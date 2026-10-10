@@ -35,6 +35,7 @@ def main() -> int:
         repository=jobs,
         profile_repository=PostgresProfileRepository(dsn, profile_id=profile_id),
         preparation_repository=preparations,
+        application_repository=PostgresApplicationRepository(dsn),
         obumai=ObumAIClient(obum_settings),
     )
 
