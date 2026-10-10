@@ -24,6 +24,10 @@ class AuthenticatedPrincipal:
     auth_source: str = ""
     claims: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def subject_fingerprint(self) -> str:
+        return sha256(self.subject.encode("utf-8")).hexdigest()[:16]
+
     def normalized(self) -> "AuthenticatedPrincipal":
         issuer = str(self.issuer or "").strip().rstrip("/")
         subject = str(self.subject or "").strip()
