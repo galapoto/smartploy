@@ -93,6 +93,16 @@ def test_endpoint_validation_fails_closed(endpoint, environment):
         validate_endpoint(endpoint, environment)
 
 
+def test_from_env_uses_official_endpoint_when_override_is_blank(monkeypatch):
+    monkeypatch.setenv("JOBMARKET_FINLAND_API_ENABLED", "true")
+    monkeypatch.setenv("JOBMARKET_FINLAND_ENVIRONMENT", "test")
+    monkeypatch.setenv("JOBMARKET_FINLAND_ENDPOINT", "")
+    monkeypatch.setenv("JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY", "fixture-key")
+    settings = JobMarketFinlandSettings.from_env()
+    assert settings is not None
+    assert settings.endpoint == TEST_ENDPOINT
+
+
 def test_settings_require_key_and_hide_it_from_repr():
     with pytest.raises(JobMarketFinlandAPIError, match="subscription key"):
         JobMarketFinlandSettings(
