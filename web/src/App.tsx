@@ -259,6 +259,10 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
+          <a className="obumai-home-link" href="https://app.obumai.com/">
+            <span className="obumai-home-mark">O</span>
+            <span>ObumAI</span>
+          </a>
           <span className={cx("connection", health?.obumai_configured ? "online" : "offline")}>
             <i />
             {health?.obumai_configured ? "ObumAI connected" : "ObumAI not configured"}

@@ -89,3 +89,14 @@ describe("worker schedule formatting", () => {
     expect(formatCadence(15)).toBe("every 15s");
   });
 });
+
+
+describe("ObumAI product navigation contract", () => {
+  it("keeps the canonical ObumAI workspace URL fixed", async () => {
+    const source = await import("./App?raw");
+    expect(source.default).toContain(
+      '<a className="obumai-home-link" href="https://app.obumai.com/">'
+    );
+    expect(source.default).not.toContain("https://app.obumai.com/?token=");
+  });
+});

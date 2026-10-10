@@ -62,3 +62,15 @@ run but the worker schema is unavailable, the dashboard reports worker status un
 pretending the API itself is down.
 
 The browser has no endpoint to claim, retry, reschedule or trigger worker tasks.
+
+
+## ObumAI product navigation
+
+SmartPloy is a standalone ObumAI product at `https://smartploy.obumai.com`.
+
+Its header includes a fixed same-tab return link to:
+
+`https://app.obumai.com/`
+
+The link contains no token, query string or cross-product session material. Authentication federation is a
+server-side identity concern and must not be encoded into product-navigation URLs.
