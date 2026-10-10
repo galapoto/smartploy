@@ -128,3 +128,59 @@ def test_restore_gate_verifies_artifact_quiesces_writes_and_records_evidence():
     assert 'health["external_actions_authorized"] is False' in restore
     assert "health_verified=true" in restore
     assert '> "${STATE_DIR}/deployed-sha"' not in restore
+
+
+def test_compose_does_not_inject_whole_production_env_into_services():
+    compose = (ROOT / "deploy/personal/docker-compose.yml").read_text(encoding="utf-8")
+
+    for service in ("api", "worker", "web", "postgres"):
+        block = _service_block(compose, service)
+        assert "env_file:" not in block
+
+    api = _service_block(compose, "api")
+    worker = _service_block(compose, "worker")
+    web = _service_block(compose, "web")
+    postgres = _service_block(compose, "postgres")
+
+    assert "JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY" not in api
+    assert "KUNTAREKRY_HTTP_HEADERS_JSON" not in api
+    assert "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON" not in api
+    assert "SMARTPLOY_WORKER_LOOP_SECONDS" not in api
+
+    assert "SMARTPLOY_ACCESS_ISSUER" not in worker
+    assert "SMARTPLOY_ACCESS_AUDIENCE" not in worker
+    assert "SMARTPLOY_ACCESS_ALLOWED_EMAIL" not in worker
+
+    assert "SMARTPLOY_DATABASE_URL" not in web
+    assert "OBUMAI_" not in web
+    assert "JOBMARKET_" not in web
+    assert "KUNTAREKRY_" not in web
+
+    assert "OBUMAI_" not in postgres
+    assert "SMARTPLOY_ACCESS_" not in postgres
+    assert "JOBMARKET_" not in postgres
+    assert "KUNTAREKRY_" not in postgres
+
+
+def test_environment_boundary_smoke_never_prints_values():
+    smoke = (ROOT / "deploy/personal/scripts/smoke-env-boundaries.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "print(" in smoke
+    assert "sorted(os.environ)" in smoke
+    assert 'sed "s/=.*//"' in smoke
+    assert "os.environ.items()" not in smoke
+    assert "printenv" not in smoke
+    assert "SMARTPLOY environment-boundary smoke: PASS" in smoke
+
+
+def test_preflight_keeps_secret_payloads_off_process_argv():
+    preflight = (ROOT / "deploy/personal/scripts/preflight.sh").read_text(encoding="utf-8")
+
+    assert 'python - "${ATS_JSON}"' not in preflight
+    assert "printf '%s' \"${ATS_JSON}\" | python -c" in preflight
+    assert "docker compose" in preflight
+    assert "config --format json" in preflight
+    assert "SMARTPLOY_ACCESS_AUDIENCE must be a non-placeholder audience identifier" in preflight
+    assert "deploy/personal/env must not be group/world readable" in preflight
