@@ -119,6 +119,10 @@ for required in postgres api worker web; do
   fi
 done
 
+# A running service is not necessarily healthy. Never record a deployment SHA
+# while the worker is failing its own Docker healthcheck.
+bash "${SCRIPT_DIR}/assert-healthy-stack.sh"
+
 if [[ -f "${STATE_DIR}/deployed-sha" ]]; then
   PREVIOUS="$(tr -d '[:space:]' < "${STATE_DIR}/deployed-sha")"
   if [[ "${PREVIOUS}" =~ ^[0-9a-f]{40}$ && "${PREVIOUS}" != "${DEPLOY_SHA}" ]]; then
