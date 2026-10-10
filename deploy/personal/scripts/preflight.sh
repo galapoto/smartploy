@@ -103,17 +103,19 @@ if [[ -n "${ATS_FILE}" ]]; then
 fi
 
 if [[ -n "${ATS_JSON}" ]]; then
-  python - "${ATS_JSON}" <<'PY'
+  if ! printf '%s' "${ATS_JSON}" | python -c '
 import json
 import sys
 
 try:
-    value = json.loads(sys.argv[1])
+    value = json.load(sys.stdin)
 except json.JSONDecodeError as exc:
     raise SystemExit(f"SMARTPLOY_PUBLIC_ATS_SOURCES_JSON is invalid JSON: {exc}")
 if not isinstance(value, list):
     raise SystemExit("SMARTPLOY_PUBLIC_ATS_SOURCES_JSON must be a JSON array")
-PY
+'; then
+    fail "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON failed validation"
+  fi
 fi
 
 if [[ -n "${OBUMAI_BASE_URL}" && ! "${OBUMAI_BASE_URL}" =~ ^https:// ]]; then
