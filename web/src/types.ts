@@ -13,6 +13,8 @@ export interface JobCardData {
   first_seen_at: string;
   last_seen_at: string;
   source_current: boolean;
+  source_attribution: string;
+  ai_preparation_allowed: boolean;
 }
 
 export interface RankingCard {
