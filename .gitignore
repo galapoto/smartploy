@@ -10,3 +10,4 @@ dist/
 build/
 *.egg-info/
 config/public_ats_sources.json
+deploy/personal/env
