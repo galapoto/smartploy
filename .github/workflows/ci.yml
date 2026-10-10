@@ -171,7 +171,9 @@ jobs:
 
           # Exercise the real production backup/restore path.
           mkdir -p /tmp/smartploy-deploy-state
+          chmod 700 /tmp/smartploy-deploy-state
           git rev-parse HEAD > /tmp/smartploy-deploy-state/deployed-sha
+          date -u +'%Y-%m-%dT%H:%M:%SZ' > /tmp/smartploy-deploy-state/deployed-at
 
           "${COMPOSE[@]}" exec -T postgres sh -c \
             'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP TABLE IF EXISTS smartploy_restore_probe; CREATE TABLE smartploy_restore_probe (value text NOT NULL); INSERT INTO smartploy_restore_probe(value) VALUES ('"'"'before-restore'"'"');"'
@@ -201,3 +203,36 @@ jobs:
           grep -Fxq 'health_verified=true' "${RESTORE_EVIDENCE}"
           EXPECTED_RESTORE_SHA="backup_sha256=$(awk 'NR == 1 {print $1}' "${BACKUP_FILE}.sha256")"
           grep -Fxq "${EXPECTED_RESTORE_SHA}" "${RESTORE_EVIDENCE}"
+
+          EVIDENCE_OUTPUT="$(bash deploy/personal/scripts/release-evidence.sh)"
+          EVIDENCE_FILE="${EVIDENCE_OUTPUT#*\n'Evidence artifact: }"
+          test "${EVIDENCE_FILE}" != "${EVIDENCE_OUTPUT}"
+          test -s "${EVIDENCE_FILE}"
+          test -s "${EVIDENCE_FILE}.sha256"
+          test "$(stat -c '%a' "${EVIDENCE_FILE}")" = "600"
+          test "$(stat -c '%a' "${EVIDENCE_FILE}.sha256")" = "600"
+          (
+            cd "$(dirname "${EVIDENCE_FILE}")"
+            sha256sum -c "$(basename "${EVIDENCE_FILE}").sha256"
+          )
+
+          DEPLOYED_SHA="$(git rev-parse HEAD)"
+          grep -Fxq 'format=smartploy-release-evidence-v1' "${EVIDENCE_FILE}"
+          grep -Fxq "current_code_sha=${DEPLOYED_SHA}" "${EVIDENCE_FILE}"
+          grep -Fxq "deployed_sha=${DEPLOYED_SHA}" "${EVIDENCE_FILE}"
+          grep -Fxq 'deployed_sha_matches_code=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'storage_ready=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'access_enabled=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'access_environment=production' "${EVIDENCE_FILE}"
+          grep -Fxq 'access_owner_restricted=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'external_actions_authorized=false' "${EVIDENCE_FILE}"
+          grep -Fxq 'latest_backup_metadata_valid=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'preflight_passed=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'env_boundary_smoke_passed=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'live_acceptance=skipped' "${EVIDENCE_FILE}"
+
+          # Evidence must never contain fixture secret/private configuration values.
+          ! grep -Fq 'ci-url-safe-random-password-1234567890' "${EVIDENCE_FILE}"
+          ! grep -Fq 'ci.cloudflareaccess.com' "${EVIDENCE_FILE}"
+          ! grep -Fq 'ci-smartploy-access-audience-123456' "${EVIDENCE_FILE}"
+          ! grep -Fq 'ci@example.com' "${EVIDENCE_FILE}"
