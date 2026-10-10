@@ -148,3 +148,35 @@ jobs:
           for service in postgres api worker web; do
             grep -qx "${service}" <<<"${running}"
           done
+
+          # Exercise the real production backup/restore path.
+          mkdir -p /tmp/smartploy-deploy-state
+          git rev-parse HEAD > /tmp/smartploy-deploy-state/deployed-sha
+
+          "${COMPOSE[@]}" exec -T postgres sh -c \
+            'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP TABLE IF EXISTS smartploy_restore_probe; CREATE TABLE smartploy_restore_probe (value text NOT NULL); INSERT INTO smartploy_restore_probe(value) VALUES ('"'"'before-restore'"'"');"'
+
+          BACKUP_OUTPUT="$(bash deploy/personal/scripts/backup.sh)"
+          BACKUP_FILE="${BACKUP_OUTPUT#Backup created: }"
+          test "${BACKUP_FILE}" != "${BACKUP_OUTPUT}"
+          test -s "${BACKUP_FILE}"
+          test -s "${BACKUP_FILE}.sha256"
+          test -s "${BACKUP_FILE}.meta"
+          grep -q '^format=smartploy-db-backup-v1 "${BACKUP_FILE}.meta"
+          grep -q "^source_deployed_sha=$(git rev-parse HEAD)$" "${BACKUP_FILE}.meta"
+
+          "${COMPOSE[@]}" exec -T postgres sh -c \
+            'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DELETE FROM smartploy_restore_probe;"'
+          probe_before="$("${COMPOSE[@]}" exec -T postgres sh -c 'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT count(*) FROM smartploy_restore_probe;"')"
+          test "${probe_before}" = "0"
+
+          bash deploy/personal/scripts/restore.sh "${BACKUP_FILE}"
+
+          probe_after="$("${COMPOSE[@]}" exec -T postgres sh -c 'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT count(*) FROM smartploy_restore_probe WHERE value='"'"'before-restore'"'"';"')"
+          test "${probe_after}" = "1"
+
+          RESTORE_EVIDENCE="$(find /tmp/smartploy-deploy-state -maxdepth 1 -type f -name 'restore-*.txt' | sort | tail -n 1)"
+          test -s "${RESTORE_EVIDENCE}"
+          grep -q '^format=smartploy-db-restore-v1 "${RESTORE_EVIDENCE}"
+          grep -q '^health_verified=true "${RESTORE_EVIDENCE}"
+          grep -q "^backup_sha256=$(awk 'NR == 1 {print $1}' "${BACKUP_FILE}.sha256")$" "${RESTORE_EVIDENCE}"
