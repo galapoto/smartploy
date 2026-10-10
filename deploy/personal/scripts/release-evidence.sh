@@ -32,7 +32,7 @@ read_env_value() {
   sed -n "s/^${name}=//p" "${ENV_FILE}" | tail -n 1
 }
 
-for command_name in awk basename chmod curl date find flock git mktemp mv python realpath sed sha256sum sort stat tail tr; do
+for command_name in awk basename chmod curl date find flock git mktemp mv python3 realpath sed sha256sum sort stat tail tr; do
   require_command "${command_name}"
 done
 
@@ -109,12 +109,12 @@ if ! curl --fail --silent --show-error --max-time 10 \
   fail "local SmartPloy health request failed"
 fi
 
-if ! PYTHONPATH="${REPO_ROOT}" python -m smartploy.live_acceptance \
+if ! PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
   origin-health "${HEALTH_FILE}" >/dev/null; then
   fail "local SmartPloy health contract failed"
 fi
 
-HEALTH_FIELDS="$(python - "${HEALTH_FILE}" <<'PY'
+HEALTH_FIELDS="$(python3 - "${HEALTH_FILE}" <<'PY'
 import json
 import sys
 
