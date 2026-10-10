@@ -516,7 +516,7 @@ class PostgresOIDCStateCache:
                     INSERT INTO smartploy_oidc_state (
                         cache_key_hash, payload, expires_at, created_at
                     )
-                    VALUES (%s, %s, now() + make_interval(secs => %s), now())
+                    VALUES (%s, %s, now() + (%s * interval '1 second'), now())
                     ON CONFLICT (cache_key_hash) DO UPDATE SET
                         payload = EXCLUDED.payload,
                         expires_at = EXCLUDED.expires_at,
