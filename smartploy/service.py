@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import os
 from datetime import datetime
 from typing import Any
 
@@ -332,7 +333,14 @@ class SmartployService:
         profile = self.profile()
         score = score_candidate(candidate, profile, now=now)
         ensure_preparation_eligible(candidate, profile, score)
-        proposed = build_preparation(candidate, profile, score, contract=V2_PACKAGE_CONTRACT)
+        use_v2 = os.getenv("SMARTPLOY_APPLICATION_CONTRACT_V2", "").lower() == "true"
+        contract = V2_PACKAGE_CONTRACT if use_v2 else None
+        proposed = (
+            build_preparation(candidate, profile, score, contract=contract)
+            if contract else build_preparation(candidate, profile, score)
+        )
+        action = V2_ACTION if use_v2 else PREPARATION_ACTION
+        instructions = V2_DRAFT_INSTRUCTIONS if use_v2 else APPLICATION_DRAFT_INSTRUCTIONS
         stored, created = self.preparation_repository.create_or_get(proposed)
 
         if not created:
@@ -364,10 +372,10 @@ class SmartployService:
 
         evidence = profile.approved_evidence()
         request_id = self.obumai.client_request_id(
-            action=V2_ACTION,
+            action=action,
             candidate=candidate,
             candidate_evidence=evidence,
-            instructions=V2_DRAFT_INSTRUCTIONS,
+            instructions=instructions,
         )
         awaiting = with_runtime(
             stored,
@@ -382,10 +390,10 @@ class SmartployService:
 
         try:
             response = self.obumai.submit_reasoning(
-                action=V2_ACTION,
+                action=action,
                 candidate=candidate,
                 candidate_evidence=evidence,
-                instructions=V2_DRAFT_INSTRUCTIONS,
+                instructions=instructions,
             )
         except ObumAIError as exc:
             failed = with_runtime(
