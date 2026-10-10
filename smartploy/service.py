@@ -239,24 +239,7 @@ class SmartployService:
         return self.application_repository.events(application_id, limit=limit)
 
     def application_summary(self) -> dict[str, Any]:
-        records = self.list_applications(limit=500)
-        state_counts: dict[str, int] = {}
-        for item in records:
-            state_counts[item.state] = state_counts.get(item.state, 0) + 1
-        return {
-            "total_records": len(records),
-            "state_counts": state_counts,
-            "preparing": state_counts.get("preparing", 0),
-            "awaiting_review": (
-                state_counts.get("ready_for_review", 0)
-                + state_counts.get("needs_review", 0)
-            ),
-            "preparation_blocked": state_counts.get("preparation_blocked", 0),
-            "actually_submitted": sum(1 for item in records if item.has_been_submitted),
-            "interviews": state_counts.get("interview", 0),
-            "offers": state_counts.get("offer", 0),
-            "rejections": state_counts.get("rejected", 0),
-        }
+        return self.application_repository.summary()
 
     def dashboard(self) -> dict[str, Any]:
         rankings = self.rankings()
