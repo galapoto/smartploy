@@ -27,6 +27,13 @@ class MemoryPreparationRepository:
         normalized = item.normalized()
         existing = self._items.get(normalized.package_id)
         if existing is not None:
+            if (
+                existing.canonical_key != normalized.canonical_key
+                or existing.profile_id != normalized.profile_id
+                or existing.job_snapshot_sha256 != normalized.job_snapshot_sha256
+                or existing.evidence_sha256 != normalized.evidence_sha256
+            ):
+                raise ValueError("preparation package ID conflicts with immutable identity")
             return existing, False
         self._items[normalized.package_id] = normalized
         return normalized, True
@@ -140,7 +147,15 @@ class PostgresPreparationRepository:
             conn.commit()
         if row is None:
             raise RuntimeError("preparation create/read reconciliation failed")
-        return self._from_row(row), created
+        stored = self._from_row(row)
+        if (
+            stored.canonical_key != value.canonical_key
+            or stored.profile_id != value.profile_id
+            or stored.job_snapshot_sha256 != value.job_snapshot_sha256
+            or stored.evidence_sha256 != value.evidence_sha256
+        ):
+            raise ValueError("preparation package ID conflicts with immutable identity")
+        return stored, created
 
     def save(self, item: ApplicationPreparation) -> ApplicationPreparation:
         value = item.normalized()
