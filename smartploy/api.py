@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 import os
 from typing import Any, Dict, List, Optional
@@ -32,6 +33,7 @@ from .oidc import (
     OIDCSettings,
     PostgresOIDCStateCache,
     PostgresSessionRepository,
+    SESSION_COOKIE_NAME,
     SmartployAuthenticationMiddleware,
     build_oidc_registry,
     clear_session_cookie,
@@ -414,7 +416,7 @@ def create_app(
             claims={},
         ).normalized()
         binding = app.state.identity_repository.resolve_or_create(principal)
-        issued = await __import__("asyncio").to_thread(
+        issued = await asyncio.to_thread(
             sessions.create,
             user_id=binding.user_id,
             principal=principal,
@@ -428,7 +430,7 @@ def create_app(
 
     @app.api_route("/auth/logout", methods=["GET", "POST"])
     async def auth_logout(request: Request):
-        raw_session = request.cookies.get("__Host-smartploy_session", "")
+        raw_session = request.cookies.get(SESSION_COOKIE_NAME, "")
         if raw_session:
             await __import__("asyncio").to_thread(sessions.revoke, raw_session)
 
