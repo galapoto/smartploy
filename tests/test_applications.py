@@ -1,7 +1,6 @@
 from smartploy.applications import (
     ApplicationRecord,
     EXTERNAL_APPLICATION_STATES,
-    MemoryError if False else ApplicationRecord,
     apply_preparation_to_application,
 )
 from smartploy.application_storage import MemoryApplicationRepository
