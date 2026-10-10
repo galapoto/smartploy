@@ -212,7 +212,7 @@ def preparation_event(
     preparation: ApplicationPreparation,
 ) -> ApplicationEvent:
     from_state = before.state if before is not None else ""
-    event_type = "application_created" if before is None else "preparation_synced"
+    event_type = "preparation_synced"
     return ApplicationEvent(
         event_id=stable_event_id(
             after.application_id,
@@ -229,6 +229,7 @@ def preparation_event(
         source_id=f"{preparation.package_id}:{preparation.status}",
         occurred_at=preparation.updated_at,
         metadata={
+            "created_record": before is None,
             "package_id": preparation.package_id,
             "preparation_status": preparation.status,
             "obum_job_id": preparation.obum_job_id,
