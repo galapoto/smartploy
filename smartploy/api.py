@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 import uvicorn
 
+from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .domain import JobSearchFilters, SourceObservation, SourcePolicy
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
@@ -76,15 +77,18 @@ def _build_service() -> SmartployService:
         repository = PostgresJobRepository(dsn)
         profile_repository = PostgresProfileRepository(dsn, profile_id=profile_id)
         preparation_repository = PostgresPreparationRepository(dsn)
+        application_repository = PostgresApplicationRepository(dsn)
     else:
         repository = MemoryJobRepository()
         profile_repository = MemoryProfileRepository(profile_id=profile_id)
         preparation_repository = MemoryPreparationRepository()
+        application_repository = MemoryApplicationRepository()
 
     service = SmartployService(
         repository=repository,
         profile_repository=profile_repository,
         preparation_repository=preparation_repository,
+        application_repository=application_repository,
         obumai=client,
     )
     service.register_source(
@@ -101,7 +105,7 @@ def _build_service() -> SmartployService:
 
 def create_app(service: SmartployService | None = None) -> FastAPI:
     active = service or _build_service()
-    app = FastAPI(title="Smartploy API", version="0.4.0")
+    app = FastAPI(title="Smartploy API", version="0.5.0")
     app.state.smartploy = active
 
     @app.get("/healthz")
@@ -206,6 +210,36 @@ def create_app(service: SmartployService | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ObumAIError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/api/v1/applications/summary")
+    def application_summary() -> dict[str, Any]:
+        return active.application_summary()
+
+    @app.get("/api/v1/applications")
+    def list_applications(limit: int = 100) -> dict[str, Any]:
+        bounded = max(1, min(limit, 500))
+        items = [item.to_dict() for item in active.list_applications(limit=bounded)]
+        return {"applications": items, "count": len(items)}
+
+    @app.get("/api/v1/applications/{application_id}/events")
+    def application_events(application_id: str, limit: int = 500) -> dict[str, Any]:
+        item = active.get_application(application_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="application not found")
+        bounded = max(1, min(limit, 2000))
+        events = [event.to_dict() for event in active.application_events(application_id, limit=bounded)]
+        return {"events": events, "count": len(events)}
+
+    @app.get("/api/v1/applications/{application_id}")
+    def get_application(application_id: str) -> dict[str, Any]:
+        item = active.get_application(application_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="application not found")
+        return item.to_dict()
+
+    @app.get("/api/v1/dashboard")
+    def dashboard() -> dict[str, Any]:
+        return active.dashboard()
 
     @app.get("/api/v1/preparations")
     def list_preparations(limit: int = 100) -> dict[str, Any]:
