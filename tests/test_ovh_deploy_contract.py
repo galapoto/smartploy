@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -160,6 +161,11 @@ def test_compose_does_not_inject_whole_production_env_into_services():
     assert "SMARTPLOY_ACCESS_" not in postgres
     assert "JOBMARKET_" not in postgres
     assert "KUNTAREKRY_" not in postgres
+
+
+def test_environment_boundary_smoke_has_valid_shell_syntax():
+    script = ROOT / "deploy/personal/scripts/smoke-env-boundaries.sh"
+    subprocess.run(["bash", "-n", str(script)], check=True)
 
 
 def test_environment_boundary_smoke_never_prints_values():
