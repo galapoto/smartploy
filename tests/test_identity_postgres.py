@@ -62,6 +62,7 @@ def candidate(jobs: PostgresJobRepository):
         SourceObservation(
             source_id="manual",
             source_mode="manual",
+            source_url="",
             raw_text="Example Data Analyst Python SQL",
             payload={
                 "company": "Example Oy",
