@@ -11,13 +11,13 @@ import uvicorn
 
 from .domain import JobSearchFilters, SourceObservation, SourcePolicy
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
+from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
 from .service import SmartployService
 from .storage import MemoryJobRepository, PostgresJobRepository
 
 
 class SourcePolicyPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     source_id: str
     display_name: str
     source_class: str
@@ -29,7 +29,6 @@ class SourcePolicyPayload(BaseModel):
 
 class SourceObservationPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     source_id: str
     source_mode: str
     source_url: str = ""
@@ -42,7 +41,6 @@ class SourceObservationPayload(BaseModel):
 
 class FiltersPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     sectors: List[str] = Field(default_factory=list)
     languages: List[str] = Field(default_factory=list)
     locations: List[str] = Field(default_factory=list)
@@ -56,16 +54,13 @@ class FiltersPayload(BaseModel):
 
 class IngestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     observation: SourceObservationPayload
     filters: Optional[FiltersPayload] = None
 
 
 class ObumAITaskPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     action: str = Field(min_length=1, max_length=64)
-    candidate_evidence: Dict[str, Any] = Field(default_factory=dict)
     instructions: str = Field(default="", max_length=20_000)
 
 
@@ -74,9 +69,19 @@ def _build_service() -> SmartployService:
     client = ObumAIClient(obum_settings) if obum_settings else None
 
     dsn = os.getenv("SMARTPLOY_DATABASE_URL", "").strip()
-    repository = PostgresJobRepository(dsn) if dsn else MemoryJobRepository()
-    service = SmartployService(repository=repository, obumai=client)
+    profile_id = os.getenv("SMARTPLOY_PROFILE_ID", "default").strip() or "default"
+    if dsn:
+        repository = PostgresJobRepository(dsn)
+        profile_repository = PostgresProfileRepository(dsn, profile_id=profile_id)
+    else:
+        repository = MemoryJobRepository()
+        profile_repository = MemoryProfileRepository(profile_id=profile_id)
 
+    service = SmartployService(
+        repository=repository,
+        profile_repository=profile_repository,
+        obumai=client,
+    )
     service.register_source(
         SourcePolicy(
             source_id="manual-import",
@@ -91,7 +96,7 @@ def _build_service() -> SmartployService:
 
 def create_app(service: SmartployService | None = None) -> FastAPI:
     active = service or _build_service()
-    app = FastAPI(title="Smartploy API", version="0.2.0")
+    app = FastAPI(title="Smartploy API", version="0.3.0")
     app.state.smartploy = active
 
     @app.get("/healthz")
@@ -101,9 +106,14 @@ def create_app(service: SmartployService | None = None) -> FastAPI:
             "ok": bool(storage.get("ready")),
             "service": "smartploy",
             "storage": storage,
+            "profile": active.profile_summary(),
             "obumai_configured": active.obumai is not None,
             "external_actions_authorized": False,
         }
+
+    @app.get("/api/v1/profile/status")
+    def profile_status() -> dict[str, Any]:
+        return active.profile_summary()
 
     @app.post("/api/v1/sources")
     def register_source(payload: SourcePolicyPayload) -> dict[str, Any]:
@@ -162,13 +172,24 @@ def create_app(service: SmartployService | None = None) -> FastAPI:
                 excluded_terms=tuple(filters.excluded_terms),
                 include_unknown=filters.include_unknown,
             )
-        result = active.ingest(observation, filters=cfg)
-        return result.to_dict()
+        return active.ingest(observation, filters=cfg).to_dict()
 
     @app.get("/api/v1/jobs")
     def list_jobs() -> dict[str, Any]:
         items = [item.to_dict() for item in active.list_jobs()]
         return {"jobs": items, "count": len(items)}
+
+    @app.get("/api/v1/rankings")
+    def rankings() -> dict[str, Any]:
+        items = [item.to_dict() for item in active.rankings()]
+        return {"rankings": items, "count": len(items)}
+
+    @app.get("/api/v1/jobs/{canonical_key}/score")
+    def score_job(canonical_key: str) -> dict[str, Any]:
+        try:
+            return active.score_job(canonical_key).to_dict()
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="job not found") from exc
 
     @app.get("/api/v1/jobs/{canonical_key}")
     def get_job(canonical_key: str) -> dict[str, Any]:
@@ -183,7 +204,6 @@ def create_app(service: SmartployService | None = None) -> FastAPI:
             return active.submit_obumai(
                 canonical_key,
                 action=payload.action,
-                candidate_evidence=payload.candidate_evidence,
                 instructions=payload.instructions,
             )
         except KeyError as exc:

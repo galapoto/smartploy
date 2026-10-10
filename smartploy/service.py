@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from datetime import datetime
+from typing import Any
 
 from .domain import (
     DiscoveryResult,
@@ -14,6 +15,9 @@ from .domain import (
     normalize_observation,
 )
 from .obumai import ObumAIClient, ObumAIError
+from .profile import CandidateProfile
+from .profile_storage import MemoryProfileRepository, ProfileRepository
+from .scoring import ScoreResult, rank_candidates, score_candidate
 from .storage import JobRepository, MemoryJobRepository, SourceHealth
 
 
@@ -22,9 +26,11 @@ class SmartployService:
         self,
         *,
         repository: JobRepository | None = None,
+        profile_repository: ProfileRepository | None = None,
         obumai: ObumAIClient | None = None,
     ) -> None:
         self.repository = repository or MemoryJobRepository()
+        self.profile_repository = profile_repository or MemoryProfileRepository()
         self.obumai = obumai
         self._policies: dict[str, SourcePolicy] = {}
 
@@ -82,12 +88,34 @@ class SmartployService:
     def storage_status(self) -> dict[str, Any]:
         return self.repository.storage_status()
 
+    def profile(self) -> CandidateProfile:
+        return self.profile_repository.profile()
+
+    def profile_summary(self) -> dict[str, Any]:
+        try:
+            summary = self.profile().summary()
+        except Exception as exc:
+            return {
+                "profile_id": getattr(self.profile_repository, "profile_id", "default"),
+                "ready": False,
+                "error": type(exc).__name__,
+            }
+        return {**summary, "ready": True}
+
+    def score_job(self, canonical_key: str, *, now: datetime | None = None) -> ScoreResult:
+        candidate = self.get_job(canonical_key)
+        if candidate is None:
+            raise KeyError(canonical_key)
+        return score_candidate(candidate, self.profile(), now=now)
+
+    def rankings(self, *, now: datetime | None = None) -> list[ScoreResult]:
+        return rank_candidates(self.list_jobs(), self.profile(), now=now)
+
     def submit_obumai(
         self,
         canonical_key: str,
         *,
         action: str,
-        candidate_evidence: Mapping[str, Any],
         instructions: str = "",
     ) -> dict[str, Any]:
         candidate = self.get_job(canonical_key)
@@ -95,9 +123,12 @@ class SmartployService:
             raise KeyError(canonical_key)
         if self.obumai is None:
             raise ObumAIError("ObumAI integration is not configured")
+        evidence = self.profile().approved_evidence()
+        if int(evidence.get("approved_fact_count") or 0) == 0:
+            raise ObumAIError("no approved Smartploy profile evidence is available")
         return self.obumai.submit_reasoning(
             action=action,
             candidate=candidate,
-            candidate_evidence=candidate_evidence,
+            candidate_evidence=evidence,
             instructions=instructions,
         )

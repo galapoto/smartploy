@@ -23,6 +23,7 @@ def test_health_and_manual_ingest_without_obumai():
     health = api.get("/healthz")
     assert health.status_code == 200
     assert health.json()["obumai_configured"] is False
+    assert health.json()["profile"]["approved_fact_count"] == 0
 
     response = api.post(
         "/api/v1/jobs/ingest",
@@ -49,6 +50,10 @@ def test_health_and_manual_ingest_without_obumai():
     assert listing.status_code == 200
     assert listing.json()["count"] == 1
 
+    ranking = api.get("/api/v1/rankings")
+    assert ranking.status_code == 200
+    assert ranking.json()["rankings"][0]["status"] == "insufficient_evidence"
+
 
 def test_obumai_request_is_truthfully_unavailable_when_not_configured():
     api = client()
@@ -71,7 +76,7 @@ def test_obumai_request_is_truthfully_unavailable_when_not_configured():
     key = created["candidate"]["canonical_key"]
     result = api.post(
         f"/api/v1/jobs/{key}/obumai",
-        json={"action": "fit_analysis", "candidate_evidence": {}},
+        json={"action": "fit_analysis"},
     )
     assert result.status_code == 503
     assert "not configured" in result.json()["detail"]

@@ -1,0 +1,28 @@
+{
+  "facts": [
+    {
+      "fact_type": "skill",
+      "value": "Python",
+      "source": "master-cv",
+      "approved": true,
+      "confidence": 1.0,
+      "tags": ["data", "programming"]
+    },
+    {
+      "fact_type": "language",
+      "value": "Finnish",
+      "source": "candidate-confirmed",
+      "approved": true,
+      "confidence": 1.0,
+      "tags": ["language"]
+    },
+    {
+      "fact_type": "preference",
+      "value": "Junior Data Analyst",
+      "source": "candidate-confirmed",
+      "approved": true,
+      "confidence": 1.0,
+      "tags": ["role", "career"]
+    }
+  ]
+}
