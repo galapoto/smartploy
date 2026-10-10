@@ -42,3 +42,23 @@ The interface deliberately distinguishes application preparation, review, and ac
 The Actually submitted metric is read only from the CRM actually_submitted value. A completed draft package never increments it.
 
 The current web slice has no final-submit control.
+
+
+## Continuous worker visibility
+
+The dashboard shows a read-only Continuous worker card when PostgreSQL worker scheduling is configured.
+
+It displays:
+- registered task count;
+- running lease state without exposing the lease-owner identifier;
+- last result;
+- next run;
+- cadence;
+- consecutive failure count;
+- bounded last error.
+
+If PostgreSQL is not configured, the card truthfully reports the worker as unconfigured. If the API can
+run but the worker schema is unavailable, the dashboard reports worker status unavailable without
+pretending the API itself is down.
+
+The browser has no endpoint to claim, retry, reschedule or trigger worker tasks.
