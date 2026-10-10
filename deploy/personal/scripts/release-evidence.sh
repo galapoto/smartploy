@@ -32,7 +32,7 @@ read_env_value() {
   sed -n "s/^${name}=//p" "${ENV_FILE}" | tail -n 1
 }
 
-for command_name in curl flock git mktemp python realpath sed sha256sum stat tail tr; do
+for command_name in awk basename chmod curl date find flock git mktemp mv python realpath sed sha256sum sort stat tail tr; do
   require_command "${command_name}"
 done
 
@@ -51,7 +51,11 @@ WEB_PORT="${WEB_PORT:-8091}"
 [[ "${WEB_PORT}" =~ ^[0-9]+$ ]] || fail "SMARTPLOY_WEB_HOST_PORT must be numeric"
 
 [[ -d "${STATE_DIR}" ]] || fail "deployment state directory does not exist"
-chmod 700 "${STATE_DIR}"
+STATE_MODE="$(stat -c '%a' "${STATE_DIR}")"
+[[ "${STATE_MODE}" =~ ^[0-7]{3,4}$ ]] || fail "unable to determine deployment state permissions"
+if (( (8#${STATE_MODE} & 077) != 0 )); then
+  fail "deployment state directory must not be group/world accessible"
+fi
 umask 077
 
 exec 9>"${STATE_DIR}/production-operation.lock"
