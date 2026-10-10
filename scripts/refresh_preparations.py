@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 
+from smartploy.application_storage import PostgresApplicationRepository
 from smartploy.obumai import ObumAIClient, ObumAIError, ObumAISettings
 from smartploy.preparation_storage import PostgresPreparationRepository
 from smartploy.profile_storage import PostgresProfileRepository
@@ -34,6 +35,7 @@ def main() -> int:
         repository=jobs,
         profile_repository=PostgresProfileRepository(dsn, profile_id=profile_id),
         preparation_repository=preparations,
+        application_repository=PostgresApplicationRepository(dsn),
         obumai=ObumAIClient(obum_settings),
     )
 

@@ -26,7 +26,9 @@ def repositories():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                TRUNCATE smartploy_application_preparations,
+                TRUNCATE smartploy_application_events,
+                         smartploy_applications,
+                         smartploy_application_preparations,
                          smartploy_source_observations,
                          smartploy_source_health,
                          smartploy_profile_facts,

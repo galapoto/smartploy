@@ -31,7 +31,9 @@ Smartploy is **not** an ObumAI submodule.
 - approved-evidence Fit/Priority scoring;
 - immutable application-draft packages for eligible 82%+ jobs;
 - ObumAI-backed CV-tailoring/cover-letter/application-answer draft contract;
-- duplicate-safe preparation queue and refresh workers.
+- duplicate-safe preparation queue and refresh workers;
+- auditable application CRM with append-only preparation events;
+- dashboard/summary APIs that keep prepared vs actually submitted distinct.
 
 ## Run locally
 
@@ -104,3 +106,27 @@ The default automatic gate is Fit >= 82, Priority >= 82, no mandatory gaps, and 
 This creates drafts only. Smartploy does not upload or submit applications in this workflow.
 
 See `docs/APPLICATION_PREPARATION.md`.
+
+
+## Application CRM and dashboard
+
+Read application pipeline state:
+
+```text
+GET /api/v1/applications
+GET /api/v1/applications/summary
+GET /api/v1/applications/{application_id}
+GET /api/v1/applications/{application_id}/events
+GET /api/v1/dashboard
+```
+
+Backfill CRM records from existing preparation packages after migration:
+
+```bash
+python scripts/sync_applications.py
+```
+
+A prepared application is never counted as submitted. Submission/outcome states are reserved for future
+verified ObumAI confirmation and communication integrations.
+
+See `docs/APPLICATION_CRM.md`.

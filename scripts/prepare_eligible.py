@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 
+from smartploy.application_storage import PostgresApplicationRepository
 from smartploy.obumai import ObumAIClient, ObumAISettings
 from smartploy.preparation_storage import PostgresPreparationRepository
 from smartploy.profile_storage import PostgresProfileRepository
@@ -31,6 +32,7 @@ def main() -> int:
         repository=jobs,
         profile_repository=PostgresProfileRepository(dsn, profile_id=profile_id),
         preparation_repository=PostgresPreparationRepository(dsn),
+        application_repository=PostgresApplicationRepository(dsn),
         obumai=ObumAIClient(obum_settings),
     )
     limit = max(1, min(int(os.getenv("SMARTPLOY_PREPARE_BATCH_LIMIT", "20")), 100))
