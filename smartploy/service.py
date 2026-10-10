@@ -8,6 +8,9 @@ from typing import Any
 
 from .application_storage import ApplicationRepository, MemoryApplicationRepository
 from .applications import ApplicationEvent, ApplicationRecord
+from .artifact_storage import ArtifactRepository, MemoryArtifactRepository
+from .artifacts import ApplicationArtifact
+from .document_render import render_application_artifacts
 from .domain import (
     DiscoveryResult,
     JobCandidate,
@@ -25,14 +28,15 @@ from .preparation_storage import (
     with_runtime,
 )
 from .preparations import (
-    APPLICATION_DRAFT_INSTRUCTIONS,
-    PREPARATION_ACTION,
     ApplicationPreparation,
     PreparationNotEligible,
     PreparationResultError,
+    action_for_contract,
     approved_evidence_ids,
     build_preparation,
+    draft_schema_for_contract,
     ensure_preparation_eligible,
+    instructions_for_contract,
     parse_draft_output,
 )
 from .profile import CandidateProfile
@@ -49,12 +53,14 @@ class SmartployService:
         profile_repository: ProfileRepository | None = None,
         preparation_repository: PreparationRepository | None = None,
         application_repository: ApplicationRepository | None = None,
+        artifact_repository: ArtifactRepository | None = None,
         obumai: ObumAIClient | None = None,
     ) -> None:
         self.repository = repository or MemoryJobRepository()
         self.profile_repository = profile_repository or MemoryProfileRepository()
         self.preparation_repository = preparation_repository or MemoryPreparationRepository()
         self.application_repository = application_repository or MemoryApplicationRepository()
+        self.artifact_repository = artifact_repository or MemoryArtifactRepository()
         self.obumai = obumai
         self._policies: dict[str, SourcePolicy] = {}
 
@@ -207,6 +213,8 @@ class SmartployService:
                 result = parse_draft_output(
                     raw_output,
                     allowed_evidence_ids=approved_evidence_ids(item.evidence_snapshot),
+                    expected_schema=draft_schema_for_contract(item.preparation_contract),
+                    evidence_snapshot=item.evidence_snapshot,
                 )
             except PreparationResultError as exc:
                 return with_runtime(
@@ -354,11 +362,13 @@ class SmartployService:
             raise ObumAIError("ObumAI integration is not configured")
 
         evidence = profile.approved_evidence()
+        action = action_for_contract(stored.preparation_contract)
+        instructions = instructions_for_contract(stored.preparation_contract)
         request_id = self.obumai.client_request_id(
-            action=PREPARATION_ACTION,
+            action=action,
             candidate=candidate,
             candidate_evidence=evidence,
-            instructions=APPLICATION_DRAFT_INSTRUCTIONS,
+            instructions=instructions,
         )
         awaiting = with_runtime(
             stored,
@@ -373,10 +383,10 @@ class SmartployService:
 
         try:
             response = self.obumai.submit_reasoning(
-                action=PREPARATION_ACTION,
+                action=action,
                 candidate=candidate,
                 candidate_evidence=evidence,
-                instructions=APPLICATION_DRAFT_INSTRUCTIONS,
+                instructions=instructions,
             )
         except ObumAIError as exc:
             failed = with_runtime(
@@ -409,8 +419,28 @@ class SmartployService:
             client_request_id=str(response.get("smartploy_client_request_id") or request_id),
         )
         saved = self.preparation_repository.save(updated)
+        self._materialize_artifacts(saved)
         self._sync_application(saved)
         return saved
+
+    def _materialize_artifacts(
+        self,
+        preparation: ApplicationPreparation,
+    ) -> list[ApplicationArtifact]:
+        if preparation.status != "completed":
+            return []
+        rendered = render_application_artifacts(preparation)
+        stored: list[ApplicationArtifact] = []
+        for artifact in rendered:
+            item, _ = self.artifact_repository.create_or_get(artifact)
+            stored.append(item)
+        return stored
+
+    def get_artifact(self, artifact_id: str) -> ApplicationArtifact | None:
+        return self.artifact_repository.get(artifact_id)
+
+    def list_artifacts(self, package_id: str) -> list[ApplicationArtifact]:
+        return self.artifact_repository.list_for_package(package_id)
 
     def get_preparation(self, package_id: str) -> ApplicationPreparation | None:
         return self.preparation_repository.get(package_id)
@@ -423,6 +453,8 @@ class SmartployService:
         if item is None:
             raise KeyError(package_id)
         if item.status in {"completed", "completed_unparsed", "cancelled"}:
+            if item.status == "completed":
+                self._materialize_artifacts(item)
             self._sync_application(item)
             return item
         if not item.obum_job_id:
@@ -440,6 +472,7 @@ class SmartployService:
             client_request_id=item.obum_client_request_id,
         )
         saved = self.preparation_repository.save(updated)
+        self._materialize_artifacts(saved)
         self._sync_application(saved)
         return saved
 
