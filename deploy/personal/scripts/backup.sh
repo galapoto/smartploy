@@ -20,15 +20,25 @@ BACKUP_DIR="$(read_env_value SMARTPLOY_BACKUP_DIR)"
 BACKUP_DIR="${BACKUP_DIR:-/srv/obum/backups/smartploy}"
 KEEP="$(read_env_value SMARTPLOY_BACKUP_KEEP)"
 KEEP="${KEEP:-7}"
+STATE_DIR="$(read_env_value SMARTPLOY_DEPLOY_STATE_DIR)"
+STATE_DIR="${STATE_DIR:-/srv/obum/data/smartploy/deploy-state}"
 
 if [[ ! "${KEEP}" =~ ^[0-9]+$ ]] || (( KEEP < 1 || KEEP > 100 )); then
   echo "SMARTPLOY_BACKUP_KEEP must be an integer between 1 and 100." >&2
   exit 1
 fi
 
-mkdir -p "${BACKUP_DIR}"
-chmod 700 "${BACKUP_DIR}"
+mkdir -p "${BACKUP_DIR}" "${STATE_DIR}"
+chmod 700 "${BACKUP_DIR}" "${STATE_DIR}"
 umask 077
+
+if [[ "${SMARTPLOY_OPERATION_LOCK_HELD:-0}" != "1" ]]; then
+  exec 9>"${STATE_DIR}/production-operation.lock"
+  if ! flock -n 9; then
+    echo "Another SmartPloy production operation owns the operation lock." >&2
+    exit 1
+  fi
+fi
 
 COMPOSE=(
   docker compose
@@ -39,7 +49,8 @@ COMPOSE=(
 
 "${COMPOSE[@]}" up -d --wait postgres >/dev/null
 
-STAMP="$(date -u +'%Y%m%dT%H%M%SZ')"
+STAMP="$(date -u +'%Y%m%dT%H%M%SZ')-$$"
+CREATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 FINAL="${BACKUP_DIR}/smartploy-${STAMP}.dump"
 TMP="$(mktemp "${BACKUP_DIR}/.smartploy-${STAMP}.XXXXXX")"
 cleanup() {
@@ -62,12 +73,32 @@ chmod 600 "${FINAL}"
 )
 chmod 600 "${FINAL}.sha256"
 
-mapfile -t BACKUPS < <(find "${BACKUP_DIR}" -maxdepth 1 -type f -name 'smartploy-*.dump' -printf '%T@ %p
-' | sort -nr | awk '{print $2}')
-if (( ${#BACKUPS[@]} > KEEP )); then
-  for old in "${BACKUPS[@]:KEEP}"; do
-    rm -f -- "${old}" "${old}.sha256"
-  done
+DUMP_SHA256="$(awk 'NR == 1 {print $1}' "${FINAL}.sha256")"
+SOURCE_DEPLOYED_SHA="unknown"
+if [[ -f "${STATE_DIR}/deployed-sha" ]]; then
+  CANDIDATE_SHA="$(tr -d '[:space:]' < "${STATE_DIR}/deployed-sha")"
+  if [[ "${CANDIDATE_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+    SOURCE_DEPLOYED_SHA="${CANDIDATE_SHA}"
+  fi
+fi
+
+META="${FINAL}.meta"
+cat > "${META}" <<EOF
+format=smartploy-db-backup-v1
+created_at=${CREATED_AT}
+source_deployed_sha=${SOURCE_DEPLOYED_SHA}
+dump_file=$(basename "${FINAL}")
+dump_sha256=${DUMP_SHA256}
+EOF
+chmod 600 "${META}"
+
+if [[ "${SMARTPLOY_BACKUP_SKIP_RETENTION:-0}" != "1" ]]; then
+  mapfile -t BACKUPS < <(find "${BACKUP_DIR}" -maxdepth 1 -type f -name 'smartploy-*.dump' -printf '%T@ %p\n' | sort -nr | awk '{print $2}')
+  if (( ${#BACKUPS[@]} > KEEP )); then
+    for old in "${BACKUPS[@]:KEEP}"; do
+      rm -f -- "${old}" "${old}.sha256" "${old}.meta"
+    done
+  fi
 fi
 
 echo "Backup created: ${FINAL}"
