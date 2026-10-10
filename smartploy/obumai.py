@@ -127,13 +127,18 @@ class ObumAIClient:
         candidate_evidence: Mapping[str, Any],
         instructions: str,
     ) -> str:
+        prompt = ObumAIClient._prompt(
+            action=action,
+            candidate=candidate,
+            candidate_evidence=candidate_evidence,
+            instructions=instructions,
+        )
         material = canonical_json(
             {
                 "contract": "smartploy.obumai.reasoning.v1",
                 "action": action,
                 "canonical_key": candidate.canonical_key,
-                "candidate_evidence": dict(candidate_evidence),
-                "instructions": instructions,
+                "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
             }
         )
         digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:24]
