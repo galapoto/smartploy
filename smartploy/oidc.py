@@ -101,7 +101,7 @@ class AuthenticationSettings:
         if configured:
             mode = configured
         elif environment == "production":
-            mode = "cloudflare" if _bool_env("SMARTPLOY_ACCESS_ENABLED", False) else "disabled"
+            mode = "cloudflare"
         else:
             mode = "disabled"
 
@@ -631,6 +631,12 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
         if self.authentication.oidc_enabled and path in PUBLIC_AUTH_PATHS:
             return await call_next(request)
 
+        if self.authentication.mode == "cloudflare":
+            return self._deny(
+                401,
+                "access_token_missing",
+                "A verified Cloudflare Access assertion is required.",
+            )
         return self._deny(
             401,
             "authentication_required",
