@@ -343,6 +343,7 @@ def create_app(
                 "email": "",
                 "user_id": "",
                 "profile_id": "",
+                "subject_fingerprint": "",
                 "auth_source": "none",
             }
         _, binding = tenant_context(request)
@@ -351,6 +352,7 @@ def create_app(
         return {
             "authenticated": True,
             **binding.to_public_dict(),
+            "subject_fingerprint": principal.subject_fingerprint,
             "auth_source": principal.auth_source or "external_identity",
         }
 
