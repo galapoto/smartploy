@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS smartploy_application_preparations (
     preparation_contract TEXT NOT NULL,
     job_snapshot_sha256 TEXT NOT NULL CHECK (length(job_snapshot_sha256) = 64),
     evidence_sha256 TEXT NOT NULL CHECK (length(evidence_sha256) = 64),
+    job_snapshot JSONB NOT NULL,
+    evidence_snapshot JSONB NOT NULL,
     score_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
     status TEXT NOT NULL CHECK (
         status IN (
