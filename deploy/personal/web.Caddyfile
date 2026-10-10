@@ -9,13 +9,17 @@
     }
 
     @backend path /api/* /healthz
-    reverse_proxy @backend api:8090 {
-        header_up Host smartploy.obumai.com
-        header_up X-Forwarded-Proto https
-        header_up Cf-Access-Jwt-Assertion {http.request.header.Cf-Access-Jwt-Assertion}
+    handle @backend {
+        reverse_proxy api:8090 {
+            header_up Host smartploy.obumai.com
+            header_up X-Forwarded-Proto https
+            header_up Cf-Access-Jwt-Assertion {http.request.header.Cf-Access-Jwt-Assertion}
+        }
     }
 
-    root * /srv
-    try_files {path} /index.html
-    file_server
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
 }
