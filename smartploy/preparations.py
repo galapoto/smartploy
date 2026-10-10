@@ -12,9 +12,13 @@ from .profile import CandidateProfile
 from .scoring import ScoreResult
 
 
-PREPARATION_CONTRACT = "smartploy.application.package.v1"
-DRAFT_RESULT_SCHEMA = "smartploy.application.draft.v1"
-PREPARATION_ACTION = "application_package_v1"
+PREPARATION_CONTRACT_V1 = "smartploy.application.package.v1"
+PREPARATION_CONTRACT = "smartploy.application.package.v2"
+DRAFT_RESULT_SCHEMA_V1 = "smartploy.application.draft.v1"
+DRAFT_RESULT_SCHEMA_V2 = "smartploy.application.draft.v2"
+DRAFT_RESULT_SCHEMA = DRAFT_RESULT_SCHEMA_V2
+PREPARATION_ACTION_V1 = "application_package_v1"
+PREPARATION_ACTION = "application_package_v2"
 TERMINAL_PREPARATION_STATES = {
     "blocked",
     "completed",
@@ -38,9 +42,9 @@ class PreparationResultError(ValueError):
     pass
 
 
-APPLICATION_DRAFT_INSTRUCTIONS = f"""Return JSON only, with no Markdown fence, using exactly this top-level schema:
+APPLICATION_DRAFT_INSTRUCTIONS_V1 = f"""Return JSON only, with no Markdown fence, using exactly this top-level schema:
 {{
-  "schema": "{DRAFT_RESULT_SCHEMA}",
+  "schema": "{DRAFT_RESULT_SCHEMA_V1}",
   "fit_summary": {{
     "summary": "string",
     "strengths": ["string"],
@@ -74,6 +78,68 @@ Rules:
 - This is a draft package for human review; final application authority is false.
 """
 
+APPLICATION_DRAFT_INSTRUCTIONS = f"""Return JSON only, with no Markdown fence, using exactly this top-level schema:
+{{
+  "schema": "{DRAFT_RESULT_SCHEMA_V2}",
+  "fit_summary": {{
+    "summary": "string",
+    "strengths": ["string"],
+    "gaps": ["string"]
+  }},
+  "tailored_cv": {{
+    "header_evidence_fact_ids": ["approved identity/contact/location fact ids only"],
+    "headline": {{"text": "string", "evidence_fact_ids": ["fact-id"]}},
+    "professional_summary": {{"text": "string", "evidence_fact_ids": ["fact-id"]}},
+    "skills": [{{"text": "string", "evidence_fact_ids": ["fact-id"]}}],
+    "experience": [{{"text": "string", "evidence_fact_ids": ["fact-id"]}}],
+    "education": [{{"text": "string", "evidence_fact_ids": ["fact-id"]}}],
+    "certifications": [{{"text": "string", "evidence_fact_ids": ["fact-id"]}}],
+    "projects": [{{"text": "string", "evidence_fact_ids": ["fact-id"]}}],
+    "languages": [{{"text": "string", "evidence_fact_ids": ["fact-id"]}}],
+    "do_not_claim": ["string"]
+  }},
+  "cover_letter": {{
+    "header_evidence_fact_ids": ["approved identity/contact/location fact ids only"],
+    "salutation": "string",
+    "paragraphs": [{{"text": "string", "evidence_fact_ids": ["fact-id"]}}],
+    "closing": "string"
+  }},
+  "application_answers": [
+    {{"question": "string", "answer": "string", "evidence_fact_ids": ["fact-id"]}}
+  ],
+  "gap_framing": ["string"],
+  "risks": ["string"],
+  "review_checklist": ["string"]
+}}
+
+Rules:
+- Use only approved candidate facts supplied in candidate_evidence.
+- Never invent identity, contact details, employers, dates, years of experience, degrees, certifications, skills, languages, projects, metrics, or results.
+- header_evidence_fact_ids may reference only supplied identity/contact/location facts. Do not rewrite those values; SmartPloy renders the exact approved evidence values.
+- Every CV claim item and every candidate claim in the cover letter or application answers must cite the supporting supplied evidence_fact_ids.
+- It is valid for a section to be an empty list when approved evidence does not support it.
+- Keep mandatory gaps visible; do not disguise them as matches.
+- Tailor wording, ordering and emphasis, not factual truth.
+- do_not_claim must explicitly list material tempting claims the evidence does not support.
+- Do not browse, upload, submit, send, email, click, or claim any external action.
+- This is a draft package for human review; final application authority is false.
+"""
+
+
+def draft_schema_for_contract(contract: str) -> str:
+    return DRAFT_RESULT_SCHEMA_V1 if contract == PREPARATION_CONTRACT_V1 else DRAFT_RESULT_SCHEMA_V2
+
+
+def action_for_contract(contract: str) -> str:
+    return PREPARATION_ACTION_V1 if contract == PREPARATION_CONTRACT_V1 else PREPARATION_ACTION
+
+
+def instructions_for_contract(contract: str) -> str:
+    return (
+        APPLICATION_DRAFT_INSTRUCTIONS_V1
+        if contract == PREPARATION_CONTRACT_V1
+        else APPLICATION_DRAFT_INSTRUCTIONS
+    )
 
 def _sha(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
