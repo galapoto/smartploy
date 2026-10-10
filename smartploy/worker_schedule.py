@@ -162,12 +162,24 @@ class PostgresWorkerTaskRepository:
         )
 
     @staticmethod
-    def _select_columns() -> str:
-        return (
-            "task_id, task_kind, enabled, cadence_seconds, next_run_at, "
-            "lease_owner, lease_until, last_started_at, last_completed_at, "
-            "last_status, consecutive_failures, last_error, metadata"
+    def _select_columns(alias: str = "") -> str:
+        prefix = f"{alias}." if alias else ""
+        names = (
+            "task_id",
+            "task_kind",
+            "enabled",
+            "cadence_seconds",
+            "next_run_at",
+            "lease_owner",
+            "lease_until",
+            "last_started_at",
+            "last_completed_at",
+            "last_status",
+            "consecutive_failures",
+            "last_error",
+            "metadata",
         )
+        return ", ".join(prefix + name for name in names)
 
     def register(self, spec: WorkerTaskSpec, *, now: datetime | None = None) -> WorkerTask:
         timestamp = _aware(now)
@@ -269,7 +281,7 @@ class PostgresWorkerTaskRepository:
                         updated_at = %s
                     FROM due
                     WHERE task.task_id = due.task_id
-                    RETURNING {self._select_columns()}
+                    RETURNING {self._select_columns("task")}
                     """,
                     (
                         timestamp,
