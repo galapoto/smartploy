@@ -28,7 +28,9 @@ function card(sector: "public" | "private" | "unknown"): RankingCard {
       posted_at: "",
       first_seen_at: "",
       last_seen_at: "",
-      source_current: true
+      source_current: true,
+      source_attribution: "",
+      ai_preparation_allowed: true
     }
   };
 }
