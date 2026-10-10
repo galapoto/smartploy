@@ -63,3 +63,36 @@ next storage slice. Smartploy's database will be independent of ObumAI's durable
 
 Smartploy should run as its own service/container and may share the same OVH/Cloudflare platform
 primitives as ObumAI. Sharing infrastructure does not mean sharing runtime state or database schemas.
+
+
+## Continuous worker
+
+Smartploy's production source ingestion is an always-on worker, not a daily cron-style search.
+
+The worker uses PostgreSQL as the scheduling authority:
+
+~~~text
+configured source/application tasks
+        |
+        v
+smartploy_worker_tasks
+  cadence + next_run
+  lease owner + lease expiry
+  failure/backoff state
+        |
+        v
+one claimed task per lease
+        |
+        +--> source poll (Kuntarekry / Job Market Finland / employer ATS)
+        |
+        +--> threshold application-draft preparation
+        |
+        +--> ObumAI draft-job refresh
+~~~
+
+Workers use row locking plus persisted leases so multiple processes can coexist without intentionally
+running the same non-expired task. Crashed leases become reclaimable after expiry. A task failure is
+contained to that task and changes its own next-run backoff; it does not block unrelated due tasks.
+
+The worker never grants application-submit authority. It only invokes the existing source adapters and
+draft-preparation boundaries.
