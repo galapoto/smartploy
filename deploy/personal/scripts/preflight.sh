@@ -38,7 +38,7 @@ is_placeholder() {
   [[ "${folded}" == *"replace-with"* || "${folded}" == *"your-team"* || "${folded}" == *"<"* || "${folded}" == *">"* ]]
 }
 
-for command_name in docker git curl flock realpath sha256sum stat grep sed awk python; do
+for command_name in docker git curl flock realpath sha256sum stat grep sed awk python3; do
   require_command "${command_name}"
 done
 
@@ -103,7 +103,7 @@ if [[ -n "${ATS_FILE}" ]]; then
 fi
 
 if [[ -n "${ATS_JSON}" ]]; then
-  if ! printf '%s' "${ATS_JSON}" | python -c '
+  if ! printf '%s' "${ATS_JSON}" | python3 -c '
 import json
 import sys
 
@@ -158,7 +158,7 @@ trap cleanup EXIT
 
 "${COMPOSE[@]}" config --format json > "${COMPOSE_JSON}"
 
-python - "${COMPOSE_JSON}" "${WEB_PORT}" <<'PY'
+python3 - "${COMPOSE_JSON}" "${WEB_PORT}" <<'PY'
 import json
 import sys
 from pathlib import Path
