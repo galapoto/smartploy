@@ -10,7 +10,9 @@ from smartploy.preparation_storage import MemoryPreparationRepository
 from smartploy.preparations import (
     DRAFT_RESULT_SCHEMA,
     PreparationNotEligible,
+    PreparationResultError,
     build_preparation,
+    parse_draft_output,
 )
 from smartploy.profile import CandidateProfile, ProfileFact
 from smartploy.profile_storage import MemoryProfileRepository
@@ -254,3 +256,19 @@ def test_mandatory_gap_blocks_automatic_preparation():
     service.repository.upsert(item)
     with pytest.raises(PreparationNotEligible, match="mandatory"):
         service.prepare_job(item.canonical_key, now=NOW)
+
+
+def test_draft_parser_rejects_evidence_ids_outside_package_snapshot():
+    draft = valid_draft()
+    draft["application_answers"] = [
+        {
+            "question": "Why you?",
+            "answer": "I have an unsupported claim.",
+            "evidence_fact_ids": ["fact-not-approved"],
+        }
+    ]
+    with pytest.raises(PreparationResultError, match="outside the immutable package snapshot"):
+        parse_draft_output(
+            json.dumps(draft),
+            allowed_evidence_ids={"fact-approved"},
+        )
