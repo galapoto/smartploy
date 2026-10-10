@@ -20,11 +20,17 @@ class PreparationRepository(Protocol):
 
 
 class MemoryPreparationRepository:
-    def __init__(self) -> None:
+    def __init__(self, profile_id: str = "") -> None:
+        self.profile_id = str(profile_id or "").strip()
         self._items: dict[str, ApplicationPreparation] = {}
+
+    def _allowed(self, item: ApplicationPreparation) -> bool:
+        return not self.profile_id or item.profile_id == self.profile_id
 
     def create_or_get(self, item: ApplicationPreparation) -> tuple[ApplicationPreparation, bool]:
         normalized = item.normalized()
+        if self.profile_id and normalized.profile_id != self.profile_id:
+            raise ValueError("preparation belongs to a different profile")
         existing = self._items.get(normalized.package_id)
         if existing is not None:
             if (
@@ -40,6 +46,8 @@ class MemoryPreparationRepository:
 
     def save(self, item: ApplicationPreparation) -> ApplicationPreparation:
         normalized = item.normalized()
+        if self.profile_id and normalized.profile_id != self.profile_id:
+            raise ValueError("preparation belongs to a different profile")
         existing = self._items.get(normalized.package_id)
         if existing is None:
             raise KeyError(normalized.package_id)
@@ -54,21 +62,27 @@ class MemoryPreparationRepository:
         return normalized
 
     def get(self, package_id: str) -> ApplicationPreparation | None:
-        return self._items.get(package_id)
+        item = self._items.get(package_id)
+        return item if item is not None and self._allowed(item) else None
 
     def list(self, *, limit: int = 100) -> list[ApplicationPreparation]:
         return sorted(
-            self._items.values(),
+            (item for item in self._items.values() if self._allowed(item)),
             key=lambda item: (item.requested_at, item.package_id),
             reverse=True,
         )[:limit]
 
 
 class PostgresPreparationRepository:
-    def __init__(self, dsn: str) -> None:
+    def __init__(self, dsn: str, profile_id: str = "") -> None:
         self.dsn = str(dsn or "").strip()
+        self.profile_id = str(profile_id or "").strip()
         if not self.dsn:
             raise ValueError("PostgreSQL DSN is required")
+
+    def _assert_profile(self, item: ApplicationPreparation) -> None:
+        if self.profile_id and item.profile_id != self.profile_id:
+            raise ValueError("preparation belongs to a different profile")
 
     def migrate(self) -> None:
         apply_migrations(self.dsn)
@@ -108,6 +122,7 @@ class PostgresPreparationRepository:
 
     def create_or_get(self, item: ApplicationPreparation) -> tuple[ApplicationPreparation, bool]:
         value = item.normalized()
+        self._assert_profile(value)
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -159,6 +174,7 @@ class PostgresPreparationRepository:
 
     def save(self, item: ApplicationPreparation) -> ApplicationPreparation:
         value = item.normalized()
+        self._assert_profile(value)
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -206,7 +222,13 @@ class PostgresPreparationRepository:
     def get(self, package_id: str) -> ApplicationPreparation | None:
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
-                cur.execute(self._select_sql() + " WHERE package_id = %s", (package_id,))
+                if self.profile_id:
+                    cur.execute(
+                        self._select_sql() + " WHERE package_id = %s AND profile_id = %s",
+                        (package_id, self.profile_id),
+                    )
+                else:
+                    cur.execute(self._select_sql() + " WHERE package_id = %s", (package_id,))
                 row = cur.fetchone()
         return self._from_row(row) if row else None
 
@@ -214,10 +236,17 @@ class PostgresPreparationRepository:
         bounded = max(1, min(int(limit), 500))
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    self._select_sql() + " ORDER BY requested_at DESC, package_id DESC LIMIT %s",
-                    (bounded,),
-                )
+                if self.profile_id:
+                    cur.execute(
+                        self._select_sql()
+                        + " WHERE profile_id = %s ORDER BY requested_at DESC, package_id DESC LIMIT %s",
+                        (self.profile_id, bounded),
+                    )
+                else:
+                    cur.execute(
+                        self._select_sql() + " ORDER BY requested_at DESC, package_id DESC LIMIT %s",
+                        (bounded,),
+                    )
                 rows = cur.fetchall()
         return [self._from_row(row) for row in rows]
 
