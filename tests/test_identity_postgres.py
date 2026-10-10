@@ -38,6 +38,7 @@ def clean_db():
                          smartploy_source_health,
                          smartploy_profile_facts,
                          smartploy_user_profiles,
+                         smartploy_user_identities,
                          smartploy_users,
                          smartploy_jobs
                 RESTART IDENTITY
@@ -97,9 +98,9 @@ def test_two_principals_get_distinct_stable_user_and_profile_ids(clean_db):
     one = identities.resolve_or_create(principal("sub-one", "one@example.com"))
     two = identities.resolve_or_create(principal("sub-two", "two@example.com"))
 
-    assert one.user_id == stable_user_id(one.issuer, one.subject)
+    assert one.user_id == stable_user_id("https://auth.obumai.com", "sub-one")
     assert one.profile_id == stable_profile_id(one.user_id)
-    assert two.user_id == stable_user_id(two.issuer, two.subject)
+    assert two.user_id == stable_user_id("https://auth.obumai.com", "sub-two")
     assert two.profile_id == stable_profile_id(two.user_id)
     assert one.user_id != two.user_id
     assert one.profile_id != two.profile_id
@@ -108,6 +109,42 @@ def test_two_principals_get_distinct_stable_user_and_profile_ids(clean_db):
     assert again.user_id == one.user_id
     assert again.profile_id == one.profile_id
     assert again.email == "updated@example.com"
+
+
+def test_explicit_identity_alias_keeps_same_smartploy_user_and_profile(clean_db):
+    identities = PostgresIdentityRepository(DSN)
+    access_principal = AuthenticatedPrincipal(
+        issuer="https://example.cloudflareaccess.com",
+        subject="cloudflare-subject",
+        email="owner@example.com",
+        auth_source="cloudflare_access",
+    )
+    oidc_principal = AuthenticatedPrincipal(
+        issuer="https://auth.obumai.com",
+        subject="obum-user-subject",
+        email="owner@example.com",
+        auth_source="oidc",
+    )
+
+    original = identities.resolve_or_create(access_principal)
+    linked = identities.link_identity(original.user_id, oidc_principal)
+    resolved_again = identities.resolve_or_create(oidc_principal)
+
+    assert linked.user_id == original.user_id
+    assert linked.profile_id == original.profile_id
+    assert resolved_again.user_id == original.user_id
+    assert resolved_again.profile_id == original.profile_id
+
+    other = identities.resolve_or_create(
+        AuthenticatedPrincipal(
+            issuer="https://auth.obumai.com",
+            subject="other-user",
+            email="other@example.com",
+            auth_source="oidc",
+        )
+    )
+    with pytest.raises(ValueError, match="already linked"):
+        identities.link_identity(other.user_id, oidc_principal)
 
 
 def test_profile_facts_are_isolated_by_resolved_profile(clean_db):
