@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _service_block(compose: str, service: str) -> str:
     match = re.search(
-        rf"(?ms)^  {re.escape(service)}:\\n(.*?)(?=^  [a-zA-Z0-9_-]+:\\n|^networks:)",
+        rf"(?ms)^  {re.escape(service)}:\n(.*?)(?=^  [a-zA-Z0-9_-]+:\n|^networks:)",
         compose,
     )
     assert match is not None, f"missing service {service}"
@@ -77,6 +77,17 @@ def test_committed_runtime_policy_contains_no_account_secrets():
     ):
         assert forbidden not in policy
     assert "deploy/personal/env" in gitignore
+
+
+def test_compose_uses_single_init_boundary():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    compose = (ROOT / "deploy/personal/docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "PYTHONPATH=/workspace" in dockerfile
+    assert 'ENTRYPOINT ["/usr/bin/tini"' not in dockerfile
+    assert "/usr/bin/tini" not in _service_block(compose, "worker")
+    assert "init: true" in _service_block(compose, "api")
+    assert "init: true" in _service_block(compose, "worker")
 
 
 def test_host_caddy_targets_only_local_smartploy_gateway():
