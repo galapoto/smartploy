@@ -67,9 +67,6 @@ services:
     image: smartploy-api:${SMARTPLOY_IMAGE_TAG:-dev}
     restart: unless-stopped
     init: true
-    entrypoint:
-      - /usr/bin/tini
-      - --
     command:
       - python
       - scripts/source_worker.py
