@@ -8,7 +8,7 @@
         Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
     }
 
-    @backend path /api/* /healthz
+    @backend path /api/* /auth/* /healthz
     handle @backend {
         reverse_proxy api:8090 {
             header_up Host smartploy.obumai.com
