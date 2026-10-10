@@ -23,7 +23,7 @@ read_env_value() {
   sed -n "s/^${name}=//p" "${ENV_FILE}" | tail -n 1
 }
 
-for command_name in curl getent python mktemp sed tail; do
+for command_name in curl getent python3 mktemp sed tail; do
   require_command "${command_name}"
 done
 
@@ -54,7 +54,7 @@ if ! curl --fail --silent --show-error --max-time 10 \
   fail "local production gateway health check failed"
 fi
 
-if ! PYTHONPATH="${REPO_ROOT}" python -m smartploy.live_acceptance \
+if ! PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
   origin-health "${HEALTH_FILE}" >/dev/null; then
   fail "local production origin health contract failed"
 fi
@@ -79,7 +79,7 @@ ROOT_PROBE="${TMP_DIR}/root.probe"
 if ! probe_public "${PRODUCTION_ORIGIN}/" "${ROOT_PROBE}"; then
   fail "public HTTPS/TLS probe failed"
 fi
-ROOT_CLASS="$(PYTHONPATH="${REPO_ROOT}" python -m smartploy.live_acceptance \
+ROOT_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
   public-probe "${ROOT_PROBE}")" \
   || fail "public root protection validation failed"
 
@@ -91,7 +91,7 @@ API_PROBE="${TMP_DIR}/api.probe"
 if ! probe_public "${PRODUCTION_ORIGIN}/api/v1/dashboard" "${API_PROBE}"; then
   fail "public protected API probe failed"
 fi
-API_CLASS="$(PYTHONPATH="${REPO_ROOT}" python -m smartploy.live_acceptance \
+API_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
   public-probe "${API_PROBE}")" \
   || fail "public API protection validation failed"
 
