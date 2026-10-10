@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import Response
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 import uvicorn
@@ -19,6 +20,7 @@ from .access import (
     CloudflareAccessVerifier,
 )
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
+from .artifact_storage import MemoryArtifactRepository, PostgresArtifactRepository
 from .domain import JobSearchFilters, SourceObservation, SourcePolicy
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
@@ -197,17 +199,20 @@ def _build_service() -> SmartployService:
         profile_repository = PostgresProfileRepository(dsn, profile_id=profile_id)
         preparation_repository = PostgresPreparationRepository(dsn)
         application_repository = PostgresApplicationRepository(dsn)
+        artifact_repository = PostgresArtifactRepository(dsn)
     else:
         repository = MemoryJobRepository()
         profile_repository = MemoryProfileRepository(profile_id=profile_id)
         preparation_repository = MemoryPreparationRepository()
         application_repository = MemoryApplicationRepository()
+        artifact_repository = MemoryArtifactRepository()
 
     service = SmartployService(
         repository=repository,
         profile_repository=profile_repository,
         preparation_repository=preparation_repository,
         application_repository=application_repository,
+        artifact_repository=artifact_repository,
         obumai=client,
     )
     service.register_source(
@@ -377,7 +382,14 @@ def create_app(
     @app.get("/api/v1/applications")
     def list_applications(limit: int = 100) -> dict[str, Any]:
         bounded = max(1, min(limit, 500))
-        items = [item.to_dict() for item in active.list_applications(limit=bounded)]
+        items = []
+        for application in active.list_applications(limit=bounded):
+            value = application.to_dict()
+            value["artifacts"] = [
+                artifact.to_dict()
+                for artifact in active.list_artifacts(application.package_id)
+            ]
+            items.append(value)
         return {"applications": items, "count": len(items)}
 
     @app.get("/api/v1/applications/{application_id}/events")
@@ -419,6 +431,36 @@ def create_app(
         if item is None:
             raise HTTPException(status_code=404, detail="preparation not found")
         return item.to_dict()
+
+    @app.get("/api/v1/preparations/{package_id}/artifacts")
+    def preparation_artifacts(package_id: str) -> dict[str, Any]:
+        if active.get_preparation(package_id) is None:
+            raise HTTPException(status_code=404, detail="preparation not found")
+        items = [item.to_dict() for item in active.list_artifacts(package_id)]
+        return {"artifacts": items, "count": len(items)}
+
+    @app.get("/api/v1/artifacts/{artifact_id}")
+    def get_artifact(artifact_id: str) -> dict[str, Any]:
+        item = active.get_artifact(artifact_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="artifact not found")
+        return item.to_dict()
+
+    @app.get("/api/v1/artifacts/{artifact_id}/download")
+    def download_artifact(artifact_id: str) -> Response:
+        item = active.get_artifact(artifact_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="artifact not found")
+        value = item.normalized()
+        return Response(
+            content=value.content,
+            media_type=value.media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{value.filename}"',
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "private, no-store",
+            },
+        )
 
     @app.post("/api/v1/preparations/{package_id}/refresh")
     def refresh_preparation(package_id: str) -> dict[str, Any]:
