@@ -152,3 +152,38 @@ Deployment does not authorize external job application submission.
 
 The continuous worker may discover/rank jobs and prepare evidence-bound drafts through approved ObumAI
 boundaries. Final application submission remains outside this stack's current authority.
+
+
+## Preflight
+
+Before any production build, migration, backup or deploy action, run:
+
+~~~bash
+chmod 600 deploy/personal/env
+bash deploy/personal/scripts/preflight.sh
+~~~
+
+The preflight is deliberately no-mutation. It verifies host tooling, Docker/Compose availability,
+private permissions on the untracked production env, exact committed runtime policy, non-placeholder
+database/Cloudflare Access configuration, loopback ingress, absolute backup/state paths, and rendered
+Compose least-privilege boundaries.
+
+It reports source and ObumAI integrations only as enabled/disabled and never prints secret values.
+
+To add a reachability-only DNS/HTTPS check:
+
+~~~bash
+bash deploy/personal/scripts/preflight.sh --online
+~~~
+
+The optional online check is not required for staging or CI.
+
+After containers are running, the separate runtime smoke:
+
+~~~bash
+bash deploy/personal/scripts/smoke-env-boundaries.sh
+~~~
+
+inspects environment **key names only** inside API, worker, PostgreSQL and web containers. It fails if
+source credentials reach the API, Cloudflare identity configuration reaches the worker, or application
+secret classes reach PostgreSQL/web.
