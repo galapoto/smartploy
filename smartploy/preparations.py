@@ -1,0 +1,256 @@
+"""Immutable Smartploy application-draft package contracts."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field, replace
+from typing import Any
+import hashlib
+import json
+
+from .domain import JobCandidate, canonical_json, utc_now_iso
+from .profile import CandidateProfile
+from .scoring import ScoreResult
+
+
+PREPARATION_CONTRACT = "smartploy.application.package.v1"
+DRAFT_RESULT_SCHEMA = "smartploy.application.draft.v1"
+PREPARATION_ACTION = "application_package_v1"
+TERMINAL_PREPARATION_STATES = {
+    "blocked",
+    "completed",
+    "completed_unparsed",
+    "failed",
+    "cancelled",
+}
+PREPARATION_STATES = {
+    "created",
+    "queued",
+    "running",
+    *TERMINAL_PREPARATION_STATES,
+}
+
+
+class PreparationNotEligible(RuntimeError):
+    pass
+
+
+class PreparationResultError(ValueError):
+    pass
+
+
+APPLICATION_DRAFT_INSTRUCTIONS = f"""Return JSON only, with no Markdown fence, using exactly this top-level schema:
+{{
+  "schema": "{DRAFT_RESULT_SCHEMA}",
+  "fit_summary": {{
+    "summary": "string",
+    "strengths": ["string"],
+    "gaps": ["string"]
+  }},
+  "cv_tailoring": {{
+    "headline": "string",
+    "summary": "string",
+    "skills_to_emphasize": ["string"],
+    "experience_edits": [
+      {{"evidence_fact_ids": ["fact-id"], "rewrite": "string"}}
+    ],
+    "do_not_claim": ["string"]
+  }},
+  "cover_letter": "string",
+  "application_answers": [
+    {{"question": "string", "answer": "string", "evidence_fact_ids": ["fact-id"]}}
+  ],
+  "gap_framing": ["string"],
+  "risks": ["string"],
+  "review_checklist": ["string"]
+}}
+
+Rules:
+- Use only approved candidate facts supplied in candidate_evidence.
+- Never invent employers, dates, years of experience, degrees, certifications, skills, languages, or results.
+- Every experience rewrite or application answer that makes a candidate claim must cite supplied evidence_fact_ids.
+- Keep mandatory gaps visible; do not disguise them as matches.
+- Tailor wording and emphasis, not factual truth.
+- Do not browse, upload, submit, send, email, click, or claim any external action.
+- This is a draft package for human review; final application authority is false.
+"""
+
+
+def _sha(value: Any) -> str:
+    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def preparation_job_snapshot(candidate: JobCandidate) -> dict[str, Any]:
+    """Return content that can change the application draft.
+
+    Discovery timestamps/source occurrences are intentionally excluded so
+    freshness changes do not mint a new application package.
+    """
+
+    job = candidate.job.normalized()
+    return {
+        "canonical_key": candidate.canonical_key,
+        "company": job.company,
+        "role_title": job.role_title,
+        "description": job.description,
+        "location": job.location,
+        "work_mode": job.work_mode,
+        "deadline": job.deadline,
+        "language": job.language,
+        "requirements": list(job.requirements),
+        "nice_to_have": list(job.nice_to_have),
+        "application_url": job.application_url,
+        "required_documents": list(job.required_documents),
+        "questions": list(job.questions),
+        "description_fingerprint": candidate.description_fingerprint,
+    }
+
+
+def approved_evidence_snapshot(profile: CandidateProfile) -> dict[str, Any]:
+    return profile.approved_evidence()
+
+
+@dataclass(frozen=True)
+class ApplicationPreparation:
+    package_id: str
+    canonical_key: str
+    profile_id: str
+    preparation_contract: str
+    job_snapshot_sha256: str
+    evidence_sha256: str
+    score_snapshot: dict[str, Any]
+    status: str = "created"
+    obum_job_id: str = ""
+    obum_client_request_id: str = ""
+    requested_at: str = field(default_factory=utc_now_iso)
+    updated_at: str = field(default_factory=utc_now_iso)
+    completed_at: str = ""
+    result: dict[str, Any] = field(default_factory=dict)
+    raw_output: str = ""
+    error: str = ""
+
+    def normalized(self) -> "ApplicationPreparation":
+        if self.status not in PREPARATION_STATES:
+            raise ValueError("unsupported preparation status")
+        if not self.package_id or not self.canonical_key or not self.profile_id:
+            raise ValueError("preparation identity is incomplete")
+        if len(self.job_snapshot_sha256) != 64 or len(self.evidence_sha256) != 64:
+            raise ValueError("preparation snapshot hashes must be SHA-256")
+        return replace(
+            self,
+            preparation_contract=self.preparation_contract or PREPARATION_CONTRACT,
+            score_snapshot=dict(self.score_snapshot or {}),
+            result=dict(self.result or {}),
+            raw_output=str(self.raw_output or ""),
+            error=str(self.error or "")[:4000],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        item = self.normalized()
+        return {
+            "package_id": item.package_id,
+            "canonical_key": item.canonical_key,
+            "profile_id": item.profile_id,
+            "preparation_contract": item.preparation_contract,
+            "job_snapshot_sha256": item.job_snapshot_sha256,
+            "evidence_sha256": item.evidence_sha256,
+            "score_snapshot": dict(item.score_snapshot),
+            "status": item.status,
+            "obum_job_id": item.obum_job_id,
+            "obum_client_request_id": item.obum_client_request_id,
+            "requested_at": item.requested_at,
+            "updated_at": item.updated_at,
+            "completed_at": item.completed_at,
+            "result": dict(item.result),
+            "raw_output": item.raw_output,
+            "error": item.error,
+            "authority": {
+                "may_prepare_drafts": True,
+                "may_upload": False,
+                "may_submit": False,
+                "external_action_authorized": False,
+            },
+        }
+
+
+def build_preparation(
+    candidate: JobCandidate,
+    profile: CandidateProfile,
+    score: ScoreResult,
+    *,
+    requested_at: str | None = None,
+) -> ApplicationPreparation:
+    job_hash = _sha(preparation_job_snapshot(candidate))
+    evidence = approved_evidence_snapshot(profile)
+    evidence_hash = _sha(evidence)
+    material = {
+        "contract": PREPARATION_CONTRACT,
+        "canonical_key": candidate.canonical_key,
+        "job_snapshot_sha256": job_hash,
+        "evidence_sha256": evidence_hash,
+    }
+    package_id = f"prep-{_sha(material)[:28]}"
+    timestamp = requested_at or utc_now_iso()
+    return ApplicationPreparation(
+        package_id=package_id,
+        canonical_key=candidate.canonical_key,
+        profile_id=profile.profile_id,
+        preparation_contract=PREPARATION_CONTRACT,
+        job_snapshot_sha256=job_hash,
+        evidence_sha256=evidence_hash,
+        score_snapshot=score.to_dict(),
+        requested_at=timestamp,
+        updated_at=timestamp,
+    )
+
+
+def ensure_preparation_eligible(
+    candidate: JobCandidate,
+    profile: CandidateProfile,
+    score: ScoreResult,
+    *,
+    minimum_fit: int = 82,
+    minimum_priority: int = 82,
+) -> None:
+    if not candidate.source_current:
+        raise PreparationNotEligible("job source is no longer current")
+    if not profile.approved_facts:
+        raise PreparationNotEligible("no approved Smartploy profile evidence is available")
+    if score.mandatory_gaps:
+        raise PreparationNotEligible("mandatory requirement gaps block automatic preparation")
+    if score.fit_score < minimum_fit:
+        raise PreparationNotEligible(f"Fit Score {score.fit_score} is below {minimum_fit}")
+    if score.priority_score < minimum_priority:
+        raise PreparationNotEligible(f"Priority Score {score.priority_score} is below {minimum_priority}")
+
+
+def parse_draft_output(output_text: str) -> dict[str, Any]:
+    text = str(output_text or "").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise PreparationResultError("ObumAI draft output is not valid JSON") from exc
+    if not isinstance(value, dict):
+        raise PreparationResultError("ObumAI draft output must be a JSON object")
+    if value.get("schema") != DRAFT_RESULT_SCHEMA:
+        raise PreparationResultError("ObumAI draft output has the wrong schema")
+
+    required = {
+        "fit_summary": dict,
+        "cv_tailoring": dict,
+        "cover_letter": str,
+        "application_answers": list,
+        "gap_framing": list,
+        "risks": list,
+        "review_checklist": list,
+    }
+    for key, expected_type in required.items():
+        if not isinstance(value.get(key), expected_type):
+            raise PreparationResultError(f"ObumAI draft output field {key} has the wrong type")
+    return value
