@@ -200,6 +200,8 @@ def build_preparation(
         "job_snapshot_sha256": job_hash,
         "evidence_sha256": evidence_hash,
     }
+    if profile.profile_id != "default":
+        material["profile_id"] = profile.profile_id
     package_id = f"prep-{_sha(material)[:28]}"
     timestamp = requested_at or utc_now_iso()
     return ApplicationPreparation(

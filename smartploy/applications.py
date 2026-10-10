@@ -40,8 +40,14 @@ PREPARATION_STATE_MAP = {
 }
 
 
-def stable_application_id(canonical_key: str) -> str:
-    digest = hashlib.sha256(str(canonical_key).encode("utf-8")).hexdigest()[:24]
+def stable_application_id(canonical_key: str, profile_id: str = "default") -> str:
+    profile = str(profile_id or "default").strip() or "default"
+    job = str(canonical_key or "").strip()
+    if profile == "default":
+        material = job
+    else:
+        material = canonical_json({"profile_id": profile, "canonical_key": job})
+    digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:24]
     return f"app-{digest}"
 
 
@@ -71,6 +77,7 @@ class ApplicationRecord:
     canonical_key: str
     package_id: str
     state: str
+    profile_id: str = "default"
     created_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)
     submitted_at: str = ""
@@ -79,7 +86,7 @@ class ApplicationRecord:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def normalized(self) -> "ApplicationRecord":
-        if not self.application_id or not self.canonical_key:
+        if not self.application_id or not self.canonical_key or not str(self.profile_id or "").strip():
             raise ValueError("application identity is incomplete")
         if self.state not in APPLICATION_STATES:
             raise ValueError("unsupported application state")
@@ -103,6 +110,7 @@ class ApplicationRecord:
             "application_id": item.application_id,
             "canonical_key": item.canonical_key,
             "package_id": item.package_id,
+            "profile_id": item.profile_id,
             "state": item.state,
             "created_at": item.created_at,
             "updated_at": item.updated_at,
@@ -160,9 +168,10 @@ def application_state_for_preparation(preparation: ApplicationPreparation) -> st
 def initial_application_for_preparation(preparation: ApplicationPreparation) -> ApplicationRecord:
     state = application_state_for_preparation(preparation)
     return ApplicationRecord(
-        application_id=stable_application_id(preparation.canonical_key),
+        application_id=stable_application_id(preparation.canonical_key, preparation.profile_id),
         canonical_key=preparation.canonical_key,
         package_id=preparation.package_id,
+        profile_id=preparation.profile_id,
         state=state,
         created_at=preparation.requested_at,
         updated_at=preparation.updated_at,
@@ -181,6 +190,8 @@ def apply_preparation_to_application(
     current = record.normalized()
     if current.canonical_key != preparation.canonical_key:
         raise ValueError("preparation belongs to a different canonical job")
+    if current.profile_id != preparation.profile_id:
+        raise ValueError("preparation belongs to a different profile")
 
     # A preparation refresh may update the linked package, but it can never
     # regress or invent externally evidenced submission/outcome state.

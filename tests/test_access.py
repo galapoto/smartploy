@@ -148,6 +148,8 @@ def test_valid_owner_token_allows_api_and_session_is_sanitized(
     assert body["authenticated"] is True
     assert body["email"] == OWNER
     assert body["auth_source"] == "cloudflare_access"
+    assert body["user_id"].startswith("usr-")
+    assert body["profile_id"].startswith("profile-")
     assert len(body["subject_fingerprint"]) == 16
     serialized = str(body)
     assert encoded not in serialized
@@ -218,6 +220,8 @@ def test_development_remains_usable_without_access(monkeypatch):
     assert session.json() == {
         "authenticated": False,
         "email": "",
+        "user_id": "",
+        "profile_id": "",
         "subject_fingerprint": "",
         "auth_source": "none",
     }

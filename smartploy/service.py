@@ -415,6 +415,9 @@ class SmartployService:
     def get_preparation(self, package_id: str) -> ApplicationPreparation | None:
         return self.preparation_repository.get(package_id)
 
+    def get_preparation_by_obum_job_id(self, job_id: str) -> ApplicationPreparation | None:
+        return self.preparation_repository.get_by_obum_job_id(job_id)
+
     def list_preparations(self, *, limit: int = 100) -> list[ApplicationPreparation]:
         return self.preparation_repository.list(limit=limit)
 
