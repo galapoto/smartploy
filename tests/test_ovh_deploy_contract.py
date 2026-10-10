@@ -4,6 +4,37 @@ import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PRODUCTION_SCRIPT_DIR = ROOT / "deploy/personal/scripts"
+EXPECTED_PRODUCTION_SCRIPTS = {
+    "backup.sh",
+    "deploy.sh",
+    "live-acceptance.sh",
+    "preflight.sh",
+    "release-evidence.sh",
+    "restore.sh",
+    "smoke-env-boundaries.sh",
+    "validate-runtime-policy.sh",
+}
+
+
+def test_all_production_shell_scripts_are_present_and_parse():
+    scripts = sorted(PRODUCTION_SCRIPT_DIR.glob("*.sh"))
+    names = {script.name for script in scripts}
+
+    assert EXPECTED_PRODUCTION_SCRIPTS <= names
+    assert scripts, "no production shell scripts discovered"
+
+    for script in scripts:
+        result = subprocess.run(
+            ["bash", "-n", str(script)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, (
+            f"invalid shell syntax in {script.relative_to(ROOT)}: "
+            f"{result.stderr.strip()}"
+        )
 
 
 def _service_block(compose: str, service: str) -> str:
