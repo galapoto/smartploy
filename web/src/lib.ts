@@ -50,3 +50,25 @@ export function relativeFreshness(value: string, now = new Date()): string {
 export function formatState(state: string): string {
   return state.replaceAll("_", " ");
 }
+
+
+export function relativeSchedule(value: string, now = new Date()): string {
+  if (!value) return "Schedule unknown";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Schedule unknown";
+  const diffMs = date.getTime() - now.getTime();
+  if (diffMs <= 0) return "Due now";
+  const minutes = Math.ceil(diffMs / 60000);
+  if (minutes < 60) return "in " + minutes + "m";
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) return "in " + hours + "h";
+  const days = Math.ceil(hours / 24);
+  return "in " + days + "d";
+}
+
+export function formatCadence(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "unknown cadence";
+  if (seconds % 3600 === 0) return "every " + seconds / 3600 + "h";
+  if (seconds % 60 === 0) return "every " + seconds / 60 + "m";
+  return "every " + seconds + "s";
+}
