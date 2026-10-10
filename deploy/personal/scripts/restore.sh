@@ -174,6 +174,8 @@ for required in postgres api worker web; do
   fi
 done
 
+bash "${SCRIPT_DIR}/assert-healthy-stack.sh"
+
 RESTORED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 EVIDENCE="${STATE_DIR}/restore-$(date -u +'%Y%m%dT%H%M%SZ')-$$.txt"
 CURRENT_CODE_SHA="unknown"
