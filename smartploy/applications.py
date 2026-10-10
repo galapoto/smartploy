@@ -76,8 +76,8 @@ class ApplicationRecord:
     application_id: str
     canonical_key: str
     package_id: str
-    profile_id: str = "default"
     state: str
+    profile_id: str = "default"
     created_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)
     submitted_at: str = ""
