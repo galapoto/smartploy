@@ -32,7 +32,7 @@ If a process crashes, the expired lease is reclaimable. If a task completes, the
 
 ## Task registration
 
-At startup/cycle synchronization, Smartploy derives tasks from current configuration.
+At worker startup, Smartploy derives tasks from current configuration. Each cycle synchronizes those task definitions with PostgreSQL. Restart the worker after changing source/environment configuration.
 
 Source tasks:
 
