@@ -110,7 +110,7 @@ jobs:
 
           "${COMPOSE[@]}" config > /tmp/smartploy-compose.yml
           "${COMPOSE[@]}" build api web
-          "${COMPOSE[@]}" up -d postgres
+          "${COMPOSE[@]}" up -d --wait postgres
           "${COMPOSE[@]}" run --rm --no-deps api python scripts/migrate.py
           "${COMPOSE[@]}" up -d api worker web
 
