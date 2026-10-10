@@ -1,0 +1,24 @@
+[Unit]
+Description=SmartPloy API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=smartploy
+Group=smartploy
+WorkingDirectory=/srv/smartploy
+EnvironmentFile=/etc/smartploy/smartploy.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/srv/smartploy/.venv/bin/uvicorn smartploy.api:app --host 127.0.0.1 --port 8090
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -194,3 +194,16 @@ authorized.
 
 For an always-on Ubuntu/OVH deployment, see docs/CONTINUOUS_WORKER.md and
 deploy/systemd/smartploy-source-worker.service.example.
+
+
+## ObumAI product subdomain
+
+SmartPloy is designed to be exposed as a first-class ObumAI tool at:
+
+`https://smartploy.obumai.com`
+
+The production browser stays same-origin: Nginx serves the React build and proxies only `/api/*` and
+`/healthz` to the localhost FastAPI service. SmartPloy remains an independently deployable service and
+does not share its database with ObumAI.
+
+See `docs/OBUMAI_SUBDOMAIN_DEPLOYMENT.md`.
