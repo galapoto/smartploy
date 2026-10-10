@@ -1,16 +1,27 @@
 CREATE TABLE IF NOT EXISTS smartploy_users (
     user_id TEXT PRIMARY KEY,
-    issuer TEXT NOT NULL,
-    subject TEXT NOT NULL,
     email TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'active'
         CHECK (status IN ('active', 'disabled')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    UNIQUE (issuer, subject)
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 );
+
+CREATE TABLE IF NOT EXISTS smartploy_user_identities (
+    issuer TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES smartploy_users(user_id) ON DELETE CASCADE,
+    auth_source TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    PRIMARY KEY (issuer, subject)
+);
+
+CREATE INDEX IF NOT EXISTS smartploy_user_identities_user_idx
+    ON smartploy_user_identities (user_id, created_at);
 
 CREATE TABLE IF NOT EXISTS smartploy_user_profiles (
     user_id TEXT PRIMARY KEY REFERENCES smartploy_users(user_id) ON DELETE CASCADE,
