@@ -430,18 +430,24 @@ class ContinuousWorker:
         self.repository.disable_absent(active)
 
     def run_once(self, *, now: datetime | None = None) -> WorkerCycle:
-        timestamp = _aware(now)
-        self.synchronize(now=timestamp)
-        claimed = self.repository.claim_due(
-            owner=self.owner,
-            lease_seconds=self.lease_seconds,
-            limit=self.claim_limit,
-            now=timestamp,
-        )
+        fixed_now = _aware(now) if now is not None else None
+        self.synchronize(now=fixed_now)
         results: list[dict[str, Any]] = []
         failed = 0
+        claimed_count = 0
 
-        for task in claimed:
+        for _ in range(self.claim_limit):
+            claimed = self.repository.claim_due(
+                owner=self.owner,
+                lease_seconds=self.lease_seconds,
+                limit=1,
+                now=fixed_now,
+            )
+            if not claimed:
+                break
+
+            task = claimed[0]
+            claimed_count += 1
             spec = self.specs.get(task.task_id)
             if spec is None:
                 result = WorkerTaskResult(
@@ -456,6 +462,7 @@ class ContinuousWorker:
                         status="failed",
                         error=f"{type(exc).__name__}: {exc}"[:2000],
                     )
+
             completed = self.repository.complete(
                 task.task_id,
                 owner=self.owner,
@@ -463,7 +470,7 @@ class ContinuousWorker:
                 error=result.error,
                 details=result.details,
                 max_backoff_seconds=self.max_backoff_seconds,
-                now=timestamp,
+                now=fixed_now,
             )
             if result.status == "failed":
                 failed += 1
@@ -478,7 +485,7 @@ class ContinuousWorker:
             )
 
         return WorkerCycle(
-            claimed=len(claimed),
+            claimed=claimed_count,
             completed=len(results),
             failed=failed,
             tasks=tuple(results),
