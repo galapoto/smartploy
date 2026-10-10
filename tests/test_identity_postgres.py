@@ -31,7 +31,9 @@ def clean_db():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                TRUNCATE smartploy_application_events,
+                TRUNCATE smartploy_oidc_state,
+                         smartploy_sessions,
+                         smartploy_application_events,
                          smartploy_applications,
                          smartploy_application_preparations,
                          smartploy_source_observations,
