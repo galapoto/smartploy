@@ -44,6 +44,7 @@ def test_deployment_files_keep_secrets_out_and_same_origin_in():
     assert "frame-ancestors 'none'" in nginx
     assert "connect-src 'self'" in nginx
     assert "Access-Control-Allow-Origin" not in nginx
+    assert "proxy_set_header Cf-Access-Jwt-Assertion $http_cf_access_jwt_assertion;" in nginx
 
     assert "EnvironmentFile=/etc/smartploy/smartploy.env" in unit
     assert "--host 127.0.0.1" in unit
