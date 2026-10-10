@@ -18,11 +18,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     let message = "Request failed with HTTP " + response.status;
+    let loginUrl = "";
     try {
-      const body = (await response.json()) as { detail?: string };
+      const body = (await response.json()) as {
+        detail?: string;
+        login_url?: string;
+        error?: { message?: string };
+      };
       if (body.detail) message = body.detail;
+      if (body.error?.message) message = body.error.message;
+      loginUrl = body.login_url ?? "";
     } catch {
       // Keep the HTTP fallback.
+    }
+    if (
+      response.status === 401 &&
+      loginUrl.startsWith("/") &&
+      typeof window !== "undefined"
+    ) {
+      window.location.assign(loginUrl);
     }
     throw new Error(message);
   }
