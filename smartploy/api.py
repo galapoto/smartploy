@@ -7,11 +7,17 @@ import os
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 import uvicorn
 
+from .access import (
+    AccessPrincipal,
+    AccessSettings,
+    CloudflareAccessMiddleware,
+    CloudflareAccessVerifier,
+)
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .domain import JobSearchFilters, SourceObservation, SourcePolicy
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
@@ -216,14 +222,25 @@ def _build_service() -> SmartployService:
     return service
 
 
-def create_app(service: SmartployService | None = None) -> FastAPI:
+def create_app(
+    service: SmartployService | None = None,
+    *,
+    access_verifier: CloudflareAccessVerifier | None = None,
+) -> FastAPI:
     active = service or _build_service()
+    access_settings = AccessSettings.from_env()
     app = FastAPI(title="Smartploy API", version="0.5.0")
     allowed_hosts = _allowed_hosts()
     if allowed_hosts:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
+    app.add_middleware(
+        CloudflareAccessMiddleware,
+        settings=access_settings,
+        verifier=access_verifier,
+    )
     app.state.smartploy = active
     app.state.public_origin = _public_origin()
+    app.state.access_settings = access_settings
 
     @app.get("/healthz")
     def health() -> dict[str, Any]:
@@ -236,6 +253,11 @@ def create_app(service: SmartployService | None = None) -> FastAPI:
             "storage": storage,
             "profile": active.profile_summary(),
             "obumai_configured": active.obumai is not None,
+            "access": {
+                "enabled": access_settings.enabled,
+                "environment": access_settings.environment,
+                "owner_restricted": bool(access_settings.allowed_email),
+            },
             "worker": {
                 "configured": worker["configured"],
                 "ready": worker["ready"],
@@ -243,6 +265,18 @@ def create_app(service: SmartployService | None = None) -> FastAPI:
                 "error": worker["error"],
             },
             "external_actions_authorized": False,
+        }
+
+    @app.get("/api/v1/session")
+    def session(request: Request) -> dict[str, Any]:
+        principal = getattr(request.state, "smartploy_principal", None)
+        if isinstance(principal, AccessPrincipal):
+            return principal.public_dict()
+        return {
+            "authenticated": False,
+            "email": "",
+            "subject_fingerprint": "",
+            "auth_source": "none",
         }
 
     @app.get("/api/v1/profile/status")
