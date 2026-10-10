@@ -188,6 +188,10 @@ def test_prepare_is_idempotent_and_refresh_persists_valid_obum_draft():
     second = service.prepare_job(ingested.candidate.canonical_key, now=NOW)
     assert first.package_id == second.package_id
     assert first.status == "queued"
+    crm = service.list_applications()
+    assert len(crm) == 1
+    assert crm[0].state == "preparing"
+    assert crm[0].has_been_submitted is False
     assert len(seen_posts) == 1
     assert seen_posts[0]["agent_id"] == "obum-assistant"
     assert '"final_submit_authorized":false' in seen_posts[0]["prompt"]
@@ -199,6 +203,9 @@ def test_prepare_is_idempotent_and_refresh_persists_valid_obum_draft():
     assert completed.result["schema"] == DRAFT_RESULT_SCHEMA
     assert completed.result["cover_letter"] == "Evidence-backed draft cover letter."
     assert completed.to_dict()["authority"]["may_submit"] is False
+    crm = service.list_applications()
+    assert crm[0].state == "ready_for_review"
+    assert crm[0].has_been_submitted is False
 
 
 def test_completed_invalid_json_is_preserved_as_unparsed():
