@@ -2,9 +2,9 @@
 
 Smartploy is a standalone job-intelligence and application orchestration product for Finland, powered by ObumAI.
 
-Smartploy continuously discovers and normalizes jobs, deduplicates repeated listings, tracks freshness,
-ranks opportunities, prepares application work and maintains the application pipeline. ObumAI supplies
-bounded reasoning and later controlled execution through a versioned API boundary.
+Smartploy discovers and normalizes jobs, deduplicates repeated listings, tracks freshness and source
+health, ranks opportunities, prepares application work and maintains the application pipeline. ObumAI
+supplies bounded reasoning and later controlled execution through a versioned API boundary.
 
 ## Repository separation
 
@@ -15,17 +15,17 @@ Smartploy is **not** an ObumAI submodule.
 - Smartploy does not import `obumellm` and does not share ObumAI's database.
 - If ObumAI is unavailable, Smartploy's discovered jobs remain available.
 
-## Current bootstrap capability
+## Current capability
 
-- source policy and acquisition-mode validation;
+- Smartploy-native job/source domain;
 - raw source evidence hashing;
-- canonical URLs;
-- Smartploy-native `JobRecord`;
-- cross-source deduplication;
+- canonical URLs and cross-source deduplication;
 - first-seen / last-seen / posted / verified freshness;
 - saved hard filters;
-- closed-job handling;
-- FastAPI service;
+- PostgreSQL durable repository plus in-memory development mode;
+- durable source-health state;
+- authorized/configured Kuntarekry RSS/XML parser and worker;
+- FastAPI job/source-health service;
 - ObumAI durable-job client using deterministic request IDs;
 - fail-closed separation between AI reasoning and external application actions.
 
@@ -39,27 +39,44 @@ cp .env.example .env
 uvicorn smartploy.api:app --reload --port 8090
 ```
 
-Then open `http://127.0.0.1:8090/docs`.
+Without `SMARTPLOY_DATABASE_URL`, Smartploy uses in-memory development storage.
 
-Run verification:
+For PostgreSQL:
 
 ```bash
-python -m compileall smartploy tests
-pytest -q
-ruff check smartploy tests
+export SMARTPLOY_DATABASE_URL='postgresql://smartploy:...@127.0.0.1:5432/smartploy'
+python scripts/migrate.py
+uvicorn smartploy.api:app --port 8090
 ```
+
+Run one authorized Kuntarekry feed poll after provisioning `KUNTAREKRY_FEED_URL`:
+
+```bash
+python scripts/poll_kuntarekry.py
+```
+
+Smartploy does not automate Kuntarekry login or invent a public feed URL.
+
+## Verification
+
+```bash
+python -m compileall smartploy scripts tests
+pytest -q
+ruff check smartploy scripts tests
+```
+
+CI additionally starts a real PostgreSQL service and tests persistence/migrations.
 
 ## ObumAI
 
 Set `OBUMAI_BASE_URL` to enable AI reasoning. Authentication headers are supplied at runtime through
 `OBUMAI_HTTP_HEADERS_JSON`; secrets are never committed.
 
-Smartploy currently targets ObumAI's durable product-agent endpoints:
+Current durable product-agent endpoints:
 
 - `POST /api/v1/agent-jobs`
 - `GET /api/v1/agent-jobs/{job_id}`
 - `GET /api/v1/agent-jobs/{job_id}/events`
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
-[docs/OBUMAI_INTEGRATION.md](docs/OBUMAI_INTEGRATION.md), and
-[docs/SOURCE_STRATEGY.md](docs/SOURCE_STRATEGY.md).
+See `docs/ARCHITECTURE.md`, `docs/PERSISTENCE.md`,
+`docs/OBUMAI_INTEGRATION.md`, and `docs/SOURCE_STRATEGY.md`.
