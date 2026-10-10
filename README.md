@@ -24,7 +24,7 @@ Smartploy is **not** an ObumAI submodule.
 - saved hard filters;
 - PostgreSQL durable repository plus in-memory development mode;
 - durable source-health state;
-- authorized/configured Kuntarekry RSS/XML parser and worker;
+- authorized/configured Kuntarekry RSS/XML parser and worker;\n- credential-gated Job Market Finland P67 v2 national job-source adapter;
 - FastAPI job/source-health service;
 - approved-evidence Fit/Priority scoring;
 - immutable application-draft packages for eligible high-confidence jobs;
@@ -138,3 +138,22 @@ Current durable product-agent endpoints:
 See docs/ARCHITECTURE.md, docs/PERSISTENCE.md, docs/SCORING.md,
 docs/APPLICATION_PREPARATION.md, docs/APPLICATION_CRM.md, docs/WEB.md,
 docs/OBUMAI_INTEGRATION.md, and docs/SOURCE_STRATEGY.md.
+
+
+## Job Market Finland national source
+
+After KEHA Centre onboarding and receipt of a KIPA subscription key:
+
+~~~bash
+export SMARTPLOY_DATABASE_URL='postgresql://...'
+export JOBMARKET_FINLAND_API_ENABLED=true
+export JOBMARKET_FINLAND_ENVIRONMENT=test
+export JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY='...'
+python scripts/poll_jobmarket_finland.py
+~~~
+
+Use the test environment until KEHA authorises production. Smartploy queries PUBLISHED and ARCHIVED
+incrementally and never treats absence from a partial query as deletion.
+
+Retrieved Job Market Finland postings are currently display/score-only in Smartploy: application
+preparation via ObumAI is blocked by default because the API terms restrict third-party forwarding.

@@ -80,6 +80,9 @@ function MatchCard(props: {
             {relativeFreshness(job?.posted_at || job?.first_seen_at || "")}
             {job?.source_ids?.length ? <span> · {job.source_ids.join(", ")}</span> : null}
           </p>
+          {job?.source_attribution ? (
+            <p className="freshness">Source: {job.source_attribution}</p>
+          ) : null}
         </div>
         <div className="score-pair">
           <ScoreBadge label="Fit" score={item.fit_score} mode={props.displayMode} />
@@ -105,7 +108,7 @@ function MatchCard(props: {
             Open job
           </a>
         ) : null}
-        {item.prepare_recommended ? (
+        {item.prepare_recommended && job?.ai_preparation_allowed !== false ? (
           <button
             className="button primary"
             type="button"
@@ -114,6 +117,9 @@ function MatchCard(props: {
           >
             {props.preparing ? "Preparing…" : "Prepare application"}
           </button>
+        ) : null}
+        {item.prepare_recommended && job?.ai_preparation_allowed === false ? (
+          <span className="gap-chip">AI preparation restricted by source terms</span>
         ) : null}
       </div>
 

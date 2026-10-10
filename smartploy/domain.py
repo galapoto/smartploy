@@ -349,9 +349,17 @@ class JobCandidate:
         return value
 
     def to_obumai_handoff(self) -> Dict[str, Any]:
+        forwarding_allowed = self.job.raw.get("external_ai_forwarding_allowed") is not False
+        reasoning_allowed = self.source_current and forwarding_allowed
         return {
             "contract": "smartploy.obumai.handoff.v1",
-            "status": "ready_for_reasoning" if self.source_current else "blocked_source_not_current",
+            "status": (
+                "ready_for_reasoning"
+                if reasoning_allowed
+                else "blocked_source_forwarding_restricted"
+                if self.source_current
+                else "blocked_source_not_current"
+            ),
             "job": self.job.to_dict(),
             "source_evidence": {
                 "canonical_url": self.canonical_url,
@@ -368,8 +376,9 @@ class JobCandidate:
                 "closed_at": self.closed_at,
             },
             "authority": {
-                "may_reason": self.source_current,
-                "may_prepare_drafts": self.source_current,
+                "may_reason": reasoning_allowed,
+                "may_prepare_drafts": reasoning_allowed,
+                "source_forwarding_restricted": not forwarding_allowed,
                 "may_upload": False,
                 "may_submit": False,
                 "external_action_authorized": False,
@@ -461,6 +470,12 @@ def normalize_observation(observation: SourceObservation, policy: SourcePolicy) 
     application_url = canonicalize_url(
         _payload_text(payload, "application_url", "apply_url", "url") or obs.source_url
     )
+    external_ai_forwarding_allowed = payload.get("external_ai_forwarding_allowed", True)
+    if not isinstance(external_ai_forwarding_allowed, bool):
+        external_ai_forwarding_allowed = True
+    source_details = payload.get("source_details")
+    if not isinstance(source_details, dict):
+        source_details = {}
     job = JobRecord(
         company=company,
         role_title=title,
@@ -488,6 +503,9 @@ def normalize_observation(observation: SourceObservation, policy: SourcePolicy) 
             "employer_sector": normalize_employer_sector(
                 _payload_text(payload, "employer_sector", "ownership_sector")
             ),
+            "source_attribution": _payload_text(payload, "source_attribution"),
+            "external_ai_forwarding_allowed": external_ai_forwarding_allowed,
+            "source_details": dict(source_details),
             "seniority": _payload_text(payload, "seniority") or infer_seniority(title, description),
             "salary_min_eur": payload.get("salary_min_eur"),
             "salary_max_eur": payload.get("salary_max_eur"),
