@@ -8,7 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
-import json
 
 from psycopg import connect
 from psycopg.types.json import Jsonb
