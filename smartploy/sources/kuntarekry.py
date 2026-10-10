@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
 from html import unescape
 from ipaddress import ip_address
-from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 import json
 import os
