@@ -26,107 +26,115 @@ Smartploy is **not** an ObumAI submodule.
 - durable source-health state;
 - authorized/configured Kuntarekry RSS/XML parser and worker;
 - FastAPI job/source-health service;
-- ObumAI durable-job client using deterministic request IDs;
-- fail-closed separation between AI reasoning and external application actions;
 - approved-evidence Fit/Priority scoring;
-- immutable application-draft packages for eligible 82%+ jobs;
+- immutable application-draft packages for eligible high-confidence jobs;
 - ObumAI-backed CV-tailoring/cover-letter/application-answer draft contract;
-- duplicate-safe preparation queue and refresh workers;
 - auditable application CRM with append-only preparation events;
-- dashboard/summary APIs that keep prepared vs actually submitted distinct.
+- dashboard/summary APIs that keep prepared vs actually submitted distinct;
+- responsive React web dashboard with heatmap/percentage ranking and Public/Private/Unknown filters.
 
 ## Run locally
 
-```bash
+Backend:
+
+~~~bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
 cp .env.example .env
 uvicorn smartploy.api:app --reload --port 8090
-```
+~~~
 
-Without `SMARTPLOY_DATABASE_URL`, Smartploy uses in-memory development storage.
+Web:
+
+~~~bash
+cd web
+npm install
+npm run dev
+~~~
+
+Vite proxies /api and /healthz to the local FastAPI service.
+
+Without SMARTPLOY_DATABASE_URL, Smartploy uses in-memory development storage.
 
 For PostgreSQL:
 
-```bash
+~~~bash
 export SMARTPLOY_DATABASE_URL='postgresql://smartploy:...@127.0.0.1:5432/smartploy'
 python scripts/migrate.py
 uvicorn smartploy.api:app --port 8090
-```
+~~~
 
-Run one authorized Kuntarekry feed poll after provisioning `KUNTAREKRY_FEED_URL`:
+Run one authorized Kuntarekry feed poll after provisioning KUNTAREKRY_FEED_URL:
 
-```bash
+~~~bash
 python scripts/poll_kuntarekry.py
-```
+~~~
 
 Smartploy does not automate Kuntarekry login or invent a public feed URL.
 
 ## Verification
 
-```bash
+Backend:
+
+~~~bash
 python -m compileall smartploy scripts tests
 pytest -q
 ruff check smartploy scripts tests
-```
+~~~
 
-CI additionally starts a real PostgreSQL service and tests persistence/migrations.
+Web:
 
-## ObumAI
+~~~bash
+cd web
+npm run test
+npm run build
+~~~
 
-Set `OBUMAI_BASE_URL` to enable AI reasoning. Authentication headers are supplied at runtime through
-`OBUMAI_HTTP_HEADERS_JSON`; secrets are never committed.
+CI starts PostgreSQL 17 and runs both backend and frontend gates.
 
-Current durable product-agent endpoints:
+## Application preparation
 
-- `POST /api/v1/agent-jobs`
-- `GET /api/v1/agent-jobs/{job_id}`
-- `GET /api/v1/agent-jobs/{job_id}/events`
+Queue high-confidence jobs:
 
-See `docs/ARCHITECTURE.md`, `docs/PERSISTENCE.md`,
-`docs/OBUMAI_INTEGRATION.md`, and `docs/SOURCE_STRATEGY.md`.
-
-
-## Application draft preparation
-
-After PostgreSQL migrations and an approved profile are configured, queue high-confidence jobs:
-
-```bash
+~~~bash
 python scripts/prepare_eligible.py
-```
+~~~
 
 Refresh queued/running ObumAI draft jobs:
 
-```bash
+~~~bash
 python scripts/refresh_preparations.py
-```
+~~~
 
-The default automatic gate is Fit >= 82, Priority >= 82, no mandatory gaps, and a current job source.
-This creates drafts only. Smartploy does not upload or submit applications in this workflow.
+Preparation creates drafts only. Smartploy does not currently upload or submit applications.
 
-See `docs/APPLICATION_PREPARATION.md`.
+## Application CRM
 
+Read pipeline state:
 
-## Application CRM and dashboard
-
-Read application pipeline state:
-
-```text
+~~~text
 GET /api/v1/applications
 GET /api/v1/applications/summary
 GET /api/v1/applications/{application_id}
 GET /api/v1/applications/{application_id}/events
 GET /api/v1/dashboard
-```
-
-Backfill CRM records from existing preparation packages after migration:
-
-```bash
-python scripts/sync_applications.py
-```
+~~~
 
 A prepared application is never counted as submitted. Submission/outcome states are reserved for future
 verified ObumAI confirmation and communication integrations.
 
-See `docs/APPLICATION_CRM.md`.
+## ObumAI
+
+Set OBUMAI_BASE_URL to enable AI reasoning. Authentication headers are supplied at runtime through
+OBUMAI_HTTP_HEADERS_JSON; secrets are never committed.
+
+Current durable product-agent endpoints:
+
+- POST /api/v1/agent-jobs
+- GET /api/v1/agent-jobs/{job_id}
+- GET /api/v1/agent-jobs/{job_id}/events
+
+See docs/ARCHITECTURE.md, docs/PERSISTENCE.md, docs/SCORING.md,
+docs/APPLICATION_PREPARATION.md, docs/APPLICATION_CRM.md, docs/WEB.md,
+docs/OBUMAI_INTEGRATION.md, and docs/SOURCE_STRATEGY.md.

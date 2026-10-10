@@ -44,6 +44,7 @@ def test_parse_kuntarekry_rss_into_source_observation():
     assert item.payload["company"] == "Example City"
     assert item.payload["role_title"] == "Data Analyst"
     assert item.payload["location"] == "Helsinki"
+    assert item.payload["employer_sector"] == "public"
     assert item.payload["application_url"].startswith("https://www.kuntarekry.fi/")
     assert "token=secret" not in item.source_url
     assert item.source_external_id == "42"
