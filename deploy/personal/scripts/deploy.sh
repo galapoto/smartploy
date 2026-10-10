@@ -65,7 +65,7 @@ COMPOSE=(
 
 "${COMPOSE[@]}" config >/dev/null
 "${COMPOSE[@]}" build --pull api web
-"${COMPOSE[@]}" up -d postgres
+"${COMPOSE[@]}" up -d --wait postgres
 
 # Always create a bounded pre-deploy database recovery point before migrations.
 bash "${SCRIPT_DIR}/backup.sh"
