@@ -364,10 +364,9 @@ class JobMarketFinlandSettings:
         if not _truthy(os.getenv("JOBMARKET_FINLAND_API_ENABLED", "")):
             return None
         environment = os.getenv("JOBMARKET_FINLAND_ENVIRONMENT", "test").strip().casefold()
-        endpoint = os.getenv(
-            "JOBMARKET_FINLAND_ENDPOINT",
-            ALLOWED_ENDPOINTS.get(environment, ""),
-        ).strip()
+        endpoint = os.getenv("JOBMARKET_FINLAND_ENDPOINT", "").strip()
+        if not endpoint:
+            endpoint = ALLOWED_ENDPOINTS.get(environment, "")
         key = os.getenv("JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY", "").strip()
         raw_headers = os.getenv("JOBMARKET_FINLAND_HTTP_HEADERS_JSON", "{}").strip() or "{}"
         try:
