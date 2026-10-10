@@ -27,6 +27,7 @@ from .preparations import (
     ApplicationPreparation,
     PreparationNotEligible,
     PreparationResultError,
+    approved_evidence_ids,
     build_preparation,
     ensure_preparation_eligible,
     parse_draft_output,
@@ -184,7 +185,10 @@ class SmartployService:
         if state == "completed":
             raw_output = str(job.get("output_text") or "")
             try:
-                result = parse_draft_output(raw_output)
+                result = parse_draft_output(
+                    raw_output,
+                    allowed_evidence_ids=approved_evidence_ids(item.evidence_snapshot),
+                )
             except PreparationResultError as exc:
                 return with_runtime(
                     item,
