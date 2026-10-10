@@ -190,3 +190,27 @@ def test_preflight_keeps_secret_payloads_off_process_argv():
     assert "config --format json" in preflight
     assert "SMARTPLOY_ACCESS_AUDIENCE must be a non-placeholder audience identifier" in preflight
     assert "deploy/personal/env must not be group/world readable" in preflight
+
+
+def test_live_acceptance_script_is_read_only_and_secret_safe():
+    script = ROOT / "deploy/personal/scripts/live-acceptance.sh"
+    text = script.read_text(encoding="utf-8")
+
+    subprocess.run(["bash", "-n", str(script)], check=True)
+
+    assert 'PRODUCTION_HOST="smartploy.obumai.com"' in text
+    assert 'PRODUCTION_ORIGIN="https://smartploy.obumai.com"' in text
+    assert "--write-out" in text
+    assert "%header{cf-ray}" in text
+    assert "%header{server}" in text
+    assert "%header{location}" in text
+    assert "--location" not in text
+    assert " --insecure" not in text
+    assert " -k " not in text
+    assert "Cf-Access-Jwt-Assertion" not in text
+    assert "Authorization:" not in text
+    assert "Cookie:" not in text
+    assert "docker compose up" not in text
+    assert "docker compose down" not in text
+    assert "git checkout" not in text
+    assert "live_acceptance=pass" in text

@@ -187,3 +187,44 @@ bash deploy/personal/scripts/smoke-env-boundaries.sh
 inspects environment **key names only** inside API, worker, PostgreSQL and web containers. It fails if
 source credentials reach the API, Cloudflare identity configuration reaches the worker, or application
 secret classes reach PostgreSQL/web.
+
+
+## Live post-deploy acceptance
+
+After the OVH host route, Cloudflare DNS proxy and Cloudflare Access application are configured, run:
+
+~~~bash
+bash deploy/personal/scripts/live-acceptance.sh
+~~~
+
+This gate is online but read-only. It first validates the local loopback origin health contract on
+`127.0.0.1:<SMARTPLOY_WEB_HOST_PORT>` using the production Host header. It then verifies the real
+`https://smartploy.obumai.com` boundary:
+
+- DNS resolves;
+- HTTPS/TLS verification succeeds normally;
+- Cloudflare edge evidence is present;
+- unauthenticated root is protected rather than returning public HTTP 200;
+- unauthenticated `/api/v1/dashboard` is protected rather than returning HTTP 200;
+- 5xx responses fail the gate;
+- 3xx protection is accepted only when the redirect targets a `*.cloudflareaccess.com`
+  `/cdn-cgi/access/` endpoint.
+
+The public probe does **not** follow redirects and captures only status, `cf-ray`, `server`, and
+`location`. It never prints cookies, JWTs, Access assertions, authorization headers, database
+credentials or source credentials.
+
+Expected successful output is intentionally compact:
+
+~~~text
+origin_health=pass
+dns=pass
+tls=pass
+cloudflare_edge=pass
+access_root=protected
+access_api=protected
+live_acceptance=pass
+~~~
+
+This gate should be run after every change to the public SmartPloy route, Cloudflare Access application,
+or production ingress.
