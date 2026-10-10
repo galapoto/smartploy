@@ -154,6 +154,10 @@ class ObumAIClient:
     ) -> dict[str, Any]:
         if not candidate.source_current:
             raise ObumAIError("cannot submit reasoning for a closed/stale job")
+        if candidate.job.raw.get("external_ai_forwarding_allowed") is False:
+            raise ObumAIError(
+                "source terms restrict forwarding this job posting to external AI processing"
+            )
 
         request_id = self.client_request_id(
             action=action,
