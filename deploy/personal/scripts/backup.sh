@@ -37,7 +37,7 @@ COMPOSE=(
   -f "${COMPOSE_DIR}/docker-compose.yml"
 )
 
-"${COMPOSE[@]}" up -d postgres >/dev/null
+"${COMPOSE[@]}" up -d --wait postgres >/dev/null
 
 STAMP="$(date -u +'%Y%m%dT%H%M%SZ')"
 FINAL="${BACKUP_DIR}/smartploy-${STAMP}.dump"
