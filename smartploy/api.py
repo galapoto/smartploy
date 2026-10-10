@@ -7,17 +7,14 @@ import os
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
+from authlib.integrations.base_client import OAuthError
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 import uvicorn
 
-from .access import (
-    AccessPrincipal,
-    AccessSettings,
-    CloudflareAccessMiddleware,
-    CloudflareAccessVerifier,
-)
+from .access import AccessPrincipal, AccessSettings, CloudflareAccessVerifier
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .identity import (
     AuthenticatedPrincipal,
@@ -28,6 +25,18 @@ from .identity import (
 )
 from .domain import JobSearchFilters, SourceObservation, SourcePolicy
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
+from .oidc import (
+    AuthenticationSettings,
+    MemoryOIDCStateCache,
+    MemorySessionRepository,
+    OIDCSettings,
+    PostgresOIDCStateCache,
+    PostgresSessionRepository,
+    SmartployAuthenticationMiddleware,
+    build_oidc_registry,
+    clear_session_cookie,
+    set_session_cookie,
+)
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
 from .preparations import PreparationNotEligible
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
@@ -255,21 +264,51 @@ def create_app(
     *,
     access_verifier: CloudflareAccessVerifier | None = None,
     identity_repository: IdentityRepository | None = None,
+    oidc_client: Any | None = None,
+    session_repository: Any | None = None,
+    oidc_state_cache: Any | None = None,
 ) -> FastAPI:
     active = service or _build_service()
-    access_settings = AccessSettings.from_env()
+    authentication = AuthenticationSettings.from_env()
+    access_settings = AccessSettings.from_env(
+        require_enabled_in_production=authentication.cloudflare_enabled
+    )
+    oidc_settings = OIDCSettings.from_env(authentication)
+    dsn = os.getenv("SMARTPLOY_DATABASE_URL", "").strip()
+
+    sessions = session_repository
+    if sessions is None:
+        sessions = PostgresSessionRepository(dsn) if dsn else MemorySessionRepository()
+
+    state_cache = oidc_state_cache
+    if state_cache is None:
+        state_cache = PostgresOIDCStateCache(dsn) if dsn else MemoryOIDCStateCache()
+
+    oidc_registry = None
+    oidc_remote = oidc_client
+    if oidc_settings is not None and oidc_remote is None:
+        oidc_registry = build_oidc_registry(oidc_settings, state_cache)
+        oidc_remote = oidc_registry.create_client("obum_identity")
+
     app = FastAPI(title="Smartploy API", version="0.5.0")
     allowed_hosts = _allowed_hosts()
     if allowed_hosts:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
     app.add_middleware(
-        CloudflareAccessMiddleware,
-        settings=access_settings,
-        verifier=access_verifier,
+        SmartployAuthenticationMiddleware,
+        authentication=authentication,
+        sessions=sessions,
+        access_settings=access_settings,
+        access_verifier=access_verifier,
     )
     app.state.smartploy = active
     app.state.public_origin = _public_origin()
+    app.state.authentication = authentication
     app.state.access_settings = access_settings
+    app.state.oidc_settings = oidc_settings
+    app.state.oidc_registry = oidc_registry
+    app.state.oidc_client = oidc_remote
+    app.state.session_repository = sessions
     app.state.identity_repository = identity_repository or _build_identity_repository()
     app.state.tenant_services = {}
 
@@ -320,6 +359,11 @@ def create_app(
             "storage": storage,
             "profile": active.profile_summary(),
             "obumai_configured": active.obumai is not None,
+            "authentication": {
+                "mode": authentication.mode,
+                "oidc_enabled": authentication.oidc_enabled,
+                "cloudflare_fallback_enabled": authentication.cloudflare_enabled,
+            },
             "access": {
                 "enabled": access_settings.enabled,
                 "environment": access_settings.environment,
@@ -333,6 +377,81 @@ def create_app(
             },
             "external_actions_authorized": False,
         }
+
+    @app.get("/auth/login")
+    async def auth_login(request: Request):
+        if oidc_settings is None or oidc_remote is None:
+            raise HTTPException(status_code=404, detail="OIDC login is not enabled")
+        request.scope.setdefault("session", {})
+        return await oidc_remote.authorize_redirect(
+            request,
+            oidc_settings.redirect_uri,
+        )
+
+    @app.api_route("/auth/callback", methods=["GET", "POST"])
+    async def auth_callback(request: Request):
+        if oidc_settings is None or oidc_remote is None:
+            raise HTTPException(status_code=404, detail="OIDC login is not enabled")
+        request.scope.setdefault("session", {})
+        try:
+            token = await oidc_remote.authorize_access_token(request)
+        except OAuthError as exc:
+            raise HTTPException(status_code=401, detail="OIDC callback validation failed") from exc
+
+        userinfo = token.get("userinfo") if isinstance(token, dict) else None
+        if not userinfo:
+            raise HTTPException(status_code=401, detail="OIDC user identity is missing")
+        claims = dict(userinfo)
+        subject = str(claims.get("sub") or "").strip()
+        if not subject:
+            raise HTTPException(status_code=401, detail="OIDC subject is missing")
+
+        principal = AuthenticatedPrincipal(
+            issuer=oidc_settings.issuer,
+            subject=subject,
+            email=str(claims.get("email") or "").strip(),
+            auth_source="oidc",
+            claims={},
+        ).normalized()
+        binding = app.state.identity_repository.resolve_or_create(principal)
+        issued = await __import__("asyncio").to_thread(
+            sessions.create,
+            user_id=binding.user_id,
+            principal=principal,
+            provider_session_id=str(claims.get("sid") or "").strip(),
+            ttl_seconds=oidc_settings.session_ttl_seconds,
+        )
+
+        response = RedirectResponse(url="/", status_code=303)
+        set_session_cookie(response, issued.token, oidc_settings.session_ttl_seconds)
+        return response
+
+    @app.api_route("/auth/logout", methods=["GET", "POST"])
+    async def auth_logout(request: Request):
+        raw_session = request.cookies.get("__Host-smartploy_session", "")
+        if raw_session:
+            await __import__("asyncio").to_thread(sessions.revoke, raw_session)
+
+        if oidc_settings is not None and oidc_remote is not None:
+            request.scope.setdefault("session", {})
+            try:
+                response = await oidc_remote.logout_redirect(
+                    request,
+                    post_logout_redirect_uri=oidc_settings.post_logout_redirect_uri,
+                    client_id=oidc_settings.client_id,
+                )
+            except Exception:
+                response = RedirectResponse(url="/auth/logged-out", status_code=303)
+        else:
+            response = RedirectResponse(url="/", status_code=303)
+        clear_session_cookie(response)
+        return response
+
+    @app.get("/auth/logged-out")
+    async def auth_logged_out():
+        response = RedirectResponse(url="/", status_code=303)
+        clear_session_cookie(response)
+        return response
 
     @app.get("/api/v1/session")
     def session(request: Request) -> dict[str, Any]:
