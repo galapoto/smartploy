@@ -31,7 +31,7 @@ def scheduler(monkeypatch):
 
 
 def test_worker_api_projects_running_task_without_lease_owner(scheduler):
-    now = datetime(2026, 10, 10, 10, 0, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     scheduler.register(
         WorkerTaskSpec(
             task_id="source:fixture",
