@@ -80,6 +80,12 @@ class JobRepository(Protocol):
         *,
         archived_at: str | None = None,
     ) -> JobCandidate | None: ...
+    def canonical_key_for_source_external_id(
+        self,
+        source_id: str,
+        source_external_id: str,
+    ) -> str | None: ...
+    def active_source_external_ids(self, source_id: str) -> set[str]: ...
     def storage_status(self) -> dict[str, Any]: ...
     def record_source_attempt(
         self,
@@ -132,7 +138,7 @@ def _redacted_archived_candidate(
     job = replace(
         original.job,
         company="Archived source",
-        role_title="Archived Job Market Finland posting",
+        role_title="Archived source posting",
         description="",
         location="",
         work_mode="review",
@@ -332,6 +338,36 @@ class MemoryJobRepository:
         )
         self._items[canonical_key] = updated
         return updated
+
+    def canonical_key_for_source_external_id(
+        self,
+        source_id: str,
+        source_external_id: str,
+    ) -> str | None:
+        source_id = str(source_id or "").strip()
+        source_external_id = str(source_external_id or "").strip()
+        if not source_id or not source_external_id:
+            return None
+        matches = [
+            record
+            for record in self._observations.values()
+            if record.get("source_id") == source_id
+            and record.get("source_external_id") == source_external_id
+            and not record.get("retired")
+        ]
+        if not matches:
+            return None
+        matches.sort(key=lambda record: str(record.get("observed_at") or ""))
+        return str(matches[-1]["canonical_key"])
+
+    def active_source_external_ids(self, source_id: str) -> set[str]:
+        return {
+            str(record.get("source_external_id"))
+            for record in self._observations.values()
+            if record.get("source_id") == source_id
+            and record.get("source_external_id")
+            and not record.get("retired")
+        }
 
     def storage_status(self) -> dict[str, Any]:
         return {"mode": self.mode, "ready": True}
@@ -667,6 +703,48 @@ class PostgresJobRepository:
                 )
             conn.commit()
         return updated
+
+    def canonical_key_for_source_external_id(
+        self,
+        source_id: str,
+        source_external_id: str,
+    ) -> str | None:
+        source_id = str(source_id or "").strip()
+        source_external_id = str(source_external_id or "").strip()
+        if not source_id or not source_external_id:
+            return None
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT canonical_key
+                    FROM smartploy_source_observations
+                    WHERE source_id = %s
+                      AND source_external_id = %s
+                      AND payload->>'retired' IS DISTINCT FROM 'true'
+                    ORDER BY observed_at DESC
+                    LIMIT 1
+                    """,
+                    (source_id, source_external_id),
+                )
+                row = cur.fetchone()
+        return str(row[0]) if row else None
+
+    def active_source_external_ids(self, source_id: str) -> set[str]:
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT source_external_id
+                    FROM smartploy_source_observations
+                    WHERE source_id = %s
+                      AND source_external_id <> ''
+                      AND payload->>'retired' IS DISTINCT FROM 'true'
+                    """,
+                    (source_id,),
+                )
+                rows = cur.fetchall()
+        return {str(row[0]) for row in rows if row[0]}
 
     def record_source_attempt(
         self,
