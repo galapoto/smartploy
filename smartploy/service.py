@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -80,16 +81,26 @@ class SmartployService:
         if not result.discovered or result.candidate is None:
             return result
 
-        decision = apply_filters(result.candidate, filters or JobSearchFilters())
+        candidate = result.candidate
+        external_id = str(observation.source_external_id or "").strip()
+        if external_id:
+            existing_key = self.repository.canonical_key_for_source_external_id(
+                candidate.job.source,
+                external_id,
+            )
+            if existing_key and existing_key != candidate.canonical_key:
+                candidate = replace(candidate, canonical_key=existing_key)
+
+        decision = apply_filters(candidate, filters or JobSearchFilters())
         if not decision.accepted:
             return DiscoveryResult(
                 status="filtered",
                 reasons=decision.reasons,
-                candidate=result.candidate,
+                candidate=candidate,
                 filter_decision=decision,
             )
 
-        stored = self.repository.upsert(result.candidate, observation)
+        stored = self.repository.upsert(candidate, observation)
         return DiscoveryResult(
             status="discovered",
             candidate=stored,
