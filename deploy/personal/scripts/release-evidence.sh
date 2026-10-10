@@ -90,6 +90,9 @@ fi
 if ! bash "${SCRIPT_DIR}/smoke-env-boundaries.sh" >/dev/null; then
   fail "runtime environment-boundary smoke failed"
 fi
+if ! bash "${SCRIPT_DIR}/assert-healthy-stack.sh" >/dev/null; then
+  fail "one or more SmartPloy services are not healthy"
+fi
 
 TMP_DIR="$(mktemp -d)"
 EVIDENCE_TMP=""
@@ -241,6 +244,7 @@ latest_backup_sha256=${LATEST_BACKUP_SHA256}
 latest_backup_metadata_valid=${LATEST_BACKUP_METADATA_VALID}
 preflight_passed=true
 env_boundary_smoke_passed=true
+stack_healthy=true
 live_acceptance=${LIVE_ACCEPTANCE}
 live_origin_health=${LIVE_ORIGIN_HEALTH}
 live_dns=${LIVE_DNS}
