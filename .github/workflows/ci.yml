@@ -205,8 +205,12 @@ jobs:
           grep -Fxq "${EXPECTED_RESTORE_SHA}" "${RESTORE_EVIDENCE}"
 
           EVIDENCE_OUTPUT="$(bash deploy/personal/scripts/release-evidence.sh)"
-          EVIDENCE_FILE="${EVIDENCE_OUTPUT#*\n'Evidence artifact: }"
-          test "${EVIDENCE_FILE}" != "${EVIDENCE_OUTPUT}"
+          EVIDENCE_FILE="$(
+            printf '%s\n' "${EVIDENCE_OUTPUT}" \
+              | sed -n 's/^Evidence artifact: //p' \
+              | tail -n 1
+          )"
+          test -n "${EVIDENCE_FILE}"
           test -s "${EVIDENCE_FILE}"
           test -s "${EVIDENCE_FILE}.sha256"
           test "$(stat -c '%a' "${EVIDENCE_FILE}")" = "600"
