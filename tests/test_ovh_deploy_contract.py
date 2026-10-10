@@ -247,3 +247,11 @@ def test_release_evidence_script_is_private_read_only_and_secret_safe():
     assert "docker compose down" not in text
     assert "pg_dump" not in text
     assert "pg_restore" not in text
+
+
+def test_release_evidence_ci_parses_artifact_path_without_fragile_shell_quoting():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "sed -n 's/^Evidence artifact: //p'" in workflow
+    assert "printf '%s\\n'" in workflow
+    assert "EVIDENCE_OUTPUT#*" not in workflow
