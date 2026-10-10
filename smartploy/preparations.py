@@ -189,13 +189,14 @@ def build_preparation(
     score: ScoreResult,
     *,
     requested_at: str | None = None,
+    contract: str = PREPARATION_CONTRACT,
 ) -> ApplicationPreparation:
     job_snapshot = preparation_job_snapshot(candidate)
     job_hash = _sha(job_snapshot)
     evidence = approved_evidence_snapshot(profile)
     evidence_hash = _sha(evidence)
     material = {
-        "contract": PREPARATION_CONTRACT,
+        "contract": contract,
         "canonical_key": candidate.canonical_key,
         "job_snapshot_sha256": job_hash,
         "evidence_sha256": evidence_hash,
@@ -208,7 +209,7 @@ def build_preparation(
         package_id=package_id,
         canonical_key=candidate.canonical_key,
         profile_id=profile.profile_id,
-        preparation_contract=PREPARATION_CONTRACT,
+        preparation_contract=contract,
         job_snapshot_sha256=job_hash,
         evidence_sha256=evidence_hash,
         job_snapshot=job_snapshot,
