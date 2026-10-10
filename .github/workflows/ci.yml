@@ -43,3 +43,21 @@ jobs:
         run: pytest -q
       - name: Lint
         run: ruff check smartploy scripts tests
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install --no-audit --no-fund
+      - name: Web tests
+        working-directory: web
+        run: npm run test
+      - name: Web build
+        working-directory: web
+        run: npm run build

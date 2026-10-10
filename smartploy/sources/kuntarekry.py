@@ -176,6 +176,7 @@ def parse_kuntarekry_feed(
             "deadline": _first(fields, "deadline", "applicationdeadline", "closingdate"),
             "language": _clean_html(_first(fields, "language", "languages")),
             "sector": _clean_html(_first(fields, "sector", "category")),
+            "employer_sector": "public",
             "application_url": link or fallback_source_url,
         }
         observations.append(

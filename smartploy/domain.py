@@ -65,6 +65,15 @@ def normalize_work_mode(value: str) -> str:
     return "review"
 
 
+def normalize_employer_sector(value: str) -> str:
+    text = normalize_identity_text(value)
+    if text in {"public", "public sector", "julkinen", "julkinen sektori"}:
+        return "public"
+    if text in {"private", "private sector", "yksityinen", "yksityinen sektori"}:
+        return "private"
+    return "unknown"
+
+
 def canonicalize_url(value: str) -> str:
     """Return stable URL identity while stripping common tracking aliases."""
 
@@ -476,6 +485,9 @@ def normalize_observation(observation: SourceObservation, policy: SourcePolicy) 
             "raw_sha256": obs.raw_sha256,
             "observation_id": obs.observation_id,
             "sector": _payload_text(payload, "sector", "industry"),
+            "employer_sector": normalize_employer_sector(
+                _payload_text(payload, "employer_sector", "ownership_sector")
+            ),
             "seniority": _payload_text(payload, "seniority") or infer_seniority(title, description),
             "salary_min_eur": payload.get("salary_min_eur"),
             "salary_max_eur": payload.get("salary_max_eur"),
