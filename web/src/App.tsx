@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getApplications, getDashboard, getHealth, prepareJob } from "./api";
 import {
   filterBySector,
+  formatCadence,
   formatState,
   queueLabel,
   relativeFreshness,
+  relativeSchedule,
   scoreBand,
   sectorLabel,
   type DisplayMode,
@@ -407,6 +409,57 @@ export default function App() {
           </div>
 
           <aside className="workspace-side">
+            <section className="side-card">
+              <div className="side-heading">
+                <h3>Continuous worker</h3>
+                <span>{dashboard.worker.count}</span>
+              </div>
+              {!dashboard.worker.configured ? (
+                <p className="muted">Worker is not configured in this environment.</p>
+              ) : !dashboard.worker.ready ? (
+                <div className="worker-warning">
+                  <strong>Worker status unavailable</strong>
+                  <small>{dashboard.worker.error || "Scheduler schema is not ready."}</small>
+                </div>
+              ) : dashboard.worker.tasks.length ? (
+                <div className="worker-list">
+                  {dashboard.worker.tasks.map((task) => (
+                    <div className="worker-row" key={task.task_id}>
+                      <div>
+                        <strong>{formatState(task.task_id)}</strong>
+                        <small>
+                          {task.lease_active
+                            ? "Running"
+                            : relativeSchedule(task.next_run_at)}
+                          {" · "}
+                          {formatCadence(task.cadence_seconds)}
+                        </small>
+                      </div>
+                      <span
+                        className={cx(
+                          "health-status",
+                          task.lease_active ? "status-running" : "status-" + task.last_status
+                        )}
+                      >
+                        {task.lease_active ? "running" : task.last_status}
+                      </span>
+                      {task.consecutive_failures ? (
+                        <p>
+                          {task.consecutive_failures} consecutive failure
+                          {task.consecutive_failures === 1 ? "" : "s"}
+                          {task.last_error ? " · " + task.last_error : ""}
+                        </p>
+                      ) : task.last_error ? (
+                        <p>{task.last_error}</p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted">Worker is ready but no tasks are registered yet.</p>
+              )}
+            </section>
+
             <section className="side-card">
               <div className="side-heading">
                 <h3>Source health</h3>
