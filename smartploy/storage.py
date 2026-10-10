@@ -222,6 +222,7 @@ class PostgresJobRepository:
                         SELECT
                             to_regclass('public.smartploy_jobs') IS NOT NULL
                             AND to_regclass('public.smartploy_profile_facts') IS NOT NULL
+                            AND to_regclass('public.smartploy_application_preparations') IS NOT NULL
                         """
                     )
                     ready = bool(cur.fetchone()[0])
