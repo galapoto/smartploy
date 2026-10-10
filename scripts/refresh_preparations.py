@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 
+from smartploy.application_storage import PostgresApplicationRepository
 from smartploy.obumai import ObumAIClient, ObumAIError, ObumAISettings
 from smartploy.preparation_storage import PostgresPreparationRepository
 from smartploy.profile_storage import PostgresProfileRepository
