@@ -190,3 +190,8 @@ def test_preflight_keeps_secret_payloads_off_process_argv():
     assert "config --format json" in preflight
     assert "SMARTPLOY_ACCESS_AUDIENCE must be a non-placeholder audience identifier" in preflight
     assert "deploy/personal/env must not be group/world readable" in preflight
+
+
+def test_environment_boundary_smoke_is_valid_bash():
+    smoke = ROOT / "deploy/personal/scripts/smoke-env-boundaries.sh"
+    subprocess.run(["bash", "-n", str(smoke)], check=True)
