@@ -12,7 +12,7 @@ from smartploy.service import SmartployService
 from smartploy.storage import PostgresJobRepository
 
 
-ACTIVE_STATES = {"created", "queued", "running", "blocked"}
+ACTIVE_STATES = {"queued", "running", "blocked"}
 
 
 def main() -> int:
