@@ -16,6 +16,7 @@ class PreparationRepository(Protocol):
     def create_or_get(self, item: ApplicationPreparation) -> tuple[ApplicationPreparation, bool]: ...
     def save(self, item: ApplicationPreparation) -> ApplicationPreparation: ...
     def get(self, package_id: str) -> ApplicationPreparation | None: ...
+    def get_by_obum_job_id(self, job_id: str) -> ApplicationPreparation | None: ...
     def list(self, *, limit: int = 100) -> list[ApplicationPreparation]: ...
 
 
@@ -64,6 +65,15 @@ class MemoryPreparationRepository:
     def get(self, package_id: str) -> ApplicationPreparation | None:
         item = self._items.get(package_id)
         return item if item is not None and self._allowed(item) else None
+
+    def get_by_obum_job_id(self, job_id: str) -> ApplicationPreparation | None:
+        value = str(job_id or "").strip()
+        if not value:
+            return None
+        for item in self._items.values():
+            if item.obum_job_id == value and self._allowed(item):
+                return item
+        return None
 
     def list(self, *, limit: int = 100) -> list[ApplicationPreparation]:
         return sorted(
@@ -229,6 +239,27 @@ class PostgresPreparationRepository:
                     )
                 else:
                     cur.execute(self._select_sql() + " WHERE package_id = %s", (package_id,))
+                row = cur.fetchone()
+        return self._from_row(row) if row else None
+
+    def get_by_obum_job_id(self, job_id: str) -> ApplicationPreparation | None:
+        value = str(job_id or "").strip()
+        if not value:
+            return None
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                if self.profile_id:
+                    cur.execute(
+                        self._select_sql()
+                        + " WHERE obum_job_id = %s AND profile_id = %s ORDER BY requested_at DESC LIMIT 1",
+                        (value, self.profile_id),
+                    )
+                else:
+                    cur.execute(
+                        self._select_sql()
+                        + " WHERE obum_job_id = %s ORDER BY requested_at DESC LIMIT 1",
+                        (value,),
+                    )
                 row = cur.fetchone()
         return self._from_row(row) if row else None
 
