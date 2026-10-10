@@ -5,8 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import os
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 import uvicorn
 
@@ -61,6 +63,37 @@ class IngestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     observation: SourceObservationPayload
     filters: Optional[FiltersPayload] = None
+
+
+def _allowed_hosts() -> tuple[str, ...]:
+    raw = os.getenv("SMARTPLOY_ALLOWED_HOSTS", "").strip()
+    if not raw:
+        return ()
+    hosts = tuple(item.strip().casefold() for item in raw.split(",") if item.strip())
+    if not hosts:
+        return ()
+    for host in hosts:
+        if "*" in host or "/" in host or "://" in host:
+            raise ValueError("SMARTPLOY_ALLOWED_HOSTS must contain exact host names only")
+    return hosts
+
+
+def _public_origin() -> str:
+    value = os.getenv("SMARTPLOY_PUBLIC_ORIGIN", "").strip().rstrip("/")
+    if not value:
+        return ""
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise ValueError("SMARTPLOY_PUBLIC_ORIGIN must be an origin-only HTTPS URL")
+    return value
 
 
 class ObumAITaskPayload(BaseModel):
@@ -186,7 +219,11 @@ def _build_service() -> SmartployService:
 def create_app(service: SmartployService | None = None) -> FastAPI:
     active = service or _build_service()
     app = FastAPI(title="Smartploy API", version="0.5.0")
+    allowed_hosts = _allowed_hosts()
+    if allowed_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
     app.state.smartploy = active
+    app.state.public_origin = _public_origin()
 
     @app.get("/healthz")
     def health() -> dict[str, Any]:
@@ -195,6 +232,7 @@ def create_app(service: SmartployService | None = None) -> FastAPI:
         return {
             "ok": bool(storage.get("ready")),
             "service": "smartploy",
+            "public_origin": app.state.public_origin,
             "storage": storage,
             "profile": active.profile_summary(),
             "obumai_configured": active.obumai is not None,
