@@ -53,7 +53,7 @@ if command -v ss >/dev/null; then
     if ss -H -ltn "( sport = :$port )" 2>/dev/null | grep -q .; then
       printf 'tcp_listen_%s=yes\n' "$port"
     else
-      printf 'tcp_listen_%s=no_or_unavailable\n'
+      printf 'tcp_listen_%s=no_or_unavailable\n' "$port"
     fi
   done
 fi
