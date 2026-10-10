@@ -29,11 +29,11 @@ umask 077
 
 # Capture names only. Values are never written or printed.
 "${COMPOSE[@]}" exec -T api \
-  python -c 'import os; print("\n".join(sorted(os.environ)))' \
+  python -c 'import os; print("\\n".join(sorted(os.environ)))' \
   > "${TMP_DIR}/api.keys"
 
 "${COMPOSE[@]}" exec -T worker \
-  python -c 'import os; print("\n".join(sorted(os.environ)))' \
+  python -c 'import os; print("\\n".join(sorted(os.environ)))' \
   > "${TMP_DIR}/worker.keys"
 
 "${COMPOSE[@]}" exec -T postgres \
