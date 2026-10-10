@@ -44,7 +44,7 @@ umask 077
   sh -c 'env | sed "s/=.*//" | sort -u' \
   > "${TMP_DIR}/web.keys"
 
-python - "${TMP_DIR}" <<'PY'
+python3 - "${TMP_DIR}" <<'PY'
 from pathlib import Path
 import sys
 
