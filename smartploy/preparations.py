@@ -321,9 +321,9 @@ def _referenced_evidence_ids(value: Any) -> set[str]:
     found: set[str] = set()
     if isinstance(value, dict):
         for key, child in value.items():
-            if key == "evidence_fact_ids":
+            if key in {"evidence_fact_ids", "header_evidence_fact_ids"}:
                 if not isinstance(child, list) or not all(isinstance(item, str) for item in child):
-                    raise PreparationResultError("evidence_fact_ids must be a list of strings")
+                    raise PreparationResultError(f"{key} must be a list of strings")
                 found.update(child)
             else:
                 found.update(_referenced_evidence_ids(child))
@@ -333,28 +333,76 @@ def _referenced_evidence_ids(value: Any) -> set[str]:
     return found
 
 
-def parse_draft_output(
-    output_text: str,
-    *,
-    allowed_evidence_ids: set[str] | None = None,
-) -> dict[str, Any]:
-    text = str(output_text or "").strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines and lines[0].strip().startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-    try:
-        value = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise PreparationResultError("ObumAI draft output is not valid JSON") from exc
-    if not isinstance(value, dict):
-        raise PreparationResultError("ObumAI draft output must be a JSON object")
-    if value.get("schema") != DRAFT_RESULT_SCHEMA:
-        raise PreparationResultError("ObumAI draft output has the wrong schema")
+def _require_text(value: Any, name: str, *, maximum: int = 6000) -> str:
+    if not isinstance(value, str):
+        raise PreparationResultError(f"{name} must be a string")
+    text = value.strip()
+    if not text or len(text) > maximum:
+        raise PreparationResultError(
+            f"{name} must be non-empty and at most {maximum} characters"
+        )
+    return text
 
+
+def _validate_string_list(
+    value: Any,
+    name: str,
+    *,
+    max_items: int = 100,
+    max_chars: int = 1000,
+) -> None:
+    if not isinstance(value, list) or len(value) > max_items:
+        raise PreparationResultError(f"{name} must be a bounded list")
+    for item in value:
+        _require_text(item, name, maximum=max_chars)
+
+
+def _validate_evidence_ids(value: Any, name: str, *, max_items: int = 50) -> None:
+    if (
+        not isinstance(value, list)
+        or len(value) > max_items
+        or not all(isinstance(item, str) and item.strip() for item in value)
+    ):
+        raise PreparationResultError(
+            f"{name} must be a bounded list of evidence fact IDs"
+        )
+
+
+def _validate_claim(value: Any, name: str, *, maximum: int = 5000) -> None:
+    if not isinstance(value, dict):
+        raise PreparationResultError(f"{name} must be an object")
+    _require_text(value.get("text"), f"{name}.text", maximum=maximum)
+    _validate_evidence_ids(
+        value.get("evidence_fact_ids"),
+        f"{name}.evidence_fact_ids",
+    )
+
+
+def _validate_claim_list(value: Any, name: str, *, max_items: int = 80) -> None:
+    if not isinstance(value, list) or len(value) > max_items:
+        raise PreparationResultError(f"{name} must be a bounded list")
+    for index, item in enumerate(value):
+        _validate_claim(item, f"{name}[{index}]")
+
+
+def _header_evidence_ids(evidence_snapshot: dict[str, Any] | None) -> set[str]:
+    allowed: set[str] = set()
+    if not isinstance(evidence_snapshot, dict):
+        return allowed
+    facts = evidence_snapshot.get("facts")
+    if not isinstance(facts, dict):
+        return allowed
+    for fact_type in ("identity", "contact", "location"):
+        rows = facts.get(fact_type)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if isinstance(row, dict) and row.get("fact_id"):
+                allowed.add(str(row["fact_id"]))
+    return allowed
+
+
+def _validate_v1(value: dict[str, Any]) -> None:
     required = {
         "fit_summary": dict,
         "cv_tailoring": dict,
@@ -366,13 +414,185 @@ def parse_draft_output(
     }
     for key, expected_type in required.items():
         if not isinstance(value.get(key), expected_type):
-            raise PreparationResultError(f"ObumAI draft output field {key} has the wrong type")
+            raise PreparationResultError(
+                f"ObumAI draft output field {key} has the wrong type"
+            )
+
+
+def _validate_v2(
+    value: dict[str, Any],
+    *,
+    evidence_snapshot: dict[str, Any] | None,
+) -> None:
+    fit = value.get("fit_summary")
+    if not isinstance(fit, dict):
+        raise PreparationResultError("fit_summary must be an object")
+    _require_text(fit.get("summary"), "fit_summary.summary")
+    _validate_string_list(
+        fit.get("strengths"),
+        "fit_summary.strengths",
+        max_items=30,
+    )
+    _validate_string_list(
+        fit.get("gaps"),
+        "fit_summary.gaps",
+        max_items=30,
+    )
+
+    cv = value.get("tailored_cv")
+    if not isinstance(cv, dict):
+        raise PreparationResultError("tailored_cv must be an object")
+    _validate_evidence_ids(
+        cv.get("header_evidence_fact_ids"),
+        "tailored_cv.header_evidence_fact_ids",
+        max_items=20,
+    )
+    _validate_claim(cv.get("headline"), "tailored_cv.headline", maximum=500)
+    _validate_claim(
+        cv.get("professional_summary"),
+        "tailored_cv.professional_summary",
+        maximum=3000,
+    )
+    for key in (
+        "skills",
+        "experience",
+        "education",
+        "certifications",
+        "projects",
+        "languages",
+    ):
+        _validate_claim_list(cv.get(key), f"tailored_cv.{key}")
+    _validate_string_list(
+        cv.get("do_not_claim"),
+        "tailored_cv.do_not_claim",
+        max_items=80,
+    )
+
+    letter = value.get("cover_letter")
+    if not isinstance(letter, dict):
+        raise PreparationResultError("cover_letter must be an object")
+    _validate_evidence_ids(
+        letter.get("header_evidence_fact_ids"),
+        "cover_letter.header_evidence_fact_ids",
+        max_items=20,
+    )
+    _require_text(
+        letter.get("salutation"),
+        "cover_letter.salutation",
+        maximum=500,
+    )
+    _validate_claim_list(
+        letter.get("paragraphs"),
+        "cover_letter.paragraphs",
+        max_items=20,
+    )
+    _require_text(
+        letter.get("closing"),
+        "cover_letter.closing",
+        maximum=500,
+    )
+
+    answers = value.get("application_answers")
+    if not isinstance(answers, list) or len(answers) > 100:
+        raise PreparationResultError(
+            "application_answers must be a bounded list"
+        )
+    for index, answer in enumerate(answers):
+        if not isinstance(answer, dict):
+            raise PreparationResultError(
+                f"application_answers[{index}] must be an object"
+            )
+        _require_text(
+            answer.get("question"),
+            f"application_answers[{index}].question",
+            maximum=2000,
+        )
+        _require_text(
+            answer.get("answer"),
+            f"application_answers[{index}].answer",
+            maximum=6000,
+        )
+        _validate_evidence_ids(
+            answer.get("evidence_fact_ids"),
+            f"application_answers[{index}].evidence_fact_ids",
+        )
+
+    _validate_string_list(
+        value.get("gap_framing"),
+        "gap_framing",
+        max_items=50,
+    )
+    _validate_string_list(value.get("risks"), "risks", max_items=50)
+    _validate_string_list(
+        value.get("review_checklist"),
+        "review_checklist",
+        max_items=80,
+    )
+
+    if evidence_snapshot is not None:
+        header_ids = (
+            set(cv["header_evidence_fact_ids"])
+            | set(letter["header_evidence_fact_ids"])
+        )
+        unknown_header = sorted(
+            header_ids - _header_evidence_ids(evidence_snapshot)
+        )
+        if unknown_header:
+            raise PreparationResultError(
+                "document header referenced evidence that is not approved "
+                "identity/contact/location"
+            )
+
+
+def parse_draft_output(
+    output_text: str,
+    *,
+    allowed_evidence_ids: set[str] | None = None,
+    expected_schema: str | None = None,
+    evidence_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    text = str(output_text or "").strip()
+    fence = chr(96) * 3
+    if text.startswith(fence):
+        lines = text.splitlines()
+        if lines and lines[0].strip().startswith(fence):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == fence:
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise PreparationResultError(
+            "ObumAI draft output is not valid JSON"
+        ) from exc
+    if not isinstance(value, dict):
+        raise PreparationResultError(
+            "ObumAI draft output must be a JSON object"
+        )
+
+    schema = expected_schema or DRAFT_RESULT_SCHEMA
+    if value.get("schema") != schema:
+        raise PreparationResultError(
+            "ObumAI draft output has the wrong schema"
+        )
+
+    if schema == DRAFT_RESULT_SCHEMA_V1:
+        _validate_v1(value)
+    elif schema == DRAFT_RESULT_SCHEMA_V2:
+        _validate_v2(value, evidence_snapshot=evidence_snapshot)
+    else:
+        raise PreparationResultError(
+            "unsupported SmartPloy draft schema"
+        )
 
     referenced_ids = _referenced_evidence_ids(value)
     if allowed_evidence_ids is not None:
         unknown = sorted(referenced_ids - allowed_evidence_ids)
         if unknown:
             raise PreparationResultError(
-                "ObumAI draft output referenced evidence IDs outside the immutable package snapshot"
+                "ObumAI draft output referenced evidence IDs outside "
+                "the immutable package snapshot"
             )
     return value
+
