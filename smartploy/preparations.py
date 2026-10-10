@@ -117,6 +117,8 @@ class ApplicationPreparation:
     preparation_contract: str
     job_snapshot_sha256: str
     evidence_sha256: str
+    job_snapshot: dict[str, Any]
+    evidence_snapshot: dict[str, Any]
     score_snapshot: dict[str, Any]
     status: str = "created"
     obum_job_id: str = ""
@@ -135,9 +137,17 @@ class ApplicationPreparation:
             raise ValueError("preparation identity is incomplete")
         if len(self.job_snapshot_sha256) != 64 or len(self.evidence_sha256) != 64:
             raise ValueError("preparation snapshot hashes must be SHA-256")
+        job_snapshot = dict(self.job_snapshot or {})
+        evidence_snapshot = dict(self.evidence_snapshot or {})
+        if _sha(job_snapshot) != self.job_snapshot_sha256:
+            raise ValueError("job snapshot hash does not match package contents")
+        if _sha(evidence_snapshot) != self.evidence_sha256:
+            raise ValueError("evidence snapshot hash does not match package contents")
         return replace(
             self,
             preparation_contract=self.preparation_contract or PREPARATION_CONTRACT,
+            job_snapshot=job_snapshot,
+            evidence_snapshot=evidence_snapshot,
             score_snapshot=dict(self.score_snapshot or {}),
             result=dict(self.result or {}),
             raw_output=str(self.raw_output or ""),
@@ -154,6 +164,7 @@ class ApplicationPreparation:
             "job_snapshot_sha256": item.job_snapshot_sha256,
             "evidence_sha256": item.evidence_sha256,
             "score_snapshot": dict(item.score_snapshot),
+            "evidence_fact_ids": sorted(approved_evidence_ids(item.evidence_snapshot)),
             "status": item.status,
             "obum_job_id": item.obum_job_id,
             "obum_client_request_id": item.obum_client_request_id,
@@ -179,7 +190,8 @@ def build_preparation(
     *,
     requested_at: str | None = None,
 ) -> ApplicationPreparation:
-    job_hash = _sha(preparation_job_snapshot(candidate))
+    job_snapshot = preparation_job_snapshot(candidate)
+    job_hash = _sha(job_snapshot)
     evidence = approved_evidence_snapshot(profile)
     evidence_hash = _sha(evidence)
     material = {
@@ -197,6 +209,8 @@ def build_preparation(
         preparation_contract=PREPARATION_CONTRACT,
         job_snapshot_sha256=job_hash,
         evidence_sha256=evidence_hash,
+        job_snapshot=job_snapshot,
+        evidence_snapshot=evidence,
         score_snapshot=score.to_dict(),
         requested_at=timestamp,
         updated_at=timestamp,
@@ -223,7 +237,41 @@ def ensure_preparation_eligible(
         raise PreparationNotEligible(f"Priority Score {score.priority_score} is below {minimum_priority}")
 
 
-def parse_draft_output(output_text: str) -> dict[str, Any]:
+def approved_evidence_ids(evidence_snapshot: dict[str, Any]) -> set[str]:
+    ids: set[str] = set()
+    facts = evidence_snapshot.get("facts") if isinstance(evidence_snapshot, dict) else None
+    if not isinstance(facts, dict):
+        return ids
+    for rows in facts.values():
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if isinstance(row, dict) and row.get("fact_id"):
+                ids.add(str(row["fact_id"]))
+    return ids
+
+
+def _referenced_evidence_ids(value: Any) -> set[str]:
+    found: set[str] = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == "evidence_fact_ids":
+                if not isinstance(child, list) or not all(isinstance(item, str) for item in child):
+                    raise PreparationResultError("evidence_fact_ids must be a list of strings")
+                found.update(child)
+            else:
+                found.update(_referenced_evidence_ids(child))
+    elif isinstance(value, list):
+        for child in value:
+            found.update(_referenced_evidence_ids(child))
+    return found
+
+
+def parse_draft_output(
+    output_text: str,
+    *,
+    allowed_evidence_ids: set[str] | None = None,
+) -> dict[str, Any]:
     text = str(output_text or "").strip()
     if text.startswith("```"):
         lines = text.splitlines()
@@ -253,4 +301,12 @@ def parse_draft_output(output_text: str) -> dict[str, Any]:
     for key, expected_type in required.items():
         if not isinstance(value.get(key), expected_type):
             raise PreparationResultError(f"ObumAI draft output field {key} has the wrong type")
+
+    referenced_ids = _referenced_evidence_ids(value)
+    if allowed_evidence_ids is not None:
+        unknown = sorted(referenced_ids - allowed_evidence_ids)
+        if unknown:
+            raise PreparationResultError(
+                "ObumAI draft output referenced evidence IDs outside the immutable package snapshot"
+            )
     return value
