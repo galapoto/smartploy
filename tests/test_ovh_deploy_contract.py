@@ -172,7 +172,7 @@ def test_environment_boundary_smoke_never_prints_values():
     assert 'sed "s/=.*//"' in smoke
     assert "os.environ.items()" not in smoke
     assert "printenv" not in smoke
-    assert "SMARTPLOY environment-boundary smoke: PASS" in smoke
+    assert "SmartPloy environment-boundary smoke: PASS" in smoke
 
 
 def test_preflight_keeps_secret_payloads_off_process_argv():
