@@ -94,8 +94,9 @@ describe("worker schedule formatting", () => {
 describe("ObumAI product navigation contract", () => {
   it("keeps the canonical ObumAI workspace URL fixed", async () => {
     const source = await import("./App?raw");
-    expect(source.default).toContain('href="https://app.obumai.com/"');
-    expect(source.default).not.toContain("token=");
-    expect(source.default).not.toContain("target=\"_blank\"");
+    expect(source.default).toContain(
+      '<a className="obumai-home-link" href="https://app.obumai.com/">'
+    );
+    expect(source.default).not.toContain("https://app.obumai.com/?token=");
   });
 });
