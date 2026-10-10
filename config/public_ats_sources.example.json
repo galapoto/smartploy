@@ -1,0 +1,17 @@
+[
+  {
+    "provider": "smartrecruiters",
+    "tenant": "example-company",
+    "label": "Example Company",
+    "employer_sector": "private",
+    "external_ai_forwarding_allowed": false
+  },
+  {
+    "provider": "lever",
+    "tenant": "example-company",
+    "label": "Example Company",
+    "stack": "eu",
+    "employer_sector": "private",
+    "external_ai_forwarding_allowed": false
+  }
+]
