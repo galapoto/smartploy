@@ -11,7 +11,7 @@ Smartploy uses heterogeneous source adapters. "Job board" does not imply "scrape
 | LinkedIn | manual/share/email/approved official integration | no scraping/browser-bot connector |
 | Duunitori | manual/import until supported interface verified | review |
 | Valtiolle.fi | manual/import until supported interface verified | review |
-| Direct employer / ATS pages | API/feed/direct adapter where permitted | per-provider review |
+| Direct employer / ATS pages | SmartRecruiters / Lever public posting APIs | adapters implemented; tenant registry required |
 
 ## Kuntarekry boundary
 
@@ -80,3 +80,49 @@ that processing basis is explicitly cleared.
 When an ARCHIVED posting is received, Smartploy redacts that source occurrence. If the canonical job is
 also independently backed by another current source, Smartploy rebuilds the canonical record from the
 remaining source rather than closing the independent listing.
+
+
+## Direct employer ATS sources
+
+Smartploy supports explicit read-only employer tenants for SmartRecruiters and Lever.
+
+SmartRecruiters uses its public Posting API under:
+`https://api.smartrecruiters.com/v1/companies/{companyIdentifier}/postings`.
+
+Lever uses its published Postings API under either:
+- `https://api.lever.co/v0/postings/{SITE}`
+- `https://api.eu.lever.co/v0/postings/{SITE}`
+
+Smartploy never accepts an arbitrary provider base URL. Operators configure a provider and tenant slug;
+the adapter constructs the exact supported host/path.
+
+Tenant configuration is loaded from either:
+- `SMARTPLOY_PUBLIC_ATS_SOURCES_JSON`, or
+- `SMARTPLOY_PUBLIC_ATS_SOURCES_FILE`.
+
+The example registry is `config/public_ats_sources.example.json`. The local
+`config/public_ats_sources.json` path is ignored by Git.
+
+Each tenant explicitly declares:
+- employer label;
+- employer sector: public / private / unknown;
+- whether external AI forwarding has been reviewed and allowed.
+
+The AI-forwarding value defaults to false. Public availability of a job posting does not automatically
+grant Smartploy permission to send its contents to an external AI provider.
+
+### Exhaustive snapshot rule
+
+SmartRecruiters and Lever listing calls are treated as exhaustive public snapshots only after every
+page/detail request succeeds. After a successful complete snapshot Smartploy retires previously active
+external posting IDs that are absent. If any page, detail, parse, normalization, or duplicate-ID check
+fails, retirement is skipped.
+
+The same provider external ID remains bound to one Smartploy canonical job even when the employer edits
+the description enough to change the content-derived duplicate fingerprint.
+
+Official references:
+- https://developers.smartrecruiters.com/docs/posting-api
+- https://developers.smartrecruiters.com/docs/endpoints
+- https://developers.smartrecruiters.com/docs/objects
+- https://github.com/lever/postings-api
