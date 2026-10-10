@@ -43,6 +43,23 @@ class SourceHealth:
         }
 
 
+def apply_migrations(dsn: str) -> None:
+    """Apply all numbered Smartploy SQL migrations in lexical order."""
+
+    directory = Path(__file__).resolve().parent.parent / "migrations"
+    paths = sorted(directory.glob("[0-9][0-9][0-9]_*.sql"))
+    if not paths:
+        raise RuntimeError("no Smartploy migrations found")
+    with connect(dsn) as conn:
+        with conn.cursor() as cur:
+            for path in paths:
+                sql = path.read_text(encoding="utf-8")
+                statements = [item.strip() for item in sql.split(";") if item.strip()]
+                for statement in statements:
+                    cur.execute(statement)
+        conn.commit()
+
+
 class JobRepository(Protocol):
     def upsert(self, candidate: JobCandidate, observation: SourceObservation | None = None) -> JobCandidate: ...
     def get(self, canonical_key: str) -> JobCandidate | None: ...
@@ -193,24 +210,20 @@ class PostgresJobRepository:
         if not self.dsn:
             raise ValueError("PostgreSQL DSN is required")
 
-    @staticmethod
-    def migration_path() -> Path:
-        return Path(__file__).resolve().parent.parent / "migrations" / "001_job_intelligence.sql"
-
     def migrate(self) -> None:
-        sql = self.migration_path().read_text(encoding="utf-8")
-        statements = [item.strip() for item in sql.split(";") if item.strip()]
-        with connect(self.dsn) as conn:
-            with conn.cursor() as cur:
-                for statement in statements:
-                    cur.execute(statement)
-            conn.commit()
+        apply_migrations(self.dsn)
 
     def storage_status(self) -> dict[str, Any]:
         try:
             with connect(self.dsn) as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT to_regclass('public.smartploy_jobs') IS NOT NULL")
+                    cur.execute(
+                        """
+                        SELECT
+                            to_regclass('public.smartploy_jobs') IS NOT NULL
+                            AND to_regclass('public.smartploy_profile_facts') IS NOT NULL
+                        """
+                    )
                     ready = bool(cur.fetchone()[0])
             return {"mode": self.mode, "ready": ready}
         except Exception as exc:
