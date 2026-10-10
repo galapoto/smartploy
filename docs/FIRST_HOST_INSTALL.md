@@ -10,7 +10,7 @@ SmartPloy dump already exists.
 Run on `obum-core-01` as a sudo-authorized operator:
 
 ```bash
-sudo install -d /srv/obum/stacks
+sudo mkdir -p /srv/obum/stacks
 sudo git clone https://github.com/galapoto/smartploy.git /srv/obum/stacks/smartploy
 cd /srv/obum/stacks/smartploy
 sudo bash deploy/personal/scripts/bootstrap-first-host.sh
