@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -97,3 +98,26 @@ def test_closed_candidate_is_not_sent_to_obumai():
             candidate=item,
             candidate_evidence={},
         )
+
+
+def test_idempotency_key_changes_when_job_prompt_content_changes():
+    item = candidate()
+    changed = replace(
+        item,
+        job=replace(item.job, requirements=("Python", "SQL")),
+    )
+    evidence = {"facts": {"skill": [{"fact_id": "fact-1", "value": "Python"}]}}
+    first = ObumAIClient.client_request_id(
+        action="application_package_v1",
+        candidate=item,
+        candidate_evidence=evidence,
+        instructions="draft",
+    )
+    second = ObumAIClient.client_request_id(
+        action="application_package_v1",
+        candidate=changed,
+        candidate_evidence=evidence,
+        instructions="draft",
+    )
+    assert item.canonical_key == changed.canonical_key
+    assert first != second
