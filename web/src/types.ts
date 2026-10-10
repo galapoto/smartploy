@@ -66,6 +66,30 @@ export interface ProfileStatus {
   [key: string]: unknown;
 }
 
+export interface WorkerTaskView {
+  task_id: string;
+  task_kind: string;
+  enabled: boolean;
+  cadence_seconds: number;
+  next_run_at: string;
+  last_started_at: string;
+  last_completed_at: string;
+  last_status: string;
+  consecutive_failures: number;
+  last_error: string;
+  lease_active: boolean;
+  lease_until: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface WorkerSnapshot {
+  configured: boolean;
+  ready: boolean;
+  count: number;
+  tasks: WorkerTaskView[];
+  error: string;
+}
+
 export interface Dashboard {
   top_matches: RankingCard[];
   possible_matches: RankingCard[];
@@ -73,6 +97,7 @@ export interface Dashboard {
   applications: ApplicationSummary;
   source_health: SourceHealth[];
   profile: ProfileStatus;
+  worker: WorkerSnapshot;
   external_actions_authorized: boolean;
 }
 
@@ -101,6 +126,12 @@ export interface HealthResponse {
   storage: { mode: string; ready: boolean; error?: string };
   profile: ProfileStatus;
   obumai_configured: boolean;
+  worker: {
+    configured: boolean;
+    ready: boolean;
+    count: number;
+    error: string;
+  };
   external_actions_authorized: boolean;
 }
 
