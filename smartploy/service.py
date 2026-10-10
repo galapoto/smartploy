@@ -146,6 +146,10 @@ class SmartployService:
             raise KeyError(canonical_key)
         if self.obumai is None:
             raise ObumAIError("ObumAI integration is not configured")
+        if candidate.job.raw.get("external_ai_forwarding_allowed") is False:
+            raise ObumAIError(
+                "source terms restrict forwarding this job posting to external AI processing"
+            )
         evidence = self.profile().approved_evidence()
         if int(evidence.get("approved_fact_count") or 0) == 0:
             raise ObumAIError("no approved Smartploy profile evidence is available")
@@ -264,6 +268,8 @@ class SmartployService:
                     "first_seen_at": candidate.first_seen_at if candidate is not None else "",
                     "last_seen_at": candidate.last_seen_at if candidate is not None else "",
                     "source_current": candidate.source_current if candidate is not None else False,
+                    "source_attribution": str(job.raw.get("source_attribution") or ""),
+                    "ai_preparation_allowed": job.raw.get("external_ai_forwarding_allowed") is not False,
                 },
             }
 
@@ -297,6 +303,11 @@ class SmartployService:
         candidate = self.get_job(canonical_key)
         if candidate is None:
             raise KeyError(canonical_key)
+
+        if candidate.job.raw.get("external_ai_forwarding_allowed") is False:
+            raise PreparationNotEligible(
+                "source terms restrict forwarding this job posting to external AI processing"
+            )
 
         profile = self.profile()
         score = score_candidate(candidate, profile, now=now)
