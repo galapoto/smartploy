@@ -114,8 +114,37 @@ Backups:
 - use PostgreSQL custom dump format;
 - are created with private permissions;
 - receive SHA256 sidecar files;
+- receive a non-secret metadata sidecar with creation time, dump checksum and source deployed SHA when known;
+- coordinate with deploy/restore through the same production-operation lock;
 - are stored in `/srv/obum/backups/smartploy` by default;
 - retain the newest seven dumps by default.
+
+## Restore
+
+Restore only from a SmartPloy dump that remains inside the configured backup directory:
+
+~~~bash
+cd /srv/obum/stacks/smartploy
+bash deploy/personal/scripts/restore.sh \
+  /srv/obum/backups/smartploy/smartploy-YYYYMMDDTHHMMSSZ-PID.dump
+~~~
+
+The restore gate:
+1. acquires the same production-operation lock used by deploy/manual backup;
+2. rejects symlinks and paths outside the configured backup directory;
+3. requires and verifies the SHA256 sidecar;
+4. validates backup metadata when present;
+5. creates a current-state safety backup without deleting the requested restore artifact;
+6. stops API, worker and web before database replacement;
+7. restores with clean/if-exists/no-owner/no-privileges/exit-on-error semantics;
+8. reruns current migrations;
+9. restarts API, worker and web;
+10. requires the normal production health contract;
+11. records a private restore-evidence file only after health succeeds.
+
+A database restore does **not** overwrite `deployed-sha`; code identity and database recovery identity remain
+separate. Restore evidence records the restored dump checksum, source deployed SHA when known, current
+code SHA, safety-backup filename and successful health verification.
 
 ## Product authority
 
