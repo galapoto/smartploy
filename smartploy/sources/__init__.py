@@ -1,0 +1,1 @@
+"""Approved Smartploy source adapters."""

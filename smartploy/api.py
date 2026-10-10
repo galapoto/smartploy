@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
 import os
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,6 +12,7 @@ import uvicorn
 from .domain import JobSearchFilters, SourceObservation, SourcePolicy
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
 from .service import SmartployService
+from .storage import MemoryJobRepository, PostgresJobRepository
 
 
 class SourcePolicyPayload(BaseModel):
@@ -69,9 +70,12 @@ class ObumAITaskPayload(BaseModel):
 
 
 def _build_service() -> SmartployService:
-    settings = ObumAISettings.from_env()
-    client = ObumAIClient(settings) if settings else None
-    service = SmartployService(obumai=client)
+    obum_settings = ObumAISettings.from_env()
+    client = ObumAIClient(obum_settings) if obum_settings else None
+
+    dsn = os.getenv("SMARTPLOY_DATABASE_URL", "").strip()
+    repository = PostgresJobRepository(dsn) if dsn else MemoryJobRepository()
+    service = SmartployService(repository=repository, obumai=client)
 
     service.register_source(
         SourcePolicy(
@@ -85,16 +89,18 @@ def _build_service() -> SmartployService:
     return service
 
 
-def create_app(service: Optional[SmartployService] = None) -> FastAPI:
+def create_app(service: SmartployService | None = None) -> FastAPI:
     active = service or _build_service()
-    app = FastAPI(title="Smartploy API", version="0.1.0")
+    app = FastAPI(title="Smartploy API", version="0.2.0")
     app.state.smartploy = active
 
     @app.get("/healthz")
     def health() -> dict[str, Any]:
+        storage = active.storage_status()
         return {
-            "ok": True,
+            "ok": bool(storage.get("ready")),
             "service": "smartploy",
+            "storage": storage,
             "obumai_configured": active.obumai is not None,
             "external_actions_authorized": False,
         }
@@ -116,6 +122,18 @@ def create_app(service: Optional[SmartployService] = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"source": policy.__dict__}
+
+    @app.get("/api/v1/sources/health")
+    def list_source_health() -> dict[str, Any]:
+        items = [item.to_dict() for item in active.list_source_health()]
+        return {"sources": items, "count": len(items)}
+
+    @app.get("/api/v1/sources/{source_id}/health")
+    def get_source_health(source_id: str) -> dict[str, Any]:
+        item = active.source_health(source_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="source health not found")
+        return item.to_dict()
 
     @app.post("/api/v1/jobs/ingest")
     def ingest(payload: IngestPayload) -> dict[str, Any]:
