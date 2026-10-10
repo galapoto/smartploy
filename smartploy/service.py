@@ -92,7 +92,15 @@ class SmartployService:
         return self.profile_repository.profile()
 
     def profile_summary(self) -> dict[str, Any]:
-        return self.profile().summary()
+        try:
+            summary = self.profile().summary()
+        except Exception as exc:
+            return {
+                "profile_id": getattr(self.profile_repository, "profile_id", "default"),
+                "ready": False,
+                "error": type(exc).__name__,
+            }
+        return {**summary, "ready": True}
 
     def score_job(self, canonical_key: str, *, now: datetime | None = None) -> ScoreResult:
         candidate = self.get_job(canonical_key)
