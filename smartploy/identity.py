@@ -5,15 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Protocol
-import re
 
 from psycopg import connect
 from psycopg.types.json import Jsonb
 
 from .storage import apply_migrations
-
-
-IDENTIFIER_RE = re.compile(r"^[a-z0-9][a-z0-9._:/-]{0,2047}$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -72,8 +68,6 @@ def stable_profile_id(user_id: str) -> str:
 class UserProfileBinding:
     user_id: str
     profile_id: str
-    issuer: str
-    subject: str
     email: str
     status: str = "active"
 
@@ -89,6 +83,11 @@ class UserProfileBinding:
 class IdentityRepository(Protocol):
     def resolve_or_create(self, principal: AuthenticatedPrincipal) -> UserProfileBinding: ...
     def get(self, user_id: str) -> UserProfileBinding | None: ...
+    def link_identity(
+        self,
+        user_id: str,
+        principal: AuthenticatedPrincipal,
+    ) -> UserProfileBinding: ...
     def claim_legacy_profile(
         self,
         principal: AuthenticatedPrincipal,
@@ -99,37 +98,64 @@ class IdentityRepository(Protocol):
 
 class MemoryIdentityRepository:
     def __init__(self) -> None:
-        self._by_user: dict[str, UserProfileBinding] = {}
+        self._bindings: dict[str, UserProfileBinding] = {}
+        self._identity_to_user: dict[tuple[str, str], str] = {}
         self._legacy_claims: dict[str, str] = {}
 
     def resolve_or_create(self, principal: AuthenticatedPrincipal) -> UserProfileBinding:
         item = principal.normalized()
-        user_id = stable_user_id(item.issuer, item.subject)
-        existing = self._by_user.get(user_id)
-        if existing is not None:
-            updated = UserProfileBinding(
+        key = (item.issuer, item.subject)
+        user_id = self._identity_to_user.get(key)
+        if user_id is None:
+            user_id = stable_user_id(item.issuer, item.subject)
+            self._identity_to_user[key] = user_id
+
+        existing = self._bindings.get(user_id)
+        if existing is None:
+            existing = UserProfileBinding(
+                user_id=user_id,
+                profile_id=stable_profile_id(user_id),
+                email=item.email,
+            )
+        elif item.email:
+            existing = UserProfileBinding(
                 user_id=existing.user_id,
                 profile_id=existing.profile_id,
-                issuer=existing.issuer,
-                subject=existing.subject,
-                email=item.email or existing.email,
+                email=item.email,
                 status=existing.status,
             )
-            self._by_user[user_id] = updated
-            return updated
-
-        binding = UserProfileBinding(
-            user_id=user_id,
-            profile_id=stable_profile_id(user_id),
-            issuer=item.issuer,
-            subject=item.subject,
-            email=item.email,
-        )
-        self._by_user[user_id] = binding
-        return binding
+        self._bindings[user_id] = existing
+        return existing
 
     def get(self, user_id: str) -> UserProfileBinding | None:
-        return self._by_user.get(str(user_id or "").strip())
+        return self._bindings.get(str(user_id or "").strip())
+
+    def link_identity(
+        self,
+        user_id: str,
+        principal: AuthenticatedPrincipal,
+    ) -> UserProfileBinding:
+        value = str(user_id or "").strip()
+        existing = self._bindings.get(value)
+        if existing is None:
+            raise KeyError(value)
+
+        item = principal.normalized()
+        key = (item.issuer, item.subject)
+        mapped = self._identity_to_user.get(key)
+        if mapped is not None and mapped != value:
+            raise ValueError("identity is already linked to another SmartPloy user")
+        self._identity_to_user[key] = value
+
+        if item.email:
+            existing = UserProfileBinding(
+                user_id=existing.user_id,
+                profile_id=existing.profile_id,
+                email=item.email,
+                status=existing.status,
+            )
+            self._bindings[value] = existing
+        return existing
 
     def claim_legacy_profile(
         self,
@@ -137,24 +163,24 @@ class MemoryIdentityRepository:
         *,
         legacy_profile_id: str = "default",
     ) -> UserProfileBinding:
-        item = principal.normalized()
         legacy = str(legacy_profile_id or "").strip()
         if not legacy:
             raise ValueError("legacy_profile_id is required")
-        user_id = stable_user_id(item.issuer, item.subject)
+
+        binding = self.resolve_or_create(principal)
         owner = self._legacy_claims.get(legacy)
-        if owner and owner != user_id:
+        if owner and owner != binding.user_id:
             raise ValueError("legacy profile is already claimed by another user")
-        binding = UserProfileBinding(
-            user_id=user_id,
+
+        claimed = UserProfileBinding(
+            user_id=binding.user_id,
             profile_id=legacy,
-            issuer=item.issuer,
-            subject=item.subject,
-            email=item.email,
+            email=binding.email,
+            status=binding.status,
         )
-        self._legacy_claims[legacy] = user_id
-        self._by_user[user_id] = binding
-        return binding
+        self._legacy_claims[legacy] = binding.user_id
+        self._bindings[binding.user_id] = claimed
+        return claimed
 
 
 class PostgresIdentityRepository:
@@ -171,52 +197,79 @@ class PostgresIdentityRepository:
         return UserProfileBinding(
             user_id=str(row[0]),
             profile_id=str(row[1]),
-            issuer=str(row[2]),
-            subject=str(row[3]),
-            email=str(row[4] or ""),
-            status=str(row[5]),
+            email=str(row[2] or ""),
+            status=str(row[3]),
         )
 
     @staticmethod
     def _select_sql() -> str:
         return """
-            SELECT u.user_id, p.profile_id, u.issuer, u.subject, u.email, u.status
+            SELECT u.user_id, p.profile_id, u.email, u.status
             FROM smartploy_users AS u
             JOIN smartploy_user_profiles AS p ON p.user_id = u.user_id
         """
 
+    def _binding_for_user(self, cur, user_id: str) -> UserProfileBinding:
+        cur.execute(self._select_sql() + " WHERE u.user_id = %s", (user_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise RuntimeError("identity/profile reconciliation failed")
+        return self._binding(row)
+
     def resolve_or_create(self, principal: AuthenticatedPrincipal) -> UserProfileBinding:
         item = principal.normalized()
-        user_id = stable_user_id(item.issuer, item.subject)
-        profile_id = stable_profile_id(user_id)
+        proposed_user_id = stable_user_id(item.issuer, item.subject)
 
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO smartploy_users (
-                        user_id, issuer, subject, email, status,
-                        created_at, updated_at, last_seen_at, metadata
+                        user_id, email, status, created_at, updated_at, last_seen_at, metadata
                     )
-                    VALUES (%s, %s, %s, %s, 'active', now(), now(), now(), %s)
+                    VALUES (%s, %s, 'active', now(), now(), now(), %s)
+                    ON CONFLICT (user_id) DO NOTHING
+                    """,
+                    (
+                        proposed_user_id,
+                        item.email,
+                        Jsonb({"created_from_auth_source": item.auth_source}),
+                    ),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO smartploy_user_identities (
+                        issuer, subject, user_id, auth_source, created_at, last_seen_at, metadata
+                    )
+                    VALUES (%s, %s, %s, %s, now(), now(), %s)
                     ON CONFLICT (issuer, subject) DO UPDATE SET
-                        email = CASE
-                            WHEN EXCLUDED.email <> '' THEN EXCLUDED.email
-                            ELSE smartploy_users.email
-                        END,
-                        updated_at = now(),
-                        last_seen_at = now()
+                        last_seen_at = now(),
+                        auth_source = CASE
+                            WHEN EXCLUDED.auth_source <> '' THEN EXCLUDED.auth_source
+                            ELSE smartploy_user_identities.auth_source
+                        END
                     RETURNING user_id
                     """,
                     (
-                        user_id,
                         item.issuer,
                         item.subject,
-                        item.email,
-                        Jsonb({"auth_source": item.auth_source}),
+                        proposed_user_id,
+                        item.auth_source,
+                        Jsonb({}),
                     ),
                 )
                 actual_user_id = str(cur.fetchone()[0])
+
+                cur.execute(
+                    """
+                    UPDATE smartploy_users
+                    SET email = CASE WHEN %s <> '' THEN %s ELSE email END,
+                        updated_at = now(),
+                        last_seen_at = now()
+                    WHERE user_id = %s
+                    """,
+                    (item.email, item.email, actual_user_id),
+                )
                 cur.execute(
                     """
                     INSERT INTO smartploy_user_profiles (user_id, profile_id)
@@ -225,15 +278,9 @@ class PostgresIdentityRepository:
                     """,
                     (actual_user_id, stable_profile_id(actual_user_id)),
                 )
-                cur.execute(
-                    self._select_sql() + " WHERE u.user_id = %s",
-                    (actual_user_id,),
-                )
-                row = cur.fetchone()
+                binding = self._binding_for_user(cur, actual_user_id)
             conn.commit()
-        if row is None:
-            raise RuntimeError("identity/profile reconciliation failed")
-        return self._binding(row)
+        return binding
 
     def get(self, user_id: str) -> UserProfileBinding | None:
         value = str(user_id or "").strip()
@@ -243,68 +290,123 @@ class PostgresIdentityRepository:
                 row = cur.fetchone()
         return self._binding(row) if row else None
 
+    def link_identity(
+        self,
+        user_id: str,
+        principal: AuthenticatedPrincipal,
+    ) -> UserProfileBinding:
+        value = str(user_id or "").strip()
+        item = principal.normalized()
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM smartploy_users WHERE user_id = %s FOR UPDATE",
+                    (value,),
+                )
+                if cur.fetchone() is None:
+                    raise KeyError(value)
+
+                cur.execute(
+                    """
+                    INSERT INTO smartploy_user_identities (
+                        issuer, subject, user_id, auth_source, created_at, last_seen_at, metadata
+                    )
+                    VALUES (%s, %s, %s, %s, now(), now(), %s)
+                    ON CONFLICT (issuer, subject) DO NOTHING
+                    """,
+                    (
+                        item.issuer,
+                        item.subject,
+                        value,
+                        item.auth_source,
+                        Jsonb({"explicit_link": True}),
+                    ),
+                )
+                cur.execute(
+                    """
+                    SELECT user_id
+                    FROM smartploy_user_identities
+                    WHERE issuer = %s AND subject = %s
+                    FOR UPDATE
+                    """,
+                    (item.issuer, item.subject),
+                )
+                mapped = str(cur.fetchone()[0])
+                if mapped != value:
+                    raise ValueError("identity is already linked to another SmartPloy user")
+
+                cur.execute(
+                    """
+                    UPDATE smartploy_user_identities
+                    SET last_seen_at = now(),
+                        auth_source = CASE WHEN %s <> '' THEN %s ELSE auth_source END
+                    WHERE issuer = %s AND subject = %s
+                    """,
+                    (item.auth_source, item.auth_source, item.issuer, item.subject),
+                )
+                if item.email:
+                    cur.execute(
+                        """
+                        UPDATE smartploy_users
+                        SET email = %s, updated_at = now(), last_seen_at = now()
+                        WHERE user_id = %s
+                        """,
+                        (item.email, value),
+                    )
+                binding = self._binding_for_user(cur, value)
+            conn.commit()
+        return binding
+
     def claim_legacy_profile(
         self,
         principal: AuthenticatedPrincipal,
         *,
         legacy_profile_id: str = "default",
     ) -> UserProfileBinding:
-        item = principal.normalized()
         legacy = str(legacy_profile_id or "").strip()
         if not legacy:
             raise ValueError("legacy_profile_id is required")
 
-        user_id = stable_user_id(item.issuer, item.subject)
+        binding = self.resolve_or_create(principal)
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO smartploy_users (
-                        user_id, issuer, subject, email, status,
-                        created_at, updated_at, last_seen_at, metadata
-                    )
-                    VALUES (%s, %s, %s, %s, 'active', now(), now(), now(), %s)
-                    ON CONFLICT (issuer, subject) DO UPDATE SET
-                        email = CASE
-                            WHEN EXCLUDED.email <> '' THEN EXCLUDED.email
-                            ELSE smartploy_users.email
-                        END,
-                        updated_at = now(),
-                        last_seen_at = now()
-                    RETURNING user_id
+                    SELECT user_id
+                    FROM smartploy_user_profiles
+                    WHERE profile_id = %s
+                    FOR UPDATE
                     """,
-                    (
-                        user_id,
-                        item.issuer,
-                        item.subject,
-                        item.email,
-                        Jsonb({"auth_source": item.auth_source, "legacy_claim": True}),
-                    ),
-                )
-                actual_user_id = str(cur.fetchone()[0])
-
-                cur.execute(
-                    "SELECT user_id FROM smartploy_user_profiles WHERE profile_id = %s FOR UPDATE",
                     (legacy,),
                 )
                 owner = cur.fetchone()
-                if owner is not None and str(owner[0]) != actual_user_id:
+                if owner is not None and str(owner[0]) != binding.user_id:
                     raise ValueError("legacy profile is already claimed by another user")
 
-                cur.execute(
-                    "SELECT profile_id FROM smartploy_user_profiles WHERE user_id = %s FOR UPDATE",
-                    (actual_user_id,),
-                )
-                current = cur.fetchone()
-                if current is not None and str(current[0]) != legacy:
+                if binding.profile_id != legacy:
+                    cur.execute(
+                        "SELECT count(*) FROM smartploy_profile_facts WHERE profile_id = %s",
+                        (binding.profile_id,),
+                    )
+                    fact_count = int(cur.fetchone()[0])
                     cur.execute(
                         """
-                        DELETE FROM smartploy_user_profiles
-                        WHERE user_id = %s
-                          AND profile_id = %s
+                        SELECT count(*)
+                        FROM smartploy_application_preparations
+                        WHERE profile_id = %s
                         """,
-                        (actual_user_id, str(current[0])),
+                        (binding.profile_id,),
                     )
+                    preparation_count = int(cur.fetchone()[0])
+                    cur.execute(
+                        "SELECT count(*) FROM smartploy_applications WHERE profile_id = %s",
+                        (binding.profile_id,),
+                    )
+                    application_count = int(cur.fetchone()[0])
+                    if fact_count or preparation_count or application_count:
+                        raise ValueError(
+                            "current profile already contains data and cannot be replaced by legacy claim"
+                        )
 
                 cur.execute(
                     """
@@ -314,17 +416,11 @@ class PostgresIdentityRepository:
                         profile_id = EXCLUDED.profile_id,
                         updated_at = now()
                     """,
-                    (actual_user_id, legacy),
+                    (binding.user_id, legacy),
                 )
-                cur.execute(
-                    self._select_sql() + " WHERE u.user_id = %s",
-                    (actual_user_id,),
-                )
-                row = cur.fetchone()
+                claimed = self._binding_for_user(cur, binding.user_id)
             conn.commit()
-        if row is None:
-            raise RuntimeError("legacy profile claim reconciliation failed")
-        return self._binding(row)
+        return claimed
 
 
 __all__ = [
