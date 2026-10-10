@@ -125,7 +125,7 @@ def test_health_is_public_but_api_requires_access(monkeypatch, signing_keys):
     denied = api.get("/api/v1/dashboard")
     assert denied.status_code == 401
     assert denied.json()["error"]["code"] == "access_token_missing"
-    assert "token" not in str(denied.json()).casefold()
+    assert "Cf-Access-Jwt-Assertion" not in str(denied.json())
 
 
 def test_valid_owner_token_allows_api_and_session_is_sanitized(
