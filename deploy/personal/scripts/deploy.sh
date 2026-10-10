@@ -79,7 +79,7 @@ HEALTH_FILE="$(mktemp)"
 HEALTH_OK=false
 for _ in $(seq 1 45); do
   if curl --fail --silent --show-error     -H 'Host: smartploy.obumai.com'     "http://127.0.0.1:${WEB_PORT}/healthz" > "${HEALTH_FILE}"; then
-    if python - "${HEALTH_FILE}" <<'PY'
+    if python3 - "${HEALTH_FILE}" <<'PY'
 import json
 import sys
 

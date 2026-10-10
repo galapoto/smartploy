@@ -220,7 +220,7 @@ def test_preflight_keeps_secret_payloads_off_process_argv():
     preflight = (ROOT / "deploy/personal/scripts/preflight.sh").read_text(encoding="utf-8")
 
     assert 'python - "${ATS_JSON}"' not in preflight
-    assert "printf '%s' \"${ATS_JSON}\" | python -c" in preflight
+    assert "printf '%s' \"${ATS_JSON}\" | python3 -c" in preflight
     assert "docker compose" in preflight
     assert "config --format json" in preflight
     assert "SMARTPLOY_ACCESS_AUDIENCE must be a non-placeholder audience identifier" in preflight
