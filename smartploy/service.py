@@ -7,6 +7,12 @@ from datetime import datetime
 from typing import Any
 
 from .application_storage import ApplicationRepository, MemoryApplicationRepository
+from .application_v2 import (
+    V2_ACTION,
+    V2_DRAFT_INSTRUCTIONS,
+    V2_PACKAGE_CONTRACT,
+    parse_v2_draft,
+)
 from .applications import ApplicationEvent, ApplicationRecord
 from .domain import (
     DiscoveryResult,
@@ -204,10 +210,13 @@ class SmartployService:
         if state == "completed":
             raw_output = str(job.get("output_text") or "")
             try:
-                result = parse_draft_output(
-                    raw_output,
-                    allowed_evidence_ids=approved_evidence_ids(item.evidence_snapshot),
-                )
+                if item.preparation_contract == V2_PACKAGE_CONTRACT:
+                    result = parse_v2_draft(raw_output, item.evidence_snapshot)
+                else:
+                    result = parse_draft_output(
+                        raw_output,
+                        allowed_evidence_ids=approved_evidence_ids(item.evidence_snapshot),
+                    )
             except PreparationResultError as exc:
                 return with_runtime(
                     item,
@@ -323,7 +332,7 @@ class SmartployService:
         profile = self.profile()
         score = score_candidate(candidate, profile, now=now)
         ensure_preparation_eligible(candidate, profile, score)
-        proposed = build_preparation(candidate, profile, score)
+        proposed = build_preparation(candidate, profile, score, contract=V2_PACKAGE_CONTRACT)
         stored, created = self.preparation_repository.create_or_get(proposed)
 
         if not created:
@@ -355,10 +364,10 @@ class SmartployService:
 
         evidence = profile.approved_evidence()
         request_id = self.obumai.client_request_id(
-            action=PREPARATION_ACTION,
+            action=V2_ACTION,
             candidate=candidate,
             candidate_evidence=evidence,
-            instructions=APPLICATION_DRAFT_INSTRUCTIONS,
+            instructions=V2_DRAFT_INSTRUCTIONS,
         )
         awaiting = with_runtime(
             stored,
@@ -373,10 +382,10 @@ class SmartployService:
 
         try:
             response = self.obumai.submit_reasoning(
-                action=PREPARATION_ACTION,
+                action=V2_ACTION,
                 candidate=candidate,
                 candidate_evidence=evidence,
-                instructions=APPLICATION_DRAFT_INSTRUCTIONS,
+                instructions=V2_DRAFT_INSTRUCTIONS,
             )
         except ObumAIError as exc:
             failed = with_runtime(
