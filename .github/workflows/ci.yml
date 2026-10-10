@@ -76,6 +76,12 @@ jobs:
           path = Path("deploy/personal/env")
           text = path.read_text(encoding="utf-8")
           replacements = {
+              "POSTGRES_PASSWORD=replace-with-url-safe-random-password":
+                  "POSTGRES_PASSWORD=ci-url-safe-random-password-1234567890",
+              "SMARTPLOY_ACCESS_ISSUER=https://your-team.cloudflareaccess.com":
+                  "SMARTPLOY_ACCESS_ISSUER=https://ci.cloudflareaccess.com",
+              "SMARTPLOY_ACCESS_AUDIENCE=replace-with-smartploy-access-audience":
+                  "SMARTPLOY_ACCESS_AUDIENCE=ci-smartploy-access-audience-123456",
               "SMARTPLOY_ACCESS_ALLOWED_EMAIL=replace-with-approved-owner-email":
                   "SMARTPLOY_ACCESS_ALLOWED_EMAIL=ci@example.com",
               "OBUMAI_BASE_URL=https://app.obumai.com":
@@ -92,6 +98,8 @@ jobs:
           path.write_text(text, encoding="utf-8")
           PY
           chmod 600 deploy/personal/env
+      - name: Run no-mutation production preflight
+        run: bash deploy/personal/scripts/preflight.sh
       - name: Validate committed production policy
         run: bash deploy/personal/scripts/validate-runtime-policy.sh deploy/personal/runtime.production.env
       - name: Build and smoke production Compose stack
