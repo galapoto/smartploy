@@ -68,7 +68,7 @@ COMPOSE=(
 "${COMPOSE[@]}" up -d --wait postgres
 
 # Always create a bounded pre-deploy database recovery point before migrations.
-bash "${SCRIPT_DIR}/backup.sh"
+SMARTPLOY_OPERATION_LOCK_HELD=1 bash "${SCRIPT_DIR}/backup.sh"
 
 # Schema mutation is an explicit one-shot step before application/worker startup.
 "${COMPOSE[@]}" run --rm --no-deps api python scripts/migrate.py

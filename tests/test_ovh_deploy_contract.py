@@ -47,6 +47,11 @@ def test_backup_is_private_checksummed_and_bounded():
     assert "chmod 600" in backup
     assert "SMARTPLOY_BACKUP_KEEP" in backup
     assert 'up -d --wait postgres' in backup
+    assert "production-operation.lock" in backup
+    assert "SMARTPLOY_OPERATION_LOCK_HELD" in backup
+    assert "format=smartploy-db-backup-v1" in backup
+    assert "source_deployed_sha=" in backup
+    assert '".meta"' in backup or ".meta" in backup
 
 
 def test_deploy_gate_orders_backup_migration_start_health_and_sha_recording():
@@ -62,6 +67,7 @@ def test_deploy_gate_orders_backup_migration_start_health_and_sha_recording():
 
     assert backup_at < migrate_at < start_at < health_at < record_at
     assert 'health["external_actions_authorized"] is False' in deploy
+    assert 'SMARTPLOY_OPERATION_LOCK_HELD=1 bash "${SCRIPT_DIR}/backup.sh"' in deploy
 
 
 def test_committed_runtime_policy_contains_no_account_secrets():
@@ -98,3 +104,27 @@ def test_host_caddy_targets_only_local_smartploy_gateway():
     )
     assert "smartploy.obumai.com" in host_caddy
     assert "reverse_proxy 127.0.0.1:8091" in host_caddy
+
+
+def test_restore_gate_verifies_artifact_quiesces_writes_and_records_evidence():
+    restore = (ROOT / "deploy/personal/scripts/restore.sh").read_text(encoding="utf-8")
+
+    assert "production-operation.lock" in restore
+    assert 'BACKUP_ROOT="$(realpath "${BACKUP_DIR}")"' in restore
+    assert "smartploy-*.dump" in restore
+    assert "sha256sum -c" in restore
+    assert "SMARTPLOY_BACKUP_SKIP_RETENTION=1" in restore
+
+    safety_at = restore.index("SAFETY_OUTPUT=")
+    stop_at = restore.index('"${COMPOSE[@]}" stop api worker web')
+    restore_at = restore.index(
+        "pg_restore --clean --if-exists --no-owner --no-privileges --exit-on-error"
+    )
+    migrate_at = restore.index("python scripts/migrate.py")
+    health_at = restore.index('http://127.0.0.1:${WEB_PORT}/healthz')
+    evidence_at = restore.index("format=smartploy-db-restore-v1")
+
+    assert safety_at < stop_at < restore_at < migrate_at < health_at < evidence_at
+    assert 'health["external_actions_authorized"] is False' in restore
+    assert "health_verified=true" in restore
+    assert '> "${STATE_DIR}/deployed-sha"' not in restore
