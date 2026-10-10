@@ -258,6 +258,12 @@ class SmartployService:
                     "work_mode": job.work_mode,
                     "deadline": job.deadline,
                     "application_url": job.application_url,
+                    "employer_sector": str(job.raw.get("employer_sector") or "unknown"),
+                    "source_ids": list(candidate.source_ids) if candidate is not None else [],
+                    "posted_at": candidate.posted_at if candidate is not None else "",
+                    "first_seen_at": candidate.first_seen_at if candidate is not None else "",
+                    "last_seen_at": candidate.last_seen_at if candidate is not None else "",
+                    "source_current": candidate.source_current if candidate is not None else False,
                 },
             }
 
