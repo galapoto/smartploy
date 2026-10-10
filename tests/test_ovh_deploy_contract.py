@@ -46,12 +46,14 @@ def test_backup_is_private_checksummed_and_bounded():
     assert "sha256sum" in backup
     assert "chmod 600" in backup
     assert "SMARTPLOY_BACKUP_KEEP" in backup
+    assert 'up -d --wait postgres' in backup
 
 
 def test_deploy_gate_orders_backup_migration_start_health_and_sha_recording():
     deploy = (ROOT / "deploy/personal/scripts/deploy.sh").read_text(encoding="utf-8")
 
     assert "flock -n 9" in deploy
+    assert 'up -d --wait postgres' in deploy
     backup_at = deploy.index('bash "${SCRIPT_DIR}/backup.sh"')
     migrate_at = deploy.index("python scripts/migrate.py")
     start_at = deploy.index("up -d --remove-orphans api worker web")
