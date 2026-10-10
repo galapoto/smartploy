@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { filterBySector, queueLabel, relativeFreshness, scoreBand } from "./lib";
+import {
+  filterBySector,
+  formatCadence,
+  queueLabel,
+  relativeFreshness,
+  relativeSchedule,
+  scoreBand
+} from "./lib";
 import type { RankingCard } from "./types";
 
 function card(sector: "public" | "private" | "unknown"): RankingCard {
@@ -62,5 +69,23 @@ describe("labels and freshness", () => {
     expect(
       relativeFreshness("2026-10-10T09:30:00Z", new Date("2026-10-10T10:00:00Z"))
     ).toBe("Seen 30m ago");
+  });
+});
+
+
+describe("worker schedule formatting", () => {
+  it("formats future next-run values deterministically", () => {
+    const now = new Date("2026-10-10T10:00:00Z");
+    expect(relativeSchedule("2026-10-10T10:04:01Z", now)).toBe("in 5m");
+    expect(relativeSchedule("2026-10-10T11:00:00Z", now)).toBe("in 1h");
+    expect(relativeSchedule("2026-10-10T09:59:59Z", now)).toBe("Due now");
+    expect(relativeSchedule("", now)).toBe("Schedule unknown");
+  });
+
+  it("formats worker cadences", () => {
+    expect(formatCadence(60)).toBe("every 1m");
+    expect(formatCadence(600)).toBe("every 10m");
+    expect(formatCadence(3600)).toBe("every 1h");
+    expect(formatCadence(15)).toBe("every 15s");
   });
 });
