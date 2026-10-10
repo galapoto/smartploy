@@ -60,7 +60,7 @@ def test_compose_publishes_only_loopback_web_gateway():
 def test_web_gateway_keeps_backend_routes_out_of_spa_fallback():
     caddy = (ROOT / "deploy/personal/web.Caddyfile").read_text(encoding="utf-8")
 
-    assert "@backend path /api/* /healthz" in caddy
+    assert "@backend path /api/* /auth/* /healthz" in caddy
     assert "handle @backend" in caddy
     assert "reverse_proxy api:8090" in caddy
     assert "header_up Host smartploy.obumai.com" in caddy
@@ -107,6 +107,7 @@ def test_committed_runtime_policy_contains_no_account_secrets():
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
 
     assert "SMARTPLOY_ENVIRONMENT=production" in policy
+    assert "SMARTPLOY_AUTH_MODE=cloudflare" in policy
     assert "SMARTPLOY_ACCESS_ENABLED=true" in policy
     for forbidden in (
         "POSTGRES_PASSWORD",
@@ -180,10 +181,13 @@ def test_compose_does_not_inject_whole_production_env_into_services():
     assert "SMARTPLOY_WORKER_LOOP_SECONDS" not in api
 
     assert "SMARTPLOY_ACCESS_ISSUER" not in worker
+    assert "SMARTPLOY_OIDC_ISSUER" not in worker
+    assert "SMARTPLOY_OIDC_CLIENT_ID" not in worker
     assert "SMARTPLOY_ACCESS_AUDIENCE" not in worker
     assert "SMARTPLOY_ACCESS_ALLOWED_EMAIL" not in worker
 
     assert "SMARTPLOY_DATABASE_URL" not in web
+    assert "SMARTPLOY_OIDC_" not in web
     assert "OBUMAI_" not in web
     assert "JOBMARKET_" not in web
     assert "KUNTAREKRY_" not in web
