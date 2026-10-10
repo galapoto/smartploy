@@ -133,6 +133,9 @@ jobs:
           done
 
           bash deploy/personal/scripts/smoke-env-boundaries.sh
+          # The worker image has an API healthcheck by default; a worker-specific
+          # override must prove that all four services are actually healthy.
+          bash deploy/personal/scripts/assert-healthy-stack.sh
 
           for _ in $(seq 1 60); do
             if curl --fail --silent \
@@ -233,6 +236,7 @@ jobs:
           grep -Fxq 'latest_backup_metadata_valid=true' "${EVIDENCE_FILE}"
           grep -Fxq 'preflight_passed=true' "${EVIDENCE_FILE}"
           grep -Fxq 'env_boundary_smoke_passed=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'stack_healthy=true' "${EVIDENCE_FILE}"
           grep -Fxq 'live_acceptance=skipped' "${EVIDENCE_FILE}"
 
           # Evidence must never contain fixture secret/private configuration values.
