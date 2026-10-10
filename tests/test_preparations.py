@@ -14,7 +14,7 @@ from smartploy.preparations import (
     build_preparation,
     parse_draft_output,
 )
-from smartploy.profile import CandidateProfile, ProfileFact
+from smartploy.profile import ProfileFact
 from smartploy.profile_storage import MemoryProfileRepository
 from smartploy.scoring import score_candidate
 from smartploy.service import SmartployService
