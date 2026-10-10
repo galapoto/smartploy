@@ -24,7 +24,7 @@ Smartploy is **not** an ObumAI submodule.
 - saved hard filters;
 - PostgreSQL durable repository plus in-memory development mode;
 - durable source-health state;
-- authorized/configured Kuntarekry RSS/XML parser and worker;\n- credential-gated Job Market Finland P67 v2 national job-source adapter;\n- read-only SmartRecruiters and Lever direct-employer ATS connectors;
+- authorized/configured Kuntarekry RSS/XML parser and worker;\n- credential-gated Job Market Finland P67 v2 national job-source adapter;\n- read-only SmartRecruiters and Lever direct-employer ATS connectors;\n- PostgreSQL-leased continuous source/application worker;
 - FastAPI job/source-health service;
 - approved-evidence Fit/Priority scoring;
 - immutable application-draft packages for eligible high-confidence jobs;
@@ -172,3 +172,25 @@ python scripts/poll_public_ats.py
 The current direct ATS connectors read public SmartRecruiters/Lever postings only. They do not call
 application-submission APIs. Missing postings are retired only after a complete successful tenant
 snapshot.
+
+
+## Continuous worker
+
+After applying migrations and configuring sources:
+
+~~~bash
+python scripts/migrate.py
+python scripts/source_worker.py --once
+python scripts/source_worker.py
+~~~
+
+The worker persists task cadence and leases in PostgreSQL. Multiple worker processes may run, but a
+non-expired task lease can be owned by only one worker at a time. Failed tasks back off exponentially
+up to the configured maximum while unrelated due tasks continue to run.
+
+The worker schedules only configured sources. ObumAI preparation/refresh tasks appear only when
+OBUMAI_BASE_URL is configured, and they remain draft-only: final external application actions are not
+authorized.
+
+For an always-on Ubuntu/OVH deployment, see docs/CONTINUOUS_WORKER.md and
+deploy/systemd/smartploy-source-worker.service.example.

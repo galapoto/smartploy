@@ -1,0 +1,250 @@
+"""Environment-driven continuous Smartploy worker task registry."""
+
+from __future__ import annotations
+
+from collections import Counter
+from datetime import datetime, timezone
+import os
+
+from .application_storage import PostgresApplicationRepository
+from .obumai import ObumAIClient, ObumAIError, ObumAISettings
+from .preparation_storage import PostgresPreparationRepository
+from .profile_storage import PostgresProfileRepository
+from .service import SmartployService
+from .sources.jobmarket_finland import (
+    JobMarketFinlandAdapter,
+    JobMarketFinlandSettings,
+    compute_modified_window,
+)
+from .sources.jobmarket_finland_polling import poll_jobmarket_finland
+from .sources.kuntarekry import KuntarekryFeedAdapter, KuntarekryFeedSettings
+from .sources.polling import poll_feed
+from .sources.public_ats import (
+    PublicATSRuntimeSettings,
+    build_public_ats_adapter,
+    load_public_ats_sources,
+)
+from .sources.public_ats_polling import poll_public_ats
+from .storage import PostgresJobRepository
+from .worker_schedule import WorkerTaskResult, WorkerTaskSpec
+
+
+ACTIVE_PREPARATION_STATES = {"queued", "running", "blocked"}
+
+
+def _positive_int(name: str, default: int, *, maximum: int | None = None) -> int:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    if maximum is not None:
+        value = min(value, maximum)
+    return value
+
+
+def _job_service(dsn: str) -> SmartployService:
+    return SmartployService(repository=PostgresJobRepository(dsn))
+
+
+def _application_service(dsn: str, settings: ObumAISettings) -> SmartployService:
+    profile_id = os.getenv("SMARTPLOY_PROFILE_ID", "default").strip() or "default"
+    return SmartployService(
+        repository=PostgresJobRepository(dsn),
+        profile_repository=PostgresProfileRepository(dsn, profile_id=profile_id),
+        preparation_repository=PostgresPreparationRepository(dsn),
+        application_repository=PostgresApplicationRepository(dsn),
+        obumai=ObumAIClient(settings),
+    )
+
+
+def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
+    dsn = str(dsn or "").strip()
+    if not dsn:
+        raise ValueError("SMARTPLOY_DATABASE_URL is required for continuous worker tasks")
+
+    specs: list[WorkerTaskSpec] = []
+
+    kuntarekry = KuntarekryFeedSettings.from_env()
+    if kuntarekry is not None:
+        cadence = _positive_int("SMARTPLOY_WORKER_KUNTAREKRY_CADENCE_SECONDS", 600)
+
+        def run_kuntarekry(settings=kuntarekry) -> WorkerTaskResult:
+            service = _job_service(dsn)
+            adapter = KuntarekryFeedAdapter(settings)
+            try:
+                summary = poll_feed(service, adapter)
+            finally:
+                adapter.close()
+            return WorkerTaskResult(
+                status=summary.status,
+                details=summary.to_dict(),
+                error=summary.error,
+            )
+
+        specs.append(
+            WorkerTaskSpec(
+                task_id="source:kuntarekry",
+                task_kind="source",
+                cadence_seconds=cadence,
+                runner=run_kuntarekry,
+                metadata={"source_id": "kuntarekry", "provider": "kuntarekry"},
+            )
+        )
+
+    jobmarket = JobMarketFinlandSettings.from_env()
+    if jobmarket is not None:
+        cadence = _positive_int("SMARTPLOY_WORKER_JOBMARKET_CADENCE_SECONDS", 300)
+
+        def run_jobmarket(settings=jobmarket) -> WorkerTaskResult:
+            repository = PostgresJobRepository(dsn)
+            health = repository.get_source_health("job-market-finland")
+            modified_from, modified_to = compute_modified_window(
+                last_success_at=health.last_success_at if health else "",
+                now=datetime.now(timezone.utc),
+                initial_lookback_minutes=settings.initial_lookback_minutes,
+                overlap_minutes=settings.overlap_minutes,
+            )
+            service = SmartployService(repository=repository)
+            adapter = JobMarketFinlandAdapter(settings)
+            try:
+                summary = poll_jobmarket_finland(
+                    service,
+                    adapter,
+                    modified_from=modified_from,
+                    modified_to=modified_to,
+                )
+            finally:
+                adapter.close()
+            return WorkerTaskResult(
+                status=summary.status,
+                details=summary.to_dict(),
+                error=summary.error,
+            )
+
+        specs.append(
+            WorkerTaskSpec(
+                task_id="source:job-market-finland",
+                task_kind="source",
+                cadence_seconds=cadence,
+                runner=run_jobmarket,
+                metadata={
+                    "source_id": "job-market-finland",
+                    "provider": "job-market-finland",
+                    "environment": jobmarket.environment,
+                },
+            )
+        )
+
+    ats_runtime = PublicATSRuntimeSettings.from_env()
+    ats_cadence = _positive_int("SMARTPLOY_WORKER_PUBLIC_ATS_CADENCE_SECONDS", 600)
+    for config in load_public_ats_sources():
+
+        def run_ats(source_config=config) -> WorkerTaskResult:
+            service = _job_service(dsn)
+            adapter = build_public_ats_adapter(source_config, ats_runtime)
+            try:
+                summary = poll_public_ats(service, adapter)
+            finally:
+                adapter.close()
+            return WorkerTaskResult(
+                status=summary.status,
+                details=summary.to_dict(),
+                error=summary.error,
+            )
+
+        specs.append(
+            WorkerTaskSpec(
+                task_id=f"source:{config.source_id}",
+                task_kind="source",
+                cadence_seconds=ats_cadence,
+                runner=run_ats,
+                metadata={
+                    "source_id": config.source_id,
+                    "provider": config.provider,
+                    "tenant": config.tenant,
+                    "stack": config.stack,
+                    "employer_sector": config.employer_sector,
+                    "external_ai_forwarding_allowed": config.external_ai_forwarding_allowed,
+                },
+            )
+        )
+
+    obum_settings = ObumAISettings.from_env()
+    if obum_settings is not None:
+        prepare_cadence = _positive_int("SMARTPLOY_WORKER_PREPARE_CADENCE_SECONDS", 120)
+        refresh_cadence = _positive_int("SMARTPLOY_WORKER_REFRESH_CADENCE_SECONDS", 60)
+
+        def run_prepare(settings=obum_settings) -> WorkerTaskResult:
+            service = _application_service(dsn, settings)
+            limit = _positive_int("SMARTPLOY_PREPARE_BATCH_LIMIT", 20, maximum=100)
+            packages = service.prepare_eligible(limit=limit)
+            counts = Counter(item.status for item in packages)
+            return WorkerTaskResult(
+                status="healthy",
+                details={
+                    "eligible_processed": len(packages),
+                    "package_status_counts": dict(counts),
+                    "external_actions_authorized": False,
+                },
+            )
+
+        def run_refresh(settings=obum_settings) -> WorkerTaskResult:
+            preparations = PostgresPreparationRepository(dsn)
+            service = _application_service(dsn, settings)
+            limit = _positive_int("SMARTPLOY_REFRESH_BATCH_LIMIT", 50, maximum=500)
+            updated = 0
+            failures = 0
+            states: Counter[str] = Counter()
+
+            for item in preparations.list(limit=limit):
+                if item.status not in ACTIVE_PREPARATION_STATES:
+                    continue
+                try:
+                    current = service.refresh_preparation(item.package_id)
+                except ObumAIError:
+                    failures += 1
+                    continue
+                updated += 1
+                states[current.status] += 1
+
+            if failures and not updated:
+                status = "failed"
+            elif failures:
+                status = "degraded"
+            else:
+                status = "healthy"
+            error = f"{failures} preparation refreshes failed" if failures else ""
+            return WorkerTaskResult(
+                status=status,
+                error=error,
+                details={
+                    "updated_count": updated,
+                    "failure_count": failures,
+                    "status_counts": dict(states),
+                    "external_actions_authorized": False,
+                },
+            )
+
+        specs.extend(
+            [
+                WorkerTaskSpec(
+                    task_id="application:prepare-eligible",
+                    task_kind="application_prepare",
+                    cadence_seconds=prepare_cadence,
+                    runner=run_prepare,
+                    metadata={"external_actions_authorized": False},
+                ),
+                WorkerTaskSpec(
+                    task_id="application:refresh-preparations",
+                    task_kind="application_refresh",
+                    cadence_seconds=refresh_cadence,
+                    runner=run_refresh,
+                    metadata={"external_actions_authorized": False},
+                ),
+            ]
+        )
+
+    return specs
