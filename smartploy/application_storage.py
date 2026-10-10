@@ -18,11 +18,29 @@ from .preparations import ApplicationPreparation
 from .storage import apply_migrations
 
 
+def _summary_payload(state_counts: dict[str, int], actually_submitted: int) -> dict[str, Any]:
+    return {
+        "total_records": sum(state_counts.values()),
+        "state_counts": dict(sorted(state_counts.items())),
+        "preparing": state_counts.get("preparing", 0),
+        "awaiting_review": (
+            state_counts.get("ready_for_review", 0)
+            + state_counts.get("needs_review", 0)
+        ),
+        "preparation_blocked": state_counts.get("preparation_blocked", 0),
+        "actually_submitted": int(actually_submitted),
+        "interviews": state_counts.get("interview", 0),
+        "offers": state_counts.get("offer", 0),
+        "rejections": state_counts.get("rejected", 0),
+    }
+
+
 class ApplicationRepository(Protocol):
     def sync_preparation(self, preparation: ApplicationPreparation) -> ApplicationRecord: ...
     def get(self, application_id: str) -> ApplicationRecord | None: ...
     def list(self, *, limit: int = 100) -> list[ApplicationRecord]: ...
     def events(self, application_id: str, *, limit: int = 500) -> list[ApplicationEvent]: ...
+    def summary(self) -> dict[str, Any]: ...
 
 
 class MemoryApplicationRepository:
@@ -60,6 +78,12 @@ class MemoryApplicationRepository:
             (item for item in self._events.values() if item.application_id == application_id),
             key=lambda item: (item.occurred_at, item.event_id),
         )[:bounded]
+
+    def summary(self) -> dict[str, Any]:
+        counts: dict[str, int] = {}
+        for item in self._items.values():
+            counts[item.state] = counts.get(item.state, 0) + 1
+        return _summary_payload(counts, sum(1 for item in self._items.values() if item.has_been_submitted))
 
 
 class PostgresApplicationRepository:
@@ -213,3 +237,16 @@ class PostgresApplicationRepository:
                 )
                 rows = cur.fetchall()
         return [self._event_from_row(row) for row in rows]
+
+    def summary(self) -> dict[str, Any]:
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT state, count(*) FROM smartploy_applications GROUP BY state"
+                )
+                counts = {str(state): int(count) for state, count in cur.fetchall()}
+                cur.execute(
+                    "SELECT count(*) FROM smartploy_applications WHERE submitted_at IS NOT NULL"
+                )
+                submitted = int(cur.fetchone()[0])
+        return _summary_payload(counts, submitted)
