@@ -61,3 +61,90 @@ jobs:
       - name: Web build
         working-directory: web
         run: npm run build
+
+  deploy-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare fixture production environment
+        run: |
+          cp deploy/personal/env.example deploy/personal/env
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("deploy/personal/env")
+          text = path.read_text(encoding="utf-8")
+          replacements = {
+              "SMARTPLOY_ACCESS_ALLOWED_EMAIL=replace-with-approved-owner-email":
+                  "SMARTPLOY_ACCESS_ALLOWED_EMAIL=ci@example.com",
+              "OBUMAI_BASE_URL=https://app.obumai.com":
+                  "OBUMAI_BASE_URL=",
+              "SMARTPLOY_WEB_HOST_PORT=8091":
+                  "SMARTPLOY_WEB_HOST_PORT=18091",
+              "SMARTPLOY_BACKUP_DIR=/srv/obum/backups/smartploy":
+                  "SMARTPLOY_BACKUP_DIR=/tmp/smartploy-backups",
+              "SMARTPLOY_DEPLOY_STATE_DIR=/srv/obum/data/smartploy/deploy-state":
+                  "SMARTPLOY_DEPLOY_STATE_DIR=/tmp/smartploy-deploy-state",
+          }
+          for old, new in replacements.items():
+              text = text.replace(old, new)
+          path.write_text(text, encoding="utf-8")
+          PY
+          chmod 600 deploy/personal/env
+      - name: Validate committed production policy
+        run: bash deploy/personal/scripts/validate-runtime-policy.sh deploy/personal/runtime.production.env
+      - name: Build and smoke production Compose stack
+        run: |
+          set -euo pipefail
+          COMPOSE=(
+            docker compose
+            --env-file deploy/personal/env
+            --env-file deploy/personal/runtime.production.env
+            -f deploy/personal/docker-compose.yml
+          )
+          cleanup() {
+            "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          "${COMPOSE[@]}" config > /tmp/smartploy-compose.yml
+          "${COMPOSE[@]}" build api web
+          "${COMPOSE[@]}" up -d postgres
+          "${COMPOSE[@]}" run --rm --no-deps api python scripts/migrate.py
+          "${COMPOSE[@]}" up -d api worker web
+
+          for _ in $(seq 1 60); do
+            if curl --fail --silent \
+              -H 'Host: smartploy.obumai.com' \
+              http://127.0.0.1:18091/healthz > /tmp/smartploy-health.json; then
+              break
+            fi
+            sleep 2
+          done
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          health = json.loads(Path("/tmp/smartploy-health.json").read_text(encoding="utf-8"))
+          assert health["ok"] is True
+          assert health["public_origin"] == "https://smartploy.obumai.com"
+          assert health["storage"]["ready"] is True
+          assert health["access"]["enabled"] is True
+          assert health["access"]["environment"] == "production"
+          assert health["access"]["owner_restricted"] is True
+          assert health["external_actions_authorized"] is False
+          PY
+
+          status="$(
+            curl --silent --output /tmp/smartploy-denied.json --write-out '%{http_code}' \
+              -H 'Host: smartploy.obumai.com' \
+              http://127.0.0.1:18091/api/v1/dashboard
+          )"
+          test "${status}" = "401"
+
+          running="$("${COMPOSE[@]}" ps --status running --services)"
+          for service in postgres api worker web; do
+            grep -qx "${service}" <<<"${running}"
+          done
