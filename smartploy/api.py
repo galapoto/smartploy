@@ -19,6 +19,13 @@ from .access import (
     CloudflareAccessVerifier,
 )
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
+from .identity import (
+    AuthenticatedPrincipal,
+    IdentityRepository,
+    MemoryIdentityRepository,
+    PostgresIdentityRepository,
+    UserProfileBinding,
+)
 from .domain import JobSearchFilters, SourceObservation, SourcePolicy
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
@@ -186,6 +193,27 @@ def _worker_snapshot() -> dict[str, Any]:
     }
 
 
+def _principal_from_request(request: Request) -> AuthenticatedPrincipal | None:
+    principal = getattr(request.state, "smartploy_principal", None)
+    if isinstance(principal, AuthenticatedPrincipal):
+        return principal.normalized()
+    if isinstance(principal, AccessPrincipal):
+        return AuthenticatedPrincipal(
+            issuer=principal.issuer,
+            subject=principal.subject,
+            email=principal.email,
+            auth_source="cloudflare_access",
+        ).normalized()
+    return None
+
+
+def _build_identity_repository() -> IdentityRepository:
+    dsn = os.getenv("SMARTPLOY_DATABASE_URL", "").strip()
+    if dsn:
+        return PostgresIdentityRepository(dsn)
+    return MemoryIdentityRepository()
+
+
 def _build_service() -> SmartployService:
     obum_settings = ObumAISettings.from_env()
     client = ObumAIClient(obum_settings) if obum_settings else None
@@ -226,6 +254,7 @@ def create_app(
     service: SmartployService | None = None,
     *,
     access_verifier: CloudflareAccessVerifier | None = None,
+    identity_repository: IdentityRepository | None = None,
 ) -> FastAPI:
     active = service or _build_service()
     access_settings = AccessSettings.from_env()
@@ -241,6 +270,44 @@ def create_app(
     app.state.smartploy = active
     app.state.public_origin = _public_origin()
     app.state.access_settings = access_settings
+    app.state.identity_repository = identity_repository or _build_identity_repository()
+    app.state.tenant_services = {}
+
+    def tenant_context(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
+        principal = _principal_from_request(request)
+        if principal is None:
+            return active, None
+
+        binding = app.state.identity_repository.resolve_or_create(principal)
+        request.state.smartploy_binding = binding
+
+        cached = app.state.tenant_services.get(binding.profile_id)
+        if cached is not None:
+            return cached, binding
+
+        dsn = os.getenv("SMARTPLOY_DATABASE_URL", "").strip()
+        if dsn:
+            tenant = SmartployService(
+                repository=active.repository,
+                profile_repository=PostgresProfileRepository(dsn, profile_id=binding.profile_id),
+                preparation_repository=PostgresPreparationRepository(
+                    dsn, profile_id=binding.profile_id
+                ),
+                application_repository=PostgresApplicationRepository(
+                    dsn, profile_id=binding.profile_id
+                ),
+                obumai=active.obumai,
+            )
+        else:
+            tenant = SmartployService(
+                repository=active.repository,
+                profile_repository=MemoryProfileRepository(profile_id=binding.profile_id),
+                preparation_repository=MemoryPreparationRepository(profile_id=binding.profile_id),
+                application_repository=MemoryApplicationRepository(profile_id=binding.profile_id),
+                obumai=active.obumai,
+            )
+        app.state.tenant_services[binding.profile_id] = tenant
+        return tenant, binding
 
     @app.get("/healthz")
     def health() -> dict[str, Any]:
@@ -269,19 +336,28 @@ def create_app(
 
     @app.get("/api/v1/session")
     def session(request: Request) -> dict[str, Any]:
-        principal = getattr(request.state, "smartploy_principal", None)
-        if isinstance(principal, AccessPrincipal):
-            return principal.public_dict()
+        principal = _principal_from_request(request)
+        if principal is None:
+            return {
+                "authenticated": False,
+                "email": "",
+                "user_id": "",
+                "profile_id": "",
+                "auth_source": "none",
+            }
+        _, binding = tenant_context(request)
+        if binding is None:
+            raise HTTPException(status_code=500, detail="identity binding unavailable")
         return {
-            "authenticated": False,
-            "email": "",
-            "subject_fingerprint": "",
-            "auth_source": "none",
+            "authenticated": True,
+            **binding.to_public_dict(),
+            "auth_source": principal.auth_source or "external_identity",
         }
 
     @app.get("/api/v1/profile/status")
-    def profile_status() -> dict[str, Any]:
-        return active.profile_summary()
+    def profile_status(request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        return tenant.profile_summary()
 
     @app.post("/api/v1/sources")
     def register_source(payload: SourcePolicyPayload) -> dict[str, Any]:
@@ -348,21 +424,24 @@ def create_app(
         return {"jobs": items, "count": len(items)}
 
     @app.get("/api/v1/rankings")
-    def rankings() -> dict[str, Any]:
-        items = [item.to_dict() for item in active.rankings()]
+    def rankings(request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        items = [item.to_dict() for item in tenant.rankings()]
         return {"rankings": items, "count": len(items)}
 
     @app.get("/api/v1/jobs/{canonical_key}/score")
-    def score_job(canonical_key: str) -> dict[str, Any]:
+    def score_job(canonical_key: str, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
         try:
-            return active.score_job(canonical_key).to_dict()
+            return tenant.score_job(canonical_key).to_dict()
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="job not found") from exc
 
     @app.post("/api/v1/jobs/{canonical_key}/prepare")
-    def prepare_job(canonical_key: str) -> dict[str, Any]:
+    def prepare_job(canonical_key: str, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
         try:
-            return active.prepare_job(canonical_key).to_dict()
+            return tenant.prepare_job(canonical_key).to_dict()
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="job not found") from exc
         except PreparationNotEligible as exc:
@@ -371,27 +450,31 @@ def create_app(
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/api/v1/applications/summary")
-    def application_summary() -> dict[str, Any]:
-        return active.application_summary()
+    def application_summary(request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        return tenant.application_summary()
 
     @app.get("/api/v1/applications")
-    def list_applications(limit: int = 100) -> dict[str, Any]:
+    def list_applications(request: Request, limit: int = 100) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
         bounded = max(1, min(limit, 500))
-        items = [item.to_dict() for item in active.list_applications(limit=bounded)]
+        items = [item.to_dict() for item in tenant.list_applications(limit=bounded)]
         return {"applications": items, "count": len(items)}
 
     @app.get("/api/v1/applications/{application_id}/events")
-    def application_events(application_id: str, limit: int = 500) -> dict[str, Any]:
-        item = active.get_application(application_id)
+    def application_events(application_id: str, request: Request, limit: int = 500) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        item = tenant.get_application(application_id)
         if item is None:
             raise HTTPException(status_code=404, detail="application not found")
         bounded = max(1, min(limit, 2000))
-        events = [event.to_dict() for event in active.application_events(application_id, limit=bounded)]
+        events = [event.to_dict() for event in tenant.application_events(application_id, limit=bounded)]
         return {"events": events, "count": len(events)}
 
     @app.get("/api/v1/applications/{application_id}")
-    def get_application(application_id: str) -> dict[str, Any]:
-        item = active.get_application(application_id)
+    def get_application(application_id: str, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        item = tenant.get_application(application_id)
         if item is None:
             raise HTTPException(status_code=404, detail="application not found")
         return item.to_dict()
@@ -401,29 +484,33 @@ def create_app(
         return _worker_snapshot()
 
     @app.get("/api/v1/dashboard")
-    def dashboard() -> dict[str, Any]:
+    def dashboard(request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
         return {
-            **active.dashboard(),
+            **tenant.dashboard(),
             "worker": _worker_snapshot(),
         }
 
     @app.get("/api/v1/preparations")
-    def list_preparations(limit: int = 100) -> dict[str, Any]:
+    def list_preparations(request: Request, limit: int = 100) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
         bounded = max(1, min(limit, 500))
-        items = [item.to_dict() for item in active.list_preparations(limit=bounded)]
+        items = [item.to_dict() for item in tenant.list_preparations(limit=bounded)]
         return {"preparations": items, "count": len(items)}
 
     @app.get("/api/v1/preparations/{package_id}")
-    def get_preparation(package_id: str) -> dict[str, Any]:
-        item = active.get_preparation(package_id)
+    def get_preparation(package_id: str, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        item = tenant.get_preparation(package_id)
         if item is None:
             raise HTTPException(status_code=404, detail="preparation not found")
         return item.to_dict()
 
     @app.post("/api/v1/preparations/{package_id}/refresh")
-    def refresh_preparation(package_id: str) -> dict[str, Any]:
+    def refresh_preparation(package_id: str, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
         try:
-            return active.refresh_preparation(package_id).to_dict()
+            return tenant.refresh_preparation(package_id).to_dict()
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="preparation not found") from exc
         except ObumAIError as exc:
@@ -437,9 +524,14 @@ def create_app(
         return item.to_dict()
 
     @app.post("/api/v1/jobs/{canonical_key}/obumai")
-    def submit_obumai(canonical_key: str, payload: ObumAITaskPayload) -> dict[str, Any]:
+    def submit_obumai(
+        canonical_key: str,
+        payload: ObumAITaskPayload,
+        request: Request,
+    ) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
         try:
-            return active.submit_obumai(
+            return tenant.submit_obumai(
                 canonical_key,
                 action=payload.action,
                 instructions=payload.instructions,
@@ -450,20 +542,30 @@ def create_app(
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/api/v1/obumai/jobs/{job_id}")
-    def get_obumai_job(job_id: str) -> dict[str, Any]:
-        if active.obumai is None:
+    def get_obumai_job(job_id: str, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        if tenant.obumai is None:
             raise HTTPException(status_code=503, detail="ObumAI integration is not configured")
+        if tenant.get_preparation_by_obum_job_id(job_id) is None:
+            raise HTTPException(status_code=404, detail="ObumAI job not found")
         try:
-            return active.obumai.get_job(job_id)
+            return tenant.obumai.get_job(job_id)
         except ObumAIError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/api/v1/obumai/jobs/{job_id}/events")
-    def get_obumai_events(job_id: str, after_sequence: int = 0) -> dict[str, Any]:
-        if active.obumai is None:
+    def get_obumai_events(
+        job_id: str,
+        request: Request,
+        after_sequence: int = 0,
+    ) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        if tenant.obumai is None:
             raise HTTPException(status_code=503, detail="ObumAI integration is not configured")
+        if tenant.get_preparation_by_obum_job_id(job_id) is None:
+            raise HTTPException(status_code=404, detail="ObumAI job not found")
         try:
-            return active.obumai.get_events(job_id, after_sequence=after_sequence)
+            return tenant.obumai.get_events(job_id, after_sequence=after_sequence)
         except ObumAIError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
