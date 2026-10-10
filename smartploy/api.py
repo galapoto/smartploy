@@ -11,6 +11,8 @@ import uvicorn
 
 from .domain import JobSearchFilters, SourceObservation, SourcePolicy
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
+from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
+from .preparations import PreparationNotEligible
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
 from .service import SmartployService
 from .storage import MemoryJobRepository, PostgresJobRepository
@@ -73,13 +75,16 @@ def _build_service() -> SmartployService:
     if dsn:
         repository = PostgresJobRepository(dsn)
         profile_repository = PostgresProfileRepository(dsn, profile_id=profile_id)
+        preparation_repository = PostgresPreparationRepository(dsn)
     else:
         repository = MemoryJobRepository()
         profile_repository = MemoryProfileRepository(profile_id=profile_id)
+        preparation_repository = MemoryPreparationRepository()
 
     service = SmartployService(
         repository=repository,
         profile_repository=profile_repository,
+        preparation_repository=preparation_repository,
         obumai=client,
     )
     service.register_source(
@@ -96,7 +101,7 @@ def _build_service() -> SmartployService:
 
 def create_app(service: SmartployService | None = None) -> FastAPI:
     active = service or _build_service()
-    app = FastAPI(title="Smartploy API", version="0.3.0")
+    app = FastAPI(title="Smartploy API", version="0.4.0")
     app.state.smartploy = active
 
     @app.get("/healthz")
@@ -190,6 +195,39 @@ def create_app(service: SmartployService | None = None) -> FastAPI:
             return active.score_job(canonical_key).to_dict()
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="job not found") from exc
+
+    @app.post("/api/v1/jobs/{canonical_key}/prepare")
+    def prepare_job(canonical_key: str) -> dict[str, Any]:
+        try:
+            return active.prepare_job(canonical_key).to_dict()
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="job not found") from exc
+        except PreparationNotEligible as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ObumAIError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/api/v1/preparations")
+    def list_preparations(limit: int = 100) -> dict[str, Any]:
+        bounded = max(1, min(limit, 500))
+        items = [item.to_dict() for item in active.list_preparations(limit=bounded)]
+        return {"preparations": items, "count": len(items)}
+
+    @app.get("/api/v1/preparations/{package_id}")
+    def get_preparation(package_id: str) -> dict[str, Any]:
+        item = active.get_preparation(package_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="preparation not found")
+        return item.to_dict()
+
+    @app.post("/api/v1/preparations/{package_id}/refresh")
+    def refresh_preparation(package_id: str) -> dict[str, Any]:
+        try:
+            return active.refresh_preparation(package_id).to_dict()
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="preparation not found") from exc
+        except ObumAIError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/api/v1/jobs/{canonical_key}")
     def get_job(canonical_key: str) -> dict[str, Any]:
