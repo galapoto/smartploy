@@ -1,0 +1,21 @@
+:8080 {
+    encode zstd gzip
+
+    header {
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+    }
+
+    @backend path /api/* /healthz
+    reverse_proxy @backend api:8090 {
+        header_up Host smartploy.obumai.com
+        header_up X-Forwarded-Proto https
+        header_up Cf-Access-Jwt-Assertion {http.request.header.Cf-Access-Jwt-Assertion}
+    }
+
+    root * /srv
+    try_files {path} /index.html
+    file_server
+}

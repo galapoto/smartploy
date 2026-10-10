@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+.env
+.env.*
+!.env.example
+web/node_modules
+web/dist
+build
+dist
+*.egg-info
+deploy/personal/env
+config/public_ats_sources.json
