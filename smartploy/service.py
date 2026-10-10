@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from .application_storage import ApplicationRepository, MemoryApplicationRepository
+from .applications import ApplicationEvent, ApplicationRecord
 from .domain import (
     DiscoveryResult,
     JobCandidate,
@@ -45,11 +47,13 @@ class SmartployService:
         repository: JobRepository | None = None,
         profile_repository: ProfileRepository | None = None,
         preparation_repository: PreparationRepository | None = None,
+        application_repository: ApplicationRepository | None = None,
         obumai: ObumAIClient | None = None,
     ) -> None:
         self.repository = repository or MemoryJobRepository()
         self.profile_repository = profile_repository or MemoryProfileRepository()
         self.preparation_repository = preparation_repository or MemoryPreparationRepository()
+        self.application_repository = application_repository or MemoryApplicationRepository()
         self.obumai = obumai
         self._policies: dict[str, SourcePolicy] = {}
 
@@ -222,6 +226,79 @@ class SmartployService:
             updated_at=timestamp,
         )
 
+    def _sync_application(self, preparation: ApplicationPreparation) -> ApplicationRecord:
+        return self.application_repository.sync_preparation(preparation)
+
+    def get_application(self, application_id: str) -> ApplicationRecord | None:
+        return self.application_repository.get(application_id)
+
+    def list_applications(self, *, limit: int = 100) -> list[ApplicationRecord]:
+        return self.application_repository.list(limit=limit)
+
+    def application_events(self, application_id: str, *, limit: int = 500) -> list[ApplicationEvent]:
+        return self.application_repository.events(application_id, limit=limit)
+
+    def application_summary(self) -> dict[str, Any]:
+        records = self.list_applications(limit=500)
+        state_counts: dict[str, int] = {}
+        for item in records:
+            state_counts[item.state] = state_counts.get(item.state, 0) + 1
+        return {
+            "total_records": len(records),
+            "state_counts": state_counts,
+            "preparing": state_counts.get("preparing", 0),
+            "awaiting_review": (
+                state_counts.get("ready_for_review", 0)
+                + state_counts.get("needs_review", 0)
+            ),
+            "preparation_blocked": state_counts.get("preparation_blocked", 0),
+            "actually_submitted": sum(1 for item in records if item.has_been_submitted),
+            "interviews": state_counts.get("interview", 0),
+            "offers": state_counts.get("offer", 0),
+            "rejections": state_counts.get("rejected", 0),
+        }
+
+    def dashboard(self) -> dict[str, Any]:
+        rankings = self.rankings()
+
+        def card(score: ScoreResult) -> dict[str, Any]:
+            candidate = self.get_job(score.canonical_key)
+            job = candidate.job if candidate is not None else None
+            return {
+                **score.to_dict(),
+                "job": None
+                if job is None
+                else {
+                    "company": job.company,
+                    "role_title": job.role_title,
+                    "location": job.location,
+                    "work_mode": job.work_mode,
+                    "deadline": job.deadline,
+                    "application_url": job.application_url,
+                },
+            }
+
+        top = [
+            card(item)
+            for item in rankings
+            if item.queue in {"exceptional", "auto_prepare", "review"}
+        ][:50]
+        possible = [card(item) for item in rankings if item.queue == "possible"][:100]
+
+        preparation_counts: dict[str, int] = {}
+        for item in self.list_preparations(limit=500):
+            preparation_counts[item.status] = preparation_counts.get(item.status, 0) + 1
+
+        return {
+            "top_matches": top,
+            "possible_matches": possible,
+            "preparation_counts": preparation_counts,
+            "applications": self.application_summary(),
+            "source_health": [item.to_dict() for item in self.list_source_health()],
+            "profile": self.profile_summary(),
+            "external_actions_authorized": False,
+        }
+
     def prepare_job(
         self,
         canonical_key: str,
@@ -247,8 +324,10 @@ class SmartployService:
                 "completed_unparsed",
                 "cancelled",
             }:
+                self._sync_application(stored)
                 return stored
             if stored.status == "failed" and stored.obum_job_id:
+                self._sync_application(stored)
                 return stored
 
         if self.obumai is None:
@@ -259,7 +338,8 @@ class SmartployService:
                 completed_at=utc_now_iso(),
                 updated_at=utc_now_iso(),
             )
-            self.preparation_repository.save(failed)
+            failed = self.preparation_repository.save(failed)
+            self._sync_application(failed)
             raise ObumAIError("ObumAI integration is not configured")
 
         evidence = profile.approved_evidence()
@@ -277,7 +357,8 @@ class SmartployService:
             completed_at="",
             updated_at=utc_now_iso(),
         )
-        self.preparation_repository.save(awaiting)
+        awaiting = self.preparation_repository.save(awaiting)
+        self._sync_application(awaiting)
 
         try:
             response = self.obumai.submit_reasoning(
@@ -294,7 +375,8 @@ class SmartployService:
                 completed_at=utc_now_iso(),
                 updated_at=utc_now_iso(),
             )
-            self.preparation_repository.save(failed)
+            failed = self.preparation_repository.save(failed)
+            self._sync_application(failed)
             raise
 
         job = response.get("job")
@@ -306,7 +388,8 @@ class SmartployService:
                 completed_at=utc_now_iso(),
                 updated_at=utc_now_iso(),
             )
-            self.preparation_repository.save(failed)
+            failed = self.preparation_repository.save(failed)
+            self._sync_application(failed)
             raise ObumAIError("ObumAI create response did not contain a job projection")
 
         updated = self._apply_obum_job(
@@ -314,7 +397,9 @@ class SmartployService:
             job,
             client_request_id=str(response.get("smartploy_client_request_id") or request_id),
         )
-        return self.preparation_repository.save(updated)
+        saved = self.preparation_repository.save(updated)
+        self._sync_application(saved)
+        return saved
 
     def get_preparation(self, package_id: str) -> ApplicationPreparation | None:
         return self.preparation_repository.get(package_id)
@@ -327,9 +412,11 @@ class SmartployService:
         if item is None:
             raise KeyError(package_id)
         if item.status in {"completed", "completed_unparsed", "cancelled"}:
+            self._sync_application(item)
             return item
         if not item.obum_job_id:
             if item.status == "failed":
+                self._sync_application(item)
                 return item
             raise ObumAIError("preparation has no ObumAI job id")
         if self.obumai is None:
@@ -341,7 +428,9 @@ class SmartployService:
             job,
             client_request_id=item.obum_client_request_id,
         )
-        return self.preparation_repository.save(updated)
+        saved = self.preparation_repository.save(updated)
+        self._sync_application(saved)
+        return saved
 
     def prepare_eligible(
         self,
