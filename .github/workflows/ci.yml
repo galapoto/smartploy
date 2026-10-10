@@ -115,6 +115,18 @@ jobs:
           "${COMPOSE[@]}" up -d api worker web
 
           for _ in $(seq 1 60); do
+            running="$("${COMPOSE[@]}" ps --status running --services)"
+            if grep -qx api <<<"${running}" \
+              && grep -qx worker <<<"${running}" \
+              && grep -qx web <<<"${running}"; then
+              break
+            fi
+            sleep 1
+          done
+
+          bash deploy/personal/scripts/smoke-env-boundaries.sh
+
+          for _ in $(seq 1 60); do
             if curl --fail --silent \
               -H 'Host: smartploy.obumai.com' \
               http://127.0.0.1:18091/healthz > /tmp/smartploy-health.json; then
