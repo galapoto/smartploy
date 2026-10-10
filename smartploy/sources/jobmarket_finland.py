@@ -19,7 +19,7 @@ import os
 
 import httpx
 
-from ..domain import SourceObservation, SourcePolicy, canonical_json, canonicalize_url, utc_now_iso
+from ..domain import SourceObservation, SourcePolicy, canonicalize_url, utc_now_iso
 
 
 SOURCE_ID = "job-market-finland"
