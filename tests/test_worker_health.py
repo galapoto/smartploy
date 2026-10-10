@@ -74,7 +74,8 @@ def test_worker_health_failure_never_echoes_database_credentials(monkeypatch, ca
     monkeypatch.setattr(worker_health, "connect", failed_connection)
     monkeypatch.setenv("SMARTPLOY_DATABASE_URL", "postgresql://user:" + password + "@db/test")
     assert worker_health.main() == 1
-    combined = capsys.readouterr().out + capsys.readouterr().err
+    output = capsys.readouterr()
+    combined = output.out + output.err
     assert password not in combined
 
 
