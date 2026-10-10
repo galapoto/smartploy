@@ -135,20 +135,17 @@ def _text_component(target: str, facts: tuple[ProfileFact, ...]) -> tuple[int | 
     if not normalize_identity_text(target) or not facts:
         return None, set()
     needed = _concepts(target)
+    if not needed:
+        return None, set()
     evidence: set[str] = set()
-    best = 0.0
+    covered: set[str] = set()
     for fact in facts:
         concepts = _fact_concepts(fact)
-        if not concepts:
-            continue
-        overlap = len(needed & concepts)
-        score = overlap / max(1, len(needed))
-        if normalize_identity_text(fact.value) in normalize_identity_text(target):
-            score = max(score, 1.0)
-        if score > 0:
+        overlap = needed & concepts
+        if overlap:
+            covered |= overlap
             evidence.add(fact.fact_id)
-        best = max(best, score)
-    return round(100 * min(1.0, best)), evidence
+    return round(100 * len(covered) / len(needed)), evidence
 
 
 def _known_skill_component(candidate: JobCandidate, facts: tuple[ProfileFact, ...]) -> tuple[int | None, set[str]]:
