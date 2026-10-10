@@ -8,8 +8,10 @@ version = "0.5.0"
 description = "Standalone job intelligence and application orchestration powered by ObumAI"
 requires-python = ">=3.11"
 dependencies = [
+  "Authlib>=1.8,<2",
   "fastapi>=0.115,<1",
   "httpx>=0.27,<1",
+  "httpx2>=2.13,<3",
   "PyJWT[crypto]>=2.10,<3",
   "psycopg[binary]>=3.2,<4",
   "pydantic>=2.9,<3",
