@@ -228,3 +228,34 @@ live_acceptance=pass
 
 This gate should be run after every change to the public SmartPloy route, Cloudflare Access application,
 or production ingress.
+
+
+## Release evidence bundle
+
+After a successful deployment, create a durable non-secret release record:
+
+~~~bash
+bash deploy/personal/scripts/release-evidence.sh
+~~~
+
+The command takes the production-operation lock so it cannot race a deploy/restore, but it does not
+mutate application/database/runtime state. It requires the repository HEAD to match the recorded
+`deployed-sha`, then reruns the no-mutation preflight, live key-only environment-boundary smoke, local
+health contract, and latest backup checksum/metadata validation.
+
+It writes a private evidence file and SHA256 sidecar under `SMARTPLOY_DEPLOY_STATE_DIR`. The manifest
+contains exact deployed/code SHA binding, policy/Compose hashes, non-secret readiness booleans, worker
+task count, backup basename/checksum validity, and gate results. It does not contain database URLs or
+passwords, Access issuer/audience/email, JWT/cookies, ObumAI headers, source credentials, job content,
+CV content, or application content.
+
+To include the public DNS/TLS/Cloudflare Access acceptance result after the public route exists:
+
+~~~bash
+bash deploy/personal/scripts/release-evidence.sh --online
+~~~
+
+The online mode reuses `live-acceptance.sh` and records only its compact pass/protected status fields.
+
+A SHA mismatch between the checked-out code and `deployed-sha` fails closed. This prevents an evidence
+bundle from certifying a different working tree than the one recorded as deployed.
