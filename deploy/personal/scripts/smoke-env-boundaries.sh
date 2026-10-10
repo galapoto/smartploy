@@ -2,45 +2,54 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMPOSE_DIR="$(cd "${SCRIPT_DIR/.." && pwd)"
-ENV_FILE="${COMPOSE_DIR/env"
-POLICY_FILE="${COMPOSE_DIR/runtime.production.env"
-COMPOSE_FILE="${COMPOSE_DIR/docker-compose.yml"
+COMPOSE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ENV_FILE="${COMPOSE_DIR}/env"
+POLICY_FILE="${COMPOSE_DIR}/runtime.production.env"
+COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
 
-if [[ ! -f "${ENV_FILE" ]]; then
+if [[ ! -f "${ENV_FILE}" ]]; then
   echo "SmartPloy environment-boundary smoke: production env missing" >&2
   exit 1
 fi
 
 COMPOSE=(
   docker compose
-  --env-file "${ENV_FILE"
-  --env-file "${POLICY_FILE"
-  -f "${COMPOSE_FILE"
+  --env-file "${ENV_FILE}"
+  --env-file "${POLICY_FILE}"
+  -f "${COMPOSE_FILE}"
 )
 
 TMP_DIR="$(mktemp -d)"
 cleanup() {
-  rm -rf "${TMP_DIR"
+  rm -rf "${TMP_DIR}"
 }
 trap cleanup EXIT
-chmod 700 "${TMP_DIR"
+chmod 700 "${TMP_DIR}"
 umask 077
 
 # Capture names only. Values are never written or printed.
-"${COMPOSE[@]" exec -T api   python -c 'import os; print("\n".join(sorted(os.environ)))'   > "${TMP_DIR/api.keys"
+"${COMPOSE[@]}" exec -T api \
+  python -c 'import os; print("\n".join(sorted(os.environ)))' \
+  > "${TMP_DIR}/api.keys"
 
-"${COMPOSE[@]" exec -T worker   python -c 'import os; print("\n".join(sorted(os.environ)))'   > "${TMP_DIR/worker.keys"
+"${COMPOSE[@]}" exec -T worker \
+  python -c 'import os; print("\n".join(sorted(os.environ)))' \
+  > "${TMP_DIR}/worker.keys"
 
-"${COMPOSE[@]" exec -T postgres   sh -c 'env | sed "s/=.*//" | sort -u'   > "${TMP_DIR/postgres.keys"
+"${COMPOSE[@]}" exec -T postgres \
+  sh -c 'env | sed "s/=.*//" | sort -u' \
+  > "${TMP_DIR}/postgres.keys"
 
-"${COMPOSE[@]" exec -T web   sh -c 'env | sed "s/=.*//" | sort -u'   > "${TMP_DIR/web.keys"
+"${COMPOSE[@]}" exec -T web \
+  sh -c 'env | sed "s/=.*//" | sort -u' \
+  > "${TMP_DIR}/web.keys"
 
-python - "${TMP_DIR" <<'PY'
+python - "${TMP_DIR}" <<'PY'
 from pathlib import Path
 import sys
 
 root = Path(sys.argv[1])
+
 
 def names(service: str) -> set[str]:
     return {
@@ -48,6 +57,7 @@ def names(service: str) -> set[str]:
         for line in (root / f"{service}.keys").read_text(encoding="utf-8").splitlines()
         if line.strip()
     }
+
 
 api = names("api")
 worker = names("worker")
@@ -100,8 +110,10 @@ worker_required = {
 }
 postgres_required = {"POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "PGDATA"}
 
+
 def fail(message: str) -> None:
     raise SystemExit(message)
+
 
 if missing := sorted(api_required - api):
     fail("API runtime is missing required environment keys: " + ", ".join(missing))
