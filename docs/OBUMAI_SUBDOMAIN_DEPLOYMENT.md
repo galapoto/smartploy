@@ -133,3 +133,28 @@ may not need to enter credentials again. SmartPloy still receives and verifies a
 Access application and does not accept a generic ObumAI chat token as application authority.
 
 No JWT is placed in the navigation URL or forwarded to ObumAI.
+
+
+## Obum Identity application authentication
+
+The customer-facing target is application-owned authentication through `auth.obumai.com`, not a
+Cloudflare Access login page.
+
+SmartPloy OIDC variables:
+
+~~~text
+SMARTPLOY_AUTH_MODE=hybrid
+SMARTPLOY_OIDC_ISSUER=https://auth.obumai.com
+SMARTPLOY_OIDC_CLIENT_ID=<registered-smartploy-client-id>
+SMARTPLOY_OIDC_REDIRECT_URI=https://smartploy.obumai.com/auth/callback
+SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI=https://smartploy.obumai.com/auth/logged-out
+SMARTPLOY_OIDC_SCOPE=openid profile email
+SMARTPLOY_SESSION_TTL_SECONDS=43200
+SMARTPLOY_OIDC_STATE_TTL_SECONDS=600
+~~~
+
+OIDC variables belong only in the API service environment. They must not be injected into worker,
+web or PostgreSQL containers.
+
+The committed production policy intentionally remains `SMARTPLOY_AUTH_MODE=cloudflare` until
+Obum Identity is deployed and the hybrid acceptance gate is ready.

@@ -104,3 +104,43 @@ authorization rules.
 
 Global logout should invalidate the central Obum Identity session and each
 application session through the supported OIDC logout mechanisms.
+
+
+## SmartPloy OIDC application session
+
+SmartPloy supports four authentication modes:
+
+- `disabled`: local development only;
+- `cloudflare`: current temporary customer gate;
+- `hybrid`: Obum Identity session first, Cloudflare Access fallback second;
+- `oidc`: Obum Identity session only.
+
+Obum Identity uses:
+
+- issuer: `https://auth.obumai.com`;
+- Authorization Code flow;
+- PKCE S256;
+- scopes: `openid profile email`;
+- exact callback: `https://smartploy.obumai.com/auth/callback`.
+
+Authlib performs OIDC discovery, state/nonce handling, PKCE and ID-token validation. Temporary
+state/nonce/code-verifier data is stored in PostgreSQL through the Authlib cache interface.
+
+After callback, SmartPloy creates its own opaque application session. The browser receives only
+`__Host-smartploy_session`; PostgreSQL stores its SHA256 hash. Provider access, refresh and ID tokens
+are not stored in the SmartPloy application-session table.
+
+## Cutover sequence
+
+1. Keep committed production mode `cloudflare`.
+2. Deploy `auth.obumai.com` and create the SmartPloy OIDC client.
+3. Link the existing owner's Obum Identity principal to the existing SmartPloy user/profile.
+4. Change production policy to `hybrid`.
+5. Verify login, callback, tenant identity, logout, and existing Cloudflare fallback.
+6. Verify silent SSO from ObumAI to SmartPloy.
+7. Change production policy to `oidc`.
+8. Run live acceptance while Cloudflare Access still exists as an emergency reversible control.
+9. Remove the customer-facing SmartPloy Cloudflare Access application only after OIDC production
+   acceptance and release evidence pass.
+
+Cloudflare Tunnel, DNS, TLS, WAF, DDoS/rate limiting and edge protections remain.

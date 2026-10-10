@@ -207,3 +207,11 @@ The production browser stays same-origin: Nginx serves the React build and proxi
 does not share its database with ObumAI.
 
 See `docs/OBUMAI_SUBDOMAIN_DEPLOYMENT.md`.
+
+
+## Obum Identity OIDC
+
+SmartPloy includes a dark OIDC application-authentication path for the future Obum Identity service at
+`auth.obumai.com`. It uses Authlib Authorization Code + PKCE, server-side OAuth state and opaque
+host-only SmartPloy sessions. Current committed production policy remains Cloudflare Access until an
+explicit hybrid/oidc cutover is separately verified.

@@ -56,7 +56,11 @@ class AccessSettings:
     network_timeout_seconds: int = 5
 
     @classmethod
-    def from_env(cls) -> "AccessSettings":
+    def from_env(
+        cls,
+        *,
+        require_enabled_in_production: bool = True,
+    ) -> "AccessSettings":
         environment = os.getenv("SMARTPLOY_ENVIRONMENT", "development").strip().casefold()
         if environment not in {"development", "test", "production"}:
             raise AccessConfigurationError(
@@ -68,7 +72,7 @@ class AccessSettings:
         audience = os.getenv("SMARTPLOY_ACCESS_AUDIENCE", "").strip()
         allowed_email = os.getenv("SMARTPLOY_ACCESS_ALLOWED_EMAIL", "").strip().casefold()
 
-        if environment == "production" and not enabled:
+        if environment == "production" and require_enabled_in_production and not enabled:
             raise AccessConfigurationError(
                 "SMARTPLOY_ACCESS_ENABLED must be true in production"
             )
