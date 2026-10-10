@@ -214,3 +214,36 @@ def test_live_acceptance_script_is_read_only_and_secret_safe():
     assert "docker compose down" not in text
     assert "git checkout" not in text
     assert "live_acceptance=pass" in text
+
+
+def test_release_evidence_script_is_private_read_only_and_secret_safe():
+    script = ROOT / "deploy/personal/scripts/release-evidence.sh"
+    text = script.read_text(encoding="utf-8")
+
+    subprocess.run(["bash", "-n", str(script)], check=True)
+
+    assert "format=smartploy-release-evidence-v1" in text
+    assert "deployed_sha_matches_code=true" in text
+    assert "preflight_passed=true" in text
+    assert "env_boundary_smoke_passed=true" in text
+    assert 'chmod 600 "${EVIDENCE_TMP}"' in text
+    assert 'chmod 600 "${FINAL}.sha256"' in text
+    assert 'sha256sum -c' in text
+    assert 'current code SHA does not match deployed-sha' in text
+    assert 'deployment state directory must not be group/world accessible' in text
+
+    assert "POSTGRES_PASSWORD" not in text
+    assert "SMARTPLOY_ACCESS_ISSUER" not in text
+    assert "SMARTPLOY_ACCESS_AUDIENCE" not in text
+    assert "SMARTPLOY_ACCESS_ALLOWED_EMAIL" not in text
+    assert "JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY" not in text
+    assert "KUNTAREKRY_FEED_URL" not in text
+    assert "OBUMAI_HTTP_HEADERS_JSON" not in text
+    assert "Cf-Access-Jwt-Assertion" not in text
+    assert "Authorization:" not in text
+    assert "Cookie:" not in text
+
+    assert "docker compose up" not in text
+    assert "docker compose down" not in text
+    assert "pg_dump" not in text
+    assert "pg_restore" not in text
