@@ -75,25 +75,27 @@ class PostgresPreparationRepository:
             preparation_contract=str(row[3]),
             job_snapshot_sha256=str(row[4]),
             evidence_sha256=str(row[5]),
-            score_snapshot=dict(row[6] or {}),
-            status=str(row[7]),
-            obum_job_id=str(row[8] or ""),
-            obum_client_request_id=str(row[9] or ""),
-            requested_at=row[10].isoformat() if row[10] else "",
-            updated_at=row[11].isoformat() if row[11] else "",
-            completed_at=row[12].isoformat() if row[12] else "",
-            result=dict(row[13] or {}),
-            raw_output=str(row[14] or ""),
-            error=str(row[15] or ""),
+            job_snapshot=dict(row[6] or {}),
+            evidence_snapshot=dict(row[7] or {}),
+            score_snapshot=dict(row[8] or {}),
+            status=str(row[9]),
+            obum_job_id=str(row[10] or ""),
+            obum_client_request_id=str(row[11] or ""),
+            requested_at=row[12].isoformat() if row[12] else "",
+            updated_at=row[13].isoformat() if row[13] else "",
+            completed_at=row[14].isoformat() if row[14] else "",
+            result=dict(row[15] or {}),
+            raw_output=str(row[16] or ""),
+            error=str(row[17] or ""),
         ).normalized()
 
     @staticmethod
     def _select_sql() -> str:
         return """
             SELECT package_id, canonical_key, profile_id, preparation_contract,
-                   job_snapshot_sha256, evidence_sha256, score_snapshot, status,
-                   obum_job_id, obum_client_request_id, requested_at, updated_at,
-                   completed_at, result, raw_output, error
+                   job_snapshot_sha256, evidence_sha256, job_snapshot, evidence_snapshot,
+                   score_snapshot, status, obum_job_id, obum_client_request_id,
+                   requested_at, updated_at, completed_at, result, raw_output, error
             FROM smartploy_application_preparations
         """
 
@@ -105,12 +107,12 @@ class PostgresPreparationRepository:
                     """
                     INSERT INTO smartploy_application_preparations (
                         package_id, canonical_key, profile_id, preparation_contract,
-                        job_snapshot_sha256, evidence_sha256, score_snapshot, status,
-                        obum_job_id, obum_client_request_id, requested_at, updated_at,
+                        job_snapshot_sha256, evidence_sha256, job_snapshot, evidence_snapshot,
+                        score_snapshot, status, obum_job_id, obum_client_request_id, requested_at, updated_at,
                         completed_at, result, raw_output, error
                     )
                     VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, '', '',
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, '', '',
                         %s::timestamptz, %s::timestamptz, NULL, %s, '', ''
                     )
                     ON CONFLICT (package_id) DO NOTHING
@@ -123,6 +125,8 @@ class PostgresPreparationRepository:
                         value.preparation_contract,
                         value.job_snapshot_sha256,
                         value.evidence_sha256,
+                        Jsonb(value.job_snapshot),
+                        Jsonb(value.evidence_snapshot),
                         Jsonb(value.score_snapshot),
                         value.status,
                         value.requested_at,
