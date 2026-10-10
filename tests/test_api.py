@@ -24,6 +24,8 @@ def test_health_and_manual_ingest_without_obumai():
     assert health.status_code == 200
     assert health.json()["obumai_configured"] is False
     assert health.json()["profile"]["approved_fact_count"] == 0
+    assert health.json()["worker"]["configured"] is False
+    assert health.json()["worker"]["ready"] is False
 
     response = api.post(
         "/api/v1/jobs/ingest",
@@ -96,3 +98,32 @@ def test_application_summary_and_dashboard_are_read_only_truthful_views():
     assert body["external_actions_authorized"] is False
     assert body["top_matches"] == []
     assert body["possible_matches"] == []
+    assert body["worker"]["configured"] is False
+    assert body["worker"]["tasks"] == []
+
+    worker = api.get("/api/v1/worker/tasks")
+    assert worker.status_code == 200
+    assert worker.json()["configured"] is False
+    assert worker.json()["count"] == 0
+
+
+def test_worker_schema_failure_is_reported_without_breaking_memory_dashboard(monkeypatch):
+    monkeypatch.setenv("SMARTPLOY_DATABASE_URL", "not-a-postgresql-dsn")
+    api = client()
+
+    worker = api.get("/api/v1/worker/tasks")
+    assert worker.status_code == 200
+    body = worker.json()
+    assert body["configured"] is True
+    assert body["ready"] is False
+    assert body["tasks"] == []
+    assert body["error"]
+
+    dashboard = api.get("/api/v1/dashboard")
+    assert dashboard.status_code == 200
+    assert dashboard.json()["worker"]["ready"] is False
+
+    health = api.get("/healthz")
+    assert health.status_code == 200
+    assert health.json()["ok"] is True
+    assert health.json()["worker"]["ready"] is False

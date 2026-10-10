@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import os
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +18,7 @@ from .preparations import PreparationNotEligible
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
 from .service import SmartployService
 from .storage import MemoryJobRepository, PostgresJobRepository
+from .worker_schedule import PostgresWorkerTaskRepository
 
 
 class SourcePolicyPayload(BaseModel):
@@ -67,6 +69,84 @@ class ObumAITaskPayload(BaseModel):
     instructions: str = Field(default="", max_length=20_000)
 
 
+def _sanitize_worker_metadata(value: Any) -> Any:
+    blocked_terms = (
+        "password",
+        "secret",
+        "credential",
+        "authorization",
+        "subscription_key",
+        "api_key",
+        "access_token",
+        "http_headers",
+    )
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            folded = str(key).casefold()
+            if any(term in folded for term in blocked_terms):
+                continue
+            result[str(key)] = _sanitize_worker_metadata(item)
+        return result
+    if isinstance(value, list):
+        return [_sanitize_worker_metadata(item) for item in value]
+    return value
+
+
+def _worker_snapshot() -> dict[str, Any]:
+    dsn = os.getenv("SMARTPLOY_DATABASE_URL", "").strip()
+    if not dsn:
+        return {
+            "configured": False,
+            "ready": False,
+            "count": 0,
+            "tasks": [],
+            "error": "",
+        }
+
+    try:
+        tasks = PostgresWorkerTaskRepository(dsn).list()
+    except Exception as exc:
+        return {
+            "configured": True,
+            "ready": False,
+            "count": 0,
+            "tasks": [],
+            "error": type(exc).__name__,
+        }
+
+    now = datetime.now(timezone.utc)
+    projected = []
+    for task in tasks:
+        lease_active = bool(task.lease_until and task.lease_until > now)
+        projected.append(
+            {
+                "task_id": task.task_id,
+                "task_kind": task.task_kind,
+                "enabled": task.enabled,
+                "cadence_seconds": task.cadence_seconds,
+                "next_run_at": task.next_run_at.isoformat(),
+                "last_started_at": task.last_started_at.isoformat() if task.last_started_at else "",
+                "last_completed_at": (
+                    task.last_completed_at.isoformat() if task.last_completed_at else ""
+                ),
+                "last_status": task.last_status,
+                "consecutive_failures": task.consecutive_failures,
+                "last_error": task.last_error,
+                "lease_active": lease_active,
+                "lease_until": task.lease_until.isoformat() if task.lease_until else "",
+                "metadata": _sanitize_worker_metadata(dict(task.metadata or {})),
+            }
+        )
+    return {
+        "configured": True,
+        "ready": True,
+        "count": len(projected),
+        "tasks": projected,
+        "error": "",
+    }
+
+
 def _build_service() -> SmartployService:
     obum_settings = ObumAISettings.from_env()
     client = ObumAIClient(obum_settings) if obum_settings else None
@@ -111,12 +191,19 @@ def create_app(service: SmartployService | None = None) -> FastAPI:
     @app.get("/healthz")
     def health() -> dict[str, Any]:
         storage = active.storage_status()
+        worker = _worker_snapshot()
         return {
             "ok": bool(storage.get("ready")),
             "service": "smartploy",
             "storage": storage,
             "profile": active.profile_summary(),
             "obumai_configured": active.obumai is not None,
+            "worker": {
+                "configured": worker["configured"],
+                "ready": worker["ready"],
+                "count": worker["count"],
+                "error": worker["error"],
+            },
             "external_actions_authorized": False,
         }
 
@@ -237,9 +324,16 @@ def create_app(service: SmartployService | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="application not found")
         return item.to_dict()
 
+    @app.get("/api/v1/worker/tasks")
+    def worker_tasks() -> dict[str, Any]:
+        return _worker_snapshot()
+
     @app.get("/api/v1/dashboard")
     def dashboard() -> dict[str, Any]:
-        return active.dashboard()
+        return {
+            **active.dashboard(),
+            "worker": _worker_snapshot(),
+        }
 
     @app.get("/api/v1/preparations")
     def list_preparations(limit: int = 100) -> dict[str, Any]:

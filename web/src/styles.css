@@ -292,7 +292,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid rgba(33, 97, 232, 0.2
   font-weight: 800;
 }
 
-.health-row, .application-row {
+.health-row, .application-row, .worker-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px 10px;
@@ -300,17 +300,20 @@ button:focus-visible, a:focus-visible { outline: 3px solid rgba(33, 97, 232, 0.2
   border-bottom: 1px solid #edf0f4;
   align-items: center;
 }
-.health-row:last-child, .application-row:last-child { border-bottom: 0; }
-.health-row > div, .application-row > div { display: grid; gap: 2px; min-width: 0; }
-.health-row strong, .application-row strong { font-size: 12px; text-transform: capitalize; }
-.health-row small, .application-row small {
+.health-row:last-child, .application-row:last-child, .worker-row:last-child { border-bottom: 0; }
+.health-row > div, .application-row > div, .worker-row > div { display: grid; gap: 2px; min-width: 0; }
+.health-row strong, .application-row strong, .worker-row strong { font-size: 12px; text-transform: capitalize; }
+.health-row small, .application-row small, .worker-row small {
   color: #8994a5;
   font-size: 10px;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
 }
-.health-row p { grid-column: 1 / -1; color: #a13c3c; font-size: 10px; margin: 0; }
+.health-row p, .worker-row p { grid-column: 1 / -1; color: #a13c3c; font-size: 10px; margin: 0; }
+.worker-list { max-height: 360px; overflow: auto; }
+.worker-warning { display: grid; gap: 4px; color: #9c3838; }
+.worker-warning small { color: #9c3838; }
 .health-status {
   font-size: 10px;
   font-weight: 800;
@@ -322,6 +325,8 @@ button:focus-visible, a:focus-visible { outline: 3px solid rgba(33, 97, 232, 0.2
 .status-healthy { color: #176b4b; background: #e6f6ed; }
 .status-degraded { color: #8d6311; background: #fff5d9; }
 .status-failed { color: #9c3838; background: #ffebeb; }
+.status-running { color: #2358a5; background: #e8f0ff; }
+.status-never, .status-disabled { color: #69758a; background: #edf1f5; }
 .application-row > span { font-size: 10px; color: #738096; }
 
 .pipeline-list { display: grid; gap: 8px; }
