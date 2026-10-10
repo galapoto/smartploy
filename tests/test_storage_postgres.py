@@ -19,7 +19,13 @@ def repository():
     with connect(DSN) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "TRUNCATE smartploy_source_observations, smartploy_source_health, smartploy_jobs RESTART IDENTITY"
+                """
+                TRUNCATE smartploy_application_preparations,
+                         smartploy_source_observations,
+                         smartploy_source_health,
+                         smartploy_jobs
+                RESTART IDENTITY
+                """
             )
         conn.commit()
     return repo

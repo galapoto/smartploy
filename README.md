@@ -27,7 +27,11 @@ Smartploy is **not** an ObumAI submodule.
 - authorized/configured Kuntarekry RSS/XML parser and worker;
 - FastAPI job/source-health service;
 - ObumAI durable-job client using deterministic request IDs;
-- fail-closed separation between AI reasoning and external application actions.
+- fail-closed separation between AI reasoning and external application actions;
+- approved-evidence Fit/Priority scoring;
+- immutable application-draft packages for eligible 82%+ jobs;
+- ObumAI-backed CV-tailoring/cover-letter/application-answer draft contract;
+- duplicate-safe preparation queue and refresh workers.
 
 ## Run locally
 
@@ -80,3 +84,23 @@ Current durable product-agent endpoints:
 
 See `docs/ARCHITECTURE.md`, `docs/PERSISTENCE.md`,
 `docs/OBUMAI_INTEGRATION.md`, and `docs/SOURCE_STRATEGY.md`.
+
+
+## Application draft preparation
+
+After PostgreSQL migrations and an approved profile are configured, queue high-confidence jobs:
+
+```bash
+python scripts/prepare_eligible.py
+```
+
+Refresh queued/running ObumAI draft jobs:
+
+```bash
+python scripts/refresh_preparations.py
+```
+
+The default automatic gate is Fit >= 82, Priority >= 82, no mandatory gaps, and a current job source.
+This creates drafts only. Smartploy does not upload or submit applications in this workflow.
+
+See `docs/APPLICATION_PREPARATION.md`.
