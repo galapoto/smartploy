@@ -24,7 +24,7 @@ Smartploy is **not** an ObumAI submodule.
 - saved hard filters;
 - PostgreSQL durable repository plus in-memory development mode;
 - durable source-health state;
-- authorized/configured Kuntarekry RSS/XML parser and worker;\n- credential-gated Job Market Finland P67 v2 national job-source adapter;
+- authorized/configured Kuntarekry RSS/XML parser and worker;\n- credential-gated Job Market Finland P67 v2 national job-source adapter;\n- read-only SmartRecruiters and Lever direct-employer ATS connectors;
 - FastAPI job/source-health service;
 - approved-evidence Fit/Priority scoring;
 - immutable application-draft packages for eligible high-confidence jobs;
@@ -157,3 +157,18 @@ incrementally and never treats absence from a partial query as deletion.
 
 Retrieved Job Market Finland postings are currently display/score-only in Smartploy: application
 preparation via ObumAI is blocked by default because the API terms restrict third-party forwarding.
+
+
+## Direct employer ATS polling
+
+Create a local registry from `config/public_ats_sources.example.json`, then:
+
+~~~bash
+export SMARTPLOY_DATABASE_URL='postgresql://...'
+export SMARTPLOY_PUBLIC_ATS_SOURCES_FILE=config/public_ats_sources.json
+python scripts/poll_public_ats.py
+~~~
+
+The current direct ATS connectors read public SmartRecruiters/Lever postings only. They do not call
+application-submission APIs. Missing postings are retired only after a complete successful tenant
+snapshot.
