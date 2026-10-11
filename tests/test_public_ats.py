@@ -532,7 +532,7 @@ def test_lever_only_imports_explicit_finnish_locations_not_office_substrings():
     adapter = LeverAdapter(
         PublicATSSourceConfig(
             "lever", "location-demo", "Location Demo", location_terms=("fi",),
-        ), runtime(), http_client=client,
+        ), runtime(page_size=3), http_client=client,
     )
     try:
         observations = adapter.fetch_all()
