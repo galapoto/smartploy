@@ -127,21 +127,49 @@ export default function App() {
   });
   const uploadRef = useRef<HTMLInputElement>(null);
 
+  // Ignore old responses after a later refresh or a user's preference change.
+  // The 60-second polling interval may overlap slow model/provider requests.
+  const loadGeneration = useRef(0);
   const load = useCallback(async (quiet = false) => {
+    const generation = ++loadGeneration.current;
     if (quiet) setRefreshing(true); else setLoading(true);
     try {
-      const [board, apps, ready, savedCV, profile, savedJobs, who, prefs, results, model] = await Promise.all([
-        getDashboard(), getApplications(), getHealth(), getCV(), getProfileFacts(), getJobs(), getSession(),
-        getSearchPreferences(), getSearchResults(), getLocalAIStatus()
+      const [essential, secondary] = await Promise.all([
+        Promise.all([
+          getDashboard(), getSearchPreferences(), getSearchResults(), getSession()
+        ]),
+        Promise.allSettled([
+          getApplications(), getHealth(), getCV(), getProfileFacts(),
+          getJobs(), getLocalAIStatus()
+        ])
       ]);
-      setDashboard(board); setApplications(apps.applications); setHealth(ready);
-      setCV(savedCV); setFacts(profile.facts); setJobs(savedJobs.jobs); setSession(who);
-      setPreferences(prefs); setDiscovery(results); setLocalAI(model);
-      setError("");
+      if (generation !== loadGeneration.current) return;
+
+      const [board, prefs, results, who] = essential;
+      setDashboard(board); setPreferences(prefs); setDiscovery(results); setSession(who);
+
+      // Optional tools must not lock users out of job discovery or onboarding.
+      // Keep the most recent good data for each isolated panel on an outage.
+      const [apps, ready, savedCV, profile, savedJobs, model] = secondary;
+      if (apps.status === "fulfilled") setApplications(apps.value.applications);
+      if (ready.status === "fulfilled") setHealth(ready.value);
+      if (savedCV.status === "fulfilled") setCV(savedCV.value);
+      if (profile.status === "fulfilled") setFacts(profile.value.facts);
+      if (savedJobs.status === "fulfilled") setJobs(savedJobs.value.jobs);
+      if (model.status === "fulfilled") setLocalAI(model.value);
+      else setLocalAI(null);
+
+      setError(secondary.some((result) => result.status === "rejected")
+        ? "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria."
+        : "");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
+      if (generation === loadGeneration.current) {
+        setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
+      }
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (generation === loadGeneration.current) {
+        setLoading(false); setRefreshing(false);
+      }
     }
   }, []);
 
@@ -153,6 +181,8 @@ export default function App() {
 
   const navigate = (target: Page) => { setPage(target); setMobileNav(false); setNotice(""); };
   async function saveSearchPreferences(next: SearchPreferencesUpdate) {
+    // A pending automatic refresh must never overwrite this user's save.
+    ++loadGeneration.current;
     const result = await updateSearchPreferences(next);
     setPreferences(result);
     const fresh = await getSearchResults();
