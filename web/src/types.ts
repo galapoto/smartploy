@@ -336,6 +336,7 @@ export interface SearchPreferences {
   languages: string[];
   work_modes: string[];
   keywords: string[];
+  skills: string[];
   seniority: string;
   revision: number;
   updated_at: string;
