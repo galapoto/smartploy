@@ -227,3 +227,32 @@ export interface ApplicationWorkspacesResponse {
   workspaces: ApplicationWorkspace[];
   count: number;
 }
+
+
+export interface LocalAIStatus {
+  configured: boolean;
+  ready: boolean;
+  provider: "disabled" | "local_obumai_ollama";
+  model: string;
+  external_ai_forwarding: false;
+}
+
+export interface LocalAIProposal {
+  schema: "smartploy.local_draft.v1";
+  cv_headline: string;
+  cv_summary: string;
+  cover_letter: string;
+  highlights: { text: string; evidence_fact_ids: string[] }[];
+  risks: string[];
+  review_notes: string[];
+}
+
+export interface LocalAISuggestion {
+  proposal: LocalAIProposal;
+  provider: string;
+  model: string;
+  approved_evidence_ids: string[];
+  external_actions_performed: false;
+  suggestions_applied: false;
+  requires_owner_review: true;
+}
