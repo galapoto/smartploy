@@ -77,6 +77,23 @@ SMARTPLOY_OPERATION_LOCK_HELD=1 bash "${SCRIPT_DIR}/backup.sh"
 # be treated as successful deployment of a newly built Git revision.
 # Recreate only application services, never the existing PostgreSQL volume.
 "${COMPOSE[@]}" up -d --wait --wait-timeout 120 --no-deps --force-recreate api
+
+# Explicitly opted-in SmartPloy model reads are allowed only on a dedicated
+# INTERNAL Docker network shared with ObumAI's Ollama. Never expose 11434,
+# join ObumAI's database network or turn on model access in CI by default.
+LOCAL_AI_ENABLED="$(read_env_value SMARTPLOY_LOCAL_AI_ENABLED)"
+if [[ "$LOCAL_AI_ENABLED" == "true" ]]; then
+  LOCAL_AI_URL="$(read_env_value SMARTPLOY_LOCAL_AI_BASE_URL)"
+  if [[ "$LOCAL_AI_URL" != "http://ollama:11434" ]]; then
+    echo "SmartPloy local AI must use the approved model-only bridge endpoint." >&2
+    exit 1
+  fi
+  export SMARTPLOY_BRIDGE_MODEL="$(read_env_value SMARTPLOY_LOCAL_AI_MODEL)"
+  SMARTPLOY_BRIDGE_MODEL="${SMARTPLOY_BRIDGE_MODEL:-qwen3:4b}"
+  export SMARTPLOY_BRIDGE_MODEL
+  bash "${SCRIPT_DIR}/bridge-local-ollama.sh" --connect
+fi
+
 "${COMPOSE[@]}" up -d --no-deps --force-recreate worker web
 
 HEALTH_FILE="$(mktemp)"
