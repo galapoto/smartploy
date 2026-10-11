@@ -149,8 +149,9 @@ export default function App() {
 
       // Optional tools must not lock users out of job discovery or onboarding.
       // Keep the most recent good data for each isolated panel on an outage.
-      const [apps, ready, savedCV, profile, savedJobs, model] = await secondaryRequest;
+      const secondary = await secondaryRequest;
       if (generation !== loadGeneration.current) return;
+      const [apps, ready, savedCV, profile, savedJobs, model] = secondary;
       if (apps.status === "fulfilled") setApplications(apps.value.applications);
       if (ready.status === "fulfilled") setHealth(ready.value);
       if (savedCV.status === "fulfilled") setCV(savedCV.value);
