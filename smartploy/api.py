@@ -865,6 +865,11 @@ def create_app(
         workspace_id: str, payload: WorkspaceEditPayload, request: Request
     ) -> dict[str, Any]:
         tenant, _ = tenant_context(request)
+        if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This application has an observed employer receipt and its submitted documents are frozen",
+            )
         try:
             item = app.state.workspace_repository.edit(
                 tenant.profile_repository.profile_id, workspace_id,
