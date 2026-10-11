@@ -55,6 +55,8 @@ def summarize(
             "configured": bool(local_ai.get("configured")),
             "ready": bool(local_ai.get("ready")),
             "model": str(local_ai.get("model", ""))[:95],
+            "endpoint_reachable": bool(local_ai.get("endpoint_reachable")),
+            "failure_category": str(local_ai.get("failure_category", "disabled"))[:40],
             "external_ai_forwarding": False,
         },
         "browser_extension_installed": "cannot_be_verified_from_server",

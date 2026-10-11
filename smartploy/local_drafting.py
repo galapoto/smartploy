@@ -179,19 +179,32 @@ class LocalDraftClient:
             self.client.close()
 
     def status(self) -> dict:
-        response = {"configured": self.settings.enabled, "ready": False,
-                    "provider": "local_obumai_ollama" if self.settings.enabled else "disabled",
-                    "model": self.settings.model if self.settings.enabled else "",
-                    "external_ai_forwarding": False}
+        response = {
+            "configured": self.settings.enabled,
+            "ready": False,
+            "provider": "local_obumai_ollama" if self.settings.enabled else "disabled",
+            "model": self.settings.model if self.settings.enabled else "",
+            "external_ai_forwarding": False,
+            "endpoint_reachable": False,
+            "failure_category": "disabled" if not self.settings.enabled else "endpoint_unreachable",
+        }
         if not self.settings.enabled:
             return response
         try:
-            answer = self._http().get("/api/tags", timeout=4)
+            answer = self._http().get("/api/tags", timeout=5)
             answer.raise_for_status()
-            names = [str(item.get("name", "")) for item in answer.json().get("models", [])
-                     if isinstance(item, dict)]
+            payload = answer.json()
+            models = payload["models"]
+            if not isinstance(models, list):
+                response["failure_category"] = "invalid_model_catalog"
+                return response
+            names = [str(item.get("name", "")) for item in models if isinstance(item, dict)]
+            response["endpoint_reachable"] = True
             response["ready"] = self.settings.model in names
+            response["failure_category"] = "ready" if response["ready"] else "model_not_installed"
         except (httpx.HTTPError, ValueError, TypeError, KeyError):
+            # Deliberately return fixed category names only. Provider errors
+            # and JSON bodies may contain private prompts or credentials.
             pass
         return response
 

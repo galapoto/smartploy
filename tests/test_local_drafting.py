@@ -176,3 +176,40 @@ def test_api_suggestion_requires_owner_consent_revision_and_never_changes_draft(
     assert api.post(endpoint, json={
         "expected_revision": 99, "acknowledge_local_ai_processing": True
     }).status_code == 409
+
+
+def test_private_model_status_explains_unreachable_vs_missing_model_without_error_echo():
+    settings = LocalDraftSettings(enabled=True, base_url="http://ollama:11434", model="qwen3:4b")
+    def absent(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"models": [{"name": "qwen3:4b-instruct"}]})
+
+    missing = LocalDraftClient(
+        settings,
+        client=httpx.Client(base_url="http://ollama:11434", transport=httpx.MockTransport(absent)),
+    ).status()
+    assert missing["configured"] is True
+    assert missing["endpoint_reachable"] is True
+    assert missing["ready"] is False
+    assert missing["failure_category"] == "model_not_installed"
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="Credentials: SECRET_PRIVATE_VALUE")
+
+    down = LocalDraftClient(
+        settings,
+        client=httpx.Client(base_url="http://ollama:11434", transport=httpx.MockTransport(refused)),
+    ).status()
+    assert down["endpoint_reachable"] is False
+    assert down["failure_category"] == "endpoint_unreachable"
+    assert "SECRET_PRIVATE_VALUE" not in json.dumps(down)
+
+    def available(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"models": [{"name": "qwen3:4b"}]})
+
+    ready = LocalDraftClient(
+        settings,
+        client=httpx.Client(base_url="http://ollama:11434", transport=httpx.MockTransport(available)),
+    ).status()
+    assert ready["endpoint_reachable"] is True
+    assert ready["ready"] is True
+    assert ready["failure_category"] == "ready"
