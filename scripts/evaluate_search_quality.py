@@ -77,6 +77,8 @@ def _candidate(case: dict[str, Any]):
         "requirements": job.get("requirements", []),
         "nice_to_have": job.get("nice_to_have", []),
         "application_url": url,
+        # Synthetic fixtures cannot authorize external model forwarding.
+        "external_ai_forwarding_allowed": False,
     }
     observation = SourceObservation(
         source_id="synthetic-eval", source_mode="manual", source_url=url,
