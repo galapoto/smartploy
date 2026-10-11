@@ -23,6 +23,15 @@ role-family match is promoted; an extra job-family qualifier such as
 "Explore more" or via explicit keyword matches. It never converts a matching
 job title into an assertion that the applicant has that qualification.
 
+A target job title that **explicitly says** Junior/Senior also conveys a
+narrow seniority preference even when the separate dropdown is set to
+"Any level". Known conflicting titles stay visible under "Explore more".
+Unknown advertised levels stay discoverable with an uncertainty note.
+If the user also saved a broader overlapping role (e.g. both "Junior Data
+Analyst" and "Data Analyst") or both junior and senior targets, the matcher
+does **not** silently invent a single-level restriction. A non-"Any"
+experience-level dropdown remains the user's explicit controlling setting.
+
 Finnish `vanhempi` (senior), `nuorempi` and `juniori` (entry) are
 recognized *when explicit in a title*. Unknown seniority remains unknown.
 
