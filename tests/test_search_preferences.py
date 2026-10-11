@@ -177,6 +177,44 @@ def test_unknown_job_seniority_remains_discoverable_not_falsely_matched():
     assert result["recommendations"][0]["mismatched_fields"] == []
 
 
+
+def test_keyword_matching_rejects_substrings_and_accepts_full_words():
+    pref = revise_preferences("p", search_settings(
+        roles=[], keywords=["AI"], skills=[], locations=[], languages=[],
+        work_modes=[], seniority="any",
+    ), revision=0)
+    unrelated = job("Paid Marketing Specialist")
+    result = search_jobs([unrelated], pref)
+    assert result["recommendations"] == []
+    assert len(result["broader"]) == 1
+    assert result["broader"][0]["preference_score"] == 0
+    true_match = job("AI Engineer")
+    assert len(search_jobs([true_match], pref)["recommendations"]) == 1
+
+
+def test_skill_matching_rejects_incidental_substrings():
+    pref = revise_preferences("p", search_settings(
+        roles=["Data Analyst"], keywords=[], skills=["SQL"], locations=[],
+        languages=[], work_modes=[], seniority="any",
+    ), revision=0)
+    no_sql = job("Data Analyst NoSQL")
+    scored = search_jobs([no_sql], pref)["recommendations"][0]
+    assert not any("Your stated skills mentioned" in reason for reason in scored["reasons"])
+    assert scored["preference_score"] < 100
+
+
+def test_phrase_matching_supports_common_job_title_separators():
+    from smartploy.search_preferences import _mentions_phrase
+    assert _mentions_phrase("Senior data-engineer", "data engineer")
+    assert _mentions_phrase("Senior data_engineer", "data engineer")
+    assert _mentions_phrase("Cloud/data engineer", "data engineer")
+    assert _mentions_phrase("C++ experience", "C++")
+    assert _mentions_phrase("Node.js / Python", "Node.js")
+    assert not _mentions_phrase("ongoing", "Go")
+    assert not _mentions_phrase("NoSQL developer", "SQL")
+    assert not _mentions_phrase("paid media", "AI")
+
+
 def test_general_mode_ignores_saved_personal_criteria():
     prefs = revise_preferences("p", search_settings(
         mode="general", roles=["Data Analyst"], keywords=["python"],
