@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
 from html import escape
