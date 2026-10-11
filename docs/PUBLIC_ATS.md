@@ -35,6 +35,18 @@ Example:
 ]
 ~~~
 
+For read-only country/region-specific discovery, a tenant may optionally
+declare `location_terms` as an array of 2-80-character geographic labels
+(for example `["Finland", "Helsinki", "Espoo"]`). Only dedicated
+location/country fields are considered. The country code `FI` matches
+when `Finland` is configured. An unmatched/unknown location is excluded
+from the complete selected-location snapshot; counts of exclusions are
+reported in source health.
+
+An operator-reviewed first pilot registry is available in
+`config/finland_public_ats_pilot.json`, with activation instructions in
+`docs/FINLAND_ATS_PILOT.md`. It is not enabled by default.
+
 Tenant slugs accept only letters, digits and hyphens. No URL field exists, so a registry entry cannot
 redirect Smartploy to an arbitrary host.
 
