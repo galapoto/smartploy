@@ -1,0 +1,89 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+
+import SearchResultsPanel from "./SearchResultsPanel";
+import type { SearchResults, SearchJobCard } from "./types";
+
+const baseJob = {
+  company: "Example Oy", role_title: "Junior Data Analyst", location: "Helsinki",
+  language: "English", work_mode: "remote",
+  employer_sector: "private" as const, source_current: true, application_url: "https://jobs.example.fi/analyst",
+  source_ids: ["lever"], source_attribution: "Public ATS", posted_at: "2026-10-11T10:00:00Z",
+  first_seen_at: "2026-10-11T10:00:00Z", last_seen_at: "2026-10-11T10:00:00Z",
+  deadline: "", ai_preparation_allowed: true,
+};
+
+const job: SearchJobCard = {
+  canonical_key: "lever-analyst", job: baseJob,
+  preference_score: null, reasons: [], unknown_fields: [], lane: "all",
+};
+const general: SearchResults = {
+  mode: "general", completed: true, available_count: 2,
+  recommendations: [], broader: [], all_jobs: [
+    job,
+    {
+      ...job, canonical_key: "lever-tester", lane: "all",
+      job: { ...baseJob, role_title: "Software Tester", company: "Quality Oy", location: "Espoo" },
+    },
+  ],
+  score_kind: "none", external_actions_authorized: false,
+};
+const personalized: SearchResults = {
+  ...general, mode: "personalized", all_jobs: [],
+  score_kind: "preference_alignment_not_verified_qualification",
+  recommendations: [{
+    ...job, lane: "recommended", preference_score: 87,
+    reasons: ["Job title matches Data analyst", "Preferred location"],
+    unknown_fields: ["Experience level not specified"],
+  }],
+  broader: [],
+};
+
+const common = {
+  search: "", sector: "all" as const,
+  onSector: vi.fn(), view: "top" as const,
+  onView: vi.fn(), displayMode: "heatmap" as const,
+  onToggleDisplay: vi.fn(), currentPage: "jobs" as const,
+  busyKey: "", onPrepare: vi.fn(), onAllJobs: vi.fn(),
+  onChangeCriteria: vi.fn(), onChangeMode: vi.fn(),
+};
+
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+describe("job discovery mode semantics", () => {
+  it("renders all general listings without any score or inferred fit percentage", () => {
+    render(<SearchResultsPanel {...common} data={general} />);
+    expect(screen.getByText("Junior Data Analyst")).toBeTruthy();
+    expect(screen.getByText("Software Tester")).toBeTruthy();
+    expect(screen.getByText(/2 current job listings/i)).toBeTruthy();
+    expect(screen.queryByText(/87% search match/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /why shown/i })).toBeNull();
+    expect(screen.getAllByText("General listing")).toHaveLength(2);
+  });
+
+  it("filters current listings client side without changing saved preferences", () => {
+    render(<SearchResultsPanel {...common} data={general} search="tester" />);
+    expect(screen.queryByText("Junior Data Analyst")).toBeNull();
+    expect(screen.getByText("Software Tester")).toBeTruthy();
+    expect(common.onChangeCriteria).not.toHaveBeenCalled();
+  });
+
+  it("explains preference scores and uncertainty, never claims eligibility verified", () => {
+    render(<SearchResultsPanel {...common} data={personalized} />);
+    expect(screen.getByText(/87% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /why shown/i }));
+    expect(screen.getByText(/Job title matches Data analyst/i)).toBeTruthy();
+    expect(screen.getByText(/Experience level not specified/i)).toBeTruthy();
+    expect(screen.getByText(/not a verified skills or eligibility assessment/i)).toBeTruthy();
+  });
+
+  it("requires an explicit action to prepare or change search mode", () => {
+    render(<SearchResultsPanel {...common} data={general} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /prepare documents/i })[0]);
+    expect(common.onPrepare).toHaveBeenCalledOnce();
+    expect(common.onPrepare).not.toHaveBeenCalledWith("anything else");
+    fireEvent.click(screen.getByRole("button", { name: /personalized/i }));
+    expect(common.onChangeMode).toHaveBeenCalledWith("personalized");
+  });
+});

@@ -127,21 +127,72 @@ export default function App() {
   });
   const uploadRef = useRef<HTMLInputElement>(null);
 
+  // Ignore old responses after a later refresh or a user's preference change.
+  // The 60-second polling interval may overlap slow model/provider requests.
+  const loadGeneration = useRef(0);
+  const lastSessionIdentity = useRef<string | null>(null);
   const load = useCallback(async (quiet = false) => {
+    const generation = ++loadGeneration.current;
     if (quiet) setRefreshing(true); else setLoading(true);
+    // Start the slower optional requests in parallel, without making first
+    // use wait for AI reachability, CV extraction or application history.
+    const secondaryRequest = Promise.allSettled([
+      getApplications(), getHealth(), getCV(), getProfileFacts(),
+      getJobs(), getLocalAIStatus()
+    ]);
     try {
-      const [board, apps, ready, savedCV, profile, savedJobs, who, prefs, results, model] = await Promise.all([
-        getDashboard(), getApplications(), getHealth(), getCV(), getProfileFacts(), getJobs(), getSession(),
-        getSearchPreferences(), getSearchResults(), getLocalAIStatus()
+      const [board, prefs, results, who] = await Promise.all([
+        getDashboard(), getSearchPreferences(), getSearchResults(), getSession()
       ]);
-      setDashboard(board); setApplications(apps.applications); setHealth(ready);
-      setCV(savedCV); setFacts(profile.facts); setJobs(savedJobs.jobs); setSession(who);
-      setPreferences(prefs); setDiscovery(results); setLocalAI(model);
-      setError("");
+      if (generation !== loadGeneration.current) return;
+      const identity = JSON.stringify([
+        Boolean(who.authenticated),
+        who.user_id || who.profile_id || who.subject_fingerprint || who.email || "",
+        who.auth_source || "",
+        // The server determines tenancy; email here is only a legacy UI fallback.
+      ]);
+      if (lastSessionIdentity.current !== null && identity !== lastSessionIdentity.current) {
+        // A browser can change signed-in accounts while the SPA remains open.
+        // Never show the previous account's CV, facts or application history.
+        setApplications([]); setCV({ present: false }); setFacts([]);
+        setJobs([]); setHealth(null); setLocalAI(null);
+        setSelectedWorkspaceId("");
+      }
+      lastSessionIdentity.current = identity;
+      setDashboard(board); setPreferences(prefs); setDiscovery(results); setSession(who);
+      // Only essential search requests govern navigation and refresh spinners.
+      setLoading(false); setRefreshing(false); setError("");
+
+      // Optional tools must not lock users out of job discovery or onboarding.
+      // Fail closed for PRIVATE data: never retain a previous account's CV
+      // or application history when those API reads cannot be authenticated.
+      const secondary = await secondaryRequest;
+      if (generation !== loadGeneration.current) return;
+      const [apps, ready, savedCV, profile, savedJobs, model] = secondary;
+      setApplications(apps.status === "fulfilled" ? apps.value.applications : []);
+      setHealth(ready.status === "fulfilled" ? ready.value : null);
+      setCV(savedCV.status === "fulfilled" ? savedCV.value : { present: false });
+      setFacts(profile.status === "fulfilled" ? profile.value.facts : []);
+      setJobs(savedJobs.status === "fulfilled" ? savedJobs.value.jobs : []);
+      setLocalAI(model.status === "fulfilled" ? model.value : null);
+
+      setError(secondary.some((result) => result.status === "rejected")
+        ? "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria."
+        : "");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
+      if (generation === loadGeneration.current) {
+        // If essential authenticated APIs fail, do not keep showing the
+        // previous user's private workspace as if the session were current.
+        lastSessionIdentity.current = null;
+        setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
+        setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
+        setHealth(null); setLocalAI(null); setSelectedWorkspaceId("");
+        setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
+      }
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (generation === loadGeneration.current) {
+        setLoading(false); setRefreshing(false);
+      }
     }
   }, []);
 
@@ -153,6 +204,9 @@ export default function App() {
 
   const navigate = (target: Page) => { setPage(target); setMobileNav(false); setNotice(""); };
   async function saveSearchPreferences(next: SearchPreferencesUpdate) {
+    // A pending automatic refresh must never overwrite this user's save.
+    ++loadGeneration.current;
+    setRefreshing(false);
     const result = await updateSearchPreferences(next);
     setPreferences(result);
     const fresh = await getSearchResults();

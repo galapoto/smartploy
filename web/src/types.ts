@@ -174,6 +174,11 @@ export interface SessionInfo {
   authenticated: boolean;
   email?: string;
   auth_source?: string;
+  // Server-issued identity, not user-editable profile data. Emails are not
+  // globally unique identity keys and must never be used for account binding.
+  user_id?: string;
+  profile_id?: string;
+  subject_fingerprint?: string;
 }
 
 export interface SavedJob {
