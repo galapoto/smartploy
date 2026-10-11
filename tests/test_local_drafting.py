@@ -125,7 +125,7 @@ def test_local_model_rejects_unsupported_evidence_and_oversize_body():
         return httpx.Response(200, json={"response": json.dumps(bad)})
     local = LocalDraftClient(
         LocalDraftSettings(enabled=True, base_url="http://host.docker.internal:11434"),
-        client=httpx.Client(transport=httpx.MockTransport(respond)),
+        client=httpx.Client(base_url="http://host.docker.internal:11434", transport=httpx.MockTransport(respond)),
     )
     with pytest.raises(LocalDraftError, match="unapproved evidence"):
         local.suggest(candidate(), p)
@@ -136,7 +136,7 @@ def test_local_model_errors_never_echo_private_provider_payload():
         return httpx.Response(502, text="private CV content should stay private")
     local = LocalDraftClient(
         LocalDraftSettings(enabled=True, base_url="http://host.docker.internal:11434"),
-        client=httpx.Client(transport=httpx.MockTransport(respond)),
+        client=httpx.Client(base_url="http://host.docker.internal:11434", transport=httpx.MockTransport(respond)),
     )
     with pytest.raises(LocalDraftError, match="no document was changed") as exc:
         local.suggest(candidate(), profile())
