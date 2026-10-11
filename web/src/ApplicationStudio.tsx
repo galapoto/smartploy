@@ -337,7 +337,9 @@ export default function ApplicationStudio(props: {
               <p>{aiStatus?.ready
                 ? "Local model available · review-only suggestions from approved facts"
                 : aiStatus?.configured
-                  ? "Local model configured but not reachable or the model is not installed"
+                  ? aiStatus.failure_category === "model_not_installed"
+                    ? "Private Ollama is reachable, but the configured model is not installed"
+                    : "Private Ollama endpoint is unavailable. Ask the operator to check its internal Docker bridge."
                   : "Local AI is not yet enabled on this server. The manual editor remains available."}</p>
             </div>
           </div>
