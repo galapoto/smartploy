@@ -8,7 +8,9 @@ import type {
   SessionInfo,
   JobsResponse,
   ManualJobPayload,
-  PreparationResponse
+  PreparationResponse,
+  ApplicationWorkspace,
+  ApplicationWorkspacesResponse
 } from "./types";
 
 const API_BASE = (import.meta.env.VITE_SMARTPLOY_API_BASE ?? "").replace(/\/$/, "");
@@ -141,4 +143,62 @@ export function addManualJob(job: ManualJobPayload): Promise<{ status: string }>
       }
     })
   });
+}
+
+
+export function startApplicationWorkspace(canonicalKey: string): Promise<{ workspace: ApplicationWorkspace; created: boolean }> {
+  return request<{ workspace: ApplicationWorkspace; created: boolean }>(
+    "/api/v1/jobs/" + encodeURIComponent(canonicalKey) + "/application-workspace",
+    { method: "POST" }
+  );
+}
+
+export function getApplicationWorkspaces(): Promise<ApplicationWorkspacesResponse> {
+  return request<ApplicationWorkspacesResponse>("/api/v1/application-workspaces");
+}
+
+export function editApplicationWorkspace(
+  workspaceId: string, expectedRevision: number, cvText: string, coverLetterText: string
+): Promise<{ workspace: ApplicationWorkspace }> {
+  return request<{ workspace: ApplicationWorkspace }>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId),
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        expected_revision: expectedRevision,
+        cv_text: cvText,
+        cover_letter_text: coverLetterText
+      })
+    }
+  );
+}
+
+export function markApplicationManuallySent(
+  workspaceId: string, expectedRevision: number, reference: string
+): Promise<{ workspace: ApplicationWorkspace; external_confirmation_verified: false }> {
+  return request<{ workspace: ApplicationWorkspace; external_confirmation_verified: false }>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/report-applied",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        expected_revision: expectedRevision,
+        confirmed_external_application: true,
+        reference
+      })
+    }
+  );
+}
+
+export function deleteApplicationWorkspace(workspaceId: string): Promise<{ deleted: true }> {
+  return request<{ deleted: true }>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId),
+    { method: "DELETE" }
+  );
+}
+
+export function applicationDownloadUrl(
+  workspaceId: string, kind: "cv" | "letter", format: "pdf" | "docx"
+): string {
+  return API_BASE + "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
+    + "/download/" + kind + "/" + format;
 }

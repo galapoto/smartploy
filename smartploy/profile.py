@@ -10,6 +10,8 @@ from .domain import canonical_json, normalize_identity_text, normalize_space, ut
 
 
 FACT_TYPES = {
+    "identity",
+    "contact",
     "skill",
     "language",
     "education",
