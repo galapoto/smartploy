@@ -157,7 +157,8 @@ export default function App() {
       }
       lastSessionIdentity.current = identity;
       setDashboard(board); setPreferences(prefs); setDiscovery(results); setSession(who);
-      setLoading(false);
+      // Only essential search requests govern navigation and refresh spinners.
+      setLoading(false); setRefreshing(false); setError("");
 
       // Optional tools must not lock users out of job discovery or onboarding.
       // Fail closed for PRIVATE data: never retain a previous account's CV
