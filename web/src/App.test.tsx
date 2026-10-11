@@ -140,9 +140,16 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 
   it("clears the previous account's CV when the signed-in identity changes", async () => {
     currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    // Same email does not mean same account; use verified user IDs.
     vi.mocked(api.getSession)
-      .mockResolvedValueOnce({ authenticated: true, email: "previous@smartploy.invalid" })
-      .mockResolvedValueOnce({ authenticated: true, email: "next@smartploy.invalid" });
+      .mockResolvedValueOnce({
+        authenticated: true, email: "shared@smartploy.invalid",
+        user_id: "usr-account-a", profile_id: "profile-a",
+      })
+      .mockResolvedValueOnce({
+        authenticated: true, email: "shared@smartploy.invalid",
+        user_id: "usr-account-b", profile_id: "profile-b",
+      });
     vi.mocked(api.getCV)
       .mockResolvedValueOnce({ present: true, filename: "PRIVATE-OLD-ACCOUNT-CV.docx" })
       .mockRejectedValueOnce(new Error("new account CV API unavailable"));
