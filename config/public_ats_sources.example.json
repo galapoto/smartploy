@@ -13,5 +13,17 @@
     "stack": "eu",
     "employer_sector": "private",
     "external_ai_forwarding_allowed": false
+  },
+  {
+    "provider": "greenhouse",
+    "tenant": "example-company",
+    "label": "Example Company (Greenhouse)",
+    "employer_sector": "private",
+    "location_terms": [
+      "Finland",
+      "Helsinki",
+      "Espoo"
+    ],
+    "external_ai_forwarding_allowed": false
   }
 ]

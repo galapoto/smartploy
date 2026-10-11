@@ -138,6 +138,7 @@ def poll_public_ats(
             "employer_sector": adapter.config.employer_sector,
             "location_terms": list(adapter.config.location_terms),
             "location_filtered_count": getattr(adapter, "last_location_filtered_count", 0),
+            "prospect_filtered_count": getattr(adapter, "last_prospect_filtered_count", 0),
             "total_source_postings": getattr(adapter, "last_total_postings", len(observations)),
         },
     )

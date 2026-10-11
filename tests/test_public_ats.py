@@ -32,7 +32,7 @@ def runtime(page_size=2):
 
 def test_config_rejects_arbitrary_provider_tenant_and_fields(monkeypatch):
     with pytest.raises(PublicATSError, match="provider"):
-        PublicATSSourceConfig("greenhouse", "acme", "Acme")
+        PublicATSSourceConfig("workday", "acme", "Acme")
     with pytest.raises(PublicATSError, match="tenant"):
         PublicATSSourceConfig("lever", "https://evil.example/x", "Acme")
     with pytest.raises(PublicATSError, match="stack"):
