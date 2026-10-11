@@ -38,6 +38,7 @@ export default function SearchSetup(props: {
   const [roles, setRoles] = useState(props.initial.roles.join(", "));
   const [locations, setLocations] = useState(props.initial.locations.join(", "));
   const [keywords, setKeywords] = useState(props.initial.keywords.join(", "));
+  const [skills, setSkills] = useState(props.initial.skills.join(", "));
   const [languages, setLanguages] = useState(props.initial.languages);
   const [workModes, setWorkModes] = useState(props.initial.work_modes);
   const [seniority, setSeniority] = useState(props.initial.seniority);
@@ -49,6 +50,7 @@ export default function SearchSetup(props: {
     setRoles(props.initial.roles.join(", "));
     setLocations(props.initial.locations.join(", "));
     setKeywords(props.initial.keywords.join(", "));
+    setSkills(props.initial.skills.join(", "));
     setLanguages(props.initial.languages);
     setWorkModes(props.initial.work_modes);
     setSeniority(props.initial.seniority);
@@ -67,7 +69,8 @@ export default function SearchSetup(props: {
     try {
       await props.onSave({
         mode, roles: chosenRoles, locations: list(locations),
-        keywords: chosenKeywords, languages, work_modes: workModes, seniority,
+        keywords: chosenKeywords, skills: list(skills),
+        languages, work_modes: workModes, seniority,
         expected_revision: props.initial.revision
       });
     } catch (exc) {
@@ -129,6 +132,12 @@ export default function SearchSetup(props: {
             <input value={keywords} onChange={(e) => setKeywords(e.target.value)}
               placeholder="Python, business analysis, documentation" maxLength={740} />
             <small>Helpful for roles with different job titles.</small>
+          </label>
+          <label className="setup-field">
+            <span>Skills and tools you have <em>Optional</em></span>
+            <input value={skills} onChange={(e) => setSkills(e.target.value)}
+              placeholder="SQL, Python, nursing, Power BI" maxLength={990} />
+            <small>Used only to compare job descriptions. Skills are not treated as verified CV facts until separately approved.</small>
           </label>
           <label className="setup-field">
             <span>Experience level</span>
