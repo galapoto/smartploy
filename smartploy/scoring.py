@@ -73,12 +73,45 @@ class ScoreResult:
         }
 
 
+# Degree level is only verified from an approved education fact at the
+# same explicit level. Sharing words like "science" never proves an MSc.
+DEGREE_GENERIC_TERMS = frozenset({
+    "bachelor", "bachelors", "bsc", "kandidaatti",
+    "master", "masters", "msc", "maisteri",
+    "doctorate", "doctoral", "phd", "tohtori",
+    "degree", "degrees", "tutkinto", "korkeakoulututkinto",
+})
+
+
+def _degree_level(value: str) -> str | None:
+    normalized = normalize_identity_text(value)
+    words = set(normalized.split())
+    if words & {"phd", "doctorate", "doctoral", "tohtori"}:
+        return "doctorate"
+    if words & {"msc", "masters", "maisteri"} or "m sc" in normalized:
+        return "master"
+    if "master" in words and words & {"degree", "degrees", "of", "science", "arts", "tutkinto"}:
+        return "master"
+    if "master" in words and {"s", "in"} <= words:
+        return "master"
+    if words & {"bsc", "bachelor", "bachelors", "kandidaatti"} or "b sc" in normalized:
+        return "bachelor"
+    return None
+
+
 def _concepts(value: str) -> set[str]:
     text = normalize_identity_text(value)
+    # A normalized alias must occupy complete tokens. The former substring
+    # search incorrectly counted "NoSQL" as SQL and "pythonic" as Python.
+    padded = f" {text} "
     found = {
         concept
         for concept, aliases in ALIASES.items()
-        if any(normalize_identity_text(alias) in text for alias in aliases)
+        if any(
+            (alias_text := normalize_identity_text(alias))
+            and f" {alias_text} " in padded
+            for alias in aliases
+        )
     }
     tokens = {
         token
@@ -96,6 +129,25 @@ def _requirement_match(requirement: str, facts: tuple[ProfileFact, ...]) -> tupl
     needed = _concepts(requirement)
     if not needed:
         return False, ()
+    level = _degree_level(requirement)
+    if level:
+        # Do not combine a lower degree with an unrelated skill or different
+        # degree to manufacture a required qualification. The subject has to
+        # be supported by one approved, same-level education statement.
+        education = tuple(
+            fact for fact in facts
+            if fact.fact_type == "education" and _degree_level(fact.value) == level
+        )
+        if not education:
+            return False, ()
+        subject = needed - DEGREE_GENERIC_TERMS
+        matches = [
+            fact.fact_id for fact in education
+            if not subject or (
+                len(subject & (_fact_concepts(fact) - DEGREE_GENERIC_TERMS)) / len(subject)
+            ) >= 0.6
+        ]
+        return bool(matches), tuple(sorted(set(matches)))
     matched_ids: list[str] = []
     covered: set[str] = set()
     for fact in facts:
