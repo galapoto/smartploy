@@ -10,8 +10,15 @@ import sys
 import pytest
 
 from scripts.evaluate_search_quality import (
-    CONTRACT, DEFAULT_FIXTURE, evaluate_suite, load_fixture,
+    CONTRACT, DEFAULT_FIXTURE, _candidate, evaluate_suite, load_fixture,
 )
+
+
+def test_synthetic_observations_cannot_authorize_ai_forwarding():
+    case = load_fixture()["cases"][0]
+    candidate = _candidate(case)
+    assert candidate.job.raw["external_ai_forwarding_allowed"] is False
+    assert candidate.source_current is True
 
 
 def test_fixture_has_search_and_evidence_coverage_and_is_fully_labeled():
