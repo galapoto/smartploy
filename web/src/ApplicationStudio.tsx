@@ -8,9 +8,10 @@ import {
   applicationDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
   getApplicationWorkspaces, markApplicationManuallySent,
   getLocalAIStatus, requestLocalAISuggestions,
-  getBrowserHandoffReadiness, createBrowserHandoffPacket
+  getBrowserHandoffReadiness, createBrowserHandoffPacket,
+  getBrowserReceipt, importBrowserReceipt
 } from "./api";
-import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness } from "./types";
+import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 
 function safePostingLink(url: string): string {
   try {
@@ -35,6 +36,11 @@ export default function ApplicationStudio(props: {
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
   const [handoff, setHandoff] = useState<BrowserHandoffReadiness | null>(null);
   const [handoffBusy, setHandoffBusy] = useState(false);
+  const [handoffPacketText, setHandoffPacketText] = useState("");
+  const [browserReceipt, setBrowserReceipt] = useState<BrowserObservedReceipt | null>(null);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptInput, setReceiptInput] = useState("");
+  const [receiptBusy, setReceiptBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -69,6 +75,7 @@ export default function ApplicationStudio(props: {
   }, [selected?.workspace_id, selected?.revision]);
 
   useEffect(() => {
+    setHandoffPacketText("");
     if (!selected) { setHandoff(null); return; }
     let alive = true;
     setHandoff(null);
@@ -79,6 +86,20 @@ export default function ApplicationStudio(props: {
     });
     return () => { alive = false; };
   }, [selected?.workspace_id, selected?.revision]);
+
+  useEffect(() => {
+    setReceiptOpen(false);
+    setReceiptInput("");
+    setBrowserReceipt(null);
+    if (!selected?.workspace_id) return;
+    let alive = true;
+    void getBrowserReceipt(selected.workspace_id).then((state) => {
+      if (alive) setBrowserReceipt(state.receipt);
+    }).catch(() => {
+      if (alive) setBrowserReceipt(null);
+    });
+    return () => { alive = false; };
+  }, [selected?.workspace_id]);
 
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
@@ -97,7 +118,7 @@ export default function ApplicationStudio(props: {
   }
 
   async function save() {
-    if (!selected || selected.status !== "draft") return;
+    if (!selected || selected.status !== "draft" || browserReceipt) return;
     setBusy(true); setMessage(""); setError("");
     try {
       const result = await editApplicationWorkspace(
@@ -111,7 +132,7 @@ export default function ApplicationStudio(props: {
   }
 
   async function askLocalAI() {
-    if (!selected || dirty || selected.status !== "draft" || !aiStatus?.ready) return;
+    if (!selected || dirty || selected.status !== "draft" || browserReceipt || !aiStatus?.ready) return;
     const ok = window.confirm(
       "Send the job description and your approved profile facts to the configured " +
       "private local ObumAI/Ollama model? Your uploaded CV file, unapproved profile " +
@@ -130,7 +151,7 @@ export default function ApplicationStudio(props: {
   }
 
   function insertAISuggestion() {
-    if (!selected || !aiSuggestion || selected.status !== "draft") return;
+    if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt) return;
     const draft = aiSuggestion.proposal;
     if (!window.confirm(
       "Insert these AI suggestions into your editable CV and cover letter? " +
@@ -147,7 +168,7 @@ export default function ApplicationStudio(props: {
   }
 
   async function copyBrowserPacket() {
-    if (!selected || dirty || !handoff?.ready || selected.status !== "draft") return;
+    if (!selected || dirty || !handoff?.ready || selected.status !== "draft" || browserReceipt) return;
     let origin = "the employer website";
     try { origin = new URL(selected.application_url).origin; } catch { /* disabled by API validation */ }
     if (!window.confirm(
@@ -159,12 +180,53 @@ export default function ApplicationStudio(props: {
     setHandoffBusy(true); setError(""); setMessage("");
     try {
       const response = await createBrowserHandoffPacket(selected.workspace_id, selected.revision);
-      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable. Use a secure HTTPS browser.");
-      await navigator.clipboard.writeText(JSON.stringify(response.packet));
-      setMessage("Private application packet copied. Open the employer posting and use the SmartPloy browser companion within 15 minutes. Review and attach your CV before submitting.");
+      const json = JSON.stringify(response.packet);
+      setHandoffPacketText(json);
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(json);
+          setMessage("Private packet copied. Open the employer posting and use the browser companion within 15 minutes. Review and attach CV before submitting.");
+        } catch {
+          setMessage("Your private packet is ready below. Select and copy it manually, then open the employer posting and browser companion.");
+        }
+      } else {
+        setMessage("Your private packet is ready below. Select and copy it manually into the browser companion.");
+      }
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Unable to copy the application packet.");
     } finally { setHandoffBusy(false); }
+  }
+
+  async function onImportObservedReceipt() {
+    if (!selected || selected.status !== "draft" || browserReceipt) return;
+    let parsed: BrowserReceiptImport;
+    try {
+      if (receiptInput.length < 30 || receiptInput.length > 5000) {
+        throw new Error("Paste the bounded receipt generated by the SmartPloy browser companion.");
+      }
+      parsed = JSON.parse(receiptInput) as BrowserReceiptImport;
+      if (parsed.schema !== "smartploy.browser_receipt.v1" ||
+          parsed.workspace_id !== selected.workspace_id ||
+          parsed.document_revision !== selected.revision ||
+          parsed.confirmed_visible !== true) {
+        throw new Error("This receipt is not for the current reviewed application revision.");
+      }
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Receipt is not valid JSON."); return;
+    }
+    if (!window.confirm(
+      "Store this browser-observed employer confirmation? The employer has NOT independently "
+      + "verified it through SmartPloy. This action does not count as a verified submission."
+    )) return;
+    setReceiptBusy(true); setError(""); setMessage("");
+    try {
+      const response = await importBrowserReceipt(selected.workspace_id, parsed);
+      setBrowserReceipt(response.receipt);
+      setReceiptOpen(false); setReceiptInput("");
+      setMessage("Employer confirmation was recorded as browser-observed, not independently verified.");
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Unable to store this browser receipt.");
+    } finally { setReceiptBusy(false); }
   }
 
   async function markApplied() {
@@ -254,7 +316,9 @@ export default function ApplicationStudio(props: {
             <h3>{selected.role_title}</h3><p>{selected.company}</p>
             {selected.status === "self_reported_applied" ?
               <span className="state-pill waiting"><Clock3 size={13}/> User-reported applied · not employer-verified</span> :
-              <span className="state-pill good">Editable draft · not submitted</span>}
+              <span className="state-pill good">{browserReceipt ?
+                "Confirmation observed · employer verification pending" :
+                "Editable draft · not submitted"}</span>}
           </div>
           {safePostingLink(selected.application_url) ? (
             <a href={safePostingLink(selected.application_url)} className="outline-btn compact"
@@ -278,7 +342,7 @@ export default function ApplicationStudio(props: {
             </div>
           </div>
           <button className="outline-btn studio-ai-trigger" type="button"
-            disabled={!aiStatus?.ready || busy || aiBusy || dirty || selected.status !== "draft"}
+            disabled={!aiStatus?.ready || busy || aiBusy || dirty || selected.status !== "draft" || !!browserReceipt}
             onClick={() => void askLocalAI()}>
             <WandSparkles size={16}/> {aiBusy ? "Generating with the local model…" : "Suggest tailored wording"}
           </button>
@@ -309,7 +373,7 @@ export default function ApplicationStudio(props: {
         <div className="studio-document">
           <div className="studio-document-head"><strong><FileText size={17}/> CV draft</strong><span>{cvText.length.toLocaleString()} / 30,000 characters</span></div>
           <textarea aria-label="Editable CV text" rows={15} maxLength={30000}
-            readOnly={selected.status !== "draft"} value={cvText}
+            readOnly={selected.status !== "draft" || !!browserReceipt} value={cvText}
             onChange={(event) => setCvText(event.target.value)}
             placeholder="Your reviewed CV content" />
           <small>Started from your uploaded CV, when available; otherwise only approved profile facts.</small>
@@ -325,7 +389,7 @@ export default function ApplicationStudio(props: {
         <div className="studio-document">
           <div className="studio-document-head"><strong><FileCheck2 size={17}/> Cover letter draft</strong><span>{letterText.length.toLocaleString()} / 10,000 characters</span></div>
           <textarea aria-label="Editable cover letter text" rows={13} maxLength={10000}
-            readOnly={selected.status !== "draft"} value={letterText}
+            readOnly={selected.status !== "draft" || !!browserReceipt} value={letterText}
             onChange={(event) => setLetterText(event.target.value)}
             placeholder="Your reviewed cover letter" />
           <small>Edit the draft to include specific, accurate examples. Draft language is not an AI quality guarantee.</small>
@@ -350,7 +414,7 @@ export default function ApplicationStudio(props: {
           </div> : null}
           <div className="studio-handoff-actions">
             <button type="button" className="navy-btn"
-              disabled={!handoff?.ready || dirty || busy || handoffBusy}
+              disabled={!handoff?.ready || dirty || busy || handoffBusy || !!browserReceipt}
               onClick={() => void copyBrowserPacket()}>
               <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" : "Copy approved autofill packet"}
             </button>
@@ -358,16 +422,55 @@ export default function ApplicationStudio(props: {
               href="https://github.com/galapoto/smartploy/blob/main/docs/BROWSER_APPLY_COMPANION.md"
               target="_blank" rel="noopener noreferrer">Browser companion instructions <ArrowUpRight size={15}/></a>
           </div>
+          {handoffPacketText ? <div className="studio-packet-fallback">
+            <label htmlFor="smartploy-browser-packet">Private packet for your browser companion</label>
+            <textarea id="smartploy-browser-packet" readOnly rows={4}
+              value={handoffPacketText} spellCheck={false}
+              onFocus={(event) => event.currentTarget.select()}
+              aria-label="Select and copy the private short-lived browser packet" />
+            <p>Copied packets contain approved contact information. Never share them in chat or public issues.</p>
+          </div> : null}
           <p className="studio-handoff-disclaimer">
             Browser-only, 15-minute packet. Upload your CV on the employer's page and answer
             any employer-specific questions. Final submission needs a separate approval and
             must be verified from the employer's confirmation; preparing the packet is not applying.
           </p>
         </section> : null}
+        <section className="studio-receipt" aria-label="Browser-observed employer confirmation">
+          <div className="studio-receipt-header">
+            <strong><CheckCircle2 size={16}/> Employer confirmation evidence</strong>
+            <span className="state-pill waiting">Not independently verified</span>
+          </div>
+          {browserReceipt ? <div className="studio-receipt-record">
+            <p>A confirmation was observed in your browser for this job. SmartPloy has not independently verified the employer's receipt.</p>
+            <p><strong>Reference:</strong> {browserReceipt.reference}</p>
+            <p><strong>Observed:</strong> {new Date(browserReceipt.observed_at).toLocaleString()}</p>
+            <p><strong>Status:</strong> Browser-observed and awaiting your review</p>
+          </div> : <>
+            <p className="muted">If the companion displayed a reference-bearing employer confirmation,
+              copy the private receipt packet and import it here. An attempt alone is not success.</p>
+            <button className="outline-btn compact" type="button"
+              onClick={() => setReceiptOpen((current) => !current)}
+              disabled={selected.status !== "draft"}>
+              {receiptOpen ? "Hide receipt import" : "Import observed receipt"}
+            </button>
+            {receiptOpen ? <div className="studio-receipt-import">
+              <label htmlFor="browser-observed-receipt">Paste receipt from the companion</label>
+              <textarea id="browser-observed-receipt" rows={5} maxLength={5000}
+                value={receiptInput} onChange={(event) => setReceiptInput(event.target.value)}
+                spellCheck={false} placeholder="Paste the private receipt JSON copied by the browser companion" />
+              <button className="navy-btn compact" type="button"
+                disabled={receiptBusy || receiptInput.length < 30}
+                onClick={() => void onImportObservedReceipt()}>
+                {receiptBusy ? "Checking…" : "Store observed confirmation"}
+              </button>
+            </div> : null}
+          </>}
+        </section>
         <div className="studio-footer">
           <span><LockKeyhole size={14}/> Private workspace · revision {selected.revision}</span>
           {selected.status === "draft" ? <div className="studio-actions">
-            <button type="button" className="primary-btn" disabled={busy || !dirty}
+            <button type="button" className="primary-btn" disabled={busy || !dirty || !!browserReceipt}
               onClick={() => void save()}><Save size={16}/>{busy ? "Working…" : "Save changes"}</button>
             <button type="button" className="navy-btn" disabled={busy}
               onClick={() => void markApplied()}>I applied on employer site <CheckCircle2 size={16}/></button>

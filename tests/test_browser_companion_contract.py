@@ -29,6 +29,12 @@ def test_extension_never_exfiltrates_packets_or_actuates_submit_without_user_cli
     assert 'browser companion' in source.lower()
     assert 'attemptReserved = true' in source
     assert 'autoSubmitAllowed: false' in policy
+    assert 'onResumeReceipt' in source
+    assert 'const stored = await chrome.storage.local.get(key)' in source
+    assert 'here.pathname.startsWith("/" + account + "/")' in source
+    assert 'smartploy.browser_receipt.v1' in source
+    assert 'confirmed_visible: true' in source
+    assert 'confirmation_page_sha256:' in source
     for unsafe in ("eval(", "innerHTML", "chrome.runtime.onMessage", "chrome.webRequest",
                    'fetch(', "XMLHttpRequest(", "document.cookie"):
         assert unsafe not in source + policy

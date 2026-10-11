@@ -21,6 +21,10 @@ from .application_storage import MemoryApplicationRepository, PostgresApplicatio
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from .browser_handoff import HandoffError, make_browser_packet, review_handoff
+from .browser_receipt import ReceiptError, validate_browser_receipt
+from .browser_receipt_storage import (
+    ReceiptConflict, MemoryBrowserReceiptRepository, PostgresBrowserReceiptRepository,
+)
 from .local_drafting import LocalDraftClient, LocalDraftError, LocalDraftSettings
 from .cv_import import CVImportError, parse_cv
 from .cv_storage import MemoryCVRepository, PostgresCVRepository
@@ -163,6 +167,12 @@ class BrowserHandoffPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     confirm_private_data_transfer: bool
+
+
+class BrowserReceiptImportPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm_user_observed: bool
+    receipt: dict[str, Any]
 
 
 class WorkspaceAppliedPayload(BaseModel):
@@ -367,6 +377,7 @@ def create_app(
     app.state.tenant_services = {}
     app.state.cv_repository = PostgresCVRepository(dsn) if dsn else MemoryCVRepository()
     app.state.workspace_repository = PostgresWorkspaceRepository(dsn) if dsn else MemoryWorkspaceRepository()
+    app.state.browser_receipts = PostgresBrowserReceiptRepository(dsn) if dsn else MemoryBrowserReceiptRepository()
     app.state.local_ai = LocalDraftClient(LocalDraftSettings.from_env())
 
     def tenant_context(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
@@ -758,6 +769,8 @@ def create_app(
             raise HTTPException(status_code=404, detail="Application workspace not found")
         if current.status != "draft" or current.revision != payload.expected_revision:
             raise HTTPException(status_code=409, detail="Review the current saved draft before requesting AI")
+        if app.state.browser_receipts.get(pid, workspace_id) is not None:
+            raise HTTPException(status_code=409, detail="This submitted application already has a browser-observed confirmation")
         candidate = tenant.get_job(current.canonical_key)
         if candidate is None or not candidate.source_current:
             raise HTTPException(status_code=409, detail="Job is no longer available")
@@ -781,6 +794,9 @@ def create_app(
             raise HTTPException(status_code=404, detail="Application workspace not found")
         job = tenant.get_job(item.canonical_key)
         result = review_handoff(item, job, tenant.profile())
+        if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:
+            result["ready"] = False
+            result["blockers"].append("An employer confirmation is already recorded for this application")
         return result
 
     @app.post("/api/v1/application-workspaces/{workspace_id}/browser-packet")
@@ -795,6 +811,8 @@ def create_app(
             raise HTTPException(status_code=404, detail="Application workspace not found")
         if item.revision != payload.expected_revision:
             raise HTTPException(status_code=409, detail="Document revision changed; review and retry")
+        if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:
+            raise HTTPException(status_code=409, detail="An employer confirmation is already recorded for this application")
         job = tenant.get_job(item.canonical_key)
         try:
             packet = make_browser_packet(item, job, tenant.profile())
@@ -803,6 +821,42 @@ def create_app(
         return JSONResponse(
             {"packet": packet, "external_actions_performed": False},
             headers={"Cache-Control": "private, no-store", "Pragma": "no-cache", "X-Content-Type-Options": "nosniff"},
+        )
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/browser-receipt")
+    def browser_receipt_state(workspace_id: str, request: Request) -> JSONResponse:
+        tenant, _ = tenant_context(request)
+        profile_id = tenant.profile_repository.profile_id
+        owner = app.state.workspace_repository.get(profile_id, workspace_id)
+        if owner is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        item = app.state.browser_receipts.get(profile_id, workspace_id)
+        return JSONResponse(
+            {"present": item is not None, "receipt": item.to_dict() if item else None},
+            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+        )
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/browser-receipt")
+    def record_browser_receipt(
+        workspace_id: str, payload: BrowserReceiptImportPayload, request: Request
+    ) -> JSONResponse:
+        if payload.confirm_user_observed is not True:
+            raise HTTPException(status_code=422, detail="Confirm you personally inspected the employer receipt")
+        tenant, _ = tenant_context(request)
+        profile_id = tenant.profile_repository.profile_id
+        workspace = app.state.workspace_repository.get(profile_id, workspace_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        try:
+            receipt = validate_browser_receipt(workspace, payload.receipt)
+            item = app.state.browser_receipts.record(receipt)
+        except ReceiptError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except ReceiptConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return JSONResponse(
+            {"receipt": item.to_dict(), "external_confirmation_verified": False},
+            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
         )
 
     @app.get("/api/v1/application-workspaces/{workspace_id}")
@@ -818,6 +872,11 @@ def create_app(
         workspace_id: str, payload: WorkspaceEditPayload, request: Request
     ) -> dict[str, Any]:
         tenant, _ = tenant_context(request)
+        if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This application has an observed employer receipt and its submitted documents are frozen",
+            )
         try:
             item = app.state.workspace_repository.edit(
                 tenant.profile_repository.profile_id, workspace_id,
@@ -856,8 +915,10 @@ def create_app(
     @app.delete("/api/v1/application-workspaces/{workspace_id}")
     def remove_application_workspace(workspace_id: str, request: Request) -> dict[str, Any]:
         tenant, _ = tenant_context(request)
-        if not app.state.workspace_repository.delete(tenant.profile_repository.profile_id, workspace_id):
+        profile_id = tenant.profile_repository.profile_id
+        if not app.state.workspace_repository.delete(profile_id, workspace_id):
             raise HTTPException(status_code=404, detail="Application workspace not found")
+        app.state.browser_receipts.delete(profile_id, workspace_id)
         return {"deleted": True}
 
     @app.get("/api/v1/application-workspaces/{workspace_id}/download/{kind}/{file_format}")

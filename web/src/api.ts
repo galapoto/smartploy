@@ -238,3 +238,24 @@ export function createBrowserHandoffPacket(
     }) }
   );
 }
+
+
+export function getBrowserReceipt(
+  workspaceId: string
+): Promise<{ present: boolean; receipt: import("./types").BrowserObservedReceipt | null }> {
+  return request<{ present: boolean; receipt: import("./types").BrowserObservedReceipt | null }>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/browser-receipt"
+  );
+}
+
+export function importBrowserReceipt(
+  workspaceId: string, receipt: import("./types").BrowserReceiptImport
+): Promise<{ receipt: import("./types").BrowserObservedReceipt; external_confirmation_verified: false }> {
+  return request<{ receipt: import("./types").BrowserObservedReceipt; external_confirmation_verified: false }>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/browser-receipt",
+    { method: "POST", body: JSON.stringify({
+      confirm_user_observed: true,
+      receipt
+    })}
+  );
+}

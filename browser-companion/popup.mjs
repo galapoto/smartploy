@@ -238,9 +238,12 @@ function submitOnce(exactUrl) {
   }
 }
 
-function inspectReceipt(expectedOrigin) {
+async function inspectReceipt(expectedOrigin, expectedAccount) {
   const here = new URL(location.href);
-  if (here.origin !== expectedOrigin) {
+  if (
+    here.origin !== expectedOrigin ||
+    !here.pathname.startsWith("/" + expectedAccount + "/")
+  ) {
     return { confirmed: false, explanation: "The browser is not at the original employer origin." };
   }
   const text = String(document.body?.innerText || "").slice(0, 20000)
@@ -252,9 +255,14 @@ function inspectReceipt(expectedOrigin) {
     el.getClientRects().length > 0 && !el.disabled
   );
   const confirmed = proof && Boolean(reference) && !stillSubmit;
+  const hashBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  const pageHash = Array.from(new Uint8Array(hashBytes))
+    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
   return {
     confirmed,
     reference: confirmed ? reference : "",
+    confirmation_page_url: here.origin + here.pathname,
+    confirmation_page_sha256: pageHash,
     explanation: confirmed ?
       "The visible employer page contains a confirmation phrase and application reference. Save that reference in SmartPloy." :
       "No sufficient confirmation evidence found. The outcome remains unverified. Do not retry automatically."
@@ -424,17 +432,76 @@ async function onSubmit() {
   }
 }
 
+async function onResumeReceipt() {
+  try {
+    const tab = await activeTab();
+    // The confirmation page can differ from the original job path after
+    // submission. Validate full packet signature/expiry against its OWN
+    // canonical job URL, then separately require matching employer+account.
+    const original = JSON.parse($("packet").value);
+    const pkt = validatePacket(original, original.application_url);
+    const initial = new URL(pkt.application_url);
+    const here = new URL(tab.url);
+    const account = initial.pathname.split("/")[1];
+    if (here.origin !== initial.origin || !here.pathname.startsWith("/" + account + "/")) {
+      throw new PacketError("This confirmation is not on the original Lever employer account.");
+    }
+    const key = await oneAttemptKey(pkt);
+    const stored = await chrome.storage.local.get(key);
+    if (!stored[key]) {
+      throw new PacketError("No matching one-time submission attempt was recorded. You may still report a manual submission.");
+    }
+    currentPacket = pkt;
+    targetTabId = tab.id;
+    inspectedUrl = tab.url;
+    currentPlan = null;
+    attemptReserved = true;
+    preflightPassed = false;
+    $("submission").hidden = false;
+    $("approve").checked = false;
+    $("submit").disabled = true;
+    await onReceipt();
+  } catch (error) { status(normalizeError(error)); }
+}
+
 async function onReceipt() {
   if (!currentPacket || targetTabId === null) return;
   try {
     const tab = await activeTab();
     if (tab.id !== targetTabId) throw new PacketError("Return to the employer page where you applied.");
-    const expectedOrigin = new URL(currentPacket.application_url).origin;
+    const original = new URL(currentPacket.application_url);
+    const account = original.pathname.split("/")[1];
     const [result] = await chrome.scripting.executeScript({
-      target: {tabId: tab.id}, func: inspectReceipt, args: [expectedOrigin]
+      target: {tabId: tab.id}, func: inspectReceipt, args: [original.origin, account]
     });
     const finding = result?.result;
     if (!finding) throw new PacketError("Could not inspect the visible employer confirmation.");
+    if (finding.confirmed) {
+      const key = await oneAttemptKey(currentPacket);
+      const prior = await chrome.storage.local.get(key);
+      if (!prior[key]) {
+        throw new PacketError(
+          "No matching companion submission attempt was recorded. Do not treat this as verified; you may still report it manually."
+        );
+      }
+      const receipt = {
+        schema: "smartploy.browser_receipt.v1",
+        workspace_id: currentPacket.workspace_id,
+        document_revision: currentPacket.revision,
+        document_sha256: currentPacket.document_sha256,
+        application_url: currentPacket.application_url,
+        confirmation_page_url: finding.confirmation_page_url,
+        reference: finding.reference,
+        confirmation_page_sha256: finding.confirmation_page_sha256,
+        observed_at: new Date().toISOString(),
+        confirmed_visible: true,
+      };
+      $("receiptExport").value = JSON.stringify(receipt);
+      $("receiptPanel").hidden = false;
+    } else {
+      $("receiptPanel").hidden = true;
+      $("receiptExport").value = "";
+    }
     status(
       finding.explanation + (finding.reference ? " Reference: " + finding.reference : ""),
       finding.confirmed
@@ -443,17 +510,30 @@ async function onReceipt() {
 }
 
 $("inspect").addEventListener("click", () => void onInspect());
+$("resume").addEventListener("click", () => void onResumeReceipt());
 $("fill").addEventListener("click", () => void onFill());
 $("check").addEventListener("click", () => void onPreflight());
 $("submit").addEventListener("click", () => void onSubmit());
 $("receipt").addEventListener("click", () => void onReceipt());
+$("copyReceipt").addEventListener("click", async () => {
+  const value = $("receiptExport").value;
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    status("Observed receipt copied. Return to the matching SmartPloy application and select Import observed receipt.", true);
+  } catch {
+    $("receiptExport").select();
+    status("Clipboard access unavailable. Select and copy the receipt text yourself.");
+  }
+});
 $("approve").addEventListener("change", () => {
   $("submit").disabled = !$("approve").checked || !preflightPassed || attemptReserved;
 });
 $("packet").addEventListener("input", () => {
   currentPacket = null; currentPlan = null; targetTabId = null;
   preflightPassed = false; attemptReserved = false;
-  $("plan").hidden = true; $("submission").hidden = true;
+  $("plan").hidden = true; $("submission").hidden = true; $("receiptPanel").hidden = true;
+  $("receiptExport").value = "";
   $("approve").checked = false; $("submit").disabled = true;
   $("feedback").textContent = "";
 });

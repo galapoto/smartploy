@@ -459,3 +459,21 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .studio-handoff-blockers ul { padding-left: 17px; margin: 7px 0 0; line-height: 1.65; }
 .studio-handoff-actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 16px; }
 .studio-handoff-disclaimer { margin: 12px 0 0; font-size: 10px; line-height: 1.7; color: #8195ad; }
+
+
+.studio-receipt { padding: 16px; margin: 17px 0; border: 1px solid #cce3f6; border-radius: 12px; background: #fcfdff; }
+.studio-receipt-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.studio-receipt-header > strong { font-size: 12px; color: #25547d; display: inline-flex; align-items: center; gap: 8px; }
+.studio-receipt > p { font-size: 11px; line-height: 1.6; color: #728ba5; }
+.studio-receipt-record { font-size: 11px; line-height: 1.5; color: #395b7b; }
+.studio-receipt-record p { margin: 6px 0; overflow-wrap: anywhere; }
+.studio-receipt-import { display: grid; gap: 9px; margin-top: 13px; }
+.studio-receipt-import label { font-size: 11px; color: #395b7b; font-weight: 700; }
+.studio-receipt-import textarea { border: 1px solid #d4e3f3; padding: 10px; border-radius: 9px; font: 11px ui-monospace,monospace; width: 100%; max-height: 155px; resize: vertical; }
+.studio-receipt-import button { justify-self: start; }
+
+
+.studio-packet-fallback { margin-top: 12px; display: grid; gap: 7px; }
+.studio-packet-fallback label { color: #416b97; font-size: 11px; font-weight: 700; }
+.studio-packet-fallback textarea { font: 10px ui-monospace,monospace; background: #f5f9ff; border: 1px solid #cfdfef; color: #244c75; border-radius: 8px; max-height: 135px; resize: vertical; padding: 9px; width: 100%; }
+.studio-packet-fallback p { color: #9a6b37; font-size: 10px; line-height: 1.5; margin: 0; }
