@@ -122,14 +122,13 @@ def _role_alignment(title: str, roles: tuple[str, ...]) -> tuple[float, str]:
     if not roles:
         return 0.0, ""
     title_words = _tokens(title)
-    title_casefold = title.casefold()
     strongest = (0.0, "")
     for term in roles:
         wanted = _tokens(term)
-        if not wanted:
-            continue
-        overlap = len(title_words & wanted) / len(wanted)
-        if term.casefold() in title_casefold:
+        overlap = len(title_words & wanted) / len(wanted) if wanted else 0.0
+        # A target such as "AI" must not match "Paid". Whole-phrase matching
+        # also retains punctuation-only tokens like "C++" and title separators.
+        if _mentions_phrase(title, term):
             overlap = 1.0
         if overlap > strongest[0]:
             strongest = overlap, term
@@ -278,7 +277,9 @@ def _alignment(
     # opportunity; previously titles wrongly overrode keyword matches.
     # An explicit experience-level conflict belongs in Explore more, but
     # must never hide the job from the user or pretend they are qualified.
-    primary = (role_fraction >= 0.5 if pref.roles else False) or bool(matched_keywords)
+    # One shared token in a two-word title (for example "Analyst" alone)
+    # is too weak for the recommendation lane. Show weak overlaps in Explore.
+    primary = (role_fraction >= 0.75 if pref.roles else False) or bool(matched_keywords)
     primary = bool(primary and not explicit_seniority_conflict)
     return max(0, min(100, score)), reasons, unknown, mismatches, primary
 

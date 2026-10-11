@@ -215,6 +215,65 @@ def test_phrase_matching_supports_common_job_title_separators():
     assert not _mentions_phrase("paid media", "AI")
 
 
+
+def test_role_titles_do_not_match_inside_unrelated_words():
+    preferences = revise_preferences("p", search_settings(
+        roles=["AI", "Go"], keywords=[], skills=[], locations=[],
+        languages=[], work_modes=[], seniority="any",
+    ), revision=0)
+    result = search_jobs([
+        job("Paid Marketing Specialist"),
+        job("Ongoing Project Manager"),
+    ], preferences)
+    assert result["recommendations"] == []
+    assert len(result["broader"]) == 2
+    assert all(item["preference_score"] == 0 for item in result["broader"])
+    assert all(item["reasons"] == [] for item in result["broader"])
+
+
+def test_multiword_role_single_token_overlap_is_broader_not_recommended():
+    pref = revise_preferences("p", search_settings(
+        roles=["Data Analyst"], keywords=[], skills=[], locations=[],
+        languages=[], work_modes=[], seniority="any",
+    ), revision=0)
+    result = search_jobs([
+        job("Database Analyst"),
+        job("Junior Data Analyst"),
+    ], pref)
+    assert [item["job"]["role_title"] for item in result["recommendations"]] == [
+        "Junior Data Analyst",
+    ]
+    weak_match = result["broader"][0]
+    assert weak_match["job"]["role_title"] == "Database Analyst"
+    assert weak_match["preference_score"] == 50
+    assert weak_match["reasons"] == ["Job title overlaps with Data Analyst"]
+
+
+def test_exact_special_character_roles_and_title_separators_are_supported():
+    for title, target in (
+        ("Senior Data-Analyst", "Data Analyst"),
+        ("C++ Developer", "C++"),
+        ("Node.js Engineer", "Node.js"),
+    ):
+        pref = revise_preferences("p", search_settings(
+            roles=[target], keywords=[], skills=[], locations=[],
+            languages=[], work_modes=[], seniority="any",
+        ), revision=0)
+        result = search_jobs([job(title)], pref)
+        assert len(result["recommendations"]) == 1, (title, target)
+        assert result["recommendations"][0]["preference_score"] == 100
+
+
+def test_explicit_keyword_can_promote_role_from_broader_lane():
+    pref = revise_preferences("p", search_settings(
+        roles=["Data Analyst"], keywords=["Python"], skills=[],
+        locations=[], languages=[], work_modes=[], seniority="any",
+    ), revision=0)
+    result = search_jobs([job("Database Analyst")], pref)
+    assert len(result["recommendations"]) == 1
+    assert "Keywords: Python" in result["recommendations"][0]["reasons"]
+
+
 def test_general_mode_ignores_saved_personal_criteria():
     prefs = revise_preferences("p", search_settings(
         mode="general", roles=["Data Analyst"], keywords=["python"],
