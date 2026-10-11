@@ -93,11 +93,14 @@ def test_deploy_gate_orders_backup_migration_start_health_and_sha_recording():
     assert 'up -d --wait postgres' in deploy
     backup_at = deploy.index('bash "${SCRIPT_DIR}/backup.sh"')
     migrate_at = deploy.index("python scripts/migrate.py")
-    start_at = deploy.index("up -d --remove-orphans api worker web")
+    start_at = deploy.index("up -d --no-deps --force-recreate worker web")
     health_at = deploy.index('http://127.0.0.1:${WEB_PORT}/healthz')
     record_at = deploy.index('"${STATE_DIR}/deployed-sha"')
 
-    assert backup_at < migrate_at < start_at < health_at < record_at
+    image_at = deploy.index('assert-running-images.sh" "${DEPLOY_SHA}"')
+    assert backup_at < migrate_at < start_at < health_at < image_at < record_at
+    assert "up -d --wait --wait-timeout 120 --no-deps --force-recreate api" in deploy
+    assert "up -d --no-deps --force-recreate worker web" in deploy
     assert 'health["external_actions_authorized"] is False' in deploy
     assert 'SMARTPLOY_OPERATION_LOCK_HELD=1 bash "${SCRIPT_DIR}/backup.sh"' in deploy
 
@@ -160,6 +163,8 @@ def test_restore_gate_verifies_artifact_quiesces_writes_and_records_evidence():
     assert safety_at < stop_at < restore_at < migrate_at < health_at < evidence_at
     assert 'health["external_actions_authorized"] is False' in restore
     assert "health_verified=true" in restore
+    assert 'export SMARTPLOY_IMAGE_TAG="${DEPLOYED_SHA:0:12}"' in restore
+    assert 'assert-running-images.sh" "${DEPLOYED_SHA}"' in restore
     assert '> "${STATE_DIR}/deployed-sha"' not in restore
 
 
@@ -258,6 +263,8 @@ def test_release_evidence_script_is_private_read_only_and_secret_safe():
     subprocess.run(["bash", "-n", str(script)], check=True)
 
     assert "format=smartploy-release-evidence-v1" in text
+    assert 'assert-running-images.sh" "${DEPLOYED_SHA}"' in text
+    assert "running_release_images_verified=true" in text
     assert "deployed_sha_matches_code=true" in text
     assert "preflight_passed=true" in text
     assert "env_boundary_smoke_passed=true" in text
