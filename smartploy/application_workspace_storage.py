@@ -1,7 +1,6 @@
 """Tenant-isolated application kit storage with optimistic edit concurrency."""
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Protocol
 
 from psycopg import connect
