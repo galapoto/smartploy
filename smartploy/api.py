@@ -769,6 +769,8 @@ def create_app(
             raise HTTPException(status_code=404, detail="Application workspace not found")
         if current.status != "draft" or current.revision != payload.expected_revision:
             raise HTTPException(status_code=409, detail="Review the current saved draft before requesting AI")
+        if app.state.browser_receipts.get(pid, workspace_id) is not None:
+            raise HTTPException(status_code=409, detail="This submitted application already has a browser-observed confirmation")
         candidate = tenant.get_job(current.canonical_key)
         if candidate is None or not candidate.source_current:
             raise HTTPException(status_code=409, detail="Job is no longer available")
@@ -792,6 +794,9 @@ def create_app(
             raise HTTPException(status_code=404, detail="Application workspace not found")
         job = tenant.get_job(item.canonical_key)
         result = review_handoff(item, job, tenant.profile())
+        if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:
+            result["ready"] = False
+            result["blockers"].append("An employer confirmation is already recorded for this application")
         return result
 
     @app.post("/api/v1/application-workspaces/{workspace_id}/browser-packet")
@@ -806,6 +811,8 @@ def create_app(
             raise HTTPException(status_code=404, detail="Application workspace not found")
         if item.revision != payload.expected_revision:
             raise HTTPException(status_code=409, detail="Document revision changed; review and retry")
+        if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:
+            raise HTTPException(status_code=409, detail="An employer confirmation is already recorded for this application")
         job = tenant.get_job(item.canonical_key)
         try:
             packet = make_browser_packet(item, job, tenant.profile())
