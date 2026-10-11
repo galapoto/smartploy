@@ -9,16 +9,21 @@ import {
 import {
   addManualJob, approveFact, createFact, deleteCV, deleteFact, getApplications,
   getCV, getDashboard, getHealth, getJobs, getProfileFacts, getSession,
-  startApplicationWorkspace, uploadCV
+  startApplicationWorkspace, uploadCV,
+  getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus
 } from "./api";
 import {
   filterBySector, formatState, queueLabel, relativeFreshness, scoreBand,
   sectorLabel, type DisplayMode, type SectorFilter
 } from "./lib";
 import ApplicationStudio from "./ApplicationStudio";
+import SearchSetup from "./SearchSetup";
+import SearchResultsPanel from "./SearchResultsPanel";
+import BrandMark from "./BrandMark";
 import type {
   ApplicationRecord, CandidateFact, CVDocument, Dashboard, HealthResponse,
-  ManualJobPayload, RankingCard, SavedJob, SessionInfo
+  ManualJobPayload, RankingCard, SavedJob, SessionInfo,
+  SearchPreferences, SearchPreferencesUpdate, SearchResults, LocalAIStatus
 } from "./types";
 
 type Page = "dashboard" | "jobs" | "applications" | "profile" | "tools" | "insights" | "sources" | "settings";
@@ -75,73 +80,6 @@ function Stat(props: { label: string; value: number; note: string; icon: LucideI
   );
 }
 
-function JobMatch(props: {
-  item: RankingCard; mode: DisplayMode; expanded: boolean; busy: boolean;
-  onToggle: () => void; onPrepare: () => void;
-}) {
-  const job = props.item.job;
-  if (!job) return null;
-  const color = scoreBand(props.item.fit_score);
-  return (
-    <article className="job-item">
-      <div className="job-avatar" aria-hidden="true">{(job.company || "J").slice(0, 1).toUpperCase()}</div>
-      <div className="job-details">
-        <div className="job-title-line">
-          <h3>{job.role_title}</h3>
-          <span className={cx("score-chip", color)}><Target size={13} /> {props.item.fit_score}% fit</span>
-        </div>
-        <p className="job-byline"><strong>{job.company || "Employer not provided"}</strong>
-          {job.location ? <span><MapPin size={13} /> {job.location}</span> : null}
-          {job.work_mode ? <span>{job.work_mode}</span> : null}
-        </p>
-        <div className="job-meta">
-          <span className="quiet-chip">{queueLabel(props.item.queue)}</span>
-          <span>{sectorLabel(job.employer_sector)}</span>
-          <span>{relativeFreshness(job.posted_at || job.first_seen_at)}</span>
-          {job.source_attribution ? <span>· {job.source_attribution}</span> : null}
-        </div>
-        {props.mode === "heatmap" ? <div className={cx("match-meter", color)}><span style={{ width: String(Math.min(100, Math.max(0, props.item.fit_score))) + "%" }} /></div> : null}
-        {props.expanded ? (
-          <div className="job-expanded">
-            <strong>Why it matches</strong>
-            {props.item.matched_requirements.length ? <ul>{props.item.matched_requirements.map((text) => <li key={text}>{text}</li>)}</ul> : <p>No matched requirements recorded yet.</p>}
-            {props.item.mandatory_gaps.length ? <p>Gaps: {props.item.mandatory_gaps.join("; ")}</p> : null}
-            {job.source_ids.length ? <small>Sources: {job.source_ids.join(", ")}</small> : null}
-          </div>
-        ) : null}
-      </div>
-      <div className="job-buttons">
-        <button type="button" className="text-btn" onClick={props.onToggle}>{props.expanded ? "Less" : "Match details"}</button>
-        {job.application_url ? (
-          <a className="outline-btn compact" href={job.application_url} target="_blank" rel="noopener noreferrer">
-            Job posting <ArrowUpRight size={14} />
-          </a>
-        ) : null}
-        <button className="navy-btn compact" type="button"
-          disabled={props.busy || !job.source_current} onClick={props.onPrepare}>
-          {props.busy ? "Opening…" : "Prepare documents"} <ArrowRight size={15}/>
-        </button>
-      </div>
-    </article>
-  );
-}
-
-function SavedJobCard(props: { item: SavedJob; busy: boolean; onPrepare: () => void }) {
-  const job = props.item.job;
-  return <article className="job-item">
-    <div className="job-avatar" aria-hidden="true">{(job.company || "J").charAt(0).toUpperCase()}</div>
-    <div className="job-details"><h3>{job.role_title}</h3><p className="job-byline"><strong>{job.company}</strong>{job.location ? <span><MapPin size={13} /> {job.location}</span> : null}</p>
-      <div className="job-meta"><span className="quiet-chip">Awaiting evidence-based ranking</span><span>{props.item.source_ids.join(", ") || "Manual import"}</span></div>
-    </div>
-    <div className="job-buttons">
-      {job.application_url ? <a className="outline-btn compact" href={job.application_url} target="_blank" rel="noopener noreferrer">Open job <ArrowUpRight size={14} /></a> : null}
-      <button className="navy-btn compact" type="button" disabled={props.busy || !props.item.source_current} onClick={props.onPrepare}>
-        {props.busy ? "Opening…" : "Prepare documents"} <ArrowRight size={15} />
-      </button>
-    </div>
-  </article>;
-}
-
 function Tool(props: { title: string; description: string; icon: LucideIcon; ready: boolean; onClick: () => void }) {
   const Icon = props.icon;
   return <button className="tool-tile" type="button" onClick={props.onClick}>
@@ -161,6 +99,9 @@ export default function App() {
   const [facts, setFacts] = useState<CandidateFact[]>([]);
   const [jobs, setJobs] = useState<SavedJob[]>([]);
   const [session, setSession] = useState<SessionInfo | null>(null);
+  const [preferences, setPreferences] = useState<SearchPreferences | null>(null);
+  const [discovery, setDiscovery] = useState<SearchResults | null>(null);
+  const [localAI, setLocalAI] = useState<LocalAIStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyCV, setBusyCV] = useState(false);
@@ -189,11 +130,13 @@ export default function App() {
   const load = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true); else setLoading(true);
     try {
-      const [board, apps, ready, savedCV, profile, savedJobs, who] = await Promise.all([
-        getDashboard(), getApplications(), getHealth(), getCV(), getProfileFacts(), getJobs(), getSession()
+      const [board, apps, ready, savedCV, profile, savedJobs, who, prefs, results, model] = await Promise.all([
+        getDashboard(), getApplications(), getHealth(), getCV(), getProfileFacts(), getJobs(), getSession(),
+        getSearchPreferences(), getSearchResults(), getLocalAIStatus()
       ]);
       setDashboard(board); setApplications(apps.applications); setHealth(ready);
       setCV(savedCV); setFacts(profile.facts); setJobs(savedJobs.jobs); setSession(who);
+      setPreferences(prefs); setDiscovery(results); setLocalAI(model);
       setError("");
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
@@ -209,6 +152,37 @@ export default function App() {
   }, [load]);
 
   const navigate = (target: Page) => { setPage(target); setMobileNav(false); setNotice(""); };
+  async function saveSearchPreferences(next: SearchPreferencesUpdate) {
+    const result = await updateSearchPreferences(next);
+    setPreferences(result);
+    const fresh = await getSearchResults();
+    setDiscovery(fresh);
+    setPage("dashboard");
+    setView("top");
+    setNotice(result.mode === "general"
+      ? "General search enabled: all current jobs, no personalization."
+      : "Your search targets were saved. Recommendations now reflect your criteria.");
+  }
+
+  async function changeSearchMode(target: "personalized" | "general") {
+    if (!preferences || preferences.mode === target) return;
+    if (target === "personalized" && !preferences.roles.length && !preferences.keywords.length) {
+      navigate("settings");
+      setNotice("Add a target job title or keyword before enabling personalized search.");
+      return;
+    }
+    try {
+      await saveSearchPreferences({
+        mode: target, roles: preferences.roles, locations: preferences.locations,
+        languages: preferences.languages, work_modes: preferences.work_modes,
+        keywords: preferences.keywords, seniority: preferences.seniority,
+        expected_revision: preferences.revision
+      });
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Could not switch job search mode.");
+    }
+  }
+
   const onUploadClick = () => uploadRef.current?.click();
 
   async function onCVUpload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -304,75 +278,44 @@ export default function App() {
     } finally { setPreparing(""); }
   }
 
-  const ranked = useMemo(() => {
-    const items = view === "top" ? (dashboard?.top_matches || []) : (dashboard?.possible_matches || []);
-    const query = search.toLocaleLowerCase().trim();
-    return filterBySector(items, sector).filter((item) => !query || [
-      item.job?.role_title, item.job?.company, item.job?.location
-    ].some((field) => (field || "").toLocaleLowerCase().includes(query)));
-  }, [dashboard, sector, view, search]);
+  if (loading && !dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><span className="spinner" /><p>Preparing your workspace…</p></div>;
+  if (!dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><h1>SmartPloy isn't available</h1><p>{error}</p><button className="primary-btn" onClick={() => void load()} type="button">Try again</button></div>;
 
-  const unranked = useMemo(() => {
-    const already = new Set([...(dashboard?.top_matches || []), ...(dashboard?.possible_matches || [])].map((x) => x.canonical_key));
-    const query = search.toLocaleLowerCase().trim();
-    return jobs.filter((item) => !already.has(item.canonical_key) && (
-      !query || [item.job.role_title, item.job.company, item.job.location].some((field) => (field || "").toLocaleLowerCase().includes(query))
-    ));
-  }, [jobs, dashboard, search]);
-
-  if (loading && !dashboard) return <div className="loading-screen"><img src="/smartploy-mark.png" alt="" /><span className="spinner" /><p>Preparing your workspace…</p></div>;
-  if (!dashboard) return <div className="loading-screen"><img src="/smartploy-mark.png" alt="" /><h1>SmartPloy isn't available</h1><p>{error}</p><button className="primary-btn" onClick={() => void load()} type="button">Try again</button></div>;
+  if (preferences && !preferences.completed) {
+    return <main className="setup-landing">
+      <div className="setup-brand"><BrandMark/><span><strong>SmartPloy</strong>
+        <small>Job intelligence for Finland</small></span></div>
+      <SearchSetup initial={preferences} onSave={saveSearchPreferences}/>
+      <p className="setup-privacy"><LockKeyhole size={14}/> No CV required to browse jobs. Search choices are private to your account.</p>
+    </main>;
+  }
 
   const approved = facts.filter((item) => item.approved);
   const skills = approved.filter((item) => item.fact_type === "skill");
   const sourcesReady = dashboard.source_health.some((s) => s.status === "healthy");
-  const obumReady = Boolean(health?.obumai_configured);
+  const obumReady = Boolean(localAI?.ready || health?.obumai_configured);
   const selectedNav = NAV.find((item) => item.id === page);
   const avatar = (session?.email?.charAt(0) || "U").toUpperCase();
   const counts = dashboard.applications;
   const onTool = (name: string) => {
     if (name === "CV Tailor" || name === "Cover Letter") {
       if (!cv.present && !facts.some((item) => item.approved)) { navigate("profile"); setNotice("Upload your CV or approve your career evidence to begin."); }
-      else { navigate("jobs"); setNotice("Choose a job and select Prepare documents. ObumAI-enhanced drafting is not connected yet."); }
+      else { navigate("jobs"); setNotice("Choose a job to prepare documents. You can request local AI writing assistance inside a saved draft."); }
     } else if (name === "Application prep") navigate("applications");
     else if (name === "Career insights") navigate("insights");
     else { navigate("tools"); setNotice("Interactive interview practice is planned, but not active yet."); }
   };
 
-  const jobsSection = <section className="panel jobs-panel">
-    <div className="panel-heading">
-      <div><p className="section-kicker">OPPORTUNITY FINDER</p><h2>{page === "jobs" ? "Find opportunities" : "Latest opportunities for you"}</h2>
-        <p>Real listings and evidence-based matches — no sample jobs.</p></div>
-      <button className="text-link" type="button" onClick={() => navigate("jobs")}>View all jobs <ArrowRight size={15} /></button>
-    </div>
-    <div className="job-filter-bar">
-      <div className="tabs" role="group" aria-label="Match list">
-        <button type="button" className={view === "top" ? "active" : ""} onClick={() => setView("top")}>Top matches</button>
-        <button type="button" className={view === "possible" ? "active" : ""} onClick={() => setView("possible")}>Possible matches</button>
-      </div>
-      <div className="filter-right">
-        <select aria-label="Employer sector" value={sector} onChange={(event) => setSector(event.target.value as SectorFilter)}>
-          <option value="all">All sectors</option><option value="public">Public</option><option value="private">Private</option><option value="unknown">Other</option>
-        </select>
-        <button type="button" className={cx("icon-btn", mode === "heatmap" && "selected")} aria-label="Toggle heatmap" onClick={() => setMode(mode === "heatmap" ? "percentage" : "heatmap")}><ListFilter size={18} /></button>
-      </div>
-    </div>
-    <div className="job-list">
-      {ranked.map((item) => <JobMatch
-        key={item.canonical_key} item={item} mode={mode} expanded={expandedJob === item.canonical_key}
-        busy={preparing === item.canonical_key}
-        onToggle={() => setExpandedJob(expandedJob === item.canonical_key ? "" : item.canonical_key)}
-        onPrepare={() => void onPrepare(item.canonical_key)}
-      />)}
-      {unranked.map((item) => <SavedJobCard key={item.canonical_key} item={item}
-        busy={preparing === item.canonical_key} onPrepare={() => void onPrepare(item.canonical_key)} />)}
-      {!ranked.length && !unranked.length ? (
-        <Empty title={jobs.length ? "No matches for these filters" : "Your opportunity list is ready to grow"}
-          description={jobs.length ? "Try clearing the search or changing the match filter. Add verified evidence to improve ranking." : "Live job sources aren't configured yet. Add a job manually to start preparing your profile while we connect verified Finnish sources."}
-          icon={BriefcaseBusiness} action="Add a job" onAction={() => setJobDialog(true)} />
-      ) : null}
-    </div>
-  </section>;
+  const jobsSection = <SearchResultsPanel
+    data={discovery} search={search} sector={sector} onSector={setSector}
+    view={view} onView={setView} displayMode={mode}
+    onToggleDisplay={() => setMode(mode === "heatmap" ? "percentage" : "heatmap")}
+    currentPage={page === "jobs" ? "jobs" : "dashboard"}
+    busyKey={preparing} onPrepare={(key) => void onPrepare(key)}
+    onAllJobs={() => navigate("jobs")}
+    onChangeCriteria={() => navigate("settings")}
+    onChangeMode={(choice) => void changeSearchMode(choice)}
+  />;
 
   const cvBlock = <section className="panel cv-panel">
     <div className="panel-heading"><div><p className="section-kicker">YOUR CAREER EVIDENCE</p><h2>Your CV</h2><p>Private, on this SmartPloy account.</p></div></div>
@@ -457,7 +400,7 @@ export default function App() {
     <button className={cx("sidebar-scrim", mobileNav && "visible")} type="button" onClick={() => setMobileNav(false)} aria-label="Close navigation" />
     <aside className={cx("sidebar", mobileNav && "open")}>
       <button className="site-brand" type="button" onClick={() => navigate("dashboard")} aria-label="SmartPloy dashboard">
-        <img src="/smartploy-mark.png" alt="SmartPloy mark" /><span><strong>SmartPloy</strong><small>Job intelligence for Finland</small></span>
+        <BrandMark className="site-brand-mark" /><span><strong>SmartPloy</strong><small>Job intelligence for Finland</small></span>
       </button>
       <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-label">WORKSPACE</div>
@@ -496,15 +439,21 @@ export default function App() {
             <button type="button" className="action-card" onClick={() => navigate("tools")}><span className="action-icon"><Sparkles size={21} /></span><span><strong>Open AI tools</strong><small>CV, letters & applications</small></span><ArrowRight size={18} /></button>
           </div>
           <div className="stats-grid">
-            <Stat label="Top matches" value={dashboard.top_matches.length} note="Best evidence-based fit" icon={Target} tone="blue" onClick={() => { setView("top"); navigate("jobs"); }} />
-            <Stat label="Possible matches" value={dashboard.possible_matches.length} note="Worth a closer look" icon={BriefcaseBusiness} tone="orange" onClick={() => { setView("possible"); navigate("jobs"); }} />
+            <Stat label={preferences?.mode === "general" ? "Available jobs" : "Preference matches"}
+              value={preferences?.mode === "general" ? discovery?.available_count || 0 : discovery?.recommendations.length || 0}
+              note={preferences?.mode === "general" ? "Current public listings" : "Based on your target roles and criteria"}
+              icon={Target} tone="blue" onClick={() => { setView("top"); navigate("jobs"); }} />
+            <Stat label={preferences?.mode === "general" ? "Healthy sources" : "Explore more"}
+              value={preferences?.mode === "general" ? dashboard.source_health.filter((source) => source.status === "healthy").length : discovery?.broader.length || 0}
+              note={preferences?.mode === "general" ? "Live job feeds" : "Other opportunities outside your main targets"}
+              icon={BriefcaseBusiness} tone="orange" onClick={() => { setView("possible"); navigate("jobs"); }} />
             <Stat label="Awaiting review" value={counts.awaiting_review} note="Drafts, not submitted" icon={Clock3} tone="violet" onClick={() => navigate("applications")} />
             <Stat label="Actually submitted" value={counts.actually_submitted} note="Evidence of submission" icon={CheckCircle2} tone="green" onClick={() => navigate("applications")} />
           </div>
           <div className="dashboard-grid"><div>{jobsSection}</div>{sidePanel}</div>
         </> : null}
         {page !== "dashboard" ? <>
-          <div className="page-intro"><div><p className="section-kicker">SMARTPLOY / {selectedNav?.label.toUpperCase()}</p><h1>{selectedNav?.label}</h1><p>Personal, evidence-based career intelligence for Finland.</p></div>
+          <div className="page-intro"><div><p className="section-kicker">SMARTPLOY / {selectedNav?.label.toUpperCase()}</p><h1>{selectedNav?.label}</h1><p>{preferences?.mode === "general" ? "General search across current Finnish vacancies." : "Your private workspace, ranked by the search criteria you chose."}</p></div>
             {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Add job</button> : null}
             {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}
           </div>
@@ -519,7 +468,19 @@ export default function App() {
               <Empty title="No applications yet" description="When you've reviewed a job and prepared an application, the draft will appear here. No submissions are claimed without external evidence." icon={FileCheck2} action="Find jobs" onAction={() => navigate("jobs")} />}
             </section></div> : null}
           {page === "insights" ? <div className="secondary-grid"><section className="panel insights-panel"><p className="section-kicker">PROFILE INSIGHTS</p><h2>Your evidence, at a glance</h2><p className="muted">These figures come from your own verified profile, not estimates.</p><div className="insight-numbers"><div><strong>{facts.length}</strong><span>Total facts</span></div><div><strong>{approved.length}</strong><span>Approved facts</span></div><div><strong>{dashboard.top_matches.length + dashboard.possible_matches.length}</strong><span>Ranked matches</span></div></div><button className="primary-btn" type="button" onClick={() => navigate("profile")}>Improve profile <ArrowRight size={16} /></button></section><aside>{sourcePanel}</aside></div> : null}
-          {page === "settings" ? <div className="secondary-grid"><section className="panel settings-panel"><h2>Privacy and account</h2><p>Your CV and approved facts are scoped to your signed-in SmartPloy profile. No automatic job submission is enabled.</p><p><ShieldCheck size={17} /> Account access is protected with the configured identity provider.</p><p><LockKeyhole size={17} /> You control CV removal and fact approval.</p><button className="outline-btn" type="button" onClick={() => navigate("profile")}>Manage personal data <ArrowRight size={16} /></button></section><aside>{sourcePanel}</aside></div> : null}
+          {page === "settings" && preferences ? <div className="stacked">
+            <SearchSetup initial={preferences} settings onSave={saveSearchPreferences} />
+            <section className="panel settings-panel">
+              <h2>Privacy and account</h2>
+              <p>Your search choices belong to your signed-in SmartPloy profile.
+                General search does not rank jobs from personal data.</p>
+              <p><ShieldCheck size={17} /> Account access is protected with the configured identity provider.</p>
+              <p><LockKeyhole size={17} /> You decide which CV facts to approve and when to share application data.</p>
+              <button className="outline-btn" type="button" onClick={() => navigate("profile")}>
+                Manage personal data <ArrowRight size={16} />
+              </button>
+            </section>
+          </div> : null}
         </> : null}
         <footer className="site-footer"><span>SmartPloy · Job intelligence for Finland</span><span>Powered by ObumAI · No automatic applications submitted</span></footer>
       </main>
