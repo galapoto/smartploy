@@ -145,6 +145,8 @@ def _seniority(title: str) -> str | None:
         return "senior"
     if words & {"intern", "internship", "trainee", "junior", "graduate", "harjoittelija", "kesätyö"}:
         return "entry"
+    if words & {"mid", "midlevel", "intermediate", "keskitaso"}:
+        return "mid"
     # Many postings omit experience level. Do not fabricate it.
     return None
 
@@ -165,12 +167,20 @@ def _job_card(candidate: JobCandidate) -> dict[str, Any]:
     }
 
 
-def _alignment(candidate: JobCandidate, pref: SearchPreferences) -> tuple[int, list[str], list[str], bool]:
+def _alignment(
+    candidate: JobCandidate, pref: SearchPreferences,
+) -> tuple[int, list[str], list[str], list[str], bool]:
+    """Compare explicit search choices against observed job details.
+
+    Missing information is unknown; an observed mismatch is never silently
+    presented as a positive match. Neither result verifies qualifications.
+    """
     job = candidate.job
     earned = 0.0
     weight = 0.0
     reasons: list[str] = []
     unknown: list[str] = []
+    mismatches: list[str] = []
     role_fraction, target = _role_alignment(job.role_title, pref.roles)
     if pref.roles:
         weight += 60
@@ -179,6 +189,7 @@ def _alignment(candidate: JobCandidate, pref: SearchPreferences) -> tuple[int, l
             reasons.append(f"Job title matches {target}")
         elif role_fraction > 0:
             reasons.append(f"Job title overlaps with {target}")
+
     if pref.locations:
         weight += 16
         place = job.location.casefold()
@@ -188,6 +199,9 @@ def _alignment(candidate: JobCandidate, pref: SearchPreferences) -> tuple[int, l
                  for location in pref.locations):
             earned += 16
             reasons.append("Preferred location")
+        else:
+            mismatches.append("Location differs from preferred locations")
+
     if pref.work_modes:
         weight += 12
         if job.work_mode == "review":
@@ -195,6 +209,9 @@ def _alignment(candidate: JobCandidate, pref: SearchPreferences) -> tuple[int, l
         elif job.work_mode in pref.work_modes:
             earned += 12
             reasons.append("Preferred work arrangement")
+        else:
+            mismatches.append("Work arrangement differs from preferred arrangements")
+
     if pref.languages:
         weight += 6
         language = job.language.casefold()
@@ -207,6 +224,10 @@ def _alignment(candidate: JobCandidate, pref: SearchPreferences) -> tuple[int, l
                  for chosen in pref.languages):
             earned += 6
             reasons.append("Preferred job language")
+        else:
+            mismatches.append("Advertised language differs from preferred languages")
+
+    explicit_seniority_conflict = False
     if pref.seniority != "any":
         weight += 6
         level = _seniority(job.role_title)
@@ -215,6 +236,12 @@ def _alignment(candidate: JobCandidate, pref: SearchPreferences) -> tuple[int, l
         elif level == pref.seniority:
             earned += 6
             reasons.append("Preferred experience level")
+        else:
+            explicit_seniority_conflict = True
+            mismatches.append(
+                f"Listed {level} role differs from your {pref.seniority} experience preference"
+            )
+
     matched_keywords: list[str] = []
     if pref.keywords:
         weight += 20
@@ -223,6 +250,7 @@ def _alignment(candidate: JobCandidate, pref: SearchPreferences) -> tuple[int, l
         earned += 20 * len(matched_keywords) / len(pref.keywords)
         if matched_keywords:
             reasons.append("Keywords: " + ", ".join(matched_keywords[:4]))
+
     if pref.skills:
         weight += 18
         job_body = (job.role_title + " " + job.description[:4000] + " " + " ".join(job.requirements)).casefold()
@@ -230,12 +258,15 @@ def _alignment(candidate: JobCandidate, pref: SearchPreferences) -> tuple[int, l
         earned += 18 * len(matched_skills) / len(pref.skills)
         if matched_skills:
             reasons.append("Your stated skills mentioned: " + ", ".join(matched_skills[:4]))
-    score = round(100 * earned / weight) if weight else 0
-    # "Recommended" means *job-search preference alignment*, not verified
-    # ability to do the job, employer eligibility, or a promise of an offer.
-    primary = (role_fraction >= .5 if pref.roles else bool(matched_keywords))
-    return max(0, min(100, score)), reasons, unknown, bool(primary)
 
+    score = round(100 * earned / weight) if weight else 0
+    # Either a target title OR an explicit keyword can identify a promising
+    # opportunity; previously titles wrongly overrode keyword matches.
+    # An explicit experience-level conflict belongs in Explore more, but
+    # must never hide the job from the user or pretend they are qualified.
+    primary = (role_fraction >= 0.5 if pref.roles else False) or bool(matched_keywords)
+    primary = bool(primary and not explicit_seniority_conflict)
+    return max(0, min(100, score)), reasons, unknown, mismatches, primary
 
 def _published_order(candidate: JobCandidate) -> tuple[float, float, str]:
     """Order by genuine posting/discovery date, NOT by a poll's last-seen time.
@@ -275,26 +306,27 @@ def search_jobs(candidates: Sequence[JobCandidate], pref: SearchPreferences) -> 
             "broader": [], "all_jobs": [
                 {"canonical_key": j.canonical_key, "job": _job_card(j),
                  "preference_score": None, "reasons": [], "unknown_fields": [],
-                 "lane": "all"} for j in current
+                 "mismatched_fields": [], "lane": "all"} for j in current
             ],
             "available_count": len(current), "score_kind": "none",
         }
 
-    ranked: list[tuple[int, bool, JobCandidate, list[str], list[str]]] = []
+    ranked: list[tuple[int, bool, JobCandidate, list[str], list[str], list[str]]] = []
     for candidate in current:
-        score, reasons, unknown, primary = _alignment(candidate, pref)
-        ranked.append((score, primary, candidate, reasons, unknown))
+        score, reasons, unknown, mismatches, primary = _alignment(candidate, pref)
+        ranked.append((score, primary, candidate, reasons, unknown, mismatches))
     ranked.sort(key=lambda x: (x[0], _published_order(x[2])), reverse=True)
 
-    def cards(group: list[tuple[int, bool, JobCandidate, list[str], list[str]]], lane: str) -> list[dict[str, Any]]:
+    def cards(group: list[tuple[int, bool, JobCandidate, list[str], list[str], list[str]]], lane: str) -> list[dict[str, Any]]:
         return [{
             "canonical_key": candidate.canonical_key,
             "job": _job_card(candidate),
             "preference_score": score,
             "reasons": reasons,
             "unknown_fields": unknown,
+            "mismatched_fields": mismatches,
             "lane": lane,
-        } for score, _, candidate, reasons, unknown in group]
+        } for score, _, candidate, reasons, unknown, mismatches in group]
 
     top = [item for item in ranked if item[1]]
     broader = [item for item in ranked if not item[1]]

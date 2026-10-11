@@ -340,11 +340,12 @@ export default function App() {
     return <main className="setup-landing">
       <div className="setup-brand"><BrandMark/><span><strong>SmartPloy</strong>
         <small>Job intelligence for Finland</small></span></div>
-      <SearchSetup initial={preferences} onSave={saveSearchPreferences}/>
+      <SearchSetup key={session?.user_id || session?.profile_id || session?.subject_fingerprint || session?.email || "unidentified"} initial={preferences} onSave={saveSearchPreferences}/>
       <p className="setup-privacy"><LockKeyhole size={14}/> No CV required to browse jobs. Search choices are private to your account.</p>
     </main>;
   }
 
+  const accountViewKey = session?.user_id || session?.profile_id || session?.subject_fingerprint || session?.email || "unidentified";
   const approved = facts.filter((item) => item.approved);
   const skills = approved.filter((item) => item.fact_type === "skill");
   const sourcesReady = dashboard.source_health.some((s) => s.status === "healthy");
@@ -524,7 +525,7 @@ export default function App() {
             </section></div> : null}
           {page === "insights" ? <div className="secondary-grid"><section className="panel insights-panel"><p className="section-kicker">PROFILE INSIGHTS</p><h2>Your evidence, at a glance</h2><p className="muted">These figures come from your own verified profile, not estimates.</p><div className="insight-numbers"><div><strong>{facts.length}</strong><span>Total facts</span></div><div><strong>{approved.length}</strong><span>Approved facts</span></div><div><strong>{dashboard.top_matches.length + dashboard.possible_matches.length}</strong><span>Ranked matches</span></div></div><button className="primary-btn" type="button" onClick={() => navigate("profile")}>Improve profile <ArrowRight size={16} /></button></section><aside>{sourcePanel}</aside></div> : null}
           {page === "settings" && preferences ? <div className="stacked">
-            <SearchSetup initial={preferences} settings onSave={saveSearchPreferences} />
+            <SearchSetup key={accountViewKey} initial={preferences} settings onSave={saveSearchPreferences} />
             <section className="panel settings-panel">
               <h2>Privacy and account</h2>
               <p>Your search choices belong to your signed-in SmartPloy profile.

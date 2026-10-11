@@ -140,6 +140,43 @@ def test_general_and_equally_scored_searches_sort_by_posting_date_not_source_pol
     assert result["recommendations"][0]["job"]["role_title"] == "Newer Data Analyst"
 
 
+
+def test_keyword_matches_are_recommended_even_if_saved_titles_differ():
+    pref = revise_preferences("p", search_settings(
+        roles=["Software tester"], keywords=["Python"], seniority="any",
+        skills=[], locations=[], languages=[], work_modes=[],
+    ), revision=0)
+    result = search_jobs([job("Data Analyst")], pref)
+    assert len(result["recommendations"]) == 1
+    assert result["recommendations"][0]["job"]["role_title"] == "Data Analyst"
+    assert any("Keywords: Python" in reason for reason in result["recommendations"][0]["reasons"])
+
+
+def test_explicit_seniority_conflicts_are_visible_in_explore_more():
+    pref = revise_preferences("p", search_settings(
+        roles=["Data Analyst"], seniority="entry",
+    ), revision=0)
+    result = search_jobs([
+        job("Senior Data Analyst", language="Finnish", work_mode="onsite"),
+        job("Junior Data Analyst", language="English", work_mode="remote"),
+    ], pref)
+    assert [item["job"]["role_title"] for item in result["recommendations"]] == ["Junior Data Analyst"]
+    senior = result["broader"][0]
+    assert senior["job"]["role_title"] == "Senior Data Analyst"
+    assert "Listed senior role differs from your entry experience preference" in senior["mismatched_fields"]
+    assert "Advertised language differs from preferred languages" in senior["mismatched_fields"]
+    assert "Work arrangement differs from preferred arrangements" in senior["mismatched_fields"]
+    assert senior["preference_score"] < 100
+
+
+def test_unknown_job_seniority_remains_discoverable_not_falsely_matched():
+    pref = revise_preferences("p", search_settings(roles=["Data Analyst"], seniority="entry"), revision=0)
+    result = search_jobs([job("Data Analyst")], pref)
+    assert len(result["recommendations"]) == 1
+    assert "Experience level not specified" in result["recommendations"][0]["unknown_fields"]
+    assert result["recommendations"][0]["mismatched_fields"] == []
+
+
 def test_general_mode_ignores_saved_personal_criteria():
     prefs = revise_preferences("p", search_settings(
         mode="general", roles=["Data Analyst"], keywords=["python"],

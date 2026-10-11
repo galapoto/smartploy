@@ -359,6 +359,7 @@ export interface SearchJobCard {
   preference_score: number | null;
   reasons: string[];
   unknown_fields: string[];
+  mismatched_fields?: string[];
   lane: "recommended" | "broader" | "all";
 }
 

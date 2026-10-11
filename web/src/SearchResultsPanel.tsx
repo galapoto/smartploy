@@ -39,6 +39,7 @@ function JobCard(props: {
         {item.reasons.length ? <ul>{item.reasons.map((text) => <li key={text}>{text}</li>)}</ul>
         : <p>Few stated criteria align with the details available in this job.</p>}
         {item.unknown_fields.length ? <p className="muted">Not verified from the posting: {item.unknown_fields.join("; ")}.</p> : null}
+        {item.mismatched_fields?.length ? <p className="muted">Differences from your preferences: {item.mismatched_fields.join("; ")}.</p> : null}
         <small>A search match is not a verified skills or eligibility assessment.</small>
       </div> : null}
     </div>
