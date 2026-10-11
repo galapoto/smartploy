@@ -66,6 +66,7 @@ class SearchPreferences:
     languages: tuple[str, ...] = ()
     work_modes: tuple[str, ...] = ()
     keywords: tuple[str, ...] = ()
+    skills: tuple[str, ...] = ()
     seniority: str = "any"
     revision: int = 0
     updated_at: str = ""
@@ -75,7 +76,8 @@ class SearchPreferences:
             "completed": self.completed, "mode": self.mode,
             "roles": list(self.roles), "locations": list(self.locations),
             "languages": list(self.languages), "work_modes": list(self.work_modes),
-            "keywords": list(self.keywords), "seniority": self.seniority,
+            "keywords": list(self.keywords), "skills": list(self.skills),
+            "seniority": self.seniority,
             "revision": self.revision, "updated_at": self.updated_at,
             "verified_qualification_fit": False,
         }
@@ -97,6 +99,7 @@ def revise_preferences(
     work_modes = _items(data.get("work_modes", []), field="work_modes", maximum=3,
                         size=12, allowed=WORK_MODE_OPTIONS)
     keywords = _items(data.get("keywords", []), field="keywords", maximum=12, size=60)
+    skills = _items(data.get("skills", []), field="skills", maximum=16, size=60)
     if mode == "personalized" and not roles and not keywords:
         raise SearchPreferenceError("Personalized search needs at least one job title or keyword")
     if revision < 0:
@@ -104,7 +107,7 @@ def revise_preferences(
     return SearchPreferences(
         profile_id=profile_id, completed=True, mode=mode, roles=roles,
         locations=locations, languages=languages, work_modes=work_modes,
-        keywords=keywords, seniority=seniority,
+        keywords=keywords, skills=skills, seniority=seniority,
         revision=revision + 1, updated_at=utc_now_iso(),
     )
 
@@ -219,6 +222,13 @@ def _alignment(candidate: JobCandidate, pref: SearchPreferences) -> tuple[int, l
         earned += 20 * len(matched_keywords) / len(pref.keywords)
         if matched_keywords:
             reasons.append("Keywords: " + ", ".join(matched_keywords[:4]))
+    if pref.skills:
+        weight += 18
+        job_body = (job.role_title + " " + job.description[:4000] + " " + " ".join(job.requirements)).casefold()
+        matched_skills = [skill for skill in pref.skills if skill.casefold() in job_body]
+        earned += 18 * len(matched_skills) / len(pref.skills)
+        if matched_skills:
+            reasons.append("Your stated skills mentioned: " + ", ".join(matched_skills[:4]))
     score = round(100 * earned / weight) if weight else 0
     # "Recommended" means *job-search preference alignment*, not verified
     # ability to do the job, employer eligibility, or a promise of an offer.
