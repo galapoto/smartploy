@@ -116,7 +116,7 @@ function JobMatch(props: {
           </a>
         ) : null}
         <button className="navy-btn compact" type="button"
-          disabled={props.busy || !job.source_current} onClick={props.onPrepare}>
+          disabled={props.busy || !props.item.source_current} onClick={props.onPrepare}>
           {props.busy ? "Opening…" : "Prepare documents"} <ArrowRight size={15}/>
         </button>
       </div>
