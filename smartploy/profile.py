@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 import hashlib
+import re
+from urllib.parse import urlsplit
 
 from .domain import canonical_json, normalize_identity_text, normalize_space, utc_now_iso
 
@@ -12,6 +14,10 @@ from .domain import canonical_json, normalize_identity_text, normalize_space, ut
 FACT_TYPES = {
     "identity",
     "contact",
+    "email",
+    "phone",
+    "linkedin",
+    "github",
     "skill",
     "language",
     "education",
@@ -45,6 +51,29 @@ class ProfileFact:
         source = normalize_space(self.source)
         if not value:
             raise ValueError("profile fact value is required")
+        if fact_type == "email":
+            if len(value) > 254 or not re.fullmatch(
+                r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", value
+            ):
+                raise ValueError("Please provide a valid email address")
+        if fact_type == "phone":
+            if not (5 <= len(value) <= 40) or len(re.findall(r"\\d", value)) < 5 or not re.fullmatch(
+                r"[+\\d() .-]+", value
+            ):
+                raise ValueError("Please provide a valid phone number")
+        if fact_type in {"linkedin", "github"}:
+            parsed = urlsplit(value)
+            allowed_hosts = (
+                {"linkedin.com", "www.linkedin.com"} if fact_type == "linkedin"
+                else {"github.com", "www.github.com"}
+            )
+            if (
+                parsed.scheme != "https" or parsed.hostname not in allowed_hosts
+                or parsed.username or parsed.password or parsed.port not in (None, 443)
+                or not parsed.path or parsed.path == "/"
+            ):
+                raise ValueError("Please provide a public HTTPS profile URL")
+
         if not source:
             raise ValueError("profile fact source is required")
         confidence = float(self.confidence)
