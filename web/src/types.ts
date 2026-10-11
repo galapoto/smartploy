@@ -296,3 +296,31 @@ export interface BrowserHandoffPacket {
     employer_submit_allowed_without_new_approval: false;
   };
 }
+
+
+export interface BrowserObservedReceipt {
+  workspace_id: string;
+  document_revision: number;
+  document_sha256: string;
+  reference: string;
+  confirmation_page_url: string;
+  confirmation_page_sha256: string;
+  observed_at: string;
+  evidence_digest: string;
+  status: "browser_observed_unverified";
+  independently_verified_by_employer: false;
+  actually_submitted_count_changed: false;
+}
+
+export interface BrowserReceiptImport {
+  schema: "smartploy.browser_receipt.v1";
+  workspace_id: string;
+  document_revision: number;
+  document_sha256: string;
+  application_url: string;
+  confirmation_page_url: string;
+  reference: string;
+  confirmation_page_sha256: string;
+  observed_at: string;
+  confirmed_visible: true;
+}
