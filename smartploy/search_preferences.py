@@ -151,6 +151,20 @@ def _seniority(title: str) -> str | None:
     return None
 
 
+def _mentions_phrase(text: str, phrase: str) -> bool:
+    """Match literal, complete keywords rather than incidental substrings.
+
+    For example AI must not match 'paid', SQL must not match 'NoSQL', and
+    Go must not match 'ongoing'. Spaces, slashes, hyphens and underscores
+    can separate words in a multiword phrase. User text is always regex-
+    escaped, preserving punctuation in phrases such as C++ and Node.js.
+    """
+    parts = phrase.split()
+    if not parts:
+        return False
+    pattern = r"(?<!\\w)" + r"[\\s/_-]+".join(re.escape(part.casefold()) for part in parts) + r"(?!\\w)"
+    return re.search(pattern, text.casefold()) is not None
+
 def _job_card(candidate: JobCandidate) -> dict[str, Any]:
     job = candidate.job
     return {
@@ -246,7 +260,7 @@ def _alignment(
     if pref.keywords:
         weight += 20
         searchable = (job.role_title + " " + job.description[:4000]).casefold()
-        matched_keywords = [word for word in pref.keywords if word.casefold() in searchable]
+        matched_keywords = [word for word in pref.keywords if _mentions_phrase(searchable, word)]
         earned += 20 * len(matched_keywords) / len(pref.keywords)
         if matched_keywords:
             reasons.append("Keywords: " + ", ".join(matched_keywords[:4]))
@@ -254,7 +268,7 @@ def _alignment(
     if pref.skills:
         weight += 18
         job_body = (job.role_title + " " + job.description[:4000] + " " + " ".join(job.requirements)).casefold()
-        matched_skills = [skill for skill in pref.skills if skill.casefold() in job_body]
+        matched_skills = [skill for skill in pref.skills if _mentions_phrase(job_body, skill)]
         earned += 18 * len(matched_skills) / len(pref.skills)
         if matched_skills:
             reasons.append("Your stated skills mentioned: " + ", ".join(matched_skills[:4]))
