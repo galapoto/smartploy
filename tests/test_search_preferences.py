@@ -51,6 +51,7 @@ def search_settings(**overrides):
         "languages": ["english"],
         "work_modes": ["remote", "hybrid"],
         "keywords": [],
+        "skills": ["Python"],
         "seniority": "entry",
     }
     values.update(overrides)
@@ -89,6 +90,21 @@ def test_personalized_ranks_matching_titles_with_explanations_not_fake_qualifica
     assert "Work arrangement not stated" in tester["unknown_fields"]
     assert len(matches["broader"]) == 1
     assert "experience" not in str(best["reasons"]).casefold() or best["preference_score"] <= 100
+
+
+def test_declared_skills_help_rank_jobs_but_are_not_automatically_approved_cv_facts():
+    pref = revise_preferences("candidate", search_settings(
+        roles=["Data analyst"], skills=["Python", "Power BI"],
+    ), revision=0)
+    result = search_jobs([
+        job("Junior Data Analyst"),
+        job("General Store Manager", company="Unrelated Employer"),
+    ], pref)
+    first = result["recommendations"][0]
+    assert first["preference_score"] > 0
+    assert any("Your stated skills mentioned" in reason for reason in first["reasons"])
+    assert "approved" not in first["reasons"][0].casefold()
+    assert result["score_kind"] == "preference_alignment_not_verified_qualification"
 
 
 def test_unknown_job_metadata_does_not_gain_full_match_credit():
@@ -132,6 +148,7 @@ def test_preference_validation_limits_bad_inputs():
         {"work_modes": ["maybe"]},
         {"seniority": "superexpert"},
         {"keywords": ["one"] * 13},
+        {"skills": ["one"] * 17},
         {"locations": ["x" * 100]},
     ):
         with pytest.raises(SearchPreferenceError):
