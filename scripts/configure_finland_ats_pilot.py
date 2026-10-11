@@ -89,8 +89,10 @@ def plan_env_update(env_contents: str, pilot_json: str) -> tuple[str, bool]:
     return env_contents + prefix + KEY + "=" + pilot_json + "\n", True
 
 
-def plan_tsmg_transport_upgrade(env_contents: str, reviewed: list[dict]) -> tuple[str, bool]:
-    """Upgrade only the original five-source pilot; refuse any operator changes."""
+def plan_tsmg_transport_upgrade(
+    env_contents: str, reviewed: list[dict], *, rollback: bool = False
+) -> tuple[str, bool]:
+    """Switch only the canonical old/reviewed pilot; refuse operator changes."""
     lines = env_contents.splitlines(keepends=True)
     found = [i for i, line in enumerate(lines) if line.startswith(KEY + "=")]
     file_values = [line[len(FILE_KEY) + 1:].strip() for line in lines if line.startswith(FILE_KEY + "=")]
@@ -109,11 +111,13 @@ def plan_tsmg_transport_upgrade(env_contents: str, reviewed: list[dict]) -> tupl
             previous.pop("request_timeout_seconds", None)
             previous.pop("page_size", None)
         old.append(previous)
-    if current == reviewed:
+    target = old if rollback else reviewed
+    expected = reviewed if rollback else old
+    if current == target:
         return env_contents, False
-    if current != old:
+    if current != expected:
         raise PilotConfigurationError("Refusing to override an operator-modified ATS source selection")
-    new_json = json.dumps(reviewed, ensure_ascii=False, separators=(",", ":"))
+    new_json = json.dumps(target, ensure_ascii=False, separators=(",", ":"))
     ending = "\r\n" if lines[index].endswith("\r\n") else "\n"
     lines[index] = KEY + "=" + new_json + ending
     return "".join(lines), True
@@ -131,14 +135,24 @@ def _validate_private_env(path: Path) -> os.stat_result:
     return details
 
 
-def stage_pilot(env: Path = ENV, registry: Path = REGISTRY, *, apply: bool = False, upgrade_tsmg_transport: bool = False) -> dict:
+def stage_pilot(
+    env: Path = ENV,
+    registry: Path = REGISTRY,
+    *,
+    apply: bool = False,
+    upgrade_tsmg_transport: bool = False,
+    rollback_tsmg_transport: bool = False,
+) -> dict:
+    if upgrade_tsmg_transport and rollback_tsmg_transport:
+        raise PilotConfigurationError("Choose upgrade or rollback, not both")
     sources = reviewed_sources(registry)
     env_stat = _validate_private_env(env)
     original = env.read_text(encoding="utf-8")
     pilot_json = json.dumps(sources, ensure_ascii=False, separators=(",", ":"))
     replacement, changed = (
-        plan_tsmg_transport_upgrade(original, sources)
-        if upgrade_tsmg_transport else plan_env_update(original, pilot_json)
+        plan_tsmg_transport_upgrade(original, sources, rollback=rollback_tsmg_transport)
+        if upgrade_tsmg_transport or rollback_tsmg_transport
+        else plan_env_update(original, pilot_json)
     )
     if apply and changed:
         descriptor, candidate = tempfile.mkstemp(prefix=".smartploy-env-", dir=str(env.parent))
@@ -164,7 +178,7 @@ def stage_pilot(env: Path = ENV, registry: Path = REGISTRY, *, apply: bool = Fal
         "source_count": len(sources),
         "tenant_ids": [item["tenant"] for item in sources],
         "region_policy": "explicit Finland/Finnish locations only",
-        "transport_scope": "TSMG only" if upgrade_tsmg_transport else "initial approved pilot",
+        "transport_scope": "TSMG only" if (upgrade_tsmg_transport or rollback_tsmg_transport) else "initial approved pilot",
         "external_ai_forwarding": "disabled",
         "private_env": "updated" if changed and apply else "unchanged" if not changed else "change_ready",
         "next": "run production preflight and guarded deploy" if apply else "review and rerun with --apply",
@@ -176,14 +190,24 @@ def main() -> int:
         description="Review or stage the opt-in public employer Finland job-source pilot"
     )
     parser.add_argument("--apply", action="store_true", help="stage pilot in the private host env")
-    parser.add_argument(
+    policy_action = parser.add_mutually_exclusive_group()
+    policy_action.add_argument(
         "--upgrade-tsmg-transport",
         action="store_true",
         help="upgrade only unmodified existing five-source pilot with a bounded TSMG timeout",
     )
+    policy_action.add_argument(
+        "--rollback-tsmg-transport",
+        action="store_true",
+        help="restore only the original TSMG timeout/page-size settings",
+    )
     args = parser.parse_args()
     try:
-        result = stage_pilot(apply=args.apply, upgrade_tsmg_transport=args.upgrade_tsmg_transport)
+        result = stage_pilot(
+            apply=args.apply,
+            upgrade_tsmg_transport=args.upgrade_tsmg_transport,
+            rollback_tsmg_transport=args.rollback_tsmg_transport,
+        )
     except (PilotConfigurationError, OSError, ValueError) as exc:
         raise SystemExit("ATS pilot: " + str(exc)) from exc
     print(json.dumps(result, sort_keys=True, ensure_ascii=False))
