@@ -76,9 +76,9 @@ beforeEach(() => {
   } as never);
   vi.mocked(api.getHealth).mockResolvedValue({ obumai_configured: false } as never);
   vi.mocked(api.getCV).mockResolvedValue({ present: false });
-  vi.mocked(api.getProfileFacts).mockResolvedValue({ facts: [] });
-  vi.mocked(api.getApplications).mockResolvedValue({ applications: [] });
-  vi.mocked(api.getJobs).mockResolvedValue({ jobs: [] });
+  vi.mocked(api.getProfileFacts).mockResolvedValue({ facts: [], count: 0 });
+  vi.mocked(api.getApplications).mockResolvedValue({ applications: [], count: 0 });
+  vi.mocked(api.getJobs).mockResolvedValue({ jobs: [], count: 0 });
   vi.mocked(api.getLocalAIStatus).mockResolvedValue({
     configured: false, ready: false, provider: "disabled", model: "", external_ai_forwarding: false,
   });
