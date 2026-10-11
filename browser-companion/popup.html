@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartPloy Apply Companion</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <img src="icon128.png" alt="SmartPloy" />
+      <div><h1>SmartPloy</h1><p>Apply Companion · Review first</p></div>
+    </header>
+
+    <section>
+      <label for="packet">1. Paste your approved SmartPloy packet</label>
+      <textarea id="packet" rows="5" placeholder="Paste the short-lived packet copied from My applications." spellcheck="false"></textarea>
+      <p class="muted">Data stays in this popup until it closes. Nothing is stored or sent to SmartPloy from this extension.</p>
+      <button id="inspect">Inspect employer form</button>
+    </section>
+
+    <section id="plan" hidden>
+      <h2>2. Review the proposed field filling</h2>
+      <p id="job"></p>
+      <div id="summary" role="status"></div>
+      <ul id="actions"></ul>
+      <div id="required"></div>
+      <button id="fill">Fill approved fields (no submit)</button>
+    </section>
+
+    <section id="submission" hidden>
+      <h2>3. Review employer form and submit</h2>
+      <p class="warning">Attach your CV file manually, answer employer-specific questions,
+        review every field and privacy notice, and solve any security challenge yourself.</p>
+      <button id="check">Check required fields</button>
+      <p id="preflight" role="status"></p>
+      <label class="confirm"><input type="checkbox" id="approve" />
+        I reviewed this employer's form and explicitly approve one attempt to submit this job application.</label>
+      <button id="submit" class="danger" disabled>Submit this application once</button>
+      <p class="muted">Automated submit is supported only for a clearly identified Lever submission form.
+        Otherwise submit using the employer's own button.</p>
+      <button id="receipt" class="secondary">Check visible confirmation</button>
+    </section>
+
+    <p id="feedback" role="status" aria-live="polite"></p>
+    <footer>SmartPloy · User-controlled · No automatic retries or external model calls</footer>
+  </main>
+  <script src="popup.mjs" type="module"></script>
+</body>
+</html>

@@ -2,14 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, Clock3,
   Download, FileCheck2, FileText, LockKeyhole, RefreshCw, Save, ShieldCheck,
-  Trash2, AlertCircle, Sparkles, WandSparkles
+  Trash2, AlertCircle, Sparkles, WandSparkles, ClipboardCopy, ExternalLink
 } from "lucide-react";
 import {
   applicationDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
   getApplicationWorkspaces, markApplicationManuallySent,
-  getLocalAIStatus, requestLocalAISuggestions
+  getLocalAIStatus, requestLocalAISuggestions,
+  getBrowserHandoffReadiness, createBrowserHandoffPacket
 } from "./api";
-import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion } from "./types";
+import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness } from "./types";
 
 function safePostingLink(url: string): string {
   try {
@@ -32,6 +33,8 @@ export default function ApplicationStudio(props: {
   const [aiBusy, setAIBusy] = useState(false);
   const [aiStatus, setAIStatus] = useState<LocalAIStatus | null>(null);
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
+  const [handoff, setHandoff] = useState<BrowserHandoffReadiness | null>(null);
+  const [handoffBusy, setHandoffBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -63,6 +66,18 @@ export default function ApplicationStudio(props: {
     setAISuggestion(null);
     setCvText(selected?.cv_text || "");
     setLetterText(selected?.cover_letter_text || "");
+  }, [selected?.workspace_id, selected?.revision]);
+
+  useEffect(() => {
+    if (!selected) { setHandoff(null); return; }
+    let alive = true;
+    setHandoff(null);
+    void getBrowserHandoffReadiness(selected.workspace_id).then((result) => {
+      if (alive) setHandoff(result);
+    }).catch(() => {
+      if (alive) setHandoff(null);
+    });
+    return () => { alive = false; };
   }, [selected?.workspace_id, selected?.revision]);
 
   const dirty = Boolean(selected && (
@@ -129,6 +144,27 @@ export default function ApplicationStudio(props: {
     setLetterText(draft.cover_letter);
     setAISuggestion(null);
     setMessage("AI wording inserted as unsaved edits. Review every claim and save to keep them.");
+  }
+
+  async function copyBrowserPacket() {
+    if (!selected || dirty || !handoff?.ready || selected.status !== "draft") return;
+    let origin = "the employer website";
+    try { origin = new URL(selected.application_url).origin; } catch { /* disabled by API validation */ }
+    if (!window.confirm(
+      "Prepare a short-lived job-application packet for " + origin + "? " +
+      "This copies your approved name and contact fields, and reviewed cover letter, " +
+      "to your computer clipboard. Keep it private; you will paste it into the " +
+      "optional SmartPloy browser companion. No form is filled or submitted by this action."
+    )) return;
+    setHandoffBusy(true); setError(""); setMessage("");
+    try {
+      const response = await createBrowserHandoffPacket(selected.workspace_id, selected.revision);
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable. Use a secure HTTPS browser.");
+      await navigator.clipboard.writeText(JSON.stringify(response.packet));
+      setMessage("Private application packet copied. Open the employer posting and use the SmartPloy browser companion within 15 minutes. Review and attach your CV before submitting.");
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Unable to copy the application packet.");
+    } finally { setHandoffBusy(false); }
   }
 
   async function markApplied() {
@@ -302,6 +338,32 @@ export default function ApplicationStudio(props: {
               aria-disabled={dirty}><Download size={15}/> PDF</a>
           </div>
         </div>
+        {selected.status === "draft" ? <section className="studio-handoff" aria-label="Browser application assistant">
+          <div className="studio-handoff-header">
+            <div><p className="section-kicker">EMPLOYER APPLICATION</p><h4>Fill the employer's form</h4>
+              <p>Use the optional SmartPloy browser companion to fill approved contact fields on this specific job's website.</p></div>
+            <ExternalLink size={18} />
+          </div>
+          {handoff?.blockers.length ? <div className="studio-handoff-blockers">
+            <strong>Before applying, complete:</strong>
+            <ul>{handoff.blockers.map((item) => <li key={item}>{item}</li>)}</ul>
+          </div> : null}
+          <div className="studio-handoff-actions">
+            <button type="button" className="navy-btn"
+              disabled={!handoff?.ready || dirty || busy || handoffBusy}
+              onClick={() => void copyBrowserPacket()}>
+              <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" : "Copy approved autofill packet"}
+            </button>
+            <a className="outline-btn"
+              href="https://github.com/galapoto/smartploy/blob/main/docs/BROWSER_APPLY_COMPANION.md"
+              target="_blank" rel="noopener noreferrer">Browser companion instructions <ArrowUpRight size={15}/></a>
+          </div>
+          <p className="studio-handoff-disclaimer">
+            Browser-only, 15-minute packet. Upload your CV on the employer's page and answer
+            any employer-specific questions. Final submission needs a separate approval and
+            must be verified from the employer's confirmation; preparing the packet is not applying.
+          </p>
+        </section> : null}
         <div className="studio-footer">
           <span><LockKeyhole size={14}/> Private workspace · revision {selected.revision}</span>
           {selected.status === "draft" ? <div className="studio-actions">

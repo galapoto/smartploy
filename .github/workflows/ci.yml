@@ -58,6 +58,11 @@ jobs:
       - name: Web tests
         working-directory: web
         run: npm run test
+      - name: Browser companion JS and security checks
+        run: |
+          node --check browser-companion/logic.mjs
+          node --check browser-companion/popup.mjs
+          node --test browser-companion/tests/logic.test.mjs
       - name: Web build
         working-directory: web
         run: npm run build

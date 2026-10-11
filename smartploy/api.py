@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 from authlib.integrations.base_client import OAuthError
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response, JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 import uvicorn
@@ -20,6 +20,7 @@ from .access import AccessPrincipal, AccessSettings, CloudflareAccessVerifier
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
+from .browser_handoff import HandoffError, make_browser_packet, review_handoff
 from .local_drafting import LocalDraftClient, LocalDraftError, LocalDraftSettings
 from .cv_import import CVImportError, parse_cv
 from .cv_storage import MemoryCVRepository, PostgresCVRepository
@@ -156,6 +157,12 @@ class LocalAISuggestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     acknowledge_local_ai_processing: bool
+
+
+class BrowserHandoffPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    confirm_private_data_transfer: bool
 
 
 class WorkspaceAppliedPayload(BaseModel):
@@ -765,6 +772,38 @@ def create_app(
         if latest is None or latest.revision != payload.expected_revision or latest.status != "draft":
             raise HTTPException(status_code=409, detail="Draft changed during AI generation; reload and retry")
         return {"suggestion": suggestion, "workspace_revision": latest.revision}
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/handoff-readiness")
+    def browser_handoff_readiness(workspace_id: str, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        item = app.state.workspace_repository.get(tenant.profile_repository.profile_id, workspace_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        job = tenant.get_job(item.canonical_key)
+        result = review_handoff(item, job, tenant.profile())
+        return result
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/browser-packet")
+    def create_browser_handoff_packet(
+        workspace_id: str, payload: BrowserHandoffPayload, request: Request
+    ) -> JSONResponse:
+        if payload.confirm_private_data_transfer is not True:
+            raise HTTPException(status_code=422, detail="Confirm the per-job personal-data transfer")
+        tenant, _ = tenant_context(request)
+        item = app.state.workspace_repository.get(tenant.profile_repository.profile_id, workspace_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        if item.revision != payload.expected_revision:
+            raise HTTPException(status_code=409, detail="Document revision changed; review and retry")
+        job = tenant.get_job(item.canonical_key)
+        try:
+            packet = make_browser_packet(item, job, tenant.profile())
+        except HandoffError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return JSONResponse(
+            {"packet": packet, "external_actions_performed": False},
+            headers={"Cache-Control": "private, no-store", "Pragma": "no-cache", "X-Content-Type-Options": "nosniff"},
+        )
 
     @app.get("/api/v1/application-workspaces/{workspace_id}")
     def get_application_workspace(workspace_id: str, request: Request) -> dict[str, Any]:
