@@ -1,0 +1,730 @@
+{
+  "schema": "smartploy.matching-quality-fixtures.v1",
+  "description": "Synthetic titles and credentials only; not a calibrated hiring or live source accuracy benchmark.",
+  "required_categories": [
+    "bilingual-role",
+    "career-switch",
+    "degree-evidence",
+    "first-use",
+    "freshness",
+    "general-mode",
+    "keyword-boundaries",
+    "language-labels",
+    "preference-conflict",
+    "role-boundaries",
+    "seniority",
+    "skill-boundaries",
+    "skill-evidence",
+    "unknown-metadata",
+    "work-arrangement"
+  ],
+  "cases": [
+    {
+      "id": "fresh-account-requires-choice",
+      "category": "first-use",
+      "kind": "first_use",
+      "jobs": [
+        {
+          "title": "Data Analyst",
+          "description": "Synthetic posting"
+        }
+      ],
+      "expect": {
+        "mode": "setup_required",
+        "lanes": {}
+      }
+    },
+    {
+      "id": "general-browse-no-personal-scores",
+      "category": "general-mode",
+      "kind": "search",
+      "preferences": {
+        "mode": "general",
+        "roles": [
+          "Data Analyst"
+        ],
+        "skills": [
+          "Python"
+        ],
+        "keywords": [
+          "Python"
+        ]
+      },
+      "jobs": [
+        {
+          "title": "Junior Data Analyst",
+          "description": "Python analysis"
+        },
+        {
+          "title": "Senior Nurse",
+          "description": "Ward supervision"
+        }
+      ],
+      "expect": {
+        "mode": "general",
+        "lanes": {
+          "Junior Data Analyst": "all",
+          "Senior Nurse": "all"
+        }
+      }
+    },
+    {
+      "id": "bilingual-english-search-finnish-job",
+      "category": "bilingual-role",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ]
+      },
+      "jobs": [
+        {
+          "title": "Data-analyytikko",
+          "description": "Raportointi"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Data-analyytikko": "recommended"
+        },
+        "reason_contains": {
+          "Data-analyytikko": [
+            "English/Finnish equivalent"
+          ]
+        }
+      }
+    },
+    {
+      "id": "bilingual-finnish-search-english-job",
+      "category": "bilingual-role",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Liiketoiminta-analyytikko"
+        ]
+      },
+      "jobs": [
+        {
+          "title": "Business Analyst",
+          "description": "Business requirements"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Business Analyst": "recommended"
+        },
+        "reason_contains": {
+          "Business Analyst": [
+            "English/Finnish equivalent"
+          ]
+        }
+      }
+    },
+    {
+      "id": "bilingual-software-testing-and-en-code",
+      "category": "language-labels",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Software Tester"
+        ],
+        "languages": [
+          "english"
+        ]
+      },
+      "jobs": [
+        {
+          "title": "Ohjelmistotestaaja",
+          "description": "Testaus",
+          "language": "EN"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Ohjelmistotestaaja": "recommended"
+        },
+        "reason_contains": {
+          "Ohjelmistotestaaja": [
+            "Preferred job language"
+          ]
+        }
+      }
+    },
+    {
+      "id": "junior-target-demotes-senior-even-when-any",
+      "category": "seniority",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Junior Data Analyst"
+        ],
+        "seniority": "any"
+      },
+      "jobs": [
+        {
+          "title": "Senior Data Analyst",
+          "description": "Senior data ownership"
+        },
+        {
+          "title": "Junior Data Analyst",
+          "description": "Graduate analysis"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Senior Data Analyst": "broader",
+          "Junior Data Analyst": "recommended"
+        },
+        "mismatch_contains": {
+          "Senior Data Analyst": [
+            "experience level stated in your target job title"
+          ]
+        }
+      }
+    },
+    {
+      "id": "entry-setting-demotes-known-senior",
+      "category": "seniority",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "seniority": "entry"
+      },
+      "jobs": [
+        {
+          "title": "Senior Data Analyst",
+          "description": "Experienced position"
+        },
+        {
+          "title": "Data Analyst",
+          "description": "Reports and analytics"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Senior Data Analyst": "broader",
+          "Data Analyst": "recommended"
+        },
+        "mismatch_contains": {
+          "Senior Data Analyst": [
+            "Listed senior role differs"
+          ]
+        },
+        "unknown_contains": {
+          "Data Analyst": [
+            "Experience level not specified"
+          ]
+        }
+      }
+    },
+    {
+      "id": "broad-target-keeps-broader-roles-discoverable",
+      "category": "seniority",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst",
+          "Junior Data Analyst"
+        ],
+        "seniority": "any"
+      },
+      "jobs": [
+        {
+          "title": "Senior Data Analyst",
+          "description": "Business reports"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Senior Data Analyst": "recommended"
+        }
+      }
+    },
+    {
+      "id": "metadata-unknown-not-falsely-matched",
+      "category": "unknown-metadata",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "locations": [
+          "Helsinki"
+        ],
+        "languages": [
+          "finnish"
+        ],
+        "work_modes": [
+          "remote"
+        ],
+        "seniority": "entry"
+      },
+      "jobs": [
+        {
+          "title": "Data Analyst",
+          "description": "Data reporting",
+          "location": "Remote",
+          "language": "Not specified",
+          "work_mode": "review"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Data Analyst": "recommended"
+        },
+        "unknown_contains": {
+          "Data Analyst": [
+            "Location not provided",
+            "Job language label not recognized",
+            "Work arrangement not stated",
+            "Experience level not specified"
+          ]
+        },
+        "score_below": {
+          "Data Analyst": 90
+        }
+      }
+    },
+    {
+      "id": "observed-preference-differences-explained",
+      "category": "preference-conflict",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "locations": [
+          "Helsinki"
+        ],
+        "languages": [
+          "english"
+        ],
+        "work_modes": [
+          "remote"
+        ],
+        "seniority": "entry"
+      },
+      "jobs": [
+        {
+          "title": "Senior Data Analyst",
+          "description": "On-site reporting",
+          "location": "Turku",
+          "language": "Finnish",
+          "work_mode": "onsite"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Senior Data Analyst": "broader"
+        },
+        "mismatch_contains": {
+          "Senior Data Analyst": [
+            "Location differs",
+            "Work arrangement differs",
+            "Advertised language differs",
+            "Listed senior role differs"
+          ]
+        },
+        "score_below": {
+          "Senior Data Analyst": 100
+        }
+      }
+    },
+    {
+      "id": "hybrid-fi-project-coordinator-match",
+      "category": "work-arrangement",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Project Coordinator"
+        ],
+        "locations": [
+          "Espoo"
+        ],
+        "work_modes": [
+          "hybrid"
+        ],
+        "languages": [
+          "finnish"
+        ]
+      },
+      "jobs": [
+        {
+          "title": "Projektikoordinaattori",
+          "description": "Projektin koordinointi",
+          "location": "Espoo",
+          "work_mode": "hybrid",
+          "language": "FI"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Projektikoordinaattori": "recommended"
+        },
+        "reason_contains": {
+          "Projektikoordinaattori": [
+            "Preferred location",
+            "Preferred work arrangement",
+            "Preferred job language",
+            "English/Finnish equivalent"
+          ]
+        }
+      }
+    },
+    {
+      "id": "onsite-vs-remote-is-known-difference",
+      "category": "work-arrangement",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "work_modes": [
+          "remote"
+        ]
+      },
+      "jobs": [
+        {
+          "title": "Data Analyst",
+          "work_mode": "onsite",
+          "description": "Reporting"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Data Analyst": "recommended"
+        },
+        "mismatch_contains": {
+          "Data Analyst": [
+            "Work arrangement differs"
+          ]
+        },
+        "score_below": {
+          "Data Analyst": 100
+        }
+      }
+    },
+    {
+      "id": "ai-keyword-not-inside-paid",
+      "category": "keyword-boundaries",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "keywords": [
+          "AI"
+        ]
+      },
+      "jobs": [
+        {
+          "title": "Paid Marketing Specialist",
+          "description": "Paid media specialist"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Paid Marketing Specialist": "broader"
+        },
+        "score_below": {
+          "Paid Marketing Specialist": 1
+        }
+      }
+    },
+    {
+      "id": "keyword-expands-target-role-family",
+      "category": "keyword-boundaries",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Software Tester"
+        ],
+        "keywords": [
+          "Python"
+        ]
+      },
+      "jobs": [
+        {
+          "title": "Data Engineer",
+          "description": "Python pipelines"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Data Engineer": "recommended"
+        },
+        "reason_contains": {
+          "Data Engineer": [
+            "Keywords: Python"
+          ]
+        }
+      }
+    },
+    {
+      "id": "partial-generic-title-not-promoted",
+      "category": "role-boundaries",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Business Analyst"
+        ]
+      },
+      "jobs": [
+        {
+          "title": "Database Analyst",
+          "description": "Database operations"
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Database Analyst": "broader"
+        }
+      }
+    },
+    {
+      "id": "sql-does-not-match-nosql",
+      "category": "skill-boundaries",
+      "kind": "search",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "skills": [
+          "SQL"
+        ]
+      },
+      "jobs": [
+        {
+          "title": "Data Analyst NoSQL",
+          "description": "NoSQL analytics",
+          "requirements": [
+            "NoSQL"
+          ]
+        }
+      ],
+      "expect": {
+        "mode": "personalized",
+        "lanes": {
+          "Data Analyst NoSQL": "recommended"
+        },
+        "reason_excludes": {
+          "Data Analyst NoSQL": [
+            "Your stated skills mentioned"
+          ]
+        },
+        "score_below": {
+          "Data Analyst NoSQL": 100
+        }
+      }
+    },
+    {
+      "id": "general-sort-by-posting-not-repoll",
+      "category": "freshness",
+      "kind": "search",
+      "preferences": {
+        "mode": "general"
+      },
+      "jobs": [
+        {
+          "title": "Old Data Analyst",
+          "description": "Older position",
+          "posted_at": "2026-09-20T09:00:00Z"
+        },
+        {
+          "title": "Recent Software Tester",
+          "description": "New vacancy",
+          "posted_at": "2026-10-10T09:00:00Z"
+        }
+      ],
+      "expect": {
+        "mode": "general",
+        "lanes": {
+          "Old Data Analyst": "all",
+          "Recent Software Tester": "all"
+        },
+        "ordered_lanes": {
+          "all_jobs": [
+            "Recent Software Tester",
+            "Old Data Analyst"
+          ]
+        }
+      }
+    },
+    {
+      "id": "bachelor-and-skills-not-a-masters",
+      "category": "degree-evidence",
+      "kind": "evidence",
+      "job": {
+        "title": "Data Analyst",
+        "description": "Analytics",
+        "requirements": [
+          "Master's degree in Data Science"
+        ]
+      },
+      "facts": [
+        {
+          "type": "education",
+          "value": "Bachelor of Science in Data Science",
+          "approved": true
+        },
+        {
+          "type": "skill",
+          "value": "Data Science",
+          "approved": true
+        }
+      ],
+      "expect": {
+        "mandatory_gaps": [
+          "Master's degree in Data Science"
+        ],
+        "matched_requirements": [],
+        "no_auto_prepare": true
+      }
+    },
+    {
+      "id": "same-level-degree-in-one-approved-fact",
+      "category": "degree-evidence",
+      "kind": "evidence",
+      "job": {
+        "title": "Data Scientist",
+        "description": "Analytics",
+        "requirements": [
+          "Master's degree in Data Science"
+        ]
+      },
+      "facts": [
+        {
+          "type": "education",
+          "value": "MSc in Data Science",
+          "approved": true
+        }
+      ],
+      "expect": {
+        "mandatory_gaps": [],
+        "matched_requirements": [
+          "Master's degree in Data Science"
+        ]
+      }
+    },
+    {
+      "id": "unapproved-msc-does-not-prove-qualification",
+      "category": "degree-evidence",
+      "kind": "evidence",
+      "job": {
+        "title": "Data Scientist",
+        "description": "Analytics",
+        "requirements": [
+          "Master's degree in Data Science"
+        ]
+      },
+      "facts": [
+        {
+          "type": "education",
+          "value": "MSc in Data Science",
+          "approved": false
+        }
+      ],
+      "expect": {
+        "mandatory_gaps": [
+          "Master's degree in Data Science"
+        ],
+        "matched_requirements": [],
+        "no_auto_prepare": true,
+        "no_evidence_credit": true
+      }
+    },
+    {
+      "id": "nosql-skill-does-not-prove-sql",
+      "category": "skill-evidence",
+      "kind": "evidence",
+      "job": {
+        "title": "Data Analyst",
+        "description": "SQL databases",
+        "requirements": [
+          "SQL"
+        ]
+      },
+      "facts": [
+        {
+          "type": "skill",
+          "value": "NoSQL",
+          "approved": true
+        }
+      ],
+      "expect": {
+        "mandatory_gaps": [
+          "SQL"
+        ],
+        "matched_requirements": [],
+        "no_auto_prepare": true,
+        "no_evidence_credit": true
+      }
+    },
+    {
+      "id": "career-switch-requires-mandatory-skill-evidence",
+      "category": "career-switch",
+      "kind": "evidence",
+      "job": {
+        "title": "Data Analyst",
+        "description": "Data reports",
+        "requirements": [
+          "SQL"
+        ]
+      },
+      "facts": [
+        {
+          "type": "education",
+          "value": "Bachelor in Environmental Engineering",
+          "approved": true
+        },
+        {
+          "type": "experience",
+          "value": "Environmental project work",
+          "approved": true
+        },
+        {
+          "type": "preference",
+          "value": "Data Analyst",
+          "tags": [
+            "role",
+            "career"
+          ],
+          "approved": true
+        }
+      ],
+      "expect": {
+        "mandatory_gaps": [
+          "SQL"
+        ],
+        "matched_requirements": [],
+        "no_auto_prepare": true
+      }
+    }
+  ]
+}
