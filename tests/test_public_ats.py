@@ -469,3 +469,46 @@ def test_scoped_page_size_retrieves_complete_snapshot_and_keeps_fi_remote():
         assert adapter.last_location_filtered_count == 50
     finally:
         adapter.close()
+
+
+def test_tsmg_timeout_on_second_page_does_not_retire_existing_jobs():
+    state = {"fail": False}
+    def job(identifier):
+        return {
+            "id": identifier,
+            "text": "Data role " + identifier,
+            "descriptionPlain": "Data analytics software",
+            "country": "FI",
+            "categories": {"location": "Helsinki"},
+            "hostedUrl": "https://jobs.lever.co/tsmg/" + identifier,
+            "applyUrl": "https://jobs.lever.co/tsmg/" + identifier + "/apply",
+        }
+
+    def handler(request):
+        skip = int(request.url.params.get("skip", "0"))
+        if not state["fail"]:
+            return httpx.Response(200, json=[job("original")])
+        if skip == 0:
+            return httpx.Response(200, json=[job(str(index)) for index in range(50)])
+        raise httpx.ReadTimeout("simulated slow second page")
+
+    adapter = LeverAdapter(
+        PublicATSSourceConfig(
+            "lever", "tsmg", "TSMG", location_terms=("Finland",),
+            request_timeout_seconds=45, page_size=50,
+        ),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    repository = MemoryJobRepository()
+    service = SmartployService(repository=repository)
+    try:
+        first = poll_public_ats(service, adapter)
+        assert first.status == "healthy"
+        assert repository.active_source_external_ids(adapter.source_id) == {"original"}
+        state["fail"] = True
+        second = poll_public_ats(service, adapter)
+        assert second.status == "failed"
+        assert second.retired_count == 0
+        assert repository.active_source_external_ids(adapter.source_id) == {"original"}
+    finally:
+        adapter.close()
