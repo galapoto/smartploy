@@ -175,7 +175,8 @@ export default function App() {
       await saveSearchPreferences({
         mode: target, roles: preferences.roles, locations: preferences.locations,
         languages: preferences.languages, work_modes: preferences.work_modes,
-        keywords: preferences.keywords, seniority: preferences.seniority,
+        keywords: preferences.keywords, skills: preferences.skills,
+        seniority: preferences.seniority,
         expected_revision: preferences.revision
       });
     } catch (exc) {
