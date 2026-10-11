@@ -116,7 +116,7 @@ function JobMatch(props: {
           </a>
         ) : null}
         <button className="navy-btn compact" type="button"
-          disabled={props.busy || !props.item.source_current} onClick={props.onPrepare}>
+          disabled={props.busy || !job.source_current} onClick={props.onPrepare}>
           {props.busy ? "Opening…" : "Prepare documents"} <ArrowRight size={15}/>
         </button>
       </div>
@@ -133,7 +133,7 @@ function SavedJobCard(props: { item: SavedJob; busy: boolean; onPrepare: () => v
     </div>
     <div className="job-buttons">
       {job.application_url ? <a className="outline-btn compact" href={job.application_url} target="_blank" rel="noopener noreferrer">Open job <ArrowUpRight size={14} /></a> : null}
-      <button className="navy-btn compact" type="button" disabled={props.busy || !job.source_current} onClick={props.onPrepare}>
+      <button className="navy-btn compact" type="button" disabled={props.busy || !props.item.source_current} onClick={props.onPrepare}>
         {props.busy ? "Opening…" : "Prepare documents"} <ArrowRight size={15} />
       </button>
     </div>
