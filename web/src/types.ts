@@ -256,3 +256,43 @@ export interface LocalAISuggestion {
   suggestions_applied: false;
   requires_owner_review: true;
 }
+
+
+export interface BrowserHandoffReadiness {
+  ready: boolean;
+  blockers: string[];
+  document_revision: number;
+  contact_fields_ready: boolean;
+  employer_submission_performed: false;
+  will_require_manual_review: true;
+  files_attached: false;
+}
+
+export interface BrowserHandoffPacket {
+  schema: "smartploy.browser_handoff.v1";
+  issued_at: string;
+  expires_at: string;
+  application_url: string;
+  company: string;
+  role_title: string;
+  workspace_id: string;
+  revision: number;
+  document_sha256: string;
+  fields: {
+    full_name: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    location: string;
+    linkedin: string;
+    github: string;
+    cover_letter: string;
+  };
+  privacy: {
+    approved_contact_only: true;
+    original_cv_included: false;
+    browser_form_fill_allowed_after_user_click: true;
+    employer_submit_allowed_without_new_approval: false;
+  };
+}
