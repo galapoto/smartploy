@@ -11,3 +11,8 @@ build/
 *.egg-info/
 config/public_ats_sources.json
 deploy/personal/env
+
+# Synthetic Chromium evidence, reports and traces (not source files)
+web/browser-evidence/
+web/playwright-report/
+web/test-results/
