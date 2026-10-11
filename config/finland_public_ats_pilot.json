@@ -88,6 +88,8 @@
       "Turku",
       "Oulu",
       "Jyväskylä"
-    ]
+    ],
+    "request_timeout_seconds": 45,
+    "page_size": 50
   }
 ]
