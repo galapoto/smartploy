@@ -254,7 +254,7 @@ test("a same-email account change resets unsaved criteria and private CV details
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
   await expect(page.getByPlaceholder(/Data analyst, Junior software tester/i))
     .toHaveValue("Account B role");
-  await page.getByRole("button", { name: "Dashboard" }).click();
+  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
   await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toHaveCount(0);
   await expect(page.getByText("ACCOUNT-B.pdf")).toBeVisible();
 });
