@@ -448,3 +448,14 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .studio-ai-preview li small { display: block; color: #8094a9; font-size: 10px; }
 .studio-ai-risks { margin-top: 14px; border-radius: 9px; background: #fff9ed; border: 1px solid #f1ddb7; padding: 11px 14px; }
 .studio-ai-risks strong { color: #866015; }
+
+
+.studio-handoff { border: 1px solid #cddfed; border-radius: 13px; padding: 17px; background: #f7fbff; margin-top: 16px; }
+.studio-handoff-header { display: flex; justify-content: space-between; align-items: start; gap: 14px; }
+.studio-handoff-header > svg { color: #246baf; flex: none; }
+.studio-handoff-header h4 { color: #1d416a; font-size: 14px; margin: 0 0 7px; }
+.studio-handoff-header p:last-child { color: #788da6; font-size: 11px; line-height: 1.6; margin: 0; }
+.studio-handoff-blockers { color: #835f22; background: #fff9ef; border: 1px solid #eedbb8; padding: 12px 15px; margin-top: 14px; border-radius: 10px; font-size: 11px; }
+.studio-handoff-blockers ul { padding-left: 17px; margin: 7px 0 0; line-height: 1.65; }
+.studio-handoff-actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 16px; }
+.studio-handoff-disclaimer { margin: 12px 0 0; font-size: 10px; line-height: 1.7; color: #8195ad; }
