@@ -1,7 +1,7 @@
 """ATS pilot readiness must reflect persisted worker polls and never reveal secrets."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from dataclasses import replace
 import json
 import sys
@@ -148,3 +148,95 @@ def test_known_poll_errors_are_categorized_without_echoing_input():
     ]
     for message, expected_category in checks:
         assert check_ats_readiness._failure_category(message) == expected_category
+
+
+def test_freshness_is_opt_in_and_requires_both_success_and_worker_completion():
+    old_report = check_ats_readiness.source_report(
+        [SOURCE], [task()], [health()], active_job_count=7,
+        reference_at=STAMP + timedelta(hours=30),
+    )
+    assert old_report["ready"] is True
+    assert old_report["freshness_gate_ready"] is None
+    assert old_report["sources"][0]["freshness"] == "not_checked"
+
+    fresh = check_ats_readiness.source_report(
+        [SOURCE], [task()], [health()], active_job_count=7,
+        reference_at=STAMP + timedelta(hours=1),
+        freshness_max_age_hours=2,
+    )
+    assert fresh["ready"] is True
+    assert fresh["sources_fresh"] == 1
+    assert fresh["freshness_gate_ready"] is True
+    assert fresh["sources"][0]["freshness"] == "fresh"
+
+    stale = check_ats_readiness.source_report(
+        [SOURCE], [task()], [health()], active_job_count=7,
+        reference_at=STAMP + timedelta(hours=25),
+        freshness_max_age_hours=24,
+    )
+    assert stale["ready"] is True  # Legacy readiness is deliberately unchanged.
+    assert stale["freshness_gate_ready"] is False
+    assert stale["sources_fresh"] == 0
+    assert stale["sources"][0]["freshness"] == "stale"
+
+
+def test_freshness_requires_valid_both_timestamps_and_rejects_future_evidence():
+    expired = check_ats_readiness.source_report(
+        [SOURCE], [task()], [replace(health(), last_success_at="unknown")],
+        active_job_count=1, freshness_max_age_hours=2, reference_at=STAMP,
+    )
+    assert expired["sources"][0]["freshness"] == "missing_timestamp"
+    assert expired["freshness_gate_ready"] is False
+
+    future = check_ats_readiness.source_report(
+        [SOURCE], [task()],
+        [replace(health(), last_success_at=(STAMP + timedelta(minutes=6)).isoformat())],
+        active_job_count=1, freshness_max_age_hours=2, reference_at=STAMP,
+    )
+    assert future["sources"][0]["freshness"] == "future_timestamp"
+    assert future["freshness_gate_ready"] is False
+
+    unpublished = check_ats_readiness.source_report(
+        [SOURCE], [task(done=False)], [health()],
+        active_job_count=1, freshness_max_age_hours=2, reference_at=STAMP,
+    )
+    assert unpublished["sources"][0]["freshness"] == "missing_timestamp"
+    assert unpublished["freshness_gate_ready"] is False
+
+
+def test_freshness_cli_fails_on_stale_sources_without_exposing_credentials(monkeypatch, capsys):
+    monkeypatch.setenv(
+        "SMARTPLOY_DATABASE_URL",
+        "postgresql://user:never-leak-this-password@db/smartploy",
+    )
+    def fixture_report(dsn, *, freshness_max_age_hours=None):
+        return check_ats_readiness.source_report(
+            [SOURCE], [task()], [health()], active_job_count=7,
+            freshness_max_age_hours=freshness_max_age_hours,
+            reference_at=STAMP + timedelta(hours=25),
+        )
+
+    monkeypatch.setattr(check_ats_readiness, "collect_report", fixture_report)
+    monkeypatch.setattr(sys, "argv", [
+        "check_ats_readiness.py", "--require-healthy",
+        "--require-jobs", "--require-fresh-hours", "24",
+    ])
+    assert check_ats_readiness.main() == 5
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["ready"] is True
+    assert payload["freshness_gate_ready"] is False
+    assert "never-leak-this-password" not in captured.out + captured.err
+
+    monkeypatch.setattr(sys, "argv", [
+        "check_ats_readiness.py", "--require-fresh-hours", "48",
+    ])
+    assert check_ats_readiness.main() == 0
+    capsys.readouterr()
+
+    for invalid in ("0", "-1", "169", "nan", "inf"):
+        monkeypatch.setattr(sys, "argv", [
+            "check_ats_readiness.py", "--require-fresh-hours", invalid,
+        ])
+        assert check_ats_readiness.main() == 2
+        capsys.readouterr()
