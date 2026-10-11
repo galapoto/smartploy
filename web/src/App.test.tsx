@@ -109,7 +109,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
   it("supports general browsing and opens an application without personalized criteria", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("radio", { name: /general job search/i }));
-    fireEvent.click(screen.getByRole("button", { name: /browse all jobs/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /browse all jobs/i }));
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     expect(screen.getByText(/1 current job listings/i)).toBeTruthy();
     expect(screen.queryByText(/90% search match/i)).toBeNull();
