@@ -2,6 +2,12 @@ import type {
   ApplicationsResponse,
   Dashboard,
   HealthResponse,
+  CVDocument,
+  CandidateFact,
+  ProfileFactsResponse,
+  SessionInfo,
+  JobsResponse,
+  ManualJobPayload,
   PreparationResponse
 } from "./types";
 
@@ -61,4 +67,78 @@ export function prepareJob(canonicalKey: string): Promise<PreparationResponse> {
     "/api/v1/jobs/" + encodeURIComponent(canonicalKey) + "/prepare",
     { method: "POST" }
   );
+}
+
+export function getSession(): Promise<SessionInfo> {
+  return request<SessionInfo>("/api/v1/session");
+}
+
+export function getJobs(): Promise<JobsResponse> {
+  return request<JobsResponse>("/api/v1/jobs");
+}
+
+export function getCV(): Promise<CVDocument> {
+  return request<CVDocument>("/api/v1/profile/cv");
+}
+
+export function getProfileFacts(): Promise<ProfileFactsResponse> {
+  return request<ProfileFactsResponse>("/api/v1/profile/facts");
+}
+
+export async function uploadCV(file: File): Promise<CVDocument> {
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error("Your CV is too large. Please use a PDF or DOCX under 5 MB.");
+  }
+  if (!/\.(pdf|docx)$/i.test(file.name)) {
+    throw new Error("Please choose a PDF or DOCX CV.");
+  }
+  const buffer = new Uint8Array(await file.arrayBuffer());
+  let encoded = "";
+  for (let i = 0; i < buffer.length; i += 16384) {
+    encoded += String.fromCharCode(...buffer.subarray(i, i + 16384));
+  }
+  return request<CVDocument>("/api/v1/profile/cv", {
+    method: "POST",
+    body: JSON.stringify({ filename: file.name, content_base64: btoa(encoded) })
+  });
+}
+
+export function deleteCV(): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>("/api/v1/profile/cv", { method: "DELETE" });
+}
+
+export function createFact(fact_type: string, value: string, approved: boolean): Promise<{ fact: CandidateFact }> {
+  return request<{ fact: CandidateFact }>("/api/v1/profile/facts", {
+    method: "POST",
+    body: JSON.stringify({ fact_type, value, approved })
+  });
+}
+
+export function approveFact(fact_id: string, approved: boolean): Promise<{ fact: CandidateFact }> {
+  return request<{ fact: CandidateFact }>("/api/v1/profile/facts/" + encodeURIComponent(fact_id), {
+    method: "PATCH",
+    body: JSON.stringify({ approved })
+  });
+}
+
+export function deleteFact(fact_id: string): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>("/api/v1/profile/facts/" + encodeURIComponent(fact_id), {
+    method: "DELETE"
+  });
+}
+
+export function addManualJob(job: ManualJobPayload): Promise<{ status: string }> {
+  return request<{ status: string }>("/api/v1/jobs/ingest", {
+    method: "POST",
+    body: JSON.stringify({
+      observation: {
+        source_id: "manual-import",
+        source_mode: "manual",
+        source_url: job.application_url,
+        raw_text: job.role_title + " " + job.company + " " + job.description,
+        observed_at: new Date().toISOString(),
+        payload: job
+      }
+    })
+  });
 }
