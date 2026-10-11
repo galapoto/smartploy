@@ -1,0 +1,979 @@
+{
+  "contract": "smartploy.search-quality.synthetic.v1",
+  "source": "fictional synthetic job/education examples only; not empirical Finnish labour-market performance",
+  "cases": [
+    {
+      "id": "fi-data-analyst",
+      "kind": "search",
+      "category": "bilingual",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ]
+      },
+      "job": {
+        "title": "Data-analyytikko",
+        "description": "",
+        "location": "Helsinki",
+        "language": "FI",
+        "work_mode": "hybrid"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "English/Finnish equivalent"
+        ]
+      }
+    },
+    {
+      "id": "fi-business-analyst",
+      "kind": "search",
+      "category": "bilingual",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Business Analyst"
+        ]
+      },
+      "job": {
+        "title": "Liiketoiminta-analyytikko",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "English/Finnish equivalent"
+        ]
+      }
+    },
+    {
+      "id": "fi-software-tester",
+      "kind": "search",
+      "category": "bilingual",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Software Tester"
+        ]
+      },
+      "job": {
+        "title": "Ohjelmistotestaaja",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "English/Finnish equivalent"
+        ]
+      }
+    },
+    {
+      "id": "fi-project-coordinator",
+      "kind": "search",
+      "category": "bilingual",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Project Coordinator"
+        ]
+      },
+      "job": {
+        "title": "Projektikoordinaattori",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "English/Finnish equivalent"
+        ]
+      }
+    },
+    {
+      "id": "en-project-coordinator",
+      "kind": "search",
+      "category": "bilingual",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Projektikoordinaattori"
+        ]
+      },
+      "job": {
+        "title": "Project Coordinator",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "English/Finnish equivalent"
+        ]
+      }
+    },
+    {
+      "id": "explicit-junior-senior-conflict",
+      "kind": "search",
+      "category": "seniority",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Junior Data Analyst"
+        ]
+      },
+      "job": {
+        "title": "Senior Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "broader",
+        "mismatch_contains": [
+          "target job title"
+        ]
+      }
+    },
+    {
+      "id": "finnish-junior-senior-conflict",
+      "kind": "search",
+      "category": "seniority",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Nuorempi data-analyytikko"
+        ]
+      },
+      "job": {
+        "title": "Vanhempi data-analyytikko",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "broader",
+        "mismatch_contains": [
+          "target job title"
+        ]
+      }
+    },
+    {
+      "id": "junior-unspecified-level",
+      "kind": "search",
+      "category": "seniority",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Junior Data Analyst"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "unknown_contains": [
+          "Experience level not specified"
+        ]
+      }
+    },
+    {
+      "id": "broad-roles-allow-senior",
+      "kind": "search",
+      "category": "seniority",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Junior Data Analyst",
+          "Data Analyst"
+        ]
+      },
+      "job": {
+        "title": "Senior Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "mismatch_excludes": [
+          "target job title"
+        ]
+      }
+    },
+    {
+      "id": "explicit-dropdown-junior",
+      "kind": "search",
+      "category": "seniority",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "seniority": "entry"
+      },
+      "job": {
+        "title": "Senior Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "broader",
+        "mismatch_contains": [
+          "experience preference"
+        ]
+      }
+    },
+    {
+      "id": "language-fi-code",
+      "kind": "search",
+      "category": "language",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "languages": [
+          "finnish"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "fi-FI",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "Preferred job language"
+        ]
+      }
+    },
+    {
+      "id": "language-en-code",
+      "kind": "search",
+      "category": "language",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "languages": [
+          "english"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "EN-GB",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "Preferred job language"
+        ]
+      }
+    },
+    {
+      "id": "language-sv-code",
+      "kind": "search",
+      "category": "language",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Project Coordinator"
+        ],
+        "languages": [
+          "swedish"
+        ]
+      },
+      "job": {
+        "title": "Projektikoordinaattori",
+        "description": "",
+        "location": "",
+        "language": "SV",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "Preferred job language"
+        ]
+      }
+    },
+    {
+      "id": "language-unknown",
+      "kind": "search",
+      "category": "language",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "languages": [
+          "finnish"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "pending",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "unknown_contains": [
+          "Job language label not recognized"
+        ],
+        "mismatch_excludes": [
+          "Advertised language differs"
+        ]
+      }
+    },
+    {
+      "id": "language-mismatch",
+      "kind": "search",
+      "category": "language",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "languages": [
+          "finnish"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "SV",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "mismatch_contains": [
+          "Advertised language differs"
+        ]
+      }
+    },
+    {
+      "id": "language-not-specified",
+      "kind": "search",
+      "category": "language",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "languages": [
+          "english"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "unknown_contains": [
+          "Job language not specified"
+        ]
+      }
+    },
+    {
+      "id": "city-name-boundary",
+      "kind": "search",
+      "category": "location",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "locations": [
+          "Helsinki"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "Helsinkiesque",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "mismatch_contains": [
+          "Location differs"
+        ]
+      }
+    },
+    {
+      "id": "city-location-positive",
+      "kind": "search",
+      "category": "location",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "locations": [
+          "Helsinki"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "Helsinki / Espoo",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "Preferred location"
+        ]
+      }
+    },
+    {
+      "id": "remote-location-unknown",
+      "kind": "search",
+      "category": "location",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "locations": [
+          "Helsinki"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "Remote",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "unknown_contains": [
+          "Location not provided"
+        ]
+      }
+    },
+    {
+      "id": "hybrid-vs-remote",
+      "kind": "search",
+      "category": "work-mode",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "work_modes": [
+          "hybrid"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "remote"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "mismatch_contains": [
+          "Work arrangement differs"
+        ]
+      }
+    },
+    {
+      "id": "unknown-work-arrangement",
+      "kind": "search",
+      "category": "work-mode",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "work_modes": [
+          "remote"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "unknown_contains": [
+          "Work arrangement not stated"
+        ]
+      }
+    },
+    {
+      "id": "hybrid-work-arrangement",
+      "kind": "search",
+      "category": "work-mode",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "work_modes": [
+          "hybrid"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "hybrid"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "Preferred work arrangement"
+        ]
+      }
+    },
+    {
+      "id": "career-switch-keyword",
+      "kind": "search",
+      "category": "career-switch",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Nurse"
+        ],
+        "keywords": [
+          "compliance"
+        ]
+      },
+      "job": {
+        "title": "Compliance Coordinator",
+        "description": "Support compliance workflows",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "Keywords: compliance"
+        ]
+      }
+    },
+    {
+      "id": "ai-not-paid",
+      "kind": "search",
+      "category": "boundaries",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "AI"
+        ]
+      },
+      "job": {
+        "title": "Paid Marketing Specialist",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "broader",
+        "reason_excludes": [
+          "Job title matches"
+        ]
+      }
+    },
+    {
+      "id": "single-analyst-token-weak",
+      "kind": "search",
+      "category": "boundaries",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ]
+      },
+      "job": {
+        "title": "Database Analyst",
+        "description": "",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "broader",
+        "reason_contains": [
+          "Job title overlaps"
+        ]
+      }
+    },
+    {
+      "id": "sql-not-nosql-skill",
+      "kind": "search",
+      "category": "boundaries",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "skills": [
+          "SQL"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst NoSQL",
+        "description": "Document stores only",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_excludes": [
+          "Your stated skills mentioned"
+        ]
+      }
+    },
+    {
+      "id": "sql-skill-positive",
+      "kind": "search",
+      "category": "boundaries",
+      "preferences": {
+        "mode": "personalized",
+        "roles": [
+          "Data Analyst"
+        ],
+        "skills": [
+          "SQL"
+        ]
+      },
+      "job": {
+        "title": "Data Analyst",
+        "description": "Build SQL dashboards",
+        "location": "",
+        "language": "",
+        "work_mode": "review"
+      },
+      "expected": {
+        "lane": "recommendations",
+        "reason_contains": [
+          "Your stated skills mentioned"
+        ]
+      }
+    },
+    {
+      "id": "general-is-unprofiled",
+      "kind": "search",
+      "category": "general",
+      "preferences": {
+        "mode": "general",
+        "roles": [
+          "Data Analyst"
+        ],
+        "keywords": [
+          "SQL"
+        ],
+        "skills": [
+          "SQL"
+        ],
+        "seniority": "entry",
+        "locations": [
+          "Helsinki"
+        ],
+        "languages": [
+          "finnish"
+        ],
+        "work_modes": [
+          "hybrid"
+        ]
+      },
+      "job": {
+        "title": "Senior Nurse",
+        "description": "NoSQL",
+        "location": "Turku",
+        "language": "swedish",
+        "work_mode": "onsite"
+      },
+      "expected": {
+        "lane": "all",
+        "score_kind": "none",
+        "preference_score": null
+      }
+    },
+    {
+      "id": "bachelor-not-masters",
+      "kind": "fit",
+      "category": "degree",
+      "job": {
+        "title": "Data Scientist",
+        "description": "",
+        "location": "Helsinki",
+        "language": "",
+        "work_mode": "review",
+        "requirements": [
+          "Master's degree in Data Science"
+        ]
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "value": "Bachelor of Science in Data Science",
+          "approved": true
+        },
+        {
+          "fact_type": "skill",
+          "value": "Data Science",
+          "approved": true
+        }
+      ],
+      "expected": {
+        "mandatory_gaps": [
+          "Master's degree in Data Science"
+        ],
+        "prepare_recommended": false
+      }
+    },
+    {
+      "id": "unrelated-master-not-data-science",
+      "kind": "fit",
+      "category": "degree",
+      "job": {
+        "title": "Data Scientist",
+        "description": "",
+        "location": "Helsinki",
+        "language": "",
+        "work_mode": "review",
+        "requirements": [
+          "Master's degree in Data Science"
+        ]
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "value": "MSc in Business Administration",
+          "approved": true
+        },
+        {
+          "fact_type": "education",
+          "value": "Bachelor in Data Science",
+          "approved": true
+        }
+      ],
+      "expected": {
+        "mandatory_gaps": [
+          "Master's degree in Data Science"
+        ],
+        "prepare_recommended": false
+      }
+    },
+    {
+      "id": "approved-masters-subject",
+      "kind": "fit",
+      "category": "degree",
+      "job": {
+        "title": "Data Scientist",
+        "description": "",
+        "location": "Helsinki",
+        "language": "",
+        "work_mode": "review",
+        "requirements": [
+          "Master's degree in Data Science"
+        ]
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "value": "MSc in Data Science",
+          "approved": true
+        }
+      ],
+      "expected": {
+        "mandatory_gaps": [],
+        "matched_requirements": [
+          "Master's degree in Data Science"
+        ],
+        "min_evidence_count": 1
+      }
+    },
+    {
+      "id": "unapproved-master-not-counted",
+      "kind": "fit",
+      "category": "degree",
+      "job": {
+        "title": "Data Scientist",
+        "description": "",
+        "location": "Helsinki",
+        "language": "",
+        "work_mode": "review",
+        "requirements": [
+          "Master's degree in Data Science"
+        ]
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "value": "MSc in Data Science",
+          "approved": false
+        }
+      ],
+      "expected": {
+        "mandatory_gaps": [
+          "Master's degree in Data Science"
+        ],
+        "prepare_recommended": false
+      }
+    },
+    {
+      "id": "sql-unverified-nosql",
+      "kind": "fit",
+      "category": "evidence",
+      "job": {
+        "title": "Data Scientist",
+        "description": "",
+        "location": "Helsinki",
+        "language": "",
+        "work_mode": "review",
+        "requirements": [
+          "SQL"
+        ]
+      },
+      "facts": [
+        {
+          "fact_type": "skill",
+          "value": "NoSQL",
+          "approved": true
+        }
+      ],
+      "expected": {
+        "mandatory_gaps": [
+          "SQL"
+        ],
+        "prepare_recommended": false
+      }
+    },
+    {
+      "id": "sql-approved",
+      "kind": "fit",
+      "category": "evidence",
+      "job": {
+        "title": "Data Scientist",
+        "description": "",
+        "location": "Helsinki",
+        "language": "",
+        "work_mode": "review",
+        "requirements": [
+          "SQL"
+        ]
+      },
+      "facts": [
+        {
+          "fact_type": "skill",
+          "value": "SQL",
+          "approved": true
+        }
+      ],
+      "expected": {
+        "mandatory_gaps": [],
+        "matched_requirements": [
+          "SQL"
+        ],
+        "min_evidence_count": 1
+      }
+    },
+    {
+      "id": "bachelor-not-doctorate",
+      "kind": "fit",
+      "category": "degree",
+      "job": {
+        "title": "Data Scientist",
+        "description": "",
+        "location": "Helsinki",
+        "language": "",
+        "work_mode": "review",
+        "requirements": [
+          "PhD in Physics"
+        ]
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "value": "BSc in Physics",
+          "approved": true
+        }
+      ],
+      "expected": {
+        "mandatory_gaps": [
+          "PhD in Physics"
+        ],
+        "prepare_recommended": false
+      }
+    },
+    {
+      "id": "finnish-master-same-subject",
+      "kind": "fit",
+      "category": "degree",
+      "job": {
+        "title": "Data Scientist",
+        "description": "",
+        "location": "Helsinki",
+        "language": "",
+        "work_mode": "review",
+        "requirements": [
+          "maisteri tietojenkäsittelytiede"
+        ]
+      },
+      "facts": [
+        {
+          "fact_type": "education",
+          "value": "maisteri tietojenkäsittelytiede",
+          "approved": true
+        }
+      ],
+      "expected": {
+        "mandatory_gaps": [],
+        "matched_requirements": [
+          "maisteri tietojenkäsittelytiede"
+        ]
+      }
+    }
+  ]
+}
