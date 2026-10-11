@@ -287,12 +287,18 @@ class PublicATSAdapter:
         parts: list[str] = []
         for value in location_values:
             parts.extend(_list_strings(value))
-        if "finland" in self.config.location_terms and any(
-            part.strip().upper() == "FI" for part in parts
-        ):
-            return True
-        normalized = " | ".join(part.casefold() for part in parts)
-        return any(term in normalized for term in self.config.location_terms)
+        # Only explicit structured location fields are used. Substrings were
+        # unsafe: an operator's "fi" term could match "Office", and "Helsinki"
+        # could match a longer unrelated place name. Treat FI/Finland as one
+        # exact country alias; do not infer country from a job description.
+        normalized_parts = [part.strip().casefold() for part in parts if part.strip()]
+        for term in self.config.location_terms:
+            equivalents = ("fi", "finland") if term in {"fi", "finland"} else (term,)
+            for phrase in equivalents:
+                pattern = r"(?<!\w)" + re.escape(phrase) + r"(?!\w)"
+                if any(re.search(pattern, part) for part in normalized_parts):
+                    return True
+        return False
 
     def close(self) -> None:
         if self._owns_client:

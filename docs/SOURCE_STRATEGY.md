@@ -111,6 +111,21 @@ Each tenant explicitly declares:
 The AI-forwarding value defaults to false. Public availability of a job posting does not automatically
 grant Smartploy permission to send its contents to an external AI provider.
 
+### Location filtering safety
+
+When `location_terms` are configured for an employer, SmartPloy compares them **only**
+against structured job location/country fields using whole-place/word boundaries.
+The explicit `FI` and `Finland` terms are equivalent for country matching.
+For example, `fi` must not accept a Swedish office simply because the word
+`Office` contains those letters, and `Finland` must not match `Finlandia`.
+
+Unconfigured employers remain unfiltered. Terms are not inferred from role
+descriptions or employer names. Configure Finnish sources deliberately and
+inspect the filtered/active counts before enabling a changed location policy.
+A fully successful snapshot may retire no-longer-in-scope source occurrences;
+failed/partial polls must never retire existing jobs. Take a verified database
+backup and review the source-diff/retirement impact before production rollout.
+
 ### Exhaustive snapshot rule
 
 SmartRecruiters and Lever listing calls are treated as exhaustive public snapshots only after every
