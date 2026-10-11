@@ -20,6 +20,7 @@ from .access import AccessPrincipal, AccessSettings, CloudflareAccessVerifier
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
+from .local_drafting import LocalDraftClient, LocalDraftError, LocalDraftSettings
 from .cv_import import CVImportError, parse_cv
 from .cv_storage import MemoryCVRepository, PostgresCVRepository
 from .profile import FACT_TYPES, ProfileFact
@@ -149,6 +150,12 @@ class WorkspaceEditPayload(BaseModel):
     expected_revision: int = Field(ge=1)
     cv_text: str = Field(min_length=1, max_length=30000)
     cover_letter_text: str = Field(min_length=1, max_length=10000)
+
+
+class LocalAISuggestPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    acknowledge_local_ai_processing: bool
 
 
 class WorkspaceAppliedPayload(BaseModel):
@@ -353,6 +360,7 @@ def create_app(
     app.state.tenant_services = {}
     app.state.cv_repository = PostgresCVRepository(dsn) if dsn else MemoryCVRepository()
     app.state.workspace_repository = PostgresWorkspaceRepository(dsn) if dsn else MemoryWorkspaceRepository()
+    app.state.local_ai = LocalDraftClient(LocalDraftSettings.from_env())
 
     def tenant_context(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
         principal = _principal_from_request(request)
@@ -724,6 +732,39 @@ def create_app(
         pid = tenant.profile_repository.profile_id
         items = app.state.workspace_repository.list(pid, limit=limit)
         return {"workspaces": [item.to_dict() for item in items], "count": len(items)}
+
+    @app.get("/api/v1/local-ai/status")
+    def local_ai_status(request: Request) -> dict[str, Any]:
+        tenant_context(request)
+        return app.state.local_ai.status()
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/ai-suggestions")
+    def application_ai_suggestions(
+        workspace_id: str, payload: LocalAISuggestPayload, request: Request
+    ) -> dict[str, Any]:
+        if payload.acknowledge_local_ai_processing is not True:
+            raise HTTPException(status_code=422, detail="Explicit consent for local processing is required")
+        tenant, _ = tenant_context(request)
+        pid = tenant.profile_repository.profile_id
+        current = app.state.workspace_repository.get(pid, workspace_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        if current.status != "draft" or current.revision != payload.expected_revision:
+            raise HTTPException(status_code=409, detail="Review the current saved draft before requesting AI")
+        candidate = tenant.get_job(current.canonical_key)
+        if candidate is None or not candidate.source_current:
+            raise HTTPException(status_code=409, detail="Job is no longer available")
+        if candidate.description_fingerprint != current.job_fingerprint:
+            raise HTTPException(status_code=409, detail="The employer job text changed; review it before generating")
+        try:
+            suggestion = app.state.local_ai.suggest(candidate, tenant.profile())
+        except LocalDraftError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        # Suggestions are never committed; a concurrent edit invalidates the proposal.
+        latest = app.state.workspace_repository.get(pid, workspace_id)
+        if latest is None or latest.revision != payload.expected_revision or latest.status != "draft":
+            raise HTTPException(status_code=409, detail="Draft changed during AI generation; reload and retry")
+        return {"suggestion": suggestion, "workspace_revision": latest.revision}
 
     @app.get("/api/v1/application-workspaces/{workspace_id}")
     def get_application_workspace(workspace_id: str, request: Request) -> dict[str, Any]:
