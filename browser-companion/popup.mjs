@@ -238,9 +238,12 @@ function submitOnce(exactUrl) {
   }
 }
 
-async function inspectReceipt(expectedOrigin) {
+async function inspectReceipt(expectedOrigin, expectedAccount) {
   const here = new URL(location.href);
-  if (here.origin !== expectedOrigin) {
+  if (
+    here.origin !== expectedOrigin ||
+    !here.pathname.startsWith("/" + expectedAccount + "/")
+  ) {
     return { confirmed: false, explanation: "The browser is not at the original employer origin." };
   }
   const text = String(document.body?.innerText || "").slice(0, 20000)
@@ -429,14 +432,47 @@ async function onSubmit() {
   }
 }
 
+async function onResumeReceipt() {
+  try {
+    const tab = await activeTab();
+    // The confirmation page can differ from the original job path after
+    // submission. Validate full packet signature/expiry against its OWN
+    // canonical job URL, then separately require matching employer+account.
+    const original = JSON.parse($("packet").value);
+    const pkt = validatePacket(original, original.application_url);
+    const initial = new URL(pkt.application_url);
+    const here = new URL(tab.url);
+    const account = initial.pathname.split("/")[1];
+    if (here.origin !== initial.origin || !here.pathname.startsWith("/" + account + "/")) {
+      throw new PacketError("This confirmation is not on the original Lever employer account.");
+    }
+    const key = await oneAttemptKey(pkt);
+    const stored = await chrome.storage.local.get(key);
+    if (!stored[key]) {
+      throw new PacketError("No matching one-time submission attempt was recorded. You may still report a manual submission.");
+    }
+    currentPacket = pkt;
+    targetTabId = tab.id;
+    inspectedUrl = tab.url;
+    currentPlan = null;
+    attemptReserved = true;
+    preflightPassed = false;
+    $("submission").hidden = false;
+    $("approve").checked = false;
+    $("submit").disabled = true;
+    await onReceipt();
+  } catch (error) { status(normalizeError(error)); }
+}
+
 async function onReceipt() {
   if (!currentPacket || targetTabId === null) return;
   try {
     const tab = await activeTab();
     if (tab.id !== targetTabId) throw new PacketError("Return to the employer page where you applied.");
-    const expectedOrigin = new URL(currentPacket.application_url).origin;
+    const original = new URL(currentPacket.application_url);
+    const account = original.pathname.split("/")[1];
     const [result] = await chrome.scripting.executeScript({
-      target: {tabId: tab.id}, func: inspectReceipt, args: [expectedOrigin]
+      target: {tabId: tab.id}, func: inspectReceipt, args: [original.origin, account]
     });
     const finding = result?.result;
     if (!finding) throw new PacketError("Could not inspect the visible employer confirmation.");
@@ -474,6 +510,7 @@ async function onReceipt() {
 }
 
 $("inspect").addEventListener("click", () => void onInspect());
+$("resume").addEventListener("click", () => void onResumeReceipt());
 $("fill").addEventListener("click", () => void onFill());
 $("check").addEventListener("click", () => void onPreflight());
 $("submit").addEventListener("click", () => void onSubmit());
