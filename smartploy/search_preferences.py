@@ -60,7 +60,7 @@ def _items(
 class SearchPreferences:
     profile_id: str
     completed: bool = False
-    mode: str = "general"
+    mode: str = "personalized"
     roles: tuple[str, ...] = ()
     locations: tuple[str, ...] = ()
     languages: tuple[str, ...] = ()
@@ -133,7 +133,9 @@ def _role_alignment(title: str, roles: tuple[str, ...]) -> tuple[float, str]:
 
 
 def _seniority(title: str) -> str | None:
-    words = _tokens(title)
+    # Keep junior/senior markers here even though broad search-token matching
+    # intentionally ignores those adjectives.
+    words = set(re.findall(r"[^\W\d_]+", title.casefold(), re.UNICODE))
     text = title.casefold()
     if words & {"senior", "principal", "lead", "johtava", "päällikkö", "head"} or "sr." in text:
         return "senior"
