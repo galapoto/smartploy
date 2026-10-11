@@ -76,10 +76,14 @@ A code review and real browser QA are required before general deployment.
 10. Only if you intend to send this specific application to the employer,
     click the final button and confirm the OS/browser confirmation prompt.
     **An attempted click is not proof of successful submission.**
-11. Check the employer response. Use **Check visible confirmation** to
-    inspect a visible reference number and confirmation phrase. If there is
-    no strong confirmation, treat the outcome as **unverified** and never
-    repeat the submit click automatically.
+11. Check the employer response. If the extension popup closes when
+    Lever navigates after submission, **reopen it, paste the SAME packet** and
+    select **Check confirmation after a previous attempt**. The companion
+    checks its existing non-sensitive one-use attempt marker and the exact
+    Lever employer account before inspecting the confirmation page.
+    Never click Submit again merely because the popup closed.
+    A strong confirmation requires a visible reference ID and a confirmation
+    phrase. Otherwise the result remains **unverified**.
 12. When the companion observes a reference-bearing confirmation, it
     offers **Copy observed receipt**. This contains the receipt reference,
     sanitized same-employer URL, page-text SHA-256, original reviewed
