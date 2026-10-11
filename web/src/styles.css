@@ -471,3 +471,9 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .studio-receipt-import label { font-size: 11px; color: #395b7b; font-weight: 700; }
 .studio-receipt-import textarea { border: 1px solid #d4e3f3; padding: 10px; border-radius: 9px; font: 11px ui-monospace,monospace; width: 100%; max-height: 155px; resize: vertical; }
 .studio-receipt-import button { justify-self: start; }
+
+
+.studio-packet-fallback { margin-top: 12px; display: grid; gap: 7px; }
+.studio-packet-fallback label { color: #416b97; font-size: 11px; font-weight: 700; }
+.studio-packet-fallback textarea { font: 10px ui-monospace,monospace; background: #f5f9ff; border: 1px solid #cfdfef; color: #244c75; border-radius: 8px; max-height: 135px; resize: vertical; padding: 9px; width: 100%; }
+.studio-packet-fallback p { color: #9a6b37; font-size: 10px; line-height: 1.5; margin: 0; }
