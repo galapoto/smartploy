@@ -238,7 +238,7 @@ function submitOnce(exactUrl) {
   }
 }
 
-function inspectReceipt(expectedOrigin) {
+async function inspectReceipt(expectedOrigin) {
   const here = new URL(location.href);
   if (here.origin !== expectedOrigin) {
     return { confirmed: false, explanation: "The browser is not at the original employer origin." };
@@ -252,9 +252,14 @@ function inspectReceipt(expectedOrigin) {
     el.getClientRects().length > 0 && !el.disabled
   );
   const confirmed = proof && Boolean(reference) && !stillSubmit;
+  const hashBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  const pageHash = Array.from(new Uint8Array(hashBytes))
+    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
   return {
     confirmed,
     reference: confirmed ? reference : "",
+    confirmation_page_url: here.origin + here.pathname,
+    confirmation_page_sha256: pageHash,
     explanation: confirmed ?
       "The visible employer page contains a confirmation phrase and application reference. Save that reference in SmartPloy." :
       "No sufficient confirmation evidence found. The outcome remains unverified. Do not retry automatically."
@@ -435,6 +440,32 @@ async function onReceipt() {
     });
     const finding = result?.result;
     if (!finding) throw new PacketError("Could not inspect the visible employer confirmation.");
+    if (finding.confirmed) {
+      const key = await oneAttemptKey(currentPacket);
+      const prior = await chrome.storage.local.get(key);
+      if (!prior[key]) {
+        throw new PacketError(
+          "No matching companion submission attempt was recorded. Do not treat this as verified; you may still report it manually."
+        );
+      }
+      const receipt = {
+        schema: "smartploy.browser_receipt.v1",
+        workspace_id: currentPacket.workspace_id,
+        document_revision: currentPacket.revision,
+        document_sha256: currentPacket.document_sha256,
+        application_url: currentPacket.application_url,
+        confirmation_page_url: finding.confirmation_page_url,
+        reference: finding.reference,
+        confirmation_page_sha256: finding.confirmation_page_sha256,
+        observed_at: new Date().toISOString(),
+        confirmed_visible: true,
+      };
+      $("receiptExport").value = JSON.stringify(receipt);
+      $("receiptPanel").hidden = false;
+    } else {
+      $("receiptPanel").hidden = true;
+      $("receiptExport").value = "";
+    }
     status(
       finding.explanation + (finding.reference ? " Reference: " + finding.reference : ""),
       finding.confirmed
@@ -447,13 +478,25 @@ $("fill").addEventListener("click", () => void onFill());
 $("check").addEventListener("click", () => void onPreflight());
 $("submit").addEventListener("click", () => void onSubmit());
 $("receipt").addEventListener("click", () => void onReceipt());
+$("copyReceipt").addEventListener("click", async () => {
+  const value = $("receiptExport").value;
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    status("Observed receipt copied. Return to the matching SmartPloy application and select Import observed receipt.", true);
+  } catch {
+    $("receiptExport").select();
+    status("Clipboard access unavailable. Select and copy the receipt text yourself.");
+  }
+});
 $("approve").addEventListener("change", () => {
   $("submit").disabled = !$("approve").checked || !preflightPassed || attemptReserved;
 });
 $("packet").addEventListener("input", () => {
   currentPacket = null; currentPlan = null; targetTabId = null;
   preflightPassed = false; attemptReserved = false;
-  $("plan").hidden = true; $("submission").hidden = true;
+  $("plan").hidden = true; $("submission").hidden = true; $("receiptPanel").hidden = true;
+  $("receiptExport").value = "";
   $("approve").checked = false; $("submit").disabled = true;
   $("feedback").textContent = "";
 });
