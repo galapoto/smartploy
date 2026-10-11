@@ -374,6 +374,62 @@ def test_location_name_boundaries_and_remote_location_uncertainty():
     assert not remote["mismatched_fields"]
 
 
+
+def test_explicit_junior_role_target_demotes_senior_even_with_any_level_setting():
+    pref = revise_preferences("p", search_settings(
+        roles=["Junior Data Analyst"], keywords=["Python"], skills=[], locations=[],
+        languages=[], work_modes=[], seniority="any",
+    ), revision=0)
+    result = search_jobs([job("Senior Data Analyst"), job("Junior Data Analyst")], pref)
+    assert [row["job"]["role_title"] for row in result["recommendations"]] == [
+        "Junior Data Analyst",
+    ]
+    senior = result["broader"][0]
+    assert senior["job"]["role_title"] == "Senior Data Analyst"
+    assert any("target job title" in detail for detail in senior["mismatched_fields"])
+    assert result["score_kind"] == "preference_alignment_not_verified_qualification"
+
+
+def test_unstated_job_level_is_uncertain_not_excluded_by_junior_target():
+    pref = revise_preferences("p", search_settings(
+        roles=["Junior Data Analyst"], keywords=[], skills=[], locations=[],
+        languages=[], work_modes=[], seniority="any",
+    ), revision=0)
+    result = search_jobs([job("Data Analyst")], pref)
+    assert len(result["recommendations"]) == 1
+    assert "Experience level not specified" in result["recommendations"][0]["unknown_fields"]
+    assert not result["recommendations"][0]["mismatched_fields"]
+
+
+@pytest.mark.parametrize(
+    "targets",
+    [
+        ["Junior Data Analyst", "Senior Data Analyst"],
+        ["Junior Data Analyst", "Data Analyst"],
+    ],
+)
+def test_multiple_overlapping_targets_do_not_create_hidden_seniority_restrictions(targets):
+    pref = revise_preferences("p", search_settings(
+        roles=targets, keywords=[], skills=[], locations=[],
+        languages=[], work_modes=[], seniority="any",
+    ), revision=0)
+    result = search_jobs([job("Senior Data Analyst"), job("Junior Data Analyst")], pref)
+    assert len(result["recommendations"]) == 2
+    assert result["broader"] == []
+    assert all(not row["mismatched_fields"] for row in result["recommendations"])
+
+
+def test_finnish_junior_title_target_rejects_explicit_senior_translation():
+    pref = revise_preferences("p", search_settings(
+        roles=["Nuorempi data-analyytikko"], keywords=[], skills=[], locations=[],
+        languages=[], work_modes=[], seniority="any",
+    ), revision=0)
+    result = search_jobs([job("Senior Data Analyst"), job("Junior Data Analyst")], pref)
+    assert len(result["recommendations"]) == 1
+    assert result["recommendations"][0]["job"]["role_title"] == "Junior Data Analyst"
+    assert len(result["broader"]) == 1
+
+
 def test_general_mode_ignores_saved_personal_criteria():
     prefs = revise_preferences("p", search_settings(
         mode="general", roles=["Data Analyst"], keywords=["python"],

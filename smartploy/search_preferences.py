@@ -178,6 +178,22 @@ def _seniority(title: str) -> str | None:
     return None
 
 
+def _explicit_target_title_level(job_title: str, roles: tuple[str, ...]) -> str | None:
+    """Use a job-title seniority hint only if all matching targets agree.
+
+    A user who selected both "Junior Data Analyst" and "Data Analyst" has
+    explicitly included the broader family and must not be narrowed down.
+    No experience level is inferred from CV, unapproved facts or job body.
+    """
+    matching = [
+        _seniority(target)
+        for target in roles
+        if _role_alignment(job_title, (target,))[0] >= 0.75
+    ]
+    levels = set(matching)
+    return next(iter(levels)) if len(levels) == 1 else None
+
+
 def _mentions_phrase(text: str, phrase: str) -> bool:
     """Match literal, complete keywords rather than incidental substrings.
 
@@ -280,19 +296,26 @@ def _alignment(
             mismatches.append("Advertised language differs from preferred languages")
 
     explicit_seniority_conflict = False
-    if pref.seniority != "any":
+    inferred_title_level = (
+        _explicit_target_title_level(job.role_title, pref.roles)
+        if pref.seniority == "any" else None
+    )
+    chosen_level = pref.seniority if pref.seniority != "any" else inferred_title_level
+    if chosen_level is not None and chosen_level != "any":
         weight += 6
         level = _seniority(job.role_title)
         if level is None:
             unknown.append("Experience level not specified")
-        elif level == pref.seniority:
+        elif level == chosen_level:
             earned += 6
             reasons.append("Preferred experience level")
         else:
             explicit_seniority_conflict = True
-            mismatches.append(
-                f"Listed {level} role differs from your {pref.seniority} experience preference"
+            basis = (
+                "experience preference" if pref.seniority != "any"
+                else "experience level stated in your target job title"
             )
+            mismatches.append(f"Listed {level} role differs from your {chosen_level} {basis}")
 
     matched_keywords: list[str] = []
     if pref.keywords:
