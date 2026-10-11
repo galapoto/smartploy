@@ -147,9 +147,9 @@ export default function App() {
       if (generation !== loadGeneration.current) return;
       const identity = JSON.stringify([
         Boolean(who.authenticated),
-        who.user_id || who.profile_id || who.subject_fingerprint || "",
+        who.user_id || who.profile_id || who.subject_fingerprint || who.email || "",
         who.auth_source || "",
-        // Email is only a display attribute; it is never a tenancy key.
+        // The server determines tenancy; email here is only a legacy UI fallback.
       ]);
       if (lastSessionIdentity.current !== null && identity !== lastSessionIdentity.current) {
         // A browser can change signed-in accounts while the SPA remains open.
