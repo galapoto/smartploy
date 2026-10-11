@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, Clock3,
   Download, FileCheck2, FileText, LockKeyhole, RefreshCw, Save, ShieldCheck,
-  Trash2, AlertCircle
+  Trash2, AlertCircle, Sparkles, WandSparkles
 } from "lucide-react";
 import {
   applicationDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
-  getApplicationWorkspaces, markApplicationManuallySent
+  getApplicationWorkspaces, markApplicationManuallySent,
+  getLocalAIStatus, requestLocalAISuggestions
 } from "./api";
-import type { ApplicationWorkspace } from "./types";
+import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion } from "./types";
 
 function safePostingLink(url: string): string {
   try {
@@ -28,6 +29,9 @@ export default function ApplicationStudio(props: {
   const [letterText, setLetterText] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [aiBusy, setAIBusy] = useState(false);
+  const [aiStatus, setAIStatus] = useState<LocalAIStatus | null>(null);
+  const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -47,12 +51,16 @@ export default function ApplicationStudio(props: {
   }, [props.focusId]);
 
   useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    void getLocalAIStatus().then(setAIStatus).catch(() => setAIStatus(null));
+  }, []);
 
   const selected = useMemo(
     () => workspaces.find((item) => item.workspace_id === selectedId) || null,
     [workspaces, selectedId]
   );
   useEffect(() => {
+    setAISuggestion(null);
     setCvText(selected?.cv_text || "");
     setLetterText(selected?.cover_letter_text || "");
   }, [selected?.workspace_id, selected?.revision]);
@@ -85,6 +93,42 @@ export default function ApplicationStudio(props: {
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Draft could not be saved.");
     } finally { setBusy(false); }
+  }
+
+  async function askLocalAI() {
+    if (!selected || dirty || selected.status !== "draft" || !aiStatus?.ready) return;
+    const ok = window.confirm(
+      "Send the job description and your approved profile facts to the configured " +
+      "private local ObumAI/Ollama model? Your uploaded CV file, unapproved profile " +
+      "facts, and employer applications will NOT be sent. The response is a draft " +
+      "proposal only and must be reviewed before saving."
+    );
+    if (!ok) return;
+    setAIBusy(true); setError(""); setMessage(""); setAISuggestion(null);
+    try {
+      const response = await requestLocalAISuggestions(selected.workspace_id, selected.revision);
+      setAISuggestion(response.suggestion);
+      setMessage("Local AI returned draft suggestions. Review them and choose whether to insert them.");
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Local AI is currently unavailable.");
+    } finally { setAIBusy(false); }
+  }
+
+  function insertAISuggestion() {
+    if (!selected || !aiSuggestion || selected.status !== "draft") return;
+    const draft = aiSuggestion.proposal;
+    if (!window.confirm(
+      "Insert these AI suggestions into your editable CV and cover letter? " +
+      "They may contain mistakes. Nothing is saved or sent until you review and click Save changes."
+    )) return;
+    setCvText((old) =>
+      "TARGET ROLE: " + selected.role_title + " — " + selected.company +
+      "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
+      "\n\n" + old
+    );
+    setLetterText(draft.cover_letter);
+    setAISuggestion(null);
+    setMessage("AI wording inserted as unsaved edits. Review every claim and save to keep them.");
   }
 
   async function markApplied() {
@@ -186,6 +230,46 @@ export default function ApplicationStudio(props: {
           <div><strong>Your content, your decision.</strong>
             <p>SmartPloy has not sent this application to anyone. The starter cover letter contains prompts that you must replace with accurate, personal details.</p></div>
         </div>
+        <section className="studio-ai-card" aria-label="Optional local AI writing support">
+          <div className="studio-ai-heading">
+            <span className="studio-ai-icon"><Sparkles size={19}/></span>
+            <div><strong>ObumAI local writing assistant</strong>
+              <p>{aiStatus?.ready
+                ? "Local model available · review-only suggestions from approved facts"
+                : aiStatus?.configured
+                  ? "Local model configured but not reachable or the model is not installed"
+                  : "Local AI is not yet enabled on this server. The manual editor remains available."}</p>
+            </div>
+          </div>
+          <button className="outline-btn studio-ai-trigger" type="button"
+            disabled={!aiStatus?.ready || busy || aiBusy || dirty || selected.status !== "draft"}
+            onClick={() => void askLocalAI()}>
+            <WandSparkles size={16}/> {aiBusy ? "Generating with the local model…" : "Suggest tailored wording"}
+          </button>
+          <p className="studio-ai-privacy">
+            Explicit consent for each generation. Only the vacancy and approved profile facts
+            reach the private model; no employer submission or external AI forwarding.
+          </p>
+          {aiSuggestion ? <div className="studio-ai-preview">
+            <div className="studio-ai-preview-title">
+              <strong>Unverified AI proposal · {aiSuggestion.model}</strong>
+              <button className="navy-btn compact" type="button"
+                onClick={insertAISuggestion}>Insert into editor <ArrowRight size={14}/></button>
+            </div>
+            <h4>{aiSuggestion.proposal.cv_headline}</h4>
+            <p>{aiSuggestion.proposal.cv_summary}</p>
+            <details><summary>Read generated cover letter</summary>
+              <pre>{aiSuggestion.proposal.cover_letter}</pre></details>
+            {aiSuggestion.proposal.highlights.length ? <details><summary>Evidence citations</summary>
+              <ul>{aiSuggestion.proposal.highlights.map((row, index) =>
+                <li key={index}>{row.text} <small>Evidence IDs: {row.evidence_fact_ids.join(", ")}</small></li>)}
+              </ul></details> : null}
+            {aiSuggestion.proposal.risks.length ? <div className="studio-ai-risks">
+              <strong>Check before using</strong>
+              <ul>{aiSuggestion.proposal.risks.map((risk, index) => <li key={index}>{risk}</li>)}</ul>
+            </div> : null}
+          </div> : null}
+        </section>
         <div className="studio-document">
           <div className="studio-document-head"><strong><FileText size={17}/> CV draft</strong><span>{cvText.length.toLocaleString()} / 30,000 characters</span></div>
           <textarea aria-label="Editable CV text" rows={15} maxLength={30000}
