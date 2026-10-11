@@ -235,6 +235,8 @@ export interface LocalAIStatus {
   provider: "disabled" | "local_obumai_ollama";
   model: string;
   external_ai_forwarding: false;
+  endpoint_reachable?: boolean;
+  failure_category?: "disabled" | "endpoint_unreachable" | "invalid_model_catalog" | "model_not_installed" | "ready";
 }
 
 export interface LocalAIProposal {
