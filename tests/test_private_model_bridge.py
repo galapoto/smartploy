@@ -26,6 +26,11 @@ args = sys.argv[1:]
 data["calls"].append(args)
 
 def write():
+    # Docker introspection is read-only. In the real shell, network-inspect
+    # and container-inspect run concurrently in a pipeline, so mocks must
+    # not race over one shared state file for those harmless observations.
+    if args[0] in {"ps", "inspect"} or args[:2] == ["network", "inspect"]:
+        return
     path.write_text(json.dumps(data), encoding="utf-8")
 
 if args[0] == "ps":
@@ -129,10 +134,10 @@ def test_script_parses_and_has_no_public_port_or_vault_modification():
     assert subprocess.run(["bash", "-n", str(SCRIPT)], check=False).returncode == 0
     source = SCRIPT.read_text(encoding="utf-8")
     assert "docker network create --driver bridge --internal" in source
-    assert "label=com.docker.compose.project=obumai-personal" in source
-    assert "label=com.docker.compose.service=ollama" in source
-    assert "label=com.docker.compose.project=smartploy" in source
-    assert "label=com.docker.compose.service=api" in source
+    assert 'service_id obumai-personal ollama' in source
+    assert 'service_id smartploy api' in source
+    assert 'label=com.docker.compose.project=$project' in source
+    assert 'label=com.docker.compose.service=$service' in source
     assert "docker network connect --alias ollama" in source
     assert "docker exec -i" in source
     for disallowed in ("docker run", "docker compose down", "docker network create --attachable",
