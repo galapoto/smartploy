@@ -471,6 +471,78 @@ def test_scoped_page_size_retrieves_complete_snapshot_and_keeps_fi_remote():
         adapter.close()
 
 
+
+def test_location_terms_match_whole_places_and_country_code_aliases():
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[])))
+    adapter = LeverAdapter(
+        PublicATSSourceConfig(
+            "lever", "location-demo", "Location Demo",
+            location_terms=("fi", "Helsinki"),
+        ),
+        runtime(), http_client=client,
+    )
+    try:
+        assert adapter._location_matches("Helsinki / Espoo", "SE")
+        assert adapter._location_matches("Helsinki metropolitan area")
+        assert adapter._location_matches("Remote", "FI")
+        assert adapter._location_matches("Western Finland")
+        assert not adapter._location_matches("Office-based, Stockholm", "SE")
+        assert not adapter._location_matches("Helsinkiesque, Sweden")
+        assert not adapter._location_matches("Finlandia business park, Sweden")
+        assert not adapter._location_matches("Remote", "SE")
+    finally:
+        adapter.close()
+
+    country_config = PublicATSSourceConfig(
+        "lever", "location-demo", "Location Demo", location_terms=("Finland",),
+    )
+    alias_adapter = LeverAdapter(country_config, runtime(), http_client=httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[]))
+    ))
+    try:
+        assert alias_adapter._location_matches("Remote", "FI")
+        assert alias_adapter._location_matches("Remote", "Finland")
+        assert not alias_adapter._location_matches("Finlandia")
+    finally:
+        alias_adapter._client.close()
+
+
+def test_lever_only_imports_explicit_finnish_locations_not_office_substrings():
+    listings = [
+        {
+            "id": "swedish-office",
+            "text": "Operations Analyst",
+            "country": "SE",
+            "categories": {"location": "Office-based Stockholm"},
+            "hostedUrl": "https://jobs.lever.co/location-demo/swedish-office",
+        },
+        {
+            "id": "finnish-remote",
+            "text": "Data Analyst",
+            "country": "FI",
+            "categories": {"location": "Remote"},
+            "hostedUrl": "https://jobs.lever.co/location-demo/finnish-remote",
+        },
+    ]
+    def handler(request):
+        assert request.url.host == "api.lever.co"
+        return httpx.Response(200, json=listings)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    adapter = LeverAdapter(
+        PublicATSSourceConfig(
+            "lever", "location-demo", "Location Demo", location_terms=("fi",),
+        ), runtime(), http_client=client,
+    )
+    try:
+        observations = adapter.fetch_all()
+        assert [item.source_external_id for item in observations] == ["finnish-remote"]
+        assert adapter.last_total_postings == 2
+        assert adapter.last_location_filtered_count == 1
+    finally:
+        client.close()
+
+
 def test_tsmg_timeout_on_second_page_does_not_retire_existing_jobs():
     state = {"fail": False}
     def job(identifier):
