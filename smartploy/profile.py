@@ -53,12 +53,12 @@ class ProfileFact:
             raise ValueError("profile fact value is required")
         if fact_type == "email":
             if len(value) > 254 or not re.fullmatch(
-                r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", value
+                r"[^\s@]+@[^\s@]+\.[^\s@]+", value
             ):
                 raise ValueError("Please provide a valid email address")
         if fact_type == "phone":
-            if not (5 <= len(value) <= 40) or len(re.findall(r"\\d", value)) < 5 or not re.fullmatch(
-                r"[+\\d() .-]+", value
+            if not (5 <= len(value) <= 40) or len(re.findall(r"\d", value)) < 5 or not re.fullmatch(
+                r"[+\d() .-]+", value
             ):
                 raise ValueError("Please provide a valid phone number")
         if fact_type in {"linkedin", "github"}:
