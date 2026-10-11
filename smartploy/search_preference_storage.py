@@ -25,6 +25,7 @@ def _stored(profile_id: str, row: tuple[Any, ...] | None) -> SearchPreferences:
         languages=tuple(criteria.get("languages") or ()),
         work_modes=tuple(criteria.get("work_modes") or ()),
         keywords=tuple(criteria.get("keywords") or ()),
+        skills=tuple(criteria.get("skills") or ()),
         seniority=str(criteria.get("seniority") or "any"),
         revision=int(revision),
         updated_at=updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at),
@@ -35,7 +36,8 @@ def _criteria(item: SearchPreferences) -> dict[str, Any]:
     return {
         "roles": list(item.roles), "locations": list(item.locations),
         "languages": list(item.languages), "work_modes": list(item.work_modes),
-        "keywords": list(item.keywords), "seniority": item.seniority,
+        "keywords": list(item.keywords), "skills": list(item.skills),
+        "seniority": item.seniority,
     }
 
 
