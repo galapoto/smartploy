@@ -118,7 +118,7 @@ export default function ApplicationStudio(props: {
   }
 
   async function save() {
-    if (!selected || selected.status !== "draft") return;
+    if (!selected || selected.status !== "draft" || browserReceipt) return;
     setBusy(true); setMessage(""); setError("");
     try {
       const result = await editApplicationWorkspace(
@@ -132,7 +132,7 @@ export default function ApplicationStudio(props: {
   }
 
   async function askLocalAI() {
-    if (!selected || dirty || selected.status !== "draft" || !aiStatus?.ready) return;
+    if (!selected || dirty || selected.status !== "draft" || browserReceipt || !aiStatus?.ready) return;
     const ok = window.confirm(
       "Send the job description and your approved profile facts to the configured " +
       "private local ObumAI/Ollama model? Your uploaded CV file, unapproved profile " +
@@ -151,7 +151,7 @@ export default function ApplicationStudio(props: {
   }
 
   function insertAISuggestion() {
-    if (!selected || !aiSuggestion || selected.status !== "draft") return;
+    if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt) return;
     const draft = aiSuggestion.proposal;
     if (!window.confirm(
       "Insert these AI suggestions into your editable CV and cover letter? " +
@@ -168,7 +168,7 @@ export default function ApplicationStudio(props: {
   }
 
   async function copyBrowserPacket() {
-    if (!selected || dirty || !handoff?.ready || selected.status !== "draft") return;
+    if (!selected || dirty || !handoff?.ready || selected.status !== "draft" || browserReceipt) return;
     let origin = "the employer website";
     try { origin = new URL(selected.application_url).origin; } catch { /* disabled by API validation */ }
     if (!window.confirm(
@@ -316,7 +316,9 @@ export default function ApplicationStudio(props: {
             <h3>{selected.role_title}</h3><p>{selected.company}</p>
             {selected.status === "self_reported_applied" ?
               <span className="state-pill waiting"><Clock3 size={13}/> User-reported applied · not employer-verified</span> :
-              <span className="state-pill good">Editable draft · not submitted</span>}
+              <span className="state-pill good">{browserReceipt ?
+                "Confirmation observed · employer verification pending" :
+                "Editable draft · not submitted"}</span>}
           </div>
           {safePostingLink(selected.application_url) ? (
             <a href={safePostingLink(selected.application_url)} className="outline-btn compact"
@@ -340,7 +342,7 @@ export default function ApplicationStudio(props: {
             </div>
           </div>
           <button className="outline-btn studio-ai-trigger" type="button"
-            disabled={!aiStatus?.ready || busy || aiBusy || dirty || selected.status !== "draft"}
+            disabled={!aiStatus?.ready || busy || aiBusy || dirty || selected.status !== "draft" || !!browserReceipt}
             onClick={() => void askLocalAI()}>
             <WandSparkles size={16}/> {aiBusy ? "Generating with the local model…" : "Suggest tailored wording"}
           </button>
@@ -371,7 +373,7 @@ export default function ApplicationStudio(props: {
         <div className="studio-document">
           <div className="studio-document-head"><strong><FileText size={17}/> CV draft</strong><span>{cvText.length.toLocaleString()} / 30,000 characters</span></div>
           <textarea aria-label="Editable CV text" rows={15} maxLength={30000}
-            readOnly={selected.status !== "draft"} value={cvText}
+            readOnly={selected.status !== "draft" || !!browserReceipt} value={cvText}
             onChange={(event) => setCvText(event.target.value)}
             placeholder="Your reviewed CV content" />
           <small>Started from your uploaded CV, when available; otherwise only approved profile facts.</small>
@@ -387,7 +389,7 @@ export default function ApplicationStudio(props: {
         <div className="studio-document">
           <div className="studio-document-head"><strong><FileCheck2 size={17}/> Cover letter draft</strong><span>{letterText.length.toLocaleString()} / 10,000 characters</span></div>
           <textarea aria-label="Editable cover letter text" rows={13} maxLength={10000}
-            readOnly={selected.status !== "draft"} value={letterText}
+            readOnly={selected.status !== "draft" || !!browserReceipt} value={letterText}
             onChange={(event) => setLetterText(event.target.value)}
             placeholder="Your reviewed cover letter" />
           <small>Edit the draft to include specific, accurate examples. Draft language is not an AI quality guarantee.</small>
@@ -412,7 +414,7 @@ export default function ApplicationStudio(props: {
           </div> : null}
           <div className="studio-handoff-actions">
             <button type="button" className="navy-btn"
-              disabled={!handoff?.ready || dirty || busy || handoffBusy}
+              disabled={!handoff?.ready || dirty || busy || handoffBusy || !!browserReceipt}
               onClick={() => void copyBrowserPacket()}>
               <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" : "Copy approved autofill packet"}
             </button>
@@ -468,7 +470,7 @@ export default function ApplicationStudio(props: {
         <div className="studio-footer">
           <span><LockKeyhole size={14}/> Private workspace · revision {selected.revision}</span>
           {selected.status === "draft" ? <div className="studio-actions">
-            <button type="button" className="primary-btn" disabled={busy || !dirty}
+            <button type="button" className="primary-btn" disabled={busy || !dirty || !!browserReceipt}
               onClick={() => void save()}><Save size={16}/>{busy ? "Working…" : "Save changes"}</button>
             <button type="button" className="navy-btn" disabled={busy}
               onClick={() => void markApplied()}>I applied on employer site <CheckCircle2 size={16}/></button>
