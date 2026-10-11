@@ -97,7 +97,7 @@ def parse_cv(filename: str, encoded: str) -> tuple[str, str, bytes, str]:
         text = _pdf_text(content)
         media_type = "application/pdf"
     else:
-        if not content.startswith(b"PK\\x03\\x04"):
+        if not content.startswith(bytes((0x50, 0x4B, 0x03, 0x04))):
             raise CVImportError("This file does not have a valid DOCX signature.")
         text = _docx_text(content)
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
