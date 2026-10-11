@@ -168,6 +168,7 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
                     "stack": config.stack,
                     "employer_sector": config.employer_sector,
                     "external_ai_forwarding_allowed": config.external_ai_forwarding_allowed,
+                    "location_terms": list(config.location_terms),
                 },
             )
         )
