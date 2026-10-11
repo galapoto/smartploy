@@ -133,24 +133,24 @@ export default function App() {
   const load = useCallback(async (quiet = false) => {
     const generation = ++loadGeneration.current;
     if (quiet) setRefreshing(true); else setLoading(true);
+    // Start the slower optional requests in parallel, without making first
+    // use wait for AI reachability, CV extraction or application history.
+    const secondaryRequest = Promise.allSettled([
+      getApplications(), getHealth(), getCV(), getProfileFacts(),
+      getJobs(), getLocalAIStatus()
+    ]);
     try {
-      const [essential, secondary] = await Promise.all([
-        Promise.all([
-          getDashboard(), getSearchPreferences(), getSearchResults(), getSession()
-        ]),
-        Promise.allSettled([
-          getApplications(), getHealth(), getCV(), getProfileFacts(),
-          getJobs(), getLocalAIStatus()
-        ])
+      const [board, prefs, results, who] = await Promise.all([
+        getDashboard(), getSearchPreferences(), getSearchResults(), getSession()
       ]);
       if (generation !== loadGeneration.current) return;
-
-      const [board, prefs, results, who] = essential;
       setDashboard(board); setPreferences(prefs); setDiscovery(results); setSession(who);
+      setLoading(false);
 
       // Optional tools must not lock users out of job discovery or onboarding.
       // Keep the most recent good data for each isolated panel on an outage.
-      const [apps, ready, savedCV, profile, savedJobs, model] = secondary;
+      const [apps, ready, savedCV, profile, savedJobs, model] = await secondaryRequest;
+      if (generation !== loadGeneration.current) return;
       if (apps.status === "fulfilled") setApplications(apps.value.applications);
       if (ready.status === "fulfilled") setHealth(ready.value);
       if (savedCV.status === "fulfilled") setCV(savedCV.value);
@@ -183,6 +183,7 @@ export default function App() {
   async function saveSearchPreferences(next: SearchPreferencesUpdate) {
     // A pending automatic refresh must never overwrite this user's save.
     ++loadGeneration.current;
+    setRefreshing(false);
     const result = await updateSearchPreferences(next);
     setPreferences(result);
     const fresh = await getSearchResults();
