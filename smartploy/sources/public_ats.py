@@ -32,6 +32,7 @@ ALLOWED_CONFIG_KEYS = {
     "stack",
     "employer_sector",
     "external_ai_forwarding_allowed",
+    "location_terms",
 }
 SMARTRECRUITERS_HOST = "api.smartrecruiters.com"
 LEVER_HOSTS = {
@@ -94,6 +95,7 @@ class PublicATSSourceConfig:
     stack: str = ""
     employer_sector: str = "unknown"
     external_ai_forwarding_allowed: bool = False
+    location_terms: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         provider = _string(self.provider).casefold()
@@ -114,6 +116,19 @@ class PublicATSSourceConfig:
             raise PublicATSError("employer_sector must be public, private or unknown")
         if not isinstance(self.external_ai_forwarding_allowed, bool):
             raise PublicATSError("external_ai_forwarding_allowed must be boolean")
+        if not isinstance(self.location_terms, (list, tuple)):
+            raise PublicATSError("location_terms must be an array")
+        if len(self.location_terms) > 20:
+            raise PublicATSError("location_terms may contain no more than 20 terms")
+        terms = []
+        for raw_term in self.location_terms:
+            if not isinstance(raw_term, str):
+                raise PublicATSError("location_terms must contain strings")
+            term = raw_term.strip().casefold()
+            if not (2 <= len(term) <= 80) or any(ord(char) < 32 for char in term):
+                raise PublicATSError("location_terms must contain 2-80 character printable locations")
+            terms.append(term)
+        object.__setattr__(self, "location_terms", tuple(sorted(set(terms))))
 
         if provider == "lever":
             stack = stack or "global"
@@ -157,6 +172,7 @@ class PublicATSSourceConfig:
                 "external_ai_forwarding_allowed",
                 False,
             ),
+            location_terms=value.get("location_terms", ()),
         )
 
 
@@ -236,6 +252,23 @@ class PublicATSAdapter:
             follow_redirects=False,
         )
         self._owns_client = http_client is None
+        self.last_location_filtered_count = 0
+        self.last_total_postings = 0
+
+    def _location_matches(self, *location_values: Any) -> bool:
+        """Select by explicit geographic fields only, never by job description text."""
+        if not self.config.location_terms:
+            return True
+
+        parts: list[str] = []
+        for value in location_values:
+            parts.extend(_list_strings(value))
+        if "finland" in self.config.location_terms and any(
+            part.strip().upper() == "FI" for part in parts
+        ):
+            return True
+        normalized = " | ".join(part.casefold() for part in parts)
+        return any(term in normalized for term in self.config.location_terms)
 
     def close(self) -> None:
         if self._owns_client:
@@ -396,6 +429,8 @@ class SmartRecruitersAdapter(PublicATSAdapter):
 
     def fetch_all(self, *, observed_at: str | None = None) -> list[SourceObservation]:
         timestamp = observed_at or utc_now_iso()
+        self.last_location_filtered_count = 0
+        self.last_total_postings = 0
         offset = 0
         summaries: list[dict[str, Any]] = []
 
@@ -437,7 +472,18 @@ class SmartRecruitersAdapter(PublicATSAdapter):
             detail = self._get_json(detail_url, expected_host=SMARTRECRUITERS_HOST)
             if not isinstance(detail, dict):
                 raise PublicATSError("SmartRecruiters detail response is not an object")
-            observations.append(self._observation(detail, timestamp))
+            observation = self._observation(detail, timestamp)
+            self.last_total_postings += 1
+            location = detail.get("location") if isinstance(detail.get("location"), dict) else {}
+            if self._location_matches(
+                observation.payload.get("location", ""),
+                location.get("country", ""),
+                location.get("region", ""),
+                location.get("city", ""),
+            ):
+                observations.append(observation)
+            else:
+                self.last_location_filtered_count += 1
         return observations
 
 
@@ -538,6 +584,8 @@ class LeverAdapter(PublicATSAdapter):
 
     def fetch_all(self, *, observed_at: str | None = None) -> list[SourceObservation]:
         timestamp = observed_at or utc_now_iso()
+        self.last_location_filtered_count = 0
+        self.last_total_postings = 0
         skip = 0
         observations: list[SourceObservation] = []
 
@@ -556,9 +604,19 @@ class LeverAdapter(PublicATSAdapter):
             for item in payload:
                 if not isinstance(item, dict):
                     raise PublicATSError("Lever list contains a non-object posting")
-                observations.append(self._observation(item, timestamp))
-                if len(observations) > self.runtime.max_items:
+                observation = self._observation(item, timestamp)
+                self.last_total_postings += 1
+                if self.last_total_postings > self.runtime.max_items:
                     raise PublicATSError("Lever result exceeds configured item limit")
+                categories = item.get("categories") if isinstance(item.get("categories"), dict) else {}
+                if self._location_matches(
+                    observation.payload.get("location", ""),
+                    item.get("country", ""),
+                    categories.get("allLocations", []),
+                ):
+                    observations.append(observation)
+                else:
+                    self.last_location_filtered_count += 1
             if len(payload) < self.runtime.page_size:
                 break
             if not payload:

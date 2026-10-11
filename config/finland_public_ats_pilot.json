@@ -1,0 +1,93 @@
+[
+  {
+    "provider": "lever",
+    "tenant": "uprightproject",
+    "label": "The Upright Project",
+    "stack": "global",
+    "employer_sector": "private",
+    "external_ai_forwarding_allowed": false,
+    "location_terms": [
+      "Finland",
+      "Helsinki",
+      "Uusimaa",
+      "Espoo",
+      "Vantaa",
+      "Tampere",
+      "Turku",
+      "Oulu"
+    ]
+  },
+  {
+    "provider": "lever",
+    "tenant": "brightlyworks",
+    "label": "Brightly Works",
+    "stack": "global",
+    "employer_sector": "private",
+    "external_ai_forwarding_allowed": false,
+    "location_terms": [
+      "Finland",
+      "Helsinki",
+      "Uusimaa",
+      "Espoo",
+      "Vantaa",
+      "Tampere",
+      "Turku",
+      "Oulu"
+    ]
+  },
+  {
+    "provider": "lever",
+    "tenant": "netlight",
+    "label": "Netlight",
+    "stack": "global",
+    "employer_sector": "private",
+    "external_ai_forwarding_allowed": false,
+    "location_terms": [
+      "Finland",
+      "Helsinki",
+      "Uusimaa",
+      "Espoo",
+      "Vantaa",
+      "Tampere",
+      "Turku",
+      "Oulu"
+    ]
+  },
+  {
+    "provider": "lever",
+    "tenant": "rovio-2",
+    "label": "Rovio",
+    "stack": "global",
+    "employer_sector": "private",
+    "external_ai_forwarding_allowed": false,
+    "location_terms": [
+      "Finland",
+      "Helsinki",
+      "Uusimaa",
+      "Espoo",
+      "Vantaa",
+      "Tampere",
+      "Turku",
+      "Oulu"
+    ]
+  },
+  {
+    "provider": "lever",
+    "tenant": "tsmg",
+    "label": "TSMG",
+    "stack": "global",
+    "employer_sector": "private",
+    "external_ai_forwarding_allowed": false,
+    "location_terms": [
+      "Finland",
+      "Helsinki",
+      "Uusimaa",
+      "Espoo",
+      "Vantaa",
+      "Tampere",
+      "Turku",
+      "Oulu",
+      "Jyväskylä"
+    ]
+  }
+]

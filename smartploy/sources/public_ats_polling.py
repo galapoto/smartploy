@@ -22,6 +22,7 @@ class PublicATSPollSummary:
     retired_count: int
     attempted_at: str
     error: str = ""
+    location_filtered_count: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -36,6 +37,7 @@ class PublicATSPollSummary:
             "retired_count": self.retired_count,
             "attempted_at": self.attempted_at,
             "error": self.error,
+            "location_filtered_count": self.location_filtered_count,
         }
 
 
@@ -134,6 +136,9 @@ def poll_public_ats(
             "retired_count": retired,
             "external_ai_forwarding_allowed": adapter.config.external_ai_forwarding_allowed,
             "employer_sector": adapter.config.employer_sector,
+            "location_terms": list(adapter.config.location_terms),
+            "location_filtered_count": getattr(adapter, "last_location_filtered_count", 0),
+            "total_source_postings": getattr(adapter, "last_total_postings", len(observations)),
         },
     )
     return PublicATSPollSummary(
@@ -148,4 +153,5 @@ def poll_public_ats(
         retired_count=retired,
         attempted_at=timestamp,
         error=error,
+        location_filtered_count=getattr(adapter, "last_location_filtered_count", 0),
     )
