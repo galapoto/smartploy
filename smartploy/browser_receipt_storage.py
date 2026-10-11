@@ -17,6 +17,9 @@ class MemoryBrowserReceiptRepository:
     def get(self, profile_id: str, workspace_id: str) -> BrowserReceipt | None:
         return self.items.get((profile_id, workspace_id))
 
+    def delete(self, profile_id: str, workspace_id: str) -> bool:
+        return self.items.pop((profile_id, workspace_id), None) is not None
+
     def record(self, item: BrowserReceipt) -> BrowserReceipt:
         key = (item.profile_id, item.workspace_id)
         old = self.items.get(key)
@@ -59,6 +62,15 @@ class PostgresBrowserReceiptRepository:
                 )
                 row = cursor.fetchone()
         return self._from_row(row) if row else None
+
+    def delete(self, profile_id: str, workspace_id: str) -> bool:
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM smartploy_browser_receipts WHERE profile_id = %s AND workspace_id = %s",
+                    (profile_id, workspace_id),
+                )
+                return cursor.rowcount > 0
 
     def record(self, item: BrowserReceipt) -> BrowserReceipt:
         with connect(self.dsn) as conn:
