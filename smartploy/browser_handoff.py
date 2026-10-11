@@ -76,15 +76,15 @@ def _posting_url(raw: str) -> str:
             except ValueError:
                 pass
         if (
-            parsed.scheme != "https" or not parsed.hostname or "." not in parsed.hostname
-            or parsed.hostname in {"localhost", "host.docker.internal"}
+            parsed.scheme != "https" or parsed.hostname not in {"jobs.lever.co", "jobs.eu.lever.co"}
             or ip is not None or parsed.username or parsed.password
             or parsed.port not in {None, 443}
+            or not re.fullmatch(r"/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+(?:/apply/?)?", parsed.path)
             or len(raw) > 1500
         ):
             raise ValueError
     except ValueError as exc:
-        raise HandoffError("An exact public HTTPS employer application URL is required") from exc
+        raise HandoffError("An exact verified Lever HTTPS job application URL is required") from exc
     return raw
 
 
