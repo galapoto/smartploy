@@ -355,7 +355,7 @@ export default function ApplicationStudio(props: {
               <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" : "Copy approved autofill packet"}
             </button>
             <a className="outline-btn"
-              href="https://github.com/galapoto/smartploy/tree/main/browser-companion"
+              href="https://github.com/galapoto/smartploy/blob/main/docs/BROWSER_APPLY_COMPANION.md"
               target="_blank" rel="noopener noreferrer">Browser companion instructions <ArrowUpRight size={15}/></a>
           </div>
           <p className="studio-handoff-disclaimer">
