@@ -228,6 +228,11 @@ def test_upgrade_existing_private_pilot_is_dry_run_idempotent_and_scoped(tmp_pat
              if line.startswith("SMARTPLOY_PUBLIC_ATS_SOURCES_JSON="))
     ) == reviewed_sources()
     assert stage_pilot(env=path, upgrade_tsmg_transport=True, apply=True)["private_env"] == "unchanged"
+    rolled_back = stage_pilot(env=path, rollback_tsmg_transport=True, apply=True)
+    assert rolled_back["private_env"] == "updated"
+    assert path.read_text() == existing
+    assert stage_pilot(env=path, rollback_tsmg_transport=True, apply=True)["private_env"] == "unchanged"
+    assert path.stat().st_mode & 0o777 == 0o600
 
 
 def test_upgrade_refuses_operator_source_modifications_and_file_registry():
