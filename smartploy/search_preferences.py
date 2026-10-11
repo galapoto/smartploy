@@ -6,6 +6,7 @@ employers or LLMs. General search does not profile or calculate fit scores.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import re
 from typing import Any, Mapping, Sequence
 
@@ -236,9 +237,32 @@ def _alignment(candidate: JobCandidate, pref: SearchPreferences) -> tuple[int, l
     return max(0, min(100, score)), reasons, unknown, bool(primary)
 
 
+def _published_order(candidate: JobCandidate) -> tuple[float, float, str]:
+    """Order by genuine posting/discovery date, NOT by a poll's last-seen time.
+
+    All feed items refreshed in one worker poll otherwise look equally new
+    and general search becomes an arbitrary canonical-key ordering.
+    """
+    def unix(value: str) -> float:
+        if not value:
+            return 0.0
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.timestamp()
+        except (ValueError, OverflowError, TypeError):
+            return 0.0
+
+    return (
+        unix(candidate.posted_at) or unix(candidate.first_seen_at),
+        unix(candidate.first_seen_at), candidate.canonical_key,
+    )
+
+
 def search_jobs(candidates: Sequence[JobCandidate], pref: SearchPreferences) -> dict[str, Any]:
     current = [item for item in candidates if item.source_current]
-    current.sort(key=lambda item: (item.last_seen_at, item.canonical_key), reverse=True)
+    current.sort(key=_published_order, reverse=True)
     if not pref.completed:
         return {
             "mode": "setup_required", "completed": False,
@@ -260,7 +284,7 @@ def search_jobs(candidates: Sequence[JobCandidate], pref: SearchPreferences) -> 
     for candidate in current:
         score, reasons, unknown, primary = _alignment(candidate, pref)
         ranked.append((score, primary, candidate, reasons, unknown))
-    ranked.sort(key=lambda x: (x[0], x[2].last_seen_at, x[2].canonical_key), reverse=True)
+    ranked.sort(key=lambda x: (x[0], _published_order(x[2])), reverse=True)
 
     def cards(group: list[tuple[int, bool, JobCandidate, list[str], list[str]]], lane: str) -> list[dict[str, Any]]:
         return [{
