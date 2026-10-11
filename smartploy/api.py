@@ -18,6 +18,8 @@ import uvicorn
 
 from .access import AccessPrincipal, AccessSettings, CloudflareAccessVerifier
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
+from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
+from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from .cv_import import CVImportError, parse_cv
 from .cv_storage import MemoryCVRepository, PostgresCVRepository
 from .profile import FACT_TYPES, ProfileFact
@@ -140,6 +142,20 @@ class ProfileFactPayload(BaseModel):
 class FactApprovalPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     approved: bool
+
+
+class WorkspaceEditPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    cv_text: str = Field(min_length=1, max_length=30000)
+    cover_letter_text: str = Field(min_length=1, max_length=10000)
+
+
+class WorkspaceAppliedPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirmed_external_application: bool
+    expected_revision: int = Field(ge=1)
+    reference: str = Field(default="", max_length=250)
 
 
 class ObumAITaskPayload(BaseModel):
@@ -336,6 +352,7 @@ def create_app(
     app.state.identity_repository = identity_repository or _build_identity_repository()
     app.state.tenant_services = {}
     app.state.cv_repository = PostgresCVRepository(dsn) if dsn else MemoryCVRepository()
+    app.state.workspace_repository = PostgresWorkspaceRepository(dsn) if dsn else MemoryWorkspaceRepository()
 
     def tenant_context(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
         principal = _principal_from_request(request)
@@ -681,6 +698,114 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ObumAIError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.post("/api/v1/jobs/{canonical_key}/application-workspace")
+    def start_application_workspace(canonical_key: str, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        candidate = tenant.get_job(canonical_key)
+        if candidate is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        profile = tenant.profile()
+        cv = app.state.cv_repository.get(profile.profile_id)
+        try:
+            proposed = new_workspace(
+                candidate, profile,
+                source_cv_text=cv.text if cv else "",
+                source_cv_sha256=cv.digest if cv else "",
+            )
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        stored, created = app.state.workspace_repository.create_or_get(proposed)
+        return {"workspace": stored.to_dict(), "created": created}
+
+    @app.get("/api/v1/application-workspaces")
+    def list_application_workspaces(request: Request, limit: int = 100) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        pid = tenant.profile_repository.profile_id
+        items = app.state.workspace_repository.list(pid, limit=limit)
+        return {"workspaces": [item.to_dict() for item in items], "count": len(items)}
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}")
+    def get_application_workspace(workspace_id: str, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        item = app.state.workspace_repository.get(tenant.profile_repository.profile_id, workspace_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        return {"workspace": item.to_dict()}
+
+    @app.put("/api/v1/application-workspaces/{workspace_id}")
+    def edit_application_workspace(
+        workspace_id: str, payload: WorkspaceEditPayload, request: Request
+    ) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        try:
+            item = app.state.workspace_repository.edit(
+                tenant.profile_repository.profile_id, workspace_id,
+                expected_revision=payload.expected_revision,
+                cv_text=payload.cv_text, cover_letter_text=payload.cover_letter_text,
+            )
+        except WorkspaceRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        return {"workspace": item.to_dict()}
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/report-applied")
+    def report_external_application(
+        workspace_id: str, payload: WorkspaceAppliedPayload, request: Request
+    ) -> dict[str, Any]:
+        if payload.confirmed_external_application is not True:
+            raise HTTPException(status_code=422, detail="Explicit personal confirmation is required")
+        tenant, _ = tenant_context(request)
+        try:
+            item = app.state.workspace_repository.report_applied(
+                tenant.profile_repository.profile_id, workspace_id,
+                expected_revision=payload.expected_revision,
+                reference=payload.reference,
+            )
+        except WorkspaceRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        return {"workspace": item.to_dict(), "external_confirmation_verified": False}
+
+    @app.delete("/api/v1/application-workspaces/{workspace_id}")
+    def remove_application_workspace(workspace_id: str, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        if not app.state.workspace_repository.delete(tenant.profile_repository.profile_id, workspace_id):
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        return {"deleted": True}
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/download/{kind}/{file_format}")
+    def download_application_document(
+        workspace_id: str, kind: str, file_format: str, request: Request
+    ) -> Response:
+        tenant, _ = tenant_context(request)
+        item = app.state.workspace_repository.get(tenant.profile_repository.profile_id, workspace_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        if kind not in {"cv", "letter"} or file_format not in {"pdf", "docx"}:
+            raise HTTPException(status_code=404, detail="Document format not available")
+        try:
+            content, mime, filename = render_document(
+                item, kind=kind, file_format=file_format,
+            )
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return Response(
+            content=content, media_type=mime,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "private, no-store",
+                "Pragma": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "sandbox",
+            },
+        )
 
     @app.get("/api/v1/applications/summary")
     def application_summary(request: Request) -> dict[str, Any]:
