@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Stage an opt-in, read-only Finland public employer ATS pilot on an OVH host.
+
+Reads only a reviewed repo-local source registry; does not poll, deploy, print
+private environment values, or alter PostgreSQL/Cloudflare/ObumAI.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parents[1]
+REGISTRY = ROOT / "config" / "finland_public_ats_pilot.json"
+ENV = ROOT / "deploy" / "personal" / "env"
+KEY = "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON"
+FILE_KEY = "SMARTPLOY_PUBLIC_ATS_SOURCES_FILE"
+
+
+class PilotConfigurationError(ValueError):
+    pass
+
+
+def reviewed_sources(registry: Path = REGISTRY) -> list[dict]:
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    if not isinstance(payload, list) or len(payload) != 5:
+        raise PilotConfigurationError("Expected exactly five approved read-only pilot boards")
+    source_ids: set[str] = set()
+    for item in payload:
+        if not isinstance(item, dict):
+            raise PilotConfigurationError("Pilot source must be an object")
+        if set(item) != {
+            "provider", "tenant", "label", "stack", "employer_sector",
+            "external_ai_forwarding_allowed", "location_terms",
+        }:
+            raise PilotConfigurationError("Pilot source registry contains unsupported fields")
+        if item["provider"] != "lever" or item["stack"] != "global":
+            raise PilotConfigurationError("Only reviewed public Lever boards can join this pilot")
+        slug = item["tenant"]
+        if not isinstance(slug, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,99}", slug):
+            raise PilotConfigurationError("Invalid pilot tenant name")
+        if slug in source_ids:
+            raise PilotConfigurationError("Duplicate pilot tenant name")
+        source_ids.add(slug)
+        if item["external_ai_forwarding_allowed"] is not False:
+            raise PilotConfigurationError("Public ATS pilot must not grant external AI forwarding")
+        if item["employer_sector"] != "private":
+            raise PilotConfigurationError("Public ATS pilot sector classification changed")
+        terms = item["location_terms"]
+        if not isinstance(terms, list) or not terms or len(terms) > 20:
+            raise PilotConfigurationError("Explicit Finnish location terms are required")
+        for term in terms:
+            if not isinstance(term, str) or not (2 <= len(term.strip()) <= 80):
+                raise PilotConfigurationError("Invalid pilot location term")
+    return payload
+
+
+def plan_env_update(env_contents: str, pilot_json: str) -> tuple[str, bool]:
+    """Never overwrite a nonblank operator-defined source configuration."""
+    lines = env_contents.splitlines(keepends=True)
+    sources = [i for i, line in enumerate(lines) if line.startswith(KEY + "=")]
+    files = [line for line in lines if line.startswith(FILE_KEY + "=")]
+    if len(sources) > 1 or len(files) > 1:
+        raise PilotConfigurationError("Duplicate ATS keys in private environment")
+    if files and files[0][len(FILE_KEY) + 1:].strip():
+        raise PilotConfigurationError("Refusing to override a configured ATS source registry file")
+    if sources:
+        original = lines[sources[0]][len(KEY) + 1:].strip()
+        if original:
+            if original == pilot_json:
+                return env_contents, False
+            raise PilotConfigurationError("Refusing to override the existing public ATS source selection")
+        linebreak = "\r\n" if lines[sources[0]].endswith("\r\n") else "\n"
+        lines[sources[0]] = KEY + "=" + pilot_json + linebreak
+        return "".join(lines), True
+    prefix = "" if not env_contents or env_contents.endswith(("\n", "\r")) else "\n"
+    return env_contents + prefix + KEY + "=" + pilot_json + "\n", True
+
+
+def _validate_private_env(path: Path) -> os.stat_result:
+    try:
+        details = path.lstat()
+    except FileNotFoundError as exc:
+        raise PilotConfigurationError("Private SmartPloy env file does not exist") from exc
+    if not stat.S_ISREG(details.st_mode) or stat.S_ISLNK(details.st_mode):
+        raise PilotConfigurationError("Private SmartPloy env must be a non-symlink regular file")
+    if stat.S_IMODE(details.st_mode) & 0o077:
+        raise PilotConfigurationError("Private SmartPloy env must not be group/world readable")
+    return details
+
+
+def stage_pilot(env: Path = ENV, registry: Path = REGISTRY, *, apply: bool = False) -> dict:
+    sources = reviewed_sources(registry)
+    env_stat = _validate_private_env(env)
+    original = env.read_text(encoding="utf-8")
+    pilot_json = json.dumps(sources, ensure_ascii=False, separators=(",", ":"))
+    replacement, changed = plan_env_update(original, pilot_json)
+    if apply and changed:
+        descriptor, candidate = tempfile.mkstemp(prefix=".smartploy-env-", dir=str(env.parent))
+        try:
+            os.fchmod(descriptor, stat.S_IMODE(env_stat.st_mode))
+            if hasattr(os, "fchown"):
+                os.fchown(descriptor, env_stat.st_uid, env_stat.st_gid)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(replacement)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(candidate, env)
+            directory = os.open(str(env.parent), os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            if os.path.exists(candidate):
+                os.unlink(candidate)
+
+    return {
+        "source_count": len(sources),
+        "tenant_ids": [item["tenant"] for item in sources],
+        "region_policy": "explicit Finland/Finnish locations only",
+        "external_ai_forwarding": "disabled",
+        "private_env": "updated" if changed and apply else "unchanged" if not changed else "change_ready",
+        "next": "run production preflight and guarded deploy" if apply else "review and rerun with --apply",
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Review or stage the opt-in public employer Finland job-source pilot"
+    )
+    parser.add_argument("--apply", action="store_true", help="stage pilot in the private host env")
+    args = parser.parse_args()
+    try:
+        result = stage_pilot(apply=args.apply)
+    except (PilotConfigurationError, OSError, ValueError) as exc:
+        raise SystemExit("ATS pilot: " + str(exc)) from exc
+    print(json.dumps(result, sort_keys=True, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
