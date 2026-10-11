@@ -36,6 +36,7 @@ export default function ApplicationStudio(props: {
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
   const [handoff, setHandoff] = useState<BrowserHandoffReadiness | null>(null);
   const [handoffBusy, setHandoffBusy] = useState(false);
+  const [handoffPacketText, setHandoffPacketText] = useState("");
   const [browserReceipt, setBrowserReceipt] = useState<BrowserObservedReceipt | null>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [receiptInput, setReceiptInput] = useState("");
@@ -74,6 +75,7 @@ export default function ApplicationStudio(props: {
   }, [selected?.workspace_id, selected?.revision]);
 
   useEffect(() => {
+    setHandoffPacketText("");
     if (!selected) { setHandoff(null); return; }
     let alive = true;
     setHandoff(null);
@@ -178,9 +180,18 @@ export default function ApplicationStudio(props: {
     setHandoffBusy(true); setError(""); setMessage("");
     try {
       const response = await createBrowserHandoffPacket(selected.workspace_id, selected.revision);
-      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable. Use a secure HTTPS browser.");
-      await navigator.clipboard.writeText(JSON.stringify(response.packet));
-      setMessage("Private application packet copied. Open the employer posting and use the SmartPloy browser companion within 15 minutes. Review and attach your CV before submitting.");
+      const json = JSON.stringify(response.packet);
+      setHandoffPacketText(json);
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(json);
+          setMessage("Private packet copied. Open the employer posting and use the browser companion within 15 minutes. Review and attach CV before submitting.");
+        } catch {
+          setMessage("Your private packet is ready below. Select and copy it manually, then open the employer posting and browser companion.");
+        }
+      } else {
+        setMessage("Your private packet is ready below. Select and copy it manually into the browser companion.");
+      }
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Unable to copy the application packet.");
     } finally { setHandoffBusy(false); }
@@ -409,6 +420,14 @@ export default function ApplicationStudio(props: {
               href="https://github.com/galapoto/smartploy/blob/main/docs/BROWSER_APPLY_COMPANION.md"
               target="_blank" rel="noopener noreferrer">Browser companion instructions <ArrowUpRight size={15}/></a>
           </div>
+          {handoffPacketText ? <div className="studio-packet-fallback">
+            <label htmlFor="smartploy-browser-packet">Private packet for your browser companion</label>
+            <textarea id="smartploy-browser-packet" readOnly rows={4}
+              value={handoffPacketText} spellCheck={false}
+              onFocus={(event) => event.currentTarget.select()}
+              aria-label="Select and copy the private short-lived browser packet" />
+            <p>Copied packets contain approved contact information. Never share them in chat or public issues.</p>
+          </div> : null}
           <p className="studio-handoff-disclaimer">
             Browser-only, 15-minute packet. Upload your CV on the employer's page and answer
             any employer-specific questions. Final submission needs a separate approval and
