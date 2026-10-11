@@ -15,6 +15,7 @@ class ProfileRepository(Protocol):
     profile_id: str
     def upsert_fact(self, fact: ProfileFact) -> ProfileFact: ...
     def list_facts(self) -> list[ProfileFact]: ...
+    def delete_fact(self, fact_id: str) -> bool: ...
     def profile(self) -> CandidateProfile: ...
 
 
@@ -27,6 +28,9 @@ class MemoryProfileRepository:
         item = fact.normalized()
         self._facts[item.fact_id] = item
         return item
+
+    def delete_fact(self, fact_id: str) -> bool:
+        return self._facts.pop(fact_id, None) is not None
 
     def list_facts(self) -> list[ProfileFact]:
         return sorted(self._facts.values(), key=lambda item: (item.fact_type, item.value, item.fact_id))
@@ -86,6 +90,16 @@ class PostgresProfileRepository:
                 )
             conn.commit()
         return item
+
+    def delete_fact(self, fact_id: str) -> bool:
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM smartploy_profile_facts WHERE profile_id = %s AND fact_id = %s",
+                    (self.profile_id, fact_id),
+                )
+                removed = cur.rowcount > 0
+        return removed
 
     @staticmethod
     def _from_row(row) -> ProfileFact:
