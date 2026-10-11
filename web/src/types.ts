@@ -196,3 +196,33 @@ export interface ManualJobPayload {
   description: string;
   application_url: string;
 }
+
+
+export interface ApplicationWorkspace {
+  workspace_id: string;
+  canonical_key: string;
+  role_title: string;
+  company: string;
+  application_url: string;
+  cv_text: string;
+  cover_letter_text: string;
+  source_cv_sha256: string;
+  approved_evidence_ids: string[];
+  revision: number;
+  status: "draft" | "self_reported_applied";
+  self_reported_applied_at: string;
+  self_reported_reference: string;
+  created_at: string;
+  updated_at: string;
+  authority: {
+    may_edit: boolean;
+    may_download: boolean;
+    may_submit_to_employer: false;
+    has_external_submission_proof: false;
+  };
+}
+
+export interface ApplicationWorkspacesResponse {
+  workspaces: ApplicationWorkspace[];
+  count: number;
+}
