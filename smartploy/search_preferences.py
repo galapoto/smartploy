@@ -5,7 +5,7 @@ employers or LLMs. General search does not profile or calculate fit scores.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import re
 from typing import Any, Mapping, Sequence
 
