@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import math
 import os
 import sys
 from typing import Any, Iterable
@@ -60,20 +61,69 @@ def _failure_category(*messages: str) -> str:
     return "other_failure"
 
 
+def _utc_timestamp(value: Any) -> datetime | None:
+    """Accept only timezone-aware datetimes for a security-relevant freshness check."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+    return parsed.astimezone(timezone.utc) if parsed.tzinfo is not None else None
+
+
+def _poll_freshness(
+    task: WorkerTask | None,
+    health: SourceHealth | None,
+    *,
+    reference_at: datetime,
+    max_age_hours: float | None,
+) -> str:
+    """Fail closed on stale, unknown or future-dated worker and source evidence."""
+    if max_age_hours is None:
+        return "not_checked"
+    completed = _utc_timestamp(task.last_completed_at if task else None)
+    succeeded = _utc_timestamp(health.last_success_at if health else None)
+    if completed is None or succeeded is None:
+        return "missing_timestamp"
+    ages = (
+        (reference_at - completed).total_seconds() / 3600,
+        (reference_at - succeeded).total_seconds() / 3600,
+    )
+    if any(age < -(5 / 60) for age in ages):
+        return "future_timestamp"
+    return "fresh" if all(age <= max_age_hours for age in ages) else "stale"
+
+
 def source_report(
     expected: Iterable[str],
     tasks: Iterable[WorkerTask],
     statuses: Iterable[SourceHealth],
     *,
     active_job_count: int,
+    freshness_max_age_hours: float | None = None,
+    reference_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Compose a credential-free report from already loaded repository data."""
+    now = reference_at or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        raise ValueError("freshness reference time must have a UTC offset")
+    now = now.astimezone(timezone.utc)
+    if freshness_max_age_hours is not None and (
+        not math.isfinite(freshness_max_age_hours)
+        or not 0.25 <= freshness_max_age_hours <= 168
+    ):
+        raise ValueError("freshness_max_age_hours must be 0.25-168")
     task_index = {task.task_id: task for task in tasks}
     health_index = {status.source_id: status for status in statuses}
     summaries = []
     completed = 0
     successful = 0
     matched = 0
+    fresh_count = 0
 
     for source_id in expected:
         task = task_index.get("source:" + source_id)
@@ -101,10 +151,16 @@ def source_report(
             successful += 1
         if health and state.startswith("healthy_"):
             matched += health.last_item_count
+        freshness = _poll_freshness(
+            task, health, reference_at=now, max_age_hours=freshness_max_age_hours
+        )
+        if state.startswith("healthy_") and freshness == "fresh":
+            fresh_count += 1
 
         summaries.append({
             "source_id": source_id,
             "readiness": state,
+            "freshness": freshness,
             "task_enabled": bool(task and task.enabled),
             "task_last_status": task_status,
             "last_completed_at": _iso(task.last_completed_at) if task else "",
@@ -124,8 +180,15 @@ def source_report(
     expected_count = len(summaries)
     return {
         "report": "smartploy-ats-readiness-v1",
-        "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "checked_at": now.isoformat(timespec="seconds"),
         "configured_sources": expected_count,
+        "freshness_max_age_hours": freshness_max_age_hours,
+        "sources_fresh": fresh_count if freshness_max_age_hours is not None else None,
+        "freshness_gate_ready": (
+            bool(expected_count and expected_count == fresh_count and
+                 expected_count == successful)
+            if freshness_max_age_hours is not None else None
+        ),
         "source_tasks_completed": completed,
         "sources_healthy": successful,
         "last_finnish_matching_postings_sum": matched,
@@ -139,7 +202,9 @@ def source_report(
     }
 
 
-def collect_report(dsn: str) -> dict[str, Any]:
+def collect_report(
+    dsn: str, *, freshness_max_age_hours: float | None = None
+) -> dict[str, Any]:
     configured = load_public_ats_sources()
     expected = [item.source_id for item in configured]
     tasks = PostgresWorkerTaskRepository(dsn).list()
@@ -148,7 +213,10 @@ def collect_report(dsn: str) -> dict[str, Any]:
         with connection.cursor() as cursor:
             cursor.execute("SELECT count(*) FROM smartploy_jobs WHERE source_current = true")
             active_count = int(cursor.fetchone()[0])
-    return source_report(expected, tasks, health, active_job_count=active_count)
+    return source_report(
+        expected, tasks, health, active_job_count=active_count,
+        freshness_max_age_hours=freshness_max_age_hours,
+    )
 
 
 def main() -> int:
@@ -157,13 +225,26 @@ def main() -> int:
                         help="Fail if any configured source lacks a healthy completed poll")
     parser.add_argument("--require-jobs", action="store_true",
                         help="Fail if no selected ATS feed has returned matching Finnish vacancies")
+    parser.add_argument(
+        "--require-fresh-hours", type=float,
+        help="Opt-in: require each healthy source's last completed/successful poll to be recent (0.25-168h)",
+    )
     args = parser.parse_args()
+    if args.require_fresh_hours is not None and (
+        not math.isfinite(args.require_fresh_hours)
+        or not 0.25 <= args.require_fresh_hours <= 168
+    ):
+        print(json.dumps({"error": "invalid_source_freshness_threshold"}), file=sys.stderr)
+        return 2
     dsn = os.getenv("SMARTPLOY_DATABASE_URL", "").strip()
     if not dsn:
         print(json.dumps({"error": "worker database is not configured"}), file=sys.stderr)
         return 2
     try:
-        report = collect_report(dsn)
+        report = (
+            collect_report(dsn, freshness_max_age_hours=args.require_fresh_hours)
+            if args.require_fresh_hours is not None else collect_report(dsn)
+        )
     except Exception as exc:
         # Driver exceptions can include DSNs; never print exception text.
         print(json.dumps({"error": "read_only_source_check_failed", "type": type(exc).__name__}), file=sys.stderr)
@@ -173,6 +254,8 @@ def main() -> int:
         return 3
     if args.require_jobs and not report["job_discovery_observed"]:
         return 4
+    if args.require_fresh_hours is not None and not report["freshness_gate_ready"]:
+        return 5
     return 0
 
 

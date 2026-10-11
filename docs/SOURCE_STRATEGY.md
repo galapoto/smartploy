@@ -141,3 +141,35 @@ Official references:
 - https://developers.smartrecruiters.com/docs/endpoints
 - https://developers.smartrecruiters.com/docs/objects
 - https://github.com/lever/postings-api
+
+
+## Opt-in source freshness acceptance
+
+A source can remain marked `healthy` after its last successful poll becomes
+stale. For the live job-discovery rollout, use the **optional**, read-only
+age gate without breaking legacy readiness:
+
+~~~bash
+python scripts/check_ats_readiness.py --require-healthy --require-jobs --require-fresh-hours 6
+~~~
+
+- `--require-fresh-hours` accepts a finite 0.25–168 hour threshold and exits
+  nonzero if any configured source is not healthy, lacks a timezone-aware
+  completed/successful poll timestamp, has a date unexpectedly in the future,
+  or exceeds the age threshold. Both the worker last-completed time and the
+  source last-successful time must be sufficiently recent.
+- Existing `--require-healthy` and `--require-jobs` semantics are unchanged
+  when the freshness flag is omitted. A healthy zero-result poll remains healthy;
+  `--require-jobs` separately requires actual selected job discovery.
+- Only source IDs, safe health states, timestamps, counts and coarse freshness
+  classifications appear in the report. It never prints source URLs with
+  credentials, raw provider errors, job descriptions, CVs or tokens.
+- This gate **does not** trigger polling, re-enable a source, retire a job,
+  update a table, change OAuth/Cloudflare policies or submit an application.
+  Staleness should lead to diagnosis of worker scheduling, source permission,
+  rate limits and upstream changes before any production action.
+
+**Not a real-world relevance metric:** a recent successful feed proves the
+source was polled; it does not prove a listing is a good match for a particular
+applicant. Job freshness and the offline synthetic search evaluation in
+`docs/SEARCH_QUALITY_EVALUATION.md` are independent checks.
