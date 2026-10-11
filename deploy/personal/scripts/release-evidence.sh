@@ -93,6 +93,10 @@ fi
 if ! bash "${SCRIPT_DIR}/assert-healthy-stack.sh" >/dev/null; then
   fail "one or more SmartPloy services are not healthy"
 fi
+# Release evidence must certify running image identity, not merely healthy older images.
+if ! bash "${SCRIPT_DIR}/assert-running-images.sh" "${DEPLOYED_SHA}" >/dev/null; then
+  fail "running container image IDs do not match deployed Git revision"
+fi
 
 TMP_DIR="$(mktemp -d)"
 EVIDENCE_TMP=""
@@ -245,6 +249,7 @@ latest_backup_metadata_valid=${LATEST_BACKUP_METADATA_VALID}
 preflight_passed=true
 env_boundary_smoke_passed=true
 stack_healthy=true
+running_release_images_verified=true
 live_acceptance=${LIVE_ACCEPTANCE}
 live_origin_health=${LIVE_ORIGIN_HEALTH}
 live_dns=${LIVE_DNS}
