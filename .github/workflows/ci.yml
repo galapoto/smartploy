@@ -105,6 +105,8 @@ jobs:
       - name: Build and smoke production Compose stack
         run: |
           set -euo pipefail
+          DEPLOY_SHA="$(git rev-parse HEAD)"
+          export SMARTPLOY_IMAGE_TAG="${DEPLOY_SHA:0:12}"
           COMPOSE=(
             docker compose
             --env-file deploy/personal/env
@@ -120,7 +122,8 @@ jobs:
           "${COMPOSE[@]}" build api web
           "${COMPOSE[@]}" up -d --wait postgres
           "${COMPOSE[@]}" run --rm --no-deps api python scripts/migrate.py
-          "${COMPOSE[@]}" up -d api worker web
+          "${COMPOSE[@]}" up -d --wait --wait-timeout 120 --no-deps --force-recreate api
+          "${COMPOSE[@]}" up -d --no-deps --force-recreate worker web
 
           for _ in $(seq 1 60); do
             running="$("${COMPOSE[@]}" ps --status running --services)"
@@ -136,6 +139,16 @@ jobs:
           # The worker image has an API healthcheck by default; a worker-specific
           # override must prove that all four services are actually healthy.
           bash deploy/personal/scripts/assert-healthy-stack.sh
+          bash deploy/personal/scripts/assert-running-images.sh "${DEPLOY_SHA}"
+          # Negative control: tag an unrelated existing image as a fake release;
+          # the image-ID gate must detect that the running containers are stale.
+          BAD_SHA="0000000000000000000000000000000000000000"
+          docker tag "smartploy-web:${SMARTPLOY_IMAGE_TAG}" "smartploy-api:000000000000"
+          docker tag "smartploy-web:${SMARTPLOY_IMAGE_TAG}" "smartploy-web:000000000000"
+          if bash deploy/personal/scripts/assert-running-images.sh "${BAD_SHA}" > /tmp/smartploy-stale-image-check.log 2>&1; then
+            echo "image provenance accepted stale service containers" >&2
+            exit 1
+          fi
 
           for _ in $(seq 1 60); do
             if curl --fail --silent \
@@ -237,6 +250,7 @@ jobs:
           grep -Fxq 'preflight_passed=true' "${EVIDENCE_FILE}"
           grep -Fxq 'env_boundary_smoke_passed=true' "${EVIDENCE_FILE}"
           grep -Fxq 'stack_healthy=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'running_release_images_verified=true' "${EVIDENCE_FILE}"
           grep -Fxq 'live_acceptance=skipped' "${EVIDENCE_FILE}"
 
           # Evidence must never contain fixture secret/private configuration values.
