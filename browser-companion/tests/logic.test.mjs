@@ -48,6 +48,11 @@ test("valid 15-minute application packet only for the exact job URL", () => {
   assert.equal(Object.hasOwn(result, "may_submit"), false);
 });
 
+test("reject even a matching malicious non-Lever host; auto-fill is scoped to supported ATS", () => {
+  const unsupported = "https://evil.example.com/uprightproject/fake-job/apply";
+  assert.throws(() => validatePacket(packet({ application_url: unsupported }), unsupported, validNow), PacketError);
+});
+
 test("reject expired, future, overlong, malformed and unsupported packets", () => {
   const inputs = [
     packet({expires_at: new Date(validNow - 1).toISOString()}),
