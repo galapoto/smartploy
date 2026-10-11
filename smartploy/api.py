@@ -160,6 +160,7 @@ class SearchPreferencesPayload(BaseModel):
     languages: list[str] = Field(default_factory=list, max_length=3)
     work_modes: list[str] = Field(default_factory=list, max_length=3)
     keywords: list[str] = Field(default_factory=list, max_length=12)
+    skills: list[str] = Field(default_factory=list, max_length=16)
     seniority: str = "any"
     expected_revision: int = Field(ge=0)
 
