@@ -45,8 +45,13 @@ hosts, source policy and retirement.
   Inspect worker restart/configuration and task startup.
 - `awaiting_first_poll`: task exists but no completed run is recorded.
   Allow a normal polling interval; inspect worker logs if persistent.
-- `poll_failed`: scheduling/connector failure. Review bounded recent worker
-  output on the host and the provider's official API availability.
+- `poll_failed`: scheduling/connector failure. The `failure_category` field
+  classifies it as `network_timeout`, `upstream_rate_limited`,
+  `upstream_access_denied`, `upstream_source_missing`,
+  `upstream_server_error`, `source_size_limit`, `unexpected_upstream_data`,
+  `network_connection_error`, `tls_error`, or `other_failure` without exposing
+  raw exception text. Inspect the classified error before changing timeout,
+  rate, or source settings.
 - `healthy_zero_matching_jobs`: successful complete poll, but no currently
   matching Finnish locations. Do not fabricate a job count.
 - `healthy_with_matching_jobs`: actual observed Finnish vacancies available;

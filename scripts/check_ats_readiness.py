@@ -33,6 +33,33 @@ def _count(metadata: dict[str, Any], key: str) -> int:
     return min(max(value, 0), 1_000_000_000)
 
 
+
+def _failure_category(*messages: str) -> str:
+    """Allowlist a diagnostic class; never disclose raw driver/provider errors."""
+    value = " ".join(str(message or "") for message in messages).casefold()
+    if not value.strip():
+        return "not_reported"
+    if "timeout" in value or "timed out" in value:
+        return "network_timeout"
+    if "http 429" in value or "rate limit" in value or "too many requests" in value:
+        return "upstream_rate_limited"
+    if "http 401" in value or "http 403" in value:
+        return "upstream_access_denied"
+    if "http 404" in value or "http 410" in value:
+        return "upstream_source_missing"
+    if "http 5" in value:
+        return "upstream_server_error"
+    if "response exceeds" in value or "configured item limit" in value or "too large" in value:
+        return "source_size_limit"
+    if "invalid json" in value or "jsondecode" in value or "unexpected shape" in value:
+        return "unexpected_upstream_data"
+    if "connection" in value or "connecterror" in value:
+        return "network_connection_error"
+    if "ssl" in value or "tls" in value:
+        return "tls_error"
+    return "other_failure"
+
+
 def source_report(
     expected: Iterable[str],
     tasks: Iterable[WorkerTask],
@@ -83,6 +110,7 @@ def source_report(
             "last_completed_at": _iso(task.last_completed_at) if task else "",
             "next_run_at": _iso(task.next_run_at) if task else "",
             "source_status": poll_status,
+            "failure_category": _failure_category(task.last_error if task else "", health.last_error if health else "") if state == "poll_failed" else "",
             "last_attempt_at": _iso(health.last_attempt_at) if health else "",
             "last_success_at": _iso(health.last_success_at) if health else "",
             "last_finnish_matching_postings": int(health.last_item_count) if health else 0,
