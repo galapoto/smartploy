@@ -178,6 +178,7 @@ export interface SessionInfo {
 
 export interface SavedJob {
   canonical_key: string;
+  source_current: boolean;
   source_ids: string[];
   posted_at: string;
   first_seen_at: string;
