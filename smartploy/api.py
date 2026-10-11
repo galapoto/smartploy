@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timezone
 import os
 from typing import Any, Dict, List, Optional
@@ -10,13 +11,16 @@ from urllib.parse import urlsplit
 
 from authlib.integrations.base_client import OAuthError
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 import uvicorn
 
 from .access import AccessPrincipal, AccessSettings, CloudflareAccessVerifier
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
+from .cv_import import CVImportError, parse_cv
+from .cv_storage import MemoryCVRepository, PostgresCVRepository
+from .profile import FACT_TYPES, ProfileFact
 from .identity import (
     AuthenticatedPrincipal,
     IdentityRepository,
@@ -118,6 +122,24 @@ def _public_origin() -> str:
     ):
         raise ValueError("SMARTPLOY_PUBLIC_ORIGIN must be an origin-only HTTPS URL")
     return value
+
+
+class CVUploadPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filename: str = Field(min_length=1, max_length=160)
+    content_base64: str = Field(min_length=24, max_length=7_000_000)
+
+
+class ProfileFactPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    fact_type: str = Field(min_length=1, max_length=40)
+    value: str = Field(min_length=1, max_length=700)
+    approved: bool = False
+
+
+class FactApprovalPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    approved: bool
 
 
 class ObumAITaskPayload(BaseModel):
@@ -313,6 +335,7 @@ def create_app(
     app.state.session_repository = sessions
     app.state.identity_repository = identity_repository or _build_identity_repository()
     app.state.tenant_services = {}
+    app.state.cv_repository = PostgresCVRepository(dsn) if dsn else MemoryCVRepository()
 
     def tenant_context(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
         principal = _principal_from_request(request)
@@ -481,6 +504,93 @@ def create_app(
     def profile_status(request: Request) -> dict[str, Any]:
         tenant, _ = tenant_context(request)
         return tenant.profile_summary()
+
+    @app.get("/api/v1/profile/facts")
+    def profile_facts(request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        facts = tenant.profile_repository.list_facts()
+        return {"facts": [item.to_dict() for item in facts], "count": len(facts)}
+
+    @app.post("/api/v1/profile/facts", status_code=201)
+    def add_profile_fact(payload: ProfileFactPayload, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        if payload.fact_type not in FACT_TYPES:
+            raise HTTPException(status_code=422, detail="Unsupported profile fact type")
+        try:
+            fact = ProfileFact(
+                fact_type=payload.fact_type,
+                value=payload.value,
+                source="user-confirmed" if payload.approved else "user-entered",
+                approved=payload.approved,
+            ).normalized()
+            saved = tenant.profile_repository.upsert_fact(fact)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"fact": saved.to_dict()}
+
+    @app.patch("/api/v1/profile/facts/{fact_id}")
+    def approve_profile_fact(fact_id: str, payload: FactApprovalPayload, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        fact = next(
+            (item for item in tenant.profile_repository.list_facts() if item.fact_id == fact_id),
+            None,
+        )
+        if fact is None:
+            raise HTTPException(status_code=404, detail="Profile fact not found")
+        saved = tenant.profile_repository.upsert_fact(replace(fact, approved=payload.approved))
+        return {"fact": saved.to_dict()}
+
+    @app.delete("/api/v1/profile/facts/{fact_id}")
+    def delete_profile_fact(fact_id: str, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        if not tenant.profile_repository.delete_fact(fact_id):
+            raise HTTPException(status_code=404, detail="Profile fact not found")
+        return {"deleted": True}
+
+    @app.get("/api/v1/profile/cv")
+    def get_cv(request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        item = app.state.cv_repository.get(tenant.profile_repository.profile_id)
+        return item.summary() if item else {"present": False}
+
+    @app.post("/api/v1/profile/cv")
+    def upload_cv(payload: CVUploadPayload, request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        try:
+            filename, media_type, raw, text = parse_cv(
+                payload.filename, payload.content_base64
+            )
+        except CVImportError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        item = app.state.cv_repository.put(
+            tenant.profile_repository.profile_id, filename, media_type, raw, text
+        )
+        # CV text is a private preview only. It is never auto-approved or sent to ObumAI.
+        return item.summary()
+
+    @app.get("/api/v1/profile/cv/download")
+    def download_cv(request: Request) -> Response:
+        tenant, _ = tenant_context(request)
+        item = app.state.cv_repository.get(tenant.profile_repository.profile_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="No CV uploaded")
+        ext = ".pdf" if item.media_type == "application/pdf" else ".docx"
+        return Response(
+            content=item.content,
+            media_type=item.media_type,
+            headers={
+                "Content-Disposition": 'attachment; filename="smartploy-cv' + ext + '"',
+                "X-Content-Type-Options": "nosniff",
+                "Cache-Control": "private, no-store",
+            },
+        )
+
+    @app.delete("/api/v1/profile/cv")
+    def delete_cv(request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        if not app.state.cv_repository.delete(tenant.profile_repository.profile_id):
+            raise HTTPException(status_code=404, detail="No CV uploaded")
+        return {"deleted": True}
 
     @app.post("/api/v1/sources")
     def register_source(payload: SourcePolicyPayload) -> dict[str, Any]:
