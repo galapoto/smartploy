@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 import json
 import sys
 
@@ -118,3 +119,32 @@ def test_cli_verification_flags_and_error_redaction(monkeypatch, capsys):
     result = capsys.readouterr()
     assert "very-private-password" not in result.err + result.out
     assert "RuntimeError" in result.err
+
+
+def test_only_safe_categories_are_exposed_for_real_worker_failures():
+    error = "PublicATSError: lever request failed: ReadTimeout postgresql://user:secret-value@db"
+    failed_task = replace(task(status="failed"), last_error=error)
+    failed_source = replace(health(state="failed", count=0), last_error=error)
+    report = check_ats_readiness.source_report(
+        [SOURCE], [failed_task], [failed_source], active_job_count=0
+    )
+    assert report["sources"][0]["failure_category"] == "network_timeout"
+    assert "secret-value" not in json.dumps(report)
+    assert "ReadTimeout" not in json.dumps(report)
+
+
+def test_known_poll_errors_are_categorized_without_echoing_input():
+    checks = [
+        ("PublicATSError: lever returned HTTP 429", "upstream_rate_limited"),
+        ("PublicATSError: lever returned HTTP 403", "upstream_access_denied"),
+        ("PublicATSError: lever returned HTTP 404", "upstream_source_missing"),
+        ("PublicATSError: lever returned HTTP 500", "upstream_server_error"),
+        ("PublicATSError: Lever result exceeds configured item limit", "source_size_limit"),
+        ("PublicATSError: invalid JSON", "unexpected_upstream_data"),
+        ("PublicATSError: ConnectionError", "network_connection_error"),
+        ("PublicATSError: SSL verification failed", "tls_error"),
+        ("Unexpected opaque sensitive content", "other_failure"),
+        ("", "not_reported"),
+    ]
+    for message, expected_category in checks:
+        assert check_ats_readiness._failure_category(message) == expected_category
