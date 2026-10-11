@@ -95,7 +95,7 @@ describe("ObumAI product navigation contract", () => {
   it("keeps the canonical ObumAI workspace URL fixed", async () => {
     const source = await import("./App?raw");
     expect(source.default).toContain(
-      '<a className="obumai-home-link" href="https://app.obumai.com/">'
+      '<a className="obumai-brand" href="https://app.obumai.com/" target="_self" title="Open ObumAI">'
     );
     expect(source.default).not.toContain("https://app.obumai.com/?token=");
   });
