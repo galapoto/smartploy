@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
 from smartploy.profile import CandidateProfile, ProfileFact
-from smartploy.scoring import rank_candidates, score_candidate
+from smartploy.scoring import _concepts, rank_candidates, score_candidate
 
 
 def candidate(posted_at="2026-10-10T01:00:00+00:00", mandatory=("Python", "SQL")):
@@ -90,3 +90,67 @@ def test_rank_candidates_uses_priority_then_fit():
     stale = candidate("2026-09-20T01:00:00+00:00")
     ranked = rank_candidates([stale, fresh], profile(), now=now)
     assert ranked[0].priority_score >= ranked[1].priority_score
+
+
+def test_skill_aliases_use_word_boundaries_not_incidental_substrings():
+    assert "sql" not in _concepts("NoSQL databases")
+    assert "python" not in _concepts("pythonic style")
+    assert "sql" in _concepts("SQL / Python")
+    assert "python" in _concepts("SQL / Python")
+    assert "power_bi" in _concepts("Power-BI dashboard")
+
+    only_nosql = CandidateProfile(facts=(
+        ProfileFact("skill", "NoSQL", "cv", approved=True),
+    ))
+    result = score_candidate(candidate(mandatory=("SQL",)), only_nosql)
+    assert result.mandatory_gaps == ("SQL",)
+    assert result.prepare_recommended is False
+    assert result.fit_breakdown["mandatory_requirements"] == 0
+
+
+def test_higher_degree_requirement_cannot_be_fulfilled_by_bachelor_or_unrelated_skills():
+    requirement = "Master's degree in Data Science"
+    bachelor = CandidateProfile(facts=(
+        ProfileFact("education", "Bachelor of Science in Data Science", "cv", approved=True),
+        ProfileFact("skill", "Data Science", "cv", approved=True),
+        ProfileFact("experience", "Data Science projects", "cv", approved=True),
+    ))
+    result = score_candidate(candidate(mandatory=(requirement,)), bachelor)
+    assert result.mandatory_gaps == (requirement,)
+    assert result.prepare_recommended is False
+    assert result.queue not in {"exceptional", "auto_prepare"}
+
+
+def test_degree_qualification_requires_same_level_and_field_in_one_approved_fact():
+    requirement = "Master's degree in Data Science"
+    unrelated = CandidateProfile(facts=(
+        ProfileFact("education", "MSc in Business Administration", "cv", approved=True),
+        ProfileFact("education", "Bachelor in Data Science", "cv", approved=True),
+    ))
+    unrelated_result = score_candidate(candidate(mandatory=(requirement,)), unrelated)
+    assert unrelated_result.mandatory_gaps == (requirement,)
+
+    correct = CandidateProfile(facts=(
+        ProfileFact("education", "MSc in Data Science", "cv", approved=True),
+    ))
+    valid_result = score_candidate(candidate(mandatory=(requirement,)), correct)
+    assert valid_result.mandatory_gaps == ()
+    assert valid_result.matched_requirements == (requirement,)
+    assert len(valid_result.matched_evidence_ids) >= 1
+
+    unapproved = CandidateProfile(facts=(
+        ProfileFact("education", "MSc in Data Science", "unreviewed", approved=False),
+    ))
+    unavailable = score_candidate(candidate(mandatory=(requirement,)), unapproved)
+    assert unavailable.mandatory_gaps == (requirement,)
+    assert unavailable.prepare_recommended is False
+
+
+def test_degree_guard_does_not_confuse_skill_mastery_with_a_degree():
+    # "Master Python scripts" is a skill phrase, not an MSc credential.
+    from smartploy.scoring import _degree_level
+    assert _degree_level("Master Python scripts") is None
+    assert _degree_level("Master's degree in Data Science") == "master"
+    assert _degree_level("M.Sc. Data Science") == "master"
+    assert _degree_level("Bachelor in Nursing") == "bachelor"
+    assert _degree_level("PhD in Physics") == "doctorate"
