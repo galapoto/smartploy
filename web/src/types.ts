@@ -142,3 +142,57 @@ export interface PreparationResponse {
   error?: string;
   updated_at?: string;
 }
+
+
+export interface CVDocument {
+  present: boolean;
+  filename?: string;
+  media_type?: string;
+  size_bytes?: number;
+  sha256?: string;
+  updated_at?: string;
+  text_preview?: string;
+  text_extracted?: boolean;
+}
+
+export interface CandidateFact {
+  fact_id: string;
+  fact_type: string;
+  value: string;
+  approved: boolean;
+  source: string;
+  confidence: number;
+  created_at: string;
+}
+
+export interface ProfileFactsResponse {
+  facts: CandidateFact[];
+  count: number;
+}
+
+export interface SessionInfo {
+  authenticated: boolean;
+  email?: string;
+  auth_source?: string;
+}
+
+export interface SavedJob {
+  canonical_key: string;
+  source_ids: string[];
+  posted_at: string;
+  first_seen_at: string;
+  job: JobCardData;
+}
+
+export interface JobsResponse {
+  jobs: SavedJob[];
+  count: number;
+}
+
+export interface ManualJobPayload {
+  company: string;
+  role_title: string;
+  location: string;
+  description: string;
+  application_url: string;
+}
