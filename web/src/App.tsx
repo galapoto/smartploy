@@ -130,6 +130,7 @@ export default function App() {
   // Ignore old responses after a later refresh or a user's preference change.
   // The 60-second polling interval may overlap slow model/provider requests.
   const loadGeneration = useRef(0);
+  const lastSessionIdentity = useRef<string | null>(null);
   const load = useCallback(async (quiet = false) => {
     const generation = ++loadGeneration.current;
     if (quiet) setRefreshing(true); else setLoading(true);
@@ -144,27 +145,44 @@ export default function App() {
         getDashboard(), getSearchPreferences(), getSearchResults(), getSession()
       ]);
       if (generation !== loadGeneration.current) return;
+      const identity = JSON.stringify([
+        Boolean(who.authenticated), who.auth_source || "", who.email || ""
+      ]);
+      if (lastSessionIdentity.current !== null && identity !== lastSessionIdentity.current) {
+        // A browser can change signed-in accounts while the SPA remains open.
+        // Never show the previous account's CV, facts or application history.
+        setApplications([]); setCV({ present: false }); setFacts([]);
+        setJobs([]); setHealth(null); setLocalAI(null);
+        setSelectedWorkspaceId("");
+      }
+      lastSessionIdentity.current = identity;
       setDashboard(board); setPreferences(prefs); setDiscovery(results); setSession(who);
       setLoading(false);
 
       // Optional tools must not lock users out of job discovery or onboarding.
-      // Keep the most recent good data for each isolated panel on an outage.
+      // Fail closed for PRIVATE data: never retain a previous account's CV
+      // or application history when those API reads cannot be authenticated.
       const secondary = await secondaryRequest;
       if (generation !== loadGeneration.current) return;
       const [apps, ready, savedCV, profile, savedJobs, model] = secondary;
-      if (apps.status === "fulfilled") setApplications(apps.value.applications);
-      if (ready.status === "fulfilled") setHealth(ready.value);
-      if (savedCV.status === "fulfilled") setCV(savedCV.value);
-      if (profile.status === "fulfilled") setFacts(profile.value.facts);
-      if (savedJobs.status === "fulfilled") setJobs(savedJobs.value.jobs);
-      if (model.status === "fulfilled") setLocalAI(model.value);
-      else setLocalAI(null);
+      setApplications(apps.status === "fulfilled" ? apps.value.applications : []);
+      setHealth(ready.status === "fulfilled" ? ready.value : null);
+      setCV(savedCV.status === "fulfilled" ? savedCV.value : { present: false });
+      setFacts(profile.status === "fulfilled" ? profile.value.facts : []);
+      setJobs(savedJobs.status === "fulfilled" ? savedJobs.value.jobs : []);
+      setLocalAI(model.status === "fulfilled" ? model.value : null);
 
       setError(secondary.some((result) => result.status === "rejected")
         ? "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria."
         : "");
     } catch (exc) {
       if (generation === loadGeneration.current) {
+        // If essential authenticated APIs fail, do not keep showing the
+        // previous user's private workspace as if the session were current.
+        lastSessionIdentity.current = null;
+        setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
+        setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
+        setHealth(null); setLocalAI(null); setSelectedWorkspaceId("");
         setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
       }
     } finally {
