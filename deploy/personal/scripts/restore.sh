@@ -35,6 +35,20 @@ if [[ ! "${WEB_PORT}" =~ ^[0-9]+$ ]] || (( WEB_PORT < 1024 || WEB_PORT > 65535 )
   exit 1
 fi
 
+# A restore must keep the previously deployed application image identity.
+# Do not ever restore with the Compose default :dev image tag.
+[[ -f "${STATE_DIR}/deployed-sha" && ! -L "${STATE_DIR}/deployed-sha" ]] || {
+  echo "Missing trusted deployed-sha; refusing restore with an unversioned image" >&2
+  exit 1
+}
+DEPLOYED_SHA="$(tr -d '[:space:]' < "${STATE_DIR}/deployed-sha")"
+CURRENT_SHA="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
+if [[ ! "${DEPLOYED_SHA}" =~ ^[0-9a-f]{40}$ || "${DEPLOYED_SHA}" != "${CURRENT_SHA}" ]]; then
+  echo "Restore code SHA does not match previously deployed release" >&2
+  exit 1
+fi
+export SMARTPLOY_IMAGE_TAG="${DEPLOYED_SHA:0:12}"
+
 mkdir -p "${BACKUP_DIR}" "${STATE_DIR}"
 chmod 700 "${BACKUP_DIR}" "${STATE_DIR}"
 umask 077
@@ -123,7 +137,8 @@ fi
 
 cd "${REPO_ROOT}"
 "${COMPOSE[@]}" run --rm --no-deps api python scripts/migrate.py
-"${COMPOSE[@]}" up -d api worker web
+"${COMPOSE[@]}" up -d --wait --wait-timeout 120 --no-deps --force-recreate api
+"${COMPOSE[@]}" up -d --no-deps --force-recreate worker web
 
 HEALTH_FILE="$(mktemp)"
 cleanup() {
@@ -175,6 +190,7 @@ for required in postgres api worker web; do
 done
 
 bash "${SCRIPT_DIR}/assert-healthy-stack.sh"
+bash "${SCRIPT_DIR}/assert-running-images.sh" "${DEPLOYED_SHA}"
 
 RESTORED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 EVIDENCE="${STATE_DIR}/restore-$(date -u +'%Y%m%dT%H%M%SZ')-$$.txt"

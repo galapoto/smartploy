@@ -73,7 +73,11 @@ SMARTPLOY_OPERATION_LOCK_HELD=1 bash "${SCRIPT_DIR}/backup.sh"
 # Schema mutation is an explicit one-shot step before application/worker startup.
 "${COMPOSE[@]}" run --rm --no-deps api python scripts/migrate.py
 
-"${COMPOSE[@]}" up -d --remove-orphans api worker web
+# This is a versioned release, not a regular "up": old containers must never
+# be treated as successful deployment of a newly built Git revision.
+# Recreate only application services, never the existing PostgreSQL volume.
+"${COMPOSE[@]}" up -d --wait --wait-timeout 120 --no-deps --force-recreate api
+"${COMPOSE[@]}" up -d --no-deps --force-recreate worker web
 
 HEALTH_FILE="$(mktemp)"
 HEALTH_OK=false
@@ -122,6 +126,7 @@ done
 # A running service is not necessarily healthy. Never record a deployment SHA
 # while the worker is failing its own Docker healthcheck.
 bash "${SCRIPT_DIR}/assert-healthy-stack.sh"
+bash "${SCRIPT_DIR}/assert-running-images.sh" "${DEPLOY_SHA}"
 
 if [[ -f "${STATE_DIR}/deployed-sha" ]]; then
   PREVIOUS="$(tr -d '[:space:]' < "${STATE_DIR}/deployed-sha")"
