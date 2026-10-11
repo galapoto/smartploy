@@ -162,7 +162,7 @@ def _mentions_phrase(text: str, phrase: str) -> bool:
     parts = phrase.split()
     if not parts:
         return False
-    pattern = r"(?<!\\w)" + r"[\\s/_-]+".join(re.escape(part.casefold()) for part in parts) + r"(?!\\w)"
+    pattern = r"(?<!\w)" + r"[\s/_-]+".join(re.escape(part.casefold()) for part in parts) + r"(?!\w)"
     return re.search(pattern, text.casefold()) is not None
 
 def _job_card(candidate: JobCandidate) -> dict[str, Any]:
