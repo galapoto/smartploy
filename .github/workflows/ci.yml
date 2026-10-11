@@ -67,6 +67,38 @@ jobs:
         working-directory: web
         run: npm run build
 
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install --no-audit --no-fund
+      - name: Install Chromium and OS libraries
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Build exact production web assets
+        working-directory: web
+        run: npm run build
+      - name: Browser acceptance against isolated synthetic API
+        working-directory: web
+        run: npm run test:e2e
+      - name: Upload synthetic screenshots and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-synthetic-browser-evidence
+          path: |
+            web/browser-evidence/
+            web/playwright-report/
+            web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
   deploy-stack:
     runs-on: ubuntu-latest
     timeout-minutes: 20
