@@ -202,3 +202,20 @@ export function applicationDownloadUrl(
   return API_BASE + "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
     + "/download/" + kind + "/" + format;
 }
+
+
+export function getLocalAIStatus(): Promise<import("./types").LocalAIStatus> {
+  return request<import("./types").LocalAIStatus>("/api/v1/local-ai/status");
+}
+
+export function requestLocalAISuggestions(
+  workspaceId: string, expectedRevision: number
+): Promise<{ suggestion: import("./types").LocalAISuggestion; workspace_revision: number }> {
+  return request<{ suggestion: import("./types").LocalAISuggestion; workspace_revision: number }>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/ai-suggestions",
+    { method: "POST", body: JSON.stringify({
+      expected_revision: expectedRevision,
+      acknowledge_local_ai_processing: true
+    }) }
+  );
+}
