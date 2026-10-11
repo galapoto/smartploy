@@ -53,6 +53,8 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
     throw new PacketError("The packet or browser tab has an invalid URL");
   }
   if (target.protocol !== "https:" || current.protocol !== "https:" ||
+      !["jobs.lever.co", "jobs.eu.lever.co"].includes(target.hostname) ||
+      !/^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+(?:\/apply\/?)?$/.test(target.pathname) ||
       target.username || target.password || target.port !== "" ||
       current.origin !== target.origin || !pathIsSameJob(current, target)) {
     throw new PacketError("Open the exact employer job/application page linked from SmartPloy");
