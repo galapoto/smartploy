@@ -169,9 +169,11 @@ export SMARTPLOY_PUBLIC_ATS_SOURCES_FILE=config/public_ats_sources.json
 python scripts/poll_public_ats.py
 ~~~
 
-The current direct ATS connectors read public SmartRecruiters/Lever postings only. They do not call
-application-submission APIs. Missing postings are retired only after a complete successful tenant
-snapshot.
+The direct ATS connectors read explicitly configured public SmartRecruiters, Lever and Greenhouse
+GET posting endpoints only. They do **not** call application-submission APIs or fetch arbitrary
+user-supplied hosts. Greenhouse board support is inactive until the operator reviews its job-board
+terms and adds a tenant to the private registry; its content is never automatically sent to cloud AI.
+Missing postings are retired only after a complete successful tenant snapshot.
 
 
 ## Continuous worker

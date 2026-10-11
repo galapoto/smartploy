@@ -1,6 +1,6 @@
 """Read-only public employer ATS source adapters.
 
-Smartploy supports explicit operator-configured SmartRecruiters and Lever tenants.
+Smartploy supports explicit operator-configured SmartRecruiters, Lever and Greenhouse tenants.
 No arbitrary API base URL is accepted. These adapters only read published/public
 job postings; application submission endpoints are intentionally out of scope.
 """
@@ -22,7 +22,7 @@ import httpx
 from ..domain import SourceObservation, SourcePolicy, canonicalize_url, utc_now_iso
 
 
-SUPPORTED_PROVIDERS = {"smartrecruiters", "lever"}
+SUPPORTED_PROVIDERS = {"smartrecruiters", "lever", "greenhouse"}
 SUPPORTED_SECTORS = {"public", "private", "unknown"}
 SUPPORTED_LEVER_STACKS = {"global", "eu"}
 TENANT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,99}$")
@@ -38,15 +38,18 @@ ALLOWED_CONFIG_KEYS = {
     "page_size",
 }
 SMARTRECRUITERS_HOST = "api.smartrecruiters.com"
+GREENHOUSE_HOST = "boards-api.greenhouse.io"
 LEVER_HOSTS = {
     "global": "api.lever.co",
     "eu": "api.eu.lever.co",
 }
 SMARTRECRUITERS_ATTRIBUTION = "SmartRecruiters public Posting API"
 LEVER_ATTRIBUTION = "Lever published Postings API"
+GREENHOUSE_ATTRIBUTION = "Greenhouse public Job Board API"
 PARSER_VERSIONS = {
     "smartrecruiters": "smartrecruiters-posting-v1",
     "lever": "lever-postings-v1",
+    "greenhouse": "greenhouse-job-board-v1",
 }
 
 
@@ -110,7 +113,7 @@ class PublicATSSourceConfig:
         stack = _string(self.stack).casefold()
 
         if provider not in SUPPORTED_PROVIDERS:
-            raise PublicATSError("provider must be smartrecruiters or lever")
+            raise PublicATSError("provider must be smartrecruiters, lever or greenhouse")
         if not TENANT_PATTERN.fullmatch(tenant):
             raise PublicATSError(
                 "tenant must contain only letters, numbers and hyphens and be at most 100 characters"
@@ -146,6 +149,9 @@ class PublicATSSourceConfig:
         if size is not None and (type(size) is not int or not (1 <= size <= 100)):
             raise PublicATSError("page_size must be an integer between 1 and 100")
 
+        if provider == "greenhouse" and size is not None:
+            raise PublicATSError("page_size is not supported for Greenhouse full-board snapshots")
+
         if provider == "lever":
             stack = stack or "global"
             if stack not in SUPPORTED_LEVER_STACKS:
@@ -164,6 +170,8 @@ class PublicATSSourceConfig:
         tenant = self.tenant.casefold()
         if self.provider == "lever":
             return f"lever-{self.stack}-{tenant}"
+        if self.provider == "greenhouse":
+            return f"greenhouse-{tenant}"
         return f"smartrecruiters-{tenant}"
 
     @classmethod
@@ -656,6 +664,142 @@ class LeverAdapter(PublicATSAdapter):
         return observations
 
 
+class GreenhouseAdapter(PublicATSAdapter):
+    """Read only the published Greenhouse Job Board GET endpoint.
+
+    Prospect-only postings (explicit null internal_job_id) are not vacancies.
+    All substantive posting data comes from the public published board; no
+    application endpoint, employer key, private account or LLM is used.
+    """
+
+    provider = "greenhouse"
+    parser_version = PARSER_VERSIONS["greenhouse"]
+
+    def __init__(
+        self,
+        config: PublicATSSourceConfig,
+        runtime: PublicATSRuntimeSettings | None = None,
+        *,
+        http_client: httpx.Client | None = None,
+    ) -> None:
+        if config.provider != self.provider:
+            raise PublicATSError("Greenhouse adapter requires greenhouse config")
+        super().__init__(config, runtime, http_client=http_client)
+        self.base = (
+            "https://" + GREENHOUSE_HOST + "/v1/boards/"
+            + quote(config.tenant, safe="") + "/jobs"
+        )
+        self.last_prospect_filtered_count = 0
+
+    def _observation(self, item: dict[str, Any], observed_at: str) -> SourceObservation:
+        external_id = _string(item.get("id"))
+        title = _string(item.get("title"))
+        if not external_id or not title:
+            raise PublicATSError("Greenhouse posting is missing id/title")
+
+        hosted_url = canonicalize_url(_string(item.get("absolute_url")))
+        if not hosted_url or not hosted_url.startswith("https://"):
+            # A manufactured or non-TLS link would misdirect an applicant.
+            # Fail the snapshot rather than publish jobs with guessed links.
+            raise PublicATSError("Greenhouse posting lacks a valid public job URL")
+
+        location = item.get("location") if isinstance(item.get("location"), dict) else {}
+        location_text = _string(location.get("name"))
+        description = _strip_html(item.get("content"))
+        offices = item.get("offices") if isinstance(item.get("offices"), list) else []
+
+        payload = {
+            "company": self.config.label,
+            "role_title": title,
+            "description": description,
+            "location": location_text,
+            # Greenhouse does not supply a canonical work arrangement field
+            # in the board response. Do not invent remote/hybrid from prose.
+            "work_mode": "review",
+            "language": _string(item.get("language")),
+            "application_url": hosted_url,
+            "employer_sector": self.config.employer_sector,
+            "source_attribution": GREENHOUSE_ATTRIBUTION,
+            "external_ai_forwarding_allowed": self.config.external_ai_forwarding_allowed,
+            "source_details": {
+                "provider": self.provider,
+                "tenant": self.config.tenant,
+                "internal_job_id": _string(item.get("internal_job_id")),
+                "updated_at": _string(item.get("updated_at")),
+                "offices": [_label(office) for office in offices[:100] if _label(office)],
+            },
+        }
+        return SourceObservation(
+            source_id=self.source_id,
+            source_mode="api",
+            source_url=hosted_url,
+            raw_text=" ".join(
+                part for part in (title, self.config.label, description) if part
+            ),
+            payload=payload,
+            observed_at=observed_at,
+            # updated_at is edit time, never a fabricated publishing date.
+            posted_at="",
+            source_external_id=external_id,
+        )
+
+    def fetch_all(self, *, observed_at: str | None = None) -> list[SourceObservation]:
+        timestamp = observed_at or utc_now_iso()
+        self.last_location_filtered_count = 0
+        self.last_prospect_filtered_count = 0
+        self.last_total_postings = 0
+        payload = self._get_json(
+            self.base,
+            expected_host=GREENHOUSE_HOST,
+            params={"content": "true"},
+        )
+        if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
+            raise PublicATSError("Greenhouse list response has unexpected shape")
+        jobs = payload["jobs"]
+        if len(jobs) > self.runtime.max_items:
+            raise PublicATSError("Greenhouse result exceeds configured item limit")
+
+        meta = payload.get("meta")
+        if isinstance(meta, dict) and type(meta.get("total")) is int:
+            if meta["total"] != len(jobs):
+                raise PublicATSError("Greenhouse posting count indicates an incomplete snapshot")
+
+        observations: list[SourceObservation] = []
+        for item in jobs:
+            if not isinstance(item, dict):
+                raise PublicATSError("Greenhouse list contains a non-object posting")
+            self.last_total_postings += 1
+            # Greenhouse documents null internal_job_id for prospect posts.
+            # These are talent pools, not open job vacancies.
+            if "internal_job_id" in item and item["internal_job_id"] is None:
+                self.last_prospect_filtered_count += 1
+                continue
+            observation = self._observation(item, timestamp)
+            location = item.get("location") if isinstance(item.get("location"), dict) else {}
+            offices = item.get("offices") if isinstance(item.get("offices"), list) else []
+            office_locations: list[str] = []
+            for office in offices:
+                if isinstance(office, dict):
+                    office_locations.extend((
+                        _string(office.get("location")), _string(office.get("name")),
+                    ))
+            # Explicit job location dominates office/department metadata:
+            # a Stockholm role must not be called Finnish merely because
+            # an employer also lists an office in Finland. Office location
+            # is used only when the advertised job place is uninformative.
+            advertised = _string(location.get("name"))
+            secondary = (
+                office_locations
+                if advertised.casefold() in {"", "remote", "anywhere", "not specified"}
+                else []
+            )
+            if self._location_matches(advertised, secondary):
+                observations.append(observation)
+            else:
+                self.last_location_filtered_count += 1
+        return observations
+
+
 def build_public_ats_adapter(
     config: PublicATSSourceConfig,
     runtime: PublicATSRuntimeSettings | None = None,
@@ -666,4 +810,6 @@ def build_public_ats_adapter(
         return SmartRecruitersAdapter(config, runtime, http_client=http_client)
     if config.provider == "lever":
         return LeverAdapter(config, runtime, http_client=http_client)
+    if config.provider == "greenhouse":
+        return GreenhouseAdapter(config, runtime, http_client=http_client)
     raise PublicATSError("unsupported ATS provider")

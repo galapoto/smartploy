@@ -84,7 +84,7 @@ remaining source rather than closing the independent listing.
 
 ## Direct employer ATS sources
 
-Smartploy supports explicit read-only employer tenants for SmartRecruiters and Lever.
+Smartploy supports explicit read-only employer tenants for SmartRecruiters, Lever and Greenhouse.
 
 SmartRecruiters uses its public Posting API under:
 `https://api.smartrecruiters.com/v1/companies/{companyIdentifier}/postings`.
@@ -92,6 +92,15 @@ SmartRecruiters uses its public Posting API under:
 Lever uses its published Postings API under either:
 - `https://api.lever.co/v0/postings/{SITE}`
 - `https://api.eu.lever.co/v0/postings/{SITE}`
+
+Greenhouse uses the public Job Board API at:
+- `GET https://boards-api.greenhouse.io/v1/boards/{BOARD_TOKEN}/jobs?content=true`
+
+**Greenhouse public-only boundary:** The adapter uses only the documented unauthenticated GET listing endpoint. It never calls the job-application POST endpoint, accepts Basic Auth keys, or guesses missing application URLs. Only explicitly published external job postings are accepted; prospect-only records with an explicit null `internal_job_id` are excluded. A failed, truncated or malformed listing cannot retire previously stored vacancies. `updated_at` is a modification timestamp, **not** a publishing date. The result displays Greenhouse source attribution and links to the public `absolute_url` application page. Work arrangements stay **unknown** when the structured board response does not state them.
+
+Greenhouse may publish city-only `location.name` values (for example, `Espoo`) without a country. If an operator wants those jobs included, explicitly review and configure city names (`Espoo`, `Helsinki`) alongside the country term (`Finland`). The adapter does **not** infer that an arbitrary city is Finnish from employer-wide offices. Office country data is only consulted when the advertised location itself is missing, `Remote`, or unspecified.
+
+The new provider is **code-supported only**: no live Greenhouse employer is activated by this change. An operator must select and review each board's terms, attribution/redistribution permissions and any allowed polling cadence before manually adding it to the private tenant registry. Public GET availability alone does not establish permission to redistribute content or forward it to cloud AI; `external_ai_forwarding_allowed` stays false unless separately approved.
 
 Smartploy never accepts an arbitrary provider base URL. Operators configure a provider and tenant slug;
 the adapter constructs the exact supported host/path.
@@ -141,6 +150,7 @@ Official references:
 - https://developers.smartrecruiters.com/docs/endpoints
 - https://developers.smartrecruiters.com/docs/objects
 - https://github.com/lever/postings-api
+- https://docs.greenhouse.io/job-board.html (public GET vs credentialed POST)
 
 
 ## Opt-in source freshness acceptance

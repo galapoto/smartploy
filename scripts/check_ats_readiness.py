@@ -172,6 +172,7 @@ def source_report(
             "last_finnish_matching_postings": int(health.last_item_count) if health else 0,
             "upstream_total_at_last_poll": _count(details, "total_source_postings"),
             "excluded_by_location_at_last_poll": _count(details, "location_filtered_count"),
+            "excluded_non_job_postings_at_last_poll": _count(details, "prospect_filtered_count"),
             "blocked_at_last_poll": _count(details, "blocked_count"),
             "consecutive_task_failures": task.consecutive_failures if task else 0,
             "consecutive_source_failures": health.consecutive_failures if health else 0,
