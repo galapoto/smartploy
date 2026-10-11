@@ -1,5 +1,5 @@
 -- Editable, locally generated application kits. Owner/profile is always resolved from
--- verified Access/OIDC identity; clients cannot supply a profile_id.
+-- verified Access/OIDC identity. Client requests cannot supply profile_id.
 -- This table does NOT assert an external employer submission has occurred.
 CREATE TABLE IF NOT EXISTS smartploy_application_workspaces (
     workspace_id TEXT PRIMARY KEY,
