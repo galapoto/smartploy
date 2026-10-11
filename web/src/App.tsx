@@ -9,12 +9,13 @@ import {
 import {
   addManualJob, approveFact, createFact, deleteCV, deleteFact, getApplications,
   getCV, getDashboard, getHealth, getJobs, getProfileFacts, getSession,
-  prepareJob, uploadCV
+  startApplicationWorkspace, uploadCV
 } from "./api";
 import {
   filterBySector, formatState, queueLabel, relativeFreshness, scoreBand,
   sectorLabel, type DisplayMode, type SectorFilter
 } from "./lib";
+import ApplicationStudio from "./ApplicationStudio";
 import type {
   ApplicationRecord, CandidateFact, CVDocument, Dashboard, HealthResponse,
   ManualJobPayload, RankingCard, SavedJob, SessionInfo
@@ -35,6 +36,7 @@ const NAV: Array<{ id: Page; label: string; icon: LucideIcon }> = [
 ];
 
 const FACT_TYPES: Array<{ value: string; label: string }> = [
+  { value: "identity", label: "Full name" }, { value: "contact", label: "Contact" },
   { value: "skill", label: "Skill" }, { value: "experience", label: "Experience" },
   { value: "education", label: "Education" }, { value: "language", label: "Language" },
   { value: "certification", label: "Certification" }, { value: "project", label: "Project" },
@@ -73,7 +75,7 @@ function Stat(props: { label: string; value: number; note: string; icon: LucideI
 
 function JobMatch(props: {
   item: RankingCard; mode: DisplayMode; expanded: boolean; busy: boolean;
-  canPrepare: boolean; onToggle: () => void; onPrepare: () => void;
+  onToggle: () => void; onPrepare: () => void;
 }) {
   const job = props.item.job;
   if (!job) return null;
@@ -113,24 +115,28 @@ function JobMatch(props: {
             Job posting <ArrowUpRight size={14} />
           </a>
         ) : null}
-        {props.item.prepare_recommended && job.ai_preparation_allowed !== false ? (
-          <button className="navy-btn compact" type="button" disabled={!props.canPrepare || props.busy} onClick={props.onPrepare}>
-            {props.busy ? "Preparing…" : "Prepare"} <ArrowRight size={15} />
-          </button>
-        ) : null}
+        <button className="navy-btn compact" type="button"
+          disabled={props.busy || !job.source_current} onClick={props.onPrepare}>
+          {props.busy ? "Opening…" : "Prepare documents"} <ArrowRight size={15}/>
+        </button>
       </div>
     </article>
   );
 }
 
-function SavedJobCard(props: { item: SavedJob }) {
+function SavedJobCard(props: { item: SavedJob; busy: boolean; onPrepare: () => void }) {
   const job = props.item.job;
   return <article className="job-item">
     <div className="job-avatar" aria-hidden="true">{(job.company || "J").charAt(0).toUpperCase()}</div>
     <div className="job-details"><h3>{job.role_title}</h3><p className="job-byline"><strong>{job.company}</strong>{job.location ? <span><MapPin size={13} /> {job.location}</span> : null}</p>
       <div className="job-meta"><span className="quiet-chip">Awaiting evidence-based ranking</span><span>{props.item.source_ids.join(", ") || "Manual import"}</span></div>
     </div>
-    {job.application_url ? <a className="outline-btn compact" href={job.application_url} target="_blank" rel="noopener noreferrer">Open job <ArrowUpRight size={14} /></a> : null}
+    <div className="job-buttons">
+      {job.application_url ? <a className="outline-btn compact" href={job.application_url} target="_blank" rel="noopener noreferrer">Open job <ArrowUpRight size={14} /></a> : null}
+      <button className="navy-btn compact" type="button" disabled={props.busy || !job.source_current} onClick={props.onPrepare}>
+        {props.busy ? "Opening…" : "Prepare documents"} <ArrowRight size={15} />
+      </button>
+    </div>
   </article>;
 }
 
@@ -158,6 +164,7 @@ export default function App() {
   const [busyCV, setBusyCV] = useState(false);
   const [busyFact, setBusyFact] = useState("");
   const [preparing, setPreparing] = useState("");
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -279,14 +286,20 @@ export default function App() {
     finally { setManualBusy(false); }
   }
 
-  async function onPrepare(item: RankingCard) {
-    setPreparing(item.canonical_key);
+  async function onPrepare(canonicalKey: string) {
+    setPreparing(canonicalKey);
     try {
-      const result = await prepareJob(item.canonical_key);
-      setNotice("Application package " + result.package_id + ": " + formatState(result.status) + ". Final submission is not enabled.");
-      await load(true);
-    } catch (exc) { setNotice(exc instanceof Error ? exc.message : "Preparation failed."); }
-    finally { setPreparing(""); }
+      const response = await startApplicationWorkspace(canonicalKey);
+      setSelectedWorkspaceId(response.workspace.workspace_id);
+      navigate("applications");
+      setNotice(response.created
+        ? "Application documents are ready to edit. Review the draft before downloading or applying."
+        : "Opened your existing private application documents.");
+    } catch (exc) {
+      const detail = exc instanceof Error ? exc.message : "Unable to create application documents.";
+      if (/Upload a CV|approve profile facts|uploaded CV/i.test(detail)) navigate("profile");
+      setNotice(detail);
+    } finally { setPreparing(""); }
   }
 
   const ranked = useMemo(() => {
@@ -317,9 +330,8 @@ export default function App() {
   const counts = dashboard.applications;
   const onTool = (name: string) => {
     if (name === "CV Tailor" || name === "Cover Letter") {
-      if (!cv.present) { navigate("profile"); setNotice("Upload your CV to get started."); }
-      else if (!obumReady) { navigate("tools"); setNotice("This tool requires ObumAI service authentication, which is not configured yet."); }
-      else { navigate("jobs"); setNotice("Choose a verified job to prepare an application."); }
+      if (!cv.present && !facts.some((item) => item.approved)) { navigate("profile"); setNotice("Upload your CV or approve your career evidence to begin."); }
+      else { navigate("jobs"); setNotice("Choose a job and select Prepare documents. ObumAI-enhanced drafting is not connected yet."); }
     } else if (name === "Application prep") navigate("applications");
     else if (name === "Career insights") navigate("insights");
     else { navigate("tools"); setNotice("Interactive interview practice is planned, but not active yet."); }
@@ -346,11 +358,12 @@ export default function App() {
     <div className="job-list">
       {ranked.map((item) => <JobMatch
         key={item.canonical_key} item={item} mode={mode} expanded={expandedJob === item.canonical_key}
-        canPrepare={obumReady} busy={preparing === item.canonical_key}
+        busy={preparing === item.canonical_key}
         onToggle={() => setExpandedJob(expandedJob === item.canonical_key ? "" : item.canonical_key)}
-        onPrepare={() => void onPrepare(item)}
+        onPrepare={() => void onPrepare(item.canonical_key)}
       />)}
-      {unranked.map((item) => <SavedJobCard key={item.canonical_key} item={item} />)}
+      {unranked.map((item) => <SavedJobCard key={item.canonical_key} item={item}
+        busy={preparing === item.canonical_key} onPrepare={() => void onPrepare(item.canonical_key)} />)}
       {!ranked.length && !unranked.length ? (
         <Empty title={jobs.length ? "No matches for these filters" : "Your opportunity list is ready to grow"}
           description={jobs.length ? "Try clearing the search or changing the match filter. Add verified evidence to improve ranking." : "Live job sources aren't configured yet. Add a job manually to start preparing your profile while we connect verified Finnish sources."}
@@ -397,8 +410,8 @@ export default function App() {
   const toolsPanel = <section className="panel tools-panel">
     <div className="panel-heading"><div><p className="section-kicker">YOUR WORKSPACE</p><h2>Career tools</h2><p>Practical tools built around your own evidence.</p></div></div>
     <div className="tool-grid">
-      <Tool title="CV Tailor" description="Prepare a job-specific CV using approved facts" icon={FileText} ready={cv.present && obumReady} onClick={() => onTool("CV Tailor")} />
-      <Tool title="Cover Letter" description="Draft a role-specific introduction" icon={WandSparkles} ready={cv.present && obumReady} onClick={() => onTool("Cover Letter")} />
+      <Tool title="CV editor" description="Review and export a job-specific CV in PDF/DOCX" icon={FileText} ready={cv.present || approved.length > 0} onClick={() => onTool("CV Tailor")} />
+      <Tool title="Cover letter editor" description="Edit and download a role-specific letter" icon={WandSparkles} ready={cv.present || approved.length > 0} onClick={() => onTool("Cover Letter")} />
       <Tool title="Application prep" description="Track and review draft packages" icon={FileCheck2} ready={true} onClick={() => onTool("Application prep")} />
       <Tool title="Interview prep" description="AI-assisted practice (planned)" icon={Sparkles} ready={false} onClick={() => onTool("Interview prep")} />
       <Tool title="Career insights" description="Explore your evidence and gaps" icon={ChartNoAxesColumn} ready={true} onClick={() => onTool("Career insights")} />
@@ -425,8 +438,8 @@ export default function App() {
     </section>
     <section className="panel compact-tools">
       <div className="small-heading"><h3>Your tools</h3><button className="text-link" type="button" onClick={() => navigate("tools")}>View all <ArrowRight size={14} /></button></div>
-      <Tool title="CV tailoring" description={obumReady ? "Prepare a draft" : "Requires ObumAI setup"} icon={FileText} ready={obumReady && cv.present} onClick={() => onTool("CV Tailor")} />
-      <Tool title="Cover letters" description={obumReady ? "Tailored to each role" : "Requires ObumAI setup"} icon={WandSparkles} ready={obumReady && cv.present} onClick={() => onTool("Cover Letter")} />
+      <Tool title="CV documents" description="Editable PDF/DOCX application CV" icon={FileText} ready={cv.present || approved.length > 0} onClick={() => onTool("CV Tailor")} />
+      <Tool title="Cover letters" description="Prepare and review a letter" icon={WandSparkles} ready={cv.present || approved.length > 0} onClick={() => onTool("Cover Letter")} />
       <Tool title="Applications" description="Review your pipeline" icon={BriefcaseBusiness} ready={true} onClick={() => navigate("applications")} />
     </section>
     <section className="panel source-overview">
@@ -497,10 +510,12 @@ export default function App() {
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">{cvBlock}{factPanel}</div><aside>{sidePanel}</aside></div> : null}
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}
-          {page === "applications" ? <section className="panel"><div className="panel-heading"><div><p className="section-kicker">APPLICATION TRACKER</p><h2>Your application pipeline</h2><p>A preparation draft is never counted as submitted.</p></div><span className="subtle-count">{applications.length} records</span></div>
+          {page === "applications" ? <div className="stacked">
+            <ApplicationStudio focusId={selectedWorkspaceId} onFindJobs={() => navigate("jobs")} />
+            <section className="panel"><div className="panel-heading"><div><p className="section-kicker">APPLICATION TRACKER</p><h2>Your application pipeline</h2><p>A preparation draft is never counted as submitted.</p></div><span className="subtle-count">{applications.length} records</span></div>
             {applications.length ? <div className="applications-list">{applications.map((item) => <div className="application-list-row" key={item.application_id}><FileText size={20} /><div><strong>{formatState(item.state)}</strong><small>Job {item.canonical_key} · {item.updated_at ? relativeFreshness(item.updated_at) : "Updated time unknown"}</small></div><span className={cx("state-pill", item.has_been_submitted ? "good" : "waiting")}>{item.has_been_submitted ? "Submitted" : "Not submitted"}</span></div>)}</div> :
               <Empty title="No applications yet" description="When you've reviewed a job and prepared an application, the draft will appear here. No submissions are claimed without external evidence." icon={FileCheck2} action="Find jobs" onAction={() => navigate("jobs")} />}
-          </section> : null}
+            </section></div> : null}
           {page === "insights" ? <div className="secondary-grid"><section className="panel insights-panel"><p className="section-kicker">PROFILE INSIGHTS</p><h2>Your evidence, at a glance</h2><p className="muted">These figures come from your own verified profile, not estimates.</p><div className="insight-numbers"><div><strong>{facts.length}</strong><span>Total facts</span></div><div><strong>{approved.length}</strong><span>Approved facts</span></div><div><strong>{dashboard.top_matches.length + dashboard.possible_matches.length}</strong><span>Ranked matches</span></div></div><button className="primary-btn" type="button" onClick={() => navigate("profile")}>Improve profile <ArrowRight size={16} /></button></section><aside>{sourcePanel}</aside></div> : null}
           {page === "settings" ? <div className="secondary-grid"><section className="panel settings-panel"><h2>Privacy and account</h2><p>Your CV and approved facts are scoped to your signed-in SmartPloy profile. No automatic job submission is enabled.</p><p><ShieldCheck size={17} /> Account access is protected with the configured identity provider.</p><p><LockKeyhole size={17} /> You control CV removal and fact approval.</p><button className="outline-btn" type="button" onClick={() => navigate("profile")}>Manage personal data <ArrowRight size={16} /></button></section><aside>{sourcePanel}</aside></div> : null}
         </> : null}
