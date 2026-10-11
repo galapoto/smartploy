@@ -8,7 +8,7 @@ import type { SearchResults, SearchJobCard } from "./types";
 const baseJob = {
   company: "Example Oy", role_title: "Junior Data Analyst", location: "Helsinki",
   language: "English", work_mode: "remote",
-  employer_sector: "private", source_current: true, application_url: "https://jobs.example.fi/analyst",
+  employer_sector: "private" as const, source_current: true, application_url: "https://jobs.example.fi/analyst",
   source_ids: ["lever"], source_attribution: "Public ATS", posted_at: "2026-10-11T10:00:00Z",
   first_seen_at: "2026-10-11T10:00:00Z", last_seen_at: "2026-10-11T10:00:00Z",
   deadline: "", ai_preparation_allowed: true,
