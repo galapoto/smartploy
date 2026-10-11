@@ -1,6 +1,7 @@
 """First-use job discovery is private, editable, and general-mode unprofiled."""
 from __future__ import annotations
 
+from dataclasses import replace
 import os
 
 from fastapi.testclient import TestClient
@@ -114,6 +115,29 @@ def test_unknown_job_metadata_does_not_gain_full_match_credit():
     assert "Location not provided" in item["unknown_fields"]
     assert "Job language not specified" in item["unknown_fields"]
     assert "Work arrangement not stated" in item["unknown_fields"]
+
+
+def test_general_and_equally_scored_searches_sort_by_posting_date_not_source_poll():
+    original = job("Older Data Analyst")
+    recent = job("Newer Data Analyst")
+    older = replace(
+        original, posted_at="2025-01-01T08:00:00Z",
+        first_seen_at="2026-10-11T10:00:00Z", last_seen_at="2026-10-11T15:10:00Z",
+    )
+    newer = replace(
+        recent, posted_at="2026-10-10T12:00:00+00:00",
+        first_seen_at="2026-10-10T12:10:00Z", last_seen_at="2026-10-11T15:00:00Z",
+    )
+    general = revise_preferences("p", {"mode": "general"}, revision=0)
+    result = search_jobs([older, newer], general)
+    assert [entry["job"]["role_title"] for entry in result["all_jobs"]] == [
+        "Newer Data Analyst", "Older Data Analyst",
+    ]
+    personal = revise_preferences("p", {
+        "mode": "personalized", "roles": ["Data Analyst"],
+    }, revision=0)
+    result = search_jobs([older, newer], personal)
+    assert result["recommendations"][0]["job"]["role_title"] == "Newer Data Analyst"
 
 
 def test_general_mode_ignores_saved_personal_criteria():
