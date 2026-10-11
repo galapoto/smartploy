@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import os
 from datetime import datetime
 from typing import Any
 
 from .application_storage import ApplicationRepository, MemoryApplicationRepository
+from .application_v2 import (
+    V2_ACTION,
+    V2_DRAFT_INSTRUCTIONS,
+    V2_PACKAGE_CONTRACT,
+    parse_v2_draft,
+)
 from .applications import ApplicationEvent, ApplicationRecord
 from .domain import (
     DiscoveryResult,
@@ -204,10 +211,13 @@ class SmartployService:
         if state == "completed":
             raw_output = str(job.get("output_text") or "")
             try:
-                result = parse_draft_output(
-                    raw_output,
-                    allowed_evidence_ids=approved_evidence_ids(item.evidence_snapshot),
-                )
+                if item.preparation_contract == V2_PACKAGE_CONTRACT:
+                    result = parse_v2_draft(raw_output, item.evidence_snapshot)
+                else:
+                    result = parse_draft_output(
+                        raw_output,
+                        allowed_evidence_ids=approved_evidence_ids(item.evidence_snapshot),
+                    )
             except PreparationResultError as exc:
                 return with_runtime(
                     item,
@@ -323,7 +333,14 @@ class SmartployService:
         profile = self.profile()
         score = score_candidate(candidate, profile, now=now)
         ensure_preparation_eligible(candidate, profile, score)
-        proposed = build_preparation(candidate, profile, score)
+        use_v2 = os.getenv("SMARTPLOY_APPLICATION_CONTRACT_V2", "").lower() == "true"
+        contract = V2_PACKAGE_CONTRACT if use_v2 else None
+        proposed = (
+            build_preparation(candidate, profile, score, contract=contract)
+            if contract else build_preparation(candidate, profile, score)
+        )
+        action = V2_ACTION if use_v2 else PREPARATION_ACTION
+        instructions = V2_DRAFT_INSTRUCTIONS if use_v2 else APPLICATION_DRAFT_INSTRUCTIONS
         stored, created = self.preparation_repository.create_or_get(proposed)
 
         if not created:
@@ -355,10 +372,10 @@ class SmartployService:
 
         evidence = profile.approved_evidence()
         request_id = self.obumai.client_request_id(
-            action=PREPARATION_ACTION,
+            action=action,
             candidate=candidate,
             candidate_evidence=evidence,
-            instructions=APPLICATION_DRAFT_INSTRUCTIONS,
+            instructions=instructions,
         )
         awaiting = with_runtime(
             stored,
@@ -373,10 +390,10 @@ class SmartployService:
 
         try:
             response = self.obumai.submit_reasoning(
-                action=PREPARATION_ACTION,
+                action=action,
                 candidate=candidate,
                 candidate_evidence=evidence,
-                instructions=APPLICATION_DRAFT_INSTRUCTIONS,
+                instructions=instructions,
             )
         except ObumAIError as exc:
             failed = with_runtime(
