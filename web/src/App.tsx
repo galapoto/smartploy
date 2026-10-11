@@ -213,8 +213,8 @@ export default function App() {
       setNotice("Your CV was uploaded privately. Review its text and confirm facts before matching.");
       await load(true);
     } catch (exc) {
-      setNotice(exc instanceof Error ? exc.message : "CV upload failed.");
       navigate("profile");
+      setNotice(exc instanceof Error ? exc.message : "CV upload failed.");
     } finally { setBusyCV(false); }
   }
 
