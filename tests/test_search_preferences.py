@@ -1,7 +1,6 @@
 """First-use job discovery is private, editable, and general-mode unprofiled."""
 from __future__ import annotations
 
-from dataclasses import replace
 import os
 
 from fastapi.testclient import TestClient
