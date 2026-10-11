@@ -80,7 +80,7 @@ describe("job discovery mode semantics", () => {
 
   it("requires an explicit action to prepare or change search mode", () => {
     render(<SearchResultsPanel {...common} data={general} />);
-    fireEvent.click(screen.getByRole("button", { name: /prepare documents/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /prepare documents/i })[0]);
     expect(common.onPrepare).toHaveBeenCalledOnce();
     expect(common.onPrepare).not.toHaveBeenCalledWith("anything else");
     fireEvent.click(screen.getByRole("button", { name: /personalized/i }));
