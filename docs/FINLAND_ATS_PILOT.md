@@ -92,6 +92,48 @@ Rerun production preflight and the guarded deploy at the pinned SHA.
 Previously stored job records are retained for audit; job freshness should
 still be reported truthfully.
 
+## TSMG network-timeout mitigation (11 October 2026)
+
+The first live pilot imported ten Finnish jobs across four healthy boards.
+TSMG's first request timed out at the prior global 15-second request timeout.
+Its source-specific `request_timeout_seconds: 45` and `page_size: 50`
+are an explicit *candidate mitigation*, not proof of a successful TSMG poll.
+Other employers still use the original 15 seconds / 100 postings.
+
+**Do not use a global timeout increase** merely to fix TSMG.
+Published Lever location filtering cannot filter `country=FI`, so this fix
+continues to download the complete paginated snapshot and then check
+structured Finnish location/country fields. It does not silently drop
+Finnish remote jobs identified through country code.
+
+After the fix is reviewed, merged and checked out on `obum-core-01`,
+the operator can upgrade only the original canonical five-source private
+registry, without printing the registry or touching its database password:
+
+```bash
+cd /srv/obum/stacks/smartploy
+sudo python3 scripts/configure_finland_ats_pilot.py --upgrade-tsmg-transport
+sudo python3 scripts/configure_finland_ats_pilot.py --upgrade-tsmg-transport --apply
+sudo bash deploy/personal/scripts/preflight.sh
+sudo bash deploy/personal/scripts/deploy.sh REVIEWED_40_CHARACTER_SHA
+sudo bash deploy/personal/scripts/assert-running-images.sh REVIEWED_40_CHARACTER_SHA
+sudo bash deploy/personal/scripts/live-acceptance.sh
+sudo bash deploy/personal/scripts/release-evidence.sh --online
+sudo docker exec smartploy-worker-1 python scripts/check_ats_readiness.py
+```
+
+The upgrade refuses to change an operator-modified registry or an existing
+custom source file. The real verification is a new TSMG source poll reporting
+`healthy_with_matching_jobs` or `healthy_zero_matching_jobs`. If the
+source still reports `network_timeout`, gather new failure evidence before
+another change; do not make unbounded retries.
+
+**Rollback:** at the same reviewed SHA, the operator may run
+`sudo python3 scripts/configure_finland_ats_pilot.py --rollback-tsmg-transport --apply`
+and redeploy with the guarded release process. This only reverts TSMG's
+per-source tuning and preserves the other four feeds. Retiring jobs from
+incomplete/failed snapshots remains prohibited.
+
 ## Outside this milestone
 
 - Job Market Finland P67 API requires KEHA onboarding and credentials.

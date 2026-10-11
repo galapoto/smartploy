@@ -34,10 +34,13 @@ def reviewed_sources(registry: Path = REGISTRY) -> list[dict]:
     for item in payload:
         if not isinstance(item, dict):
             raise PilotConfigurationError("Pilot source must be an object")
-        if set(item) != {
+        fields = {
             "provider", "tenant", "label", "stack", "employer_sector",
             "external_ai_forwarding_allowed", "location_terms",
-        }:
+        }
+        if item.get("tenant") == "tsmg":
+            fields |= {"request_timeout_seconds", "page_size"}
+        if set(item) != fields:
             raise PilotConfigurationError("Pilot source registry contains unsupported fields")
         if item["provider"] != "lever" or item["stack"] != "global":
             raise PilotConfigurationError("Only reviewed public Lever boards can join this pilot")
@@ -47,6 +50,10 @@ def reviewed_sources(registry: Path = REGISTRY) -> list[dict]:
         if slug in source_ids:
             raise PilotConfigurationError("Duplicate pilot tenant name")
         source_ids.add(slug)
+        if slug == "tsmg" and (
+            item["request_timeout_seconds"] != 45 or item["page_size"] != 50
+        ):
+            raise PilotConfigurationError("TSMG transport override differs from reviewed values")
         if item["external_ai_forwarding_allowed"] is not False:
             raise PilotConfigurationError("Public ATS pilot must not grant external AI forwarding")
         if item["employer_sector"] != "private":
@@ -82,6 +89,40 @@ def plan_env_update(env_contents: str, pilot_json: str) -> tuple[str, bool]:
     return env_contents + prefix + KEY + "=" + pilot_json + "\n", True
 
 
+def plan_tsmg_transport_upgrade(
+    env_contents: str, reviewed: list[dict], *, rollback: bool = False
+) -> tuple[str, bool]:
+    """Switch only the canonical old/reviewed pilot; refuse operator changes."""
+    lines = env_contents.splitlines(keepends=True)
+    found = [i for i, line in enumerate(lines) if line.startswith(KEY + "=")]
+    file_values = [line[len(FILE_KEY) + 1:].strip() for line in lines if line.startswith(FILE_KEY + "=")]
+    if len(found) != 1 or len(file_values) > 1 or any(file_values):
+        raise PilotConfigurationError("Expected exactly one inline ATS pilot and no custom registry file")
+    index = found[0]
+    try:
+        current = json.loads(lines[index][len(KEY) + 1:].strip())
+    except (ValueError, TypeError) as exc:
+        raise PilotConfigurationError("Current ATS source registry is not valid JSON") from exc
+
+    old = []
+    for item in reviewed:
+        previous = dict(item)
+        if previous.get("tenant") == "tsmg":
+            previous.pop("request_timeout_seconds", None)
+            previous.pop("page_size", None)
+        old.append(previous)
+    target = old if rollback else reviewed
+    expected = reviewed if rollback else old
+    if current == target:
+        return env_contents, False
+    if current != expected:
+        raise PilotConfigurationError("Refusing to override an operator-modified ATS source selection")
+    new_json = json.dumps(target, ensure_ascii=False, separators=(",", ":"))
+    ending = "\r\n" if lines[index].endswith("\r\n") else "\n"
+    lines[index] = KEY + "=" + new_json + ending
+    return "".join(lines), True
+
+
 def _validate_private_env(path: Path) -> os.stat_result:
     try:
         details = path.lstat()
@@ -94,12 +135,25 @@ def _validate_private_env(path: Path) -> os.stat_result:
     return details
 
 
-def stage_pilot(env: Path = ENV, registry: Path = REGISTRY, *, apply: bool = False) -> dict:
+def stage_pilot(
+    env: Path = ENV,
+    registry: Path = REGISTRY,
+    *,
+    apply: bool = False,
+    upgrade_tsmg_transport: bool = False,
+    rollback_tsmg_transport: bool = False,
+) -> dict:
+    if upgrade_tsmg_transport and rollback_tsmg_transport:
+        raise PilotConfigurationError("Choose upgrade or rollback, not both")
     sources = reviewed_sources(registry)
     env_stat = _validate_private_env(env)
     original = env.read_text(encoding="utf-8")
     pilot_json = json.dumps(sources, ensure_ascii=False, separators=(",", ":"))
-    replacement, changed = plan_env_update(original, pilot_json)
+    replacement, changed = (
+        plan_tsmg_transport_upgrade(original, sources, rollback=rollback_tsmg_transport)
+        if upgrade_tsmg_transport or rollback_tsmg_transport
+        else plan_env_update(original, pilot_json)
+    )
     if apply and changed:
         descriptor, candidate = tempfile.mkstemp(prefix=".smartploy-env-", dir=str(env.parent))
         try:
@@ -124,6 +178,7 @@ def stage_pilot(env: Path = ENV, registry: Path = REGISTRY, *, apply: bool = Fal
         "source_count": len(sources),
         "tenant_ids": [item["tenant"] for item in sources],
         "region_policy": "explicit Finland/Finnish locations only",
+        "transport_scope": "TSMG only" if (upgrade_tsmg_transport or rollback_tsmg_transport) else "initial approved pilot",
         "external_ai_forwarding": "disabled",
         "private_env": "updated" if changed and apply else "unchanged" if not changed else "change_ready",
         "next": "run production preflight and guarded deploy" if apply else "review and rerun with --apply",
@@ -135,9 +190,24 @@ def main() -> int:
         description="Review or stage the opt-in public employer Finland job-source pilot"
     )
     parser.add_argument("--apply", action="store_true", help="stage pilot in the private host env")
+    policy_action = parser.add_mutually_exclusive_group()
+    policy_action.add_argument(
+        "--upgrade-tsmg-transport",
+        action="store_true",
+        help="upgrade only unmodified existing five-source pilot with a bounded TSMG timeout",
+    )
+    policy_action.add_argument(
+        "--rollback-tsmg-transport",
+        action="store_true",
+        help="restore only the original TSMG timeout/page-size settings",
+    )
     args = parser.parse_args()
     try:
-        result = stage_pilot(apply=args.apply)
+        result = stage_pilot(
+            apply=args.apply,
+            upgrade_tsmg_transport=args.upgrade_tsmg_transport,
+            rollback_tsmg_transport=args.rollback_tsmg_transport,
+        )
     except (PilotConfigurationError, OSError, ValueError) as exc:
         raise SystemExit("ATS pilot: " + str(exc)) from exc
     print(json.dumps(result, sort_keys=True, ensure_ascii=False))

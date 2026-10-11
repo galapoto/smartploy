@@ -7,7 +7,8 @@ import httpx
 import pytest
 
 from scripts.configure_finland_ats_pilot import (
-    PilotConfigurationError, plan_env_update, reviewed_sources, stage_pilot
+    PilotConfigurationError, plan_env_update, plan_tsmg_transport_upgrade,
+    reviewed_sources, stage_pilot
 )
 from smartploy.service import SmartployService
 from smartploy.sources.public_ats import (
@@ -182,3 +183,70 @@ def test_env_rejects_duplicate_values_and_preserves_unrelated_lines():
     assert changed is True
     assert proposed.startswith("KUNTAREKRY_FEED_URL=\n")
     assert proposed.endswith("SMARTPLOY_PUBLIC_ATS_SOURCES_JSON=[]\n")
+
+
+def test_reviewed_tsmg_transport_override_is_only_for_failing_source():
+    registry = reviewed_sources()
+    tsmg = next(item for item in registry if item["tenant"] == "tsmg")
+    assert tsmg["request_timeout_seconds"] == 45
+    assert tsmg["page_size"] == 50
+    for item in registry:
+        if item["tenant"] != "tsmg":
+            assert "request_timeout_seconds" not in item
+            assert "page_size" not in item
+
+
+def test_upgrade_existing_private_pilot_is_dry_run_idempotent_and_scoped(tmp_path):
+    old_registry = reviewed_sources()
+    old_registry = [dict(item) for item in old_registry]
+    tsmg = next(item for item in old_registry if item["tenant"] == "tsmg")
+    tsmg.pop("request_timeout_seconds")
+    tsmg.pop("page_size")
+
+    path = tmp_path / "env"
+    existing_json = json.dumps(old_registry, ensure_ascii=False, separators=(",", ":"))
+    existing = (
+        "POSTGRES_PASSWORD=private-password-never-printed\n"
+        + "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON=" + existing_json + "\n"
+        + "SMARTPLOY_PUBLIC_ATS_SOURCES_FILE=\n"
+    )
+    path.write_text(existing, encoding="utf-8")
+    path.chmod(0o600)
+
+    report = stage_pilot(env=path, upgrade_tsmg_transport=True)
+    assert report["private_env"] == "change_ready"
+    assert report["transport_scope"] == "TSMG only"
+    assert path.read_text() == existing
+
+    applied = stage_pilot(env=path, upgrade_tsmg_transport=True, apply=True)
+    assert applied["private_env"] == "updated"
+    assert (path.stat().st_mode & 0o777) == 0o600
+    final = path.read_text()
+    assert "POSTGRES_PASSWORD=private-password-never-printed\n" in final
+    assert json.loads(
+        next(line.split("=", 1)[1] for line in final.splitlines()
+             if line.startswith("SMARTPLOY_PUBLIC_ATS_SOURCES_JSON="))
+    ) == reviewed_sources()
+    assert stage_pilot(env=path, upgrade_tsmg_transport=True, apply=True)["private_env"] == "unchanged"
+    rolled_back = stage_pilot(env=path, rollback_tsmg_transport=True, apply=True)
+    assert rolled_back["private_env"] == "updated"
+    assert path.read_text() == existing
+    assert stage_pilot(env=path, rollback_tsmg_transport=True, apply=True)["private_env"] == "unchanged"
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_upgrade_refuses_operator_source_modifications_and_file_registry():
+    original = reviewed_sources()
+    previous = [dict(item) for item in original]
+    target = next(item for item in previous if item["tenant"] == "tsmg")
+    target.pop("request_timeout_seconds")
+    target.pop("page_size")
+    previous[0]["label"] = "Custom Employer Name"
+    value = json.dumps(previous, separators=(",", ":"))
+    with pytest.raises(PilotConfigurationError, match="operator-modified"):
+        plan_tsmg_transport_upgrade("SMARTPLOY_PUBLIC_ATS_SOURCES_JSON=" + value + "\n", original)
+    with pytest.raises(PilotConfigurationError, match="inline ATS pilot"):
+        plan_tsmg_transport_upgrade(
+            "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON=" + value
+            + "\nSMARTPLOY_PUBLIC_ATS_SOURCES_FILE=/some/custom.json\n", original,
+        )

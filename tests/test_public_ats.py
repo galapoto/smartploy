@@ -384,3 +384,131 @@ def test_default_tenant_ai_policy_blocks_application_preparation():
     assert result.candidate.job.raw["external_ai_forwarding_allowed"] is False
     with pytest.raises(PreparationNotEligible, match="source terms restrict"):
         service.prepare_job(result.candidate.canonical_key)
+
+
+def test_per_source_timeout_and_pagination_are_bounded_and_isolated():
+    baseline = PublicATSRuntimeSettings(timeout_seconds=15, page_size=100, max_items=500)
+    configs = [
+        PublicATSSourceConfig("lever", "uprightproject", "Upright"),
+        PublicATSSourceConfig("lever", "tsmg", "TSMG",
+                              request_timeout_seconds=45, page_size=50),
+    ]
+    adapters = [LeverAdapter(config, baseline) for config in configs]
+    try:
+        assert adapters[0].runtime is baseline
+        assert adapters[0].runtime.timeout_seconds == 15
+        assert adapters[0].runtime.page_size == 100
+        assert adapters[1].runtime.timeout_seconds == 45
+        assert adapters[1].runtime.page_size == 50
+        assert adapters[1].runtime.max_items == 500
+        assert baseline.timeout_seconds == 15
+        assert baseline.page_size == 100
+    finally:
+        for adapter in adapters:
+            adapter.close()
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("request_timeout_seconds", True),
+        ("request_timeout_seconds", "45"),
+        ("request_timeout_seconds", 4),
+        ("request_timeout_seconds", 61),
+        ("request_timeout_seconds", float("inf")),
+        ("request_timeout_seconds", float("nan")),
+        ("page_size", True),
+        ("page_size", 0),
+        ("page_size", 101),
+        ("page_size", "50"),
+    ],
+)
+def test_per_source_override_rejects_unbounded_or_untyped_settings(key, value):
+    with pytest.raises(PublicATSError, match=key):
+        PublicATSSourceConfig("lever", "tsmg", "TSMG", **{key: value})
+
+
+def test_scoped_page_size_retrieves_complete_snapshot_and_keeps_fi_remote():
+    baseline = PublicATSRuntimeSettings(timeout_seconds=15, page_size=100, max_items=120)
+    pages = []
+
+    def make_job(i):
+        return {
+            "id": "job-" + str(i),
+            "text": "Finnish role " + str(i),
+            "descriptionPlain": "Software and analytics",
+            "country": "FI" if i == 5 else "SE",
+            "categories": {"location": "Remote" if i == 5 else "Stockholm"},
+            "hostedUrl": "https://jobs.lever.co/tsmg/job-" + str(i),
+            "applyUrl": "https://jobs.lever.co/tsmg/job-" + str(i) + "/apply",
+        }
+
+    listings = [make_job(i) for i in range(51)]
+
+    def handler(request):
+        assert request.url.host == "api.lever.co"
+        skip = int(request.url.params["skip"])
+        count = int(request.url.params["limit"])
+        pages.append((skip, count))
+        return httpx.Response(200, json=listings[skip:skip + count])
+
+    adapter = LeverAdapter(
+        PublicATSSourceConfig(
+            "lever", "tsmg", "TSMG",
+            location_terms=("Finland", "Helsinki"),
+            request_timeout_seconds=45,
+            page_size=50,
+        ), baseline,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    try:
+        records = adapter.fetch_all()
+        assert [row.source_external_id for row in records] == ["job-5"]
+        assert pages == [(0, 50), (50, 50)]
+        assert adapter.last_total_postings == 51
+        assert adapter.last_location_filtered_count == 50
+    finally:
+        adapter.close()
+
+
+def test_tsmg_timeout_on_second_page_does_not_retire_existing_jobs():
+    state = {"fail": False}
+    def job(identifier):
+        return {
+            "id": identifier,
+            "text": "Data role " + identifier,
+            "descriptionPlain": "Data analytics software",
+            "country": "FI",
+            "categories": {"location": "Helsinki"},
+            "hostedUrl": "https://jobs.lever.co/tsmg/" + identifier,
+            "applyUrl": "https://jobs.lever.co/tsmg/" + identifier + "/apply",
+        }
+
+    def handler(request):
+        skip = int(request.url.params.get("skip", "0"))
+        if not state["fail"]:
+            return httpx.Response(200, json=[job("original")])
+        if skip == 0:
+            return httpx.Response(200, json=[job(str(index)) for index in range(50)])
+        raise httpx.ReadTimeout("simulated slow second page")
+
+    adapter = LeverAdapter(
+        PublicATSSourceConfig(
+            "lever", "tsmg", "TSMG", location_terms=("Finland",),
+            request_timeout_seconds=45, page_size=50,
+        ),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    repository = MemoryJobRepository()
+    service = SmartployService(repository=repository)
+    try:
+        first = poll_public_ats(service, adapter)
+        assert first.status == "healthy"
+        assert repository.active_source_external_ids(adapter.source_id) == {"original"}
+        state["fail"] = True
+        second = poll_public_ats(service, adapter)
+        assert second.status == "failed"
+        assert second.retired_count == 0
+        assert repository.active_source_external_ids(adapter.source_id) == {"original"}
+    finally:
+        adapter.close()

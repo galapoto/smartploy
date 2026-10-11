@@ -7,7 +7,8 @@ job postings; application submission endpoints are intentionally out of scope.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import math
 from html import unescape
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,8 @@ ALLOWED_CONFIG_KEYS = {
     "employer_sector",
     "external_ai_forwarding_allowed",
     "location_terms",
+    "request_timeout_seconds",
+    "page_size",
 }
 SMARTRECRUITERS_HOST = "api.smartrecruiters.com"
 LEVER_HOSTS = {
@@ -96,6 +99,8 @@ class PublicATSSourceConfig:
     employer_sector: str = "unknown"
     external_ai_forwarding_allowed: bool = False
     location_terms: tuple[str, ...] = ()
+    request_timeout_seconds: float | None = None
+    page_size: int | None = None
 
     def __post_init__(self) -> None:
         provider = _string(self.provider).casefold()
@@ -129,6 +134,17 @@ class PublicATSSourceConfig:
                 raise PublicATSError("location_terms must contain 2-80 character printable locations")
             terms.append(term)
         object.__setattr__(self, "location_terms", tuple(sorted(set(terms))))
+
+        # Scoped tuning for unusually large/slow boards: never override the
+        # default timeout or page size for other configured employers.
+        timeout = self.request_timeout_seconds
+        if timeout is not None:
+            if type(timeout) not in (int, float) or not math.isfinite(timeout) or not (5 <= timeout <= 60):
+                raise PublicATSError("request_timeout_seconds must be between 5 and 60 seconds")
+            object.__setattr__(self, "request_timeout_seconds", float(timeout))
+        size = self.page_size
+        if size is not None and (type(size) is not int or not (1 <= size <= 100)):
+            raise PublicATSError("page_size must be an integer between 1 and 100")
 
         if provider == "lever":
             stack = stack or "global"
@@ -173,6 +189,8 @@ class PublicATSSourceConfig:
                 False,
             ),
             location_terms=value.get("location_terms", ()),
+            request_timeout_seconds=value.get("request_timeout_seconds"),
+            page_size=value.get("page_size"),
         )
 
 
@@ -245,7 +263,13 @@ class PublicATSAdapter:
         http_client: httpx.Client | None = None,
     ) -> None:
         self.config = config
-        self.runtime = runtime or PublicATSRuntimeSettings()
+        baseline = runtime or PublicATSRuntimeSettings()
+        overrides: dict[str, float | int] = {}
+        if config.request_timeout_seconds is not None:
+            overrides["timeout_seconds"] = config.request_timeout_seconds
+        if config.page_size is not None:
+            overrides["page_size"] = config.page_size
+        self.runtime = replace(baseline, **overrides) if overrides else baseline
         self.source_id = config.source_id
         self._client = http_client or httpx.Client(
             timeout=self.runtime.timeout_seconds,
