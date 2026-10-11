@@ -37,6 +37,8 @@ const NAV: Array<{ id: Page; label: string; icon: LucideIcon }> = [
 
 const FACT_TYPES: Array<{ value: string; label: string }> = [
   { value: "identity", label: "Full name" }, { value: "contact", label: "Contact" },
+  { value: "email", label: "Email address" }, { value: "phone", label: "Phone number" },
+  { value: "linkedin", label: "LinkedIn profile URL" }, { value: "github", label: "GitHub profile URL" },
   { value: "skill", label: "Skill" }, { value: "experience", label: "Experience" },
   { value: "education", label: "Education" }, { value: "language", label: "Language" },
   { value: "certification", label: "Certification" }, { value: "project", label: "Project" },
