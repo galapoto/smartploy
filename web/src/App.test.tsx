@@ -29,7 +29,7 @@ const listing = {
   canonical_key: "test-analyst",
   job: {
     company: "Example Oy", role_title: "Junior Data Analyst", location: "Helsinki",
-    language: "English", work_mode: "remote", employer_sector: "private",
+    language: "English", work_mode: "remote", employer_sector: "private" as const,
     source_current: true, application_url: "https://jobs.example.fi/analyst",
     source_ids: ["test-ats"], source_attribution: "Public ATS",
     posted_at: "2026-10-11T10:00:00Z", first_seen_at: "2026-10-11T10:00:00Z",
