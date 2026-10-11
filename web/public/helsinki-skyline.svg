@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="210" viewBox="0 0 820 210" fill="none" role="img" aria-label="Minimal Helsinki skyline">
+<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#c9e5f8" stop-opacity=".3"/><stop offset="1" stop-color="#e5f3fb" stop-opacity=".96"/></linearGradient></defs>
+<path fill="url(#sky)" d="M0 164Q120 142 213 152T410 137T820 149V210H0Z"/>
+<path stroke="#7ca7c6" stroke-width="2" opacity=".3" d="M0 174H820"/>
+<g fill="#bed6e8" opacity=".62">
+<path d="M25 139h56v41H25zM30 133h45v7H30zM101 122h80v58h-80zM109 115h64v7h-64zM208 140h56v40h-56zM493 148h54v32h-54zM580 140h71v40h-71zM685 131h90v49h-90z"/>
+</g>
+<g fill="#9bc0d8" opacity=".75">
+<path d="M280 170v-58h112v58zM295 112V91h83v21zM307 91c0-23 57-23 59 0zM331 64h10v14h-10zM335 55h3v13h-3z"/>
+<path d="M274 116v-18h15v72h-15zM388 116v-18h15v72h-15zM268 99l13-20 13 20zM382 99l13-20 13 20z"/>
+</g>
+<g stroke="#6b97b3" stroke-width="2" opacity=".55"><path d="M334 55v-16M327 46h16"/></g>
+<g fill="#eff7fd" opacity=".85"><path d="M321 119h11v19h-11zM344 119h11v19h-11zM366 119h11v19h-11zM317 145h18v25h-18zM346 145h18v25h-18z"/></g>
+<path d="M0 181Q150 175 300 185T620 183T820 181V210H0Z" fill="#e2eef8" opacity=".82"/>
+</svg>
