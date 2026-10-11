@@ -43,6 +43,15 @@ when `Finland` is configured. An unmatched/unknown location is excluded
 from the complete selected-location snapshot; counts of exclusions are
 reported in source health.
 
+An individual slow/large employer board may be given strictly bounded
+`request_timeout_seconds` (5–60 seconds) and `page_size` (1–100).
+These apply only to that employer and do not modify global ATS transport
+defaults. The TSMG pilot uses 45 seconds and 50 postings per page; other
+pilot feeds retain their normal defaults. Every page must still be fetched
+successfully before old jobs can be retired. A failed middle page never
+certifies a complete snapshot. The longer TSMG timeout is provisional until
+a successful production poll verifies it.
+
 An operator-reviewed first pilot registry is available in
 `config/finland_public_ats_pilot.json`, with activation instructions in
 `docs/FINLAND_ATS_PILOT.md`. It is not enabled by default.
