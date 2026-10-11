@@ -78,6 +78,24 @@ describe("job discovery mode semantics", () => {
     expect(screen.getByText(/not a verified skills or eligibility assessment/i)).toBeTruthy();
   });
 
+  it("separates observed mismatches from unknown fields in the explanation", () => {
+    const mismatch: SearchResults = {
+      ...personalized,
+      recommendations: [{
+        ...personalized.recommendations[0],
+        mismatched_fields: [
+          "Listed senior role differs from your entry experience preference",
+          "Work arrangement differs from preferred arrangements",
+        ],
+      }],
+    };
+    render(<SearchResultsPanel {...common} data={mismatch} />);
+    fireEvent.click(screen.getByRole("button", { name: /why shown/i }));
+    expect(screen.getByText(/Differences from your preferences:/i)).toBeTruthy();
+    expect(screen.getByText(/Listed senior role differs/i)).toBeTruthy();
+    expect(screen.getByText(/Not verified from the posting:/i)).toBeTruthy();
+  });
+
   it("requires an explicit action to prepare or change search mode", () => {
     render(<SearchResultsPanel {...common} data={general} />);
     fireEvent.click(screen.getAllByRole("button", { name: /prepare documents/i })[0]);
