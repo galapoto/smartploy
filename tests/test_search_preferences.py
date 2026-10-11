@@ -274,6 +274,106 @@ def test_explicit_keyword_can_promote_role_from_broader_lane():
     assert "Keywords: Python" in result["recommendations"][0]["reasons"]
 
 
+
+@pytest.mark.parametrize(
+    ("target_role", "advertised_title"),
+    [
+        ("Data Analyst", "Data-analyytikko"),
+        ("Data-analyytikko", "Data Analyst"),
+        ("Business Analyst", "Liiketoiminta-analyytikko"),
+        ("Software Tester", "Ohjelmistotestaaja"),
+        ("Project Coordinator", "Projektikoordinaattori"),
+        ("Projektikoordinaattori", "Project Coordinator"),
+    ],
+)
+def test_explicit_finnish_english_title_equivalents_are_discoverable(
+    target_role, advertised_title,
+):
+    pref = revise_preferences("p", search_settings(
+        roles=[target_role], keywords=[], skills=[], locations=[],
+        languages=[], work_modes=[], seniority="any",
+    ), revision=0)
+    result = search_jobs([job(advertised_title)], pref)
+    assert [row["job"]["role_title"] for row in result["recommendations"]] == [
+        advertised_title,
+    ]
+    assert result["recommendations"][0]["preference_score"] == 100
+    assert "English/Finnish equivalent" in result["recommendations"][0]["reasons"][0]
+    assert result["score_kind"] == "preference_alignment_not_verified_qualification"
+
+
+def test_translations_do_not_discard_extra_manager_or_specialist_qualifiers():
+    pref = revise_preferences("p", search_settings(
+        roles=["Data Analyst Manager"], keywords=[], skills=[], locations=[],
+        languages=[], work_modes=[], seniority="any",
+    ), revision=0)
+    result = search_jobs([job("Data-analyytikko")], pref)
+    assert result["recommendations"] == []
+    assert len(result["broader"]) == 1
+    assert result["broader"][0]["preference_score"] < 100
+
+
+def test_finnish_seniority_markers_do_not_recommend_known_senior_conflicts():
+    pref = revise_preferences("p", search_settings(
+        roles=["Data Analyst"], keywords=[], skills=[], locations=[],
+        languages=[], work_modes=[], seniority="entry",
+    ), revision=0)
+    result = search_jobs([job("Vanhempi data-analyytikko"), job("Nuorempi data-analyytikko")], pref)
+    assert [row["job"]["role_title"] for row in result["recommendations"]] == [
+        "Nuorempi data-analyytikko",
+    ]
+    senior = result["broader"][0]
+    assert senior["job"]["role_title"] == "Vanhempi data-analyytikko"
+    assert any("senior role differs from your entry" in x for x in senior["mismatched_fields"])
+
+
+@pytest.mark.parametrize(
+    ("language_label", "preference", "expected_state"),
+    [
+        ("FI", "finnish", "matched"),
+        ("fi-FI", "finnish", "matched"),
+        ("suomenkielinen", "finnish", "matched"),
+        ("EN-GB", "english", "matched"),
+        ("englanniksi", "english", "matched"),
+        ("SV", "swedish", "matched"),
+        ("ruotsinkielinen", "swedish", "matched"),
+        ("FI", "english", "mismatch"),
+        ("language pending", "finnish", "unknown"),
+    ],
+)
+def test_structured_job_languages_match_codes_and_retain_unknown_labels(
+    language_label, preference, expected_state,
+):
+    pref = revise_preferences("p", search_settings(
+        roles=["Data Analyst"], keywords=[], skills=[], locations=[],
+        languages=[preference], work_modes=[], seniority="any",
+    ), revision=0)
+    item = search_jobs([job("Data Analyst", language=language_label)], pref)["recommendations"][0]
+    if expected_state == "matched":
+        assert "Preferred job language" in item["reasons"]
+        assert not item["mismatched_fields"]
+    elif expected_state == "mismatch":
+        assert "Advertised language differs from preferred languages" in item["mismatched_fields"]
+    else:
+        assert "Job language label not recognized" in item["unknown_fields"]
+        assert not item["mismatched_fields"]
+
+
+def test_location_name_boundaries_and_remote_location_uncertainty():
+    pref = revise_preferences("p", search_settings(
+        roles=["Data Analyst"], keywords=[], skills=[], locations=["Helsinki"],
+        languages=[], work_modes=[], seniority="any",
+    ), revision=0)
+    matched = search_jobs([job("Data Analyst", location="Helsinki, Finland")], pref)["recommendations"][0]
+    assert "Preferred location" in matched["reasons"]
+    false_match = search_jobs([job("Data Analyst", location="Helsinkiesque")], pref)["recommendations"][0]
+    assert "Preferred location" not in false_match["reasons"]
+    assert "Location differs from preferred locations" in false_match["mismatched_fields"]
+    remote = search_jobs([job("Data Analyst", location="Remote")], pref)["recommendations"][0]
+    assert "Location not provided" in remote["unknown_fields"]
+    assert not remote["mismatched_fields"]
+
+
 def test_general_mode_ignores_saved_personal_criteria():
     prefs = revise_preferences("p", search_settings(
         mode="general", roles=["Data Analyst"], keywords=["python"],

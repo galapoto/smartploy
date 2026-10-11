@@ -16,10 +16,23 @@ SEARCH_MODES = frozenset({"personalized", "general"})
 SENIORITY_LEVELS = frozenset({"any", "entry", "mid", "senior"})
 LANGUAGE_OPTIONS = frozenset({"english", "finnish", "swedish"})
 WORK_MODE_OPTIONS = frozenset({"remote", "hybrid", "onsite"})
+# Conservative bilingual title pairs, not a generic translation or qualification engine.
+ROLE_EQUIVALENTS = (
+    ("data analyst", "data-analyytikko"),
+    ("business analyst", "liiketoiminta-analyytikko"),
+    ("software tester", "ohjelmistotestaaja"),
+    ("project coordinator", "projektikoordinaattori"),
+)
+LANGUAGE_LABELS = {
+    "english": frozenset({"english", "englanti", "englanninkielinen", "englanniksi", "en"}),
+    "finnish": frozenset({"finnish", "suomi", "suomeksi", "suomenkielinen", "fi"}),
+    "swedish": frozenset({"swedish", "svenska", "ruotsi", "ruotsiksi", "ruotsinkielinen", "sv"}),
+}
 STOPWORDS = frozenset({
     "and", "or", "in", "at", "for", "the", "with", "of", "a", "an",
     "junior", "senior", "entry", "level", "graduate", "trainee",
     "harjoittelija", "kokenut", "experienced", "lead", "associate",
+    "juniori", "nuorempi", "vanhempi",
     "part", "time", "full", "tyo", "ja", "tai",
 })
 
@@ -118,6 +131,21 @@ def _tokens(text: str) -> set[str]:
             if len(word) >= 2 and word not in STOPWORDS}
 
 
+def _translated_role_match(title: str, target: str) -> bool:
+    """Only promote explicit, near-exact bilingual title equivalents.
+
+    A target like "Data Analyst Manager" must not become "data-analyytikko"
+    just because both contain a shorter role phrase. Seniority words are
+    deliberately ignored here and evaluated independently when requested.
+    """
+    tokens = _tokens(target)
+    return any(
+        (tokens == _tokens(english) and _mentions_phrase(title, finnish))
+        or (tokens == _tokens(finnish) and _mentions_phrase(title, english))
+        for english, finnish in ROLE_EQUIVALENTS
+    )
+
+
 def _role_alignment(title: str, roles: tuple[str, ...]) -> tuple[float, str]:
     if not roles:
         return 0.0, ""
@@ -128,7 +156,7 @@ def _role_alignment(title: str, roles: tuple[str, ...]) -> tuple[float, str]:
         overlap = len(title_words & wanted) / len(wanted) if wanted else 0.0
         # A target such as "AI" must not match "Paid". Whole-phrase matching
         # also retains punctuation-only tokens like "C++" and title separators.
-        if _mentions_phrase(title, term):
+        if _mentions_phrase(title, term) or _translated_role_match(title, term):
             overlap = 1.0
         if overlap > strongest[0]:
             strongest = overlap, term
@@ -140,9 +168,9 @@ def _seniority(title: str) -> str | None:
     # intentionally ignores those adjectives.
     words = set(re.findall(r"[^\W\d_]+", title.casefold(), re.UNICODE))
     text = title.casefold()
-    if words & {"senior", "principal", "lead", "johtava", "päällikkö", "head"} or "sr." in text:
+    if words & {"senior", "principal", "lead", "johtava", "päällikkö", "head", "vanhempi"} or "sr." in text:
         return "senior"
-    if words & {"intern", "internship", "trainee", "junior", "graduate", "harjoittelija", "kesätyö"}:
+    if words & {"intern", "internship", "trainee", "junior", "graduate", "harjoittelija", "kesätyö", "juniori", "nuorempi"}:
         return "entry"
     if words & {"mid", "midlevel", "intermediate", "keskitaso"}:
         return "mid"
@@ -163,6 +191,18 @@ def _mentions_phrase(text: str, phrase: str) -> bool:
         return False
     pattern = r"(?<!\w)" + r"[\s/_-]+".join(re.escape(part.casefold()) for part in parts) + r"(?!\w)"
     return re.search(pattern, text.casefold()) is not None
+
+def _recognized_languages(value: str) -> frozenset[str]:
+    """Recognize explicit language names/codes, not accidental substrings.
+
+    Unknown language labels stay unknown; neither a score nor an employer
+    qualification is inferred from the posting's body text.
+    """
+    tokens = set(re.findall(r"[^\W\d_]+", value.casefold(), re.UNICODE))
+    return frozenset(
+        name for name, aliases in LANGUAGE_LABELS.items() if tokens & aliases
+    )
+
 
 def _job_card(candidate: JobCandidate) -> dict[str, Any]:
     job = candidate.job
@@ -199,16 +239,17 @@ def _alignment(
         weight += 60
         earned += 60 * role_fraction
         if role_fraction == 1:
-            reasons.append(f"Job title matches {target}")
+            suffix = " (English/Finnish equivalent)" if _translated_role_match(job.role_title, target) else ""
+            reasons.append(f"Job title matches {target}{suffix}")
         elif role_fraction > 0:
             reasons.append(f"Job title overlaps with {target}")
 
     if pref.locations:
         weight += 16
         place = job.location.casefold()
-        if not place:
+        if not place or place in {"remote", "anywhere", "unspecified", "not specified"}:
             unknown.append("Location not provided")
-        elif any(location.casefold() in place or place in location.casefold()
+        elif any(_mentions_phrase(place, location) or _mentions_phrase(location, place)
                  for location in pref.locations):
             earned += 16
             reasons.append("Preferred location")
@@ -230,11 +271,9 @@ def _alignment(
         language = job.language.casefold()
         if not language:
             unknown.append("Job language not specified")
-        elif any(chosen in language or
-                 (chosen == "finnish" and "suomi" in language) or
-                 (chosen == "swedish" and "svenska" in language) or
-                 (chosen == "english" and "englanti" in language)
-                 for chosen in pref.languages):
+        elif not _recognized_languages(language):
+            unknown.append("Job language label not recognized")
+        elif _recognized_languages(language).intersection(pref.languages):
             earned += 6
             reasons.append("Preferred job language")
         else:
