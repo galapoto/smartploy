@@ -189,6 +189,22 @@ def test_authenticated_api_receipt_does_not_increment_submitted_count(monkeypatc
     changed = dict(raw, reference="DIFFERENT-REFERENCE")
     assert api.post(endpoint, json={"confirm_user_observed": True, "receipt": changed}).status_code == 409
     assert api.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
+    frozen = api.put(f"/api/v1/application-workspaces/{w['workspace_id']}", json={
+        "expected_revision": w["revision"],
+        "cv_text": "Altered after submission", "cover_letter_text": "Altered text",
+    })
+    assert frozen.status_code == 409
+    assert api.get(
+        f"/api/v1/application-workspaces/{w['workspace_id']}/handoff-readiness"
+    ).json()["ready"] is False
+    assert api.post(
+        f"/api/v1/application-workspaces/{w['workspace_id']}/browser-packet",
+        json={"expected_revision": w["revision"], "confirm_private_data_transfer": True},
+    ).status_code == 409
+    assert api.post(
+        f"/api/v1/application-workspaces/{w['workspace_id']}/ai-suggestions",
+        json={"expected_revision": w["revision"], "acknowledge_local_ai_processing": True},
+    ).status_code == 409
     assert api.delete(f"/api/v1/application-workspaces/{w['workspace_id']}").status_code == 200
     assert api.get(endpoint).status_code == 404
 
