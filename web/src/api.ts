@@ -219,3 +219,22 @@ export function requestLocalAISuggestions(
     }) }
   );
 }
+
+
+export function getBrowserHandoffReadiness(workspaceId: string): Promise<import("./types").BrowserHandoffReadiness> {
+  return request<import("./types").BrowserHandoffReadiness>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/handoff-readiness"
+  );
+}
+
+export function createBrowserHandoffPacket(
+  workspaceId: string, revision: number
+): Promise<{ packet: import("./types").BrowserHandoffPacket; external_actions_performed: false }> {
+  return request<{ packet: import("./types").BrowserHandoffPacket; external_actions_performed: false }>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/browser-packet",
+    { method: "POST", body: JSON.stringify({
+      expected_revision: revision,
+      confirm_private_data_transfer: true
+    }) }
+  );
+}
