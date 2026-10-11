@@ -54,6 +54,8 @@ from .oidc import (
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
 from .preparations import PreparationNotEligible
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
+from .search_preferences import SearchPreferenceConflict, SearchPreferenceError, search_jobs
+from .search_preference_storage import MemorySearchPreferenceRepository, PostgresSearchPreferenceRepository
 from .service import SmartployService
 from .storage import MemoryJobRepository, PostgresJobRepository
 from .worker_schedule import PostgresWorkerTaskRepository
@@ -148,6 +150,19 @@ class ProfileFactPayload(BaseModel):
 class FactApprovalPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     approved: bool
+
+
+class SearchPreferencesPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: str
+    roles: list[str] = Field(default_factory=list, max_length=12)
+    locations: list[str] = Field(default_factory=list, max_length=12)
+    languages: list[str] = Field(default_factory=list, max_length=3)
+    work_modes: list[str] = Field(default_factory=list, max_length=3)
+    keywords: list[str] = Field(default_factory=list, max_length=12)
+    skills: list[str] = Field(default_factory=list, max_length=16)
+    seniority: str = "any"
+    expected_revision: int = Field(ge=0)
 
 
 class WorkspaceEditPayload(BaseModel):
@@ -379,6 +394,9 @@ def create_app(
     app.state.workspace_repository = PostgresWorkspaceRepository(dsn) if dsn else MemoryWorkspaceRepository()
     app.state.browser_receipts = PostgresBrowserReceiptRepository(dsn) if dsn else MemoryBrowserReceiptRepository()
     app.state.local_ai = LocalDraftClient(LocalDraftSettings.from_env())
+    app.state.search_preferences = (
+        PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
+    )
 
     def tenant_context(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
         principal = _principal_from_request(request)
@@ -693,6 +711,37 @@ def create_app(
                 include_unknown=filters.include_unknown,
             )
         return active.ingest(observation, filters=cfg).to_dict()
+
+    @app.get("/api/v1/search-preferences")
+    def get_search_preferences(request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        profile_id = tenant.profile_repository.profile_id
+        return app.state.search_preferences.get(profile_id).to_dict()
+
+    @app.put("/api/v1/search-preferences")
+    def save_search_preferences(
+        payload: SearchPreferencesPayload, request: Request
+    ) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        profile_id = tenant.profile_repository.profile_id
+        try:
+            prefs = app.state.search_preferences.save(
+                profile_id, payload.model_dump(exclude={"expected_revision"}),
+                expected_revision=payload.expected_revision,
+            )
+        except SearchPreferenceConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except SearchPreferenceError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return prefs.to_dict()
+
+    @app.get("/api/v1/search-results")
+    def user_search_results(request: Request) -> dict[str, Any]:
+        tenant, _ = tenant_context(request)
+        profile_id = tenant.profile_repository.profile_id
+        preferences = app.state.search_preferences.get(profile_id)
+        result = search_jobs(tenant.list_jobs(), preferences)
+        return {**result, "external_actions_authorized": False}
 
     @app.get("/api/v1/jobs")
     def list_jobs() -> dict[str, Any]:

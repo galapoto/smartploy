@@ -326,3 +326,44 @@ export interface BrowserReceiptImport {
   observed_at: string;
   confirmed_visible: true;
 }
+
+
+export interface SearchPreferences {
+  completed: boolean;
+  mode: "personalized" | "general";
+  roles: string[];
+  locations: string[];
+  languages: string[];
+  work_modes: string[];
+  keywords: string[];
+  skills: string[];
+  seniority: string;
+  revision: number;
+  updated_at: string;
+  verified_qualification_fit: false;
+}
+
+export type SearchPreferencesUpdate = Omit<SearchPreferences,
+  "completed" | "revision" | "updated_at" | "verified_qualification_fit"> & {
+    expected_revision: number;
+  };
+
+export interface SearchJobCard {
+  canonical_key: string;
+  job: JobCardData & { language?: string };
+  preference_score: number | null;
+  reasons: string[];
+  unknown_fields: string[];
+  lane: "recommended" | "broader" | "all";
+}
+
+export interface SearchResults {
+  mode: "personalized" | "general" | "setup_required";
+  completed: boolean;
+  recommendations: SearchJobCard[];
+  broader: SearchJobCard[];
+  all_jobs: SearchJobCard[];
+  available_count: number;
+  score_kind: string;
+  external_actions_authorized: false;
+}

@@ -1,0 +1,9 @@
+export default function BrandMark({ className = "" }: { className?: string }) {
+  // Inline vector means Cloudflare/CDN asset caching or a failed PNG request
+  // can never make the dashboard/sidebar SmartPloy mark disappear.
+  return <svg className={className} viewBox="0 0 192 192" role="img"
+    aria-label="SmartPloy turquoise and navy mark" xmlns="http://www.w3.org/2000/svg">
+    <path fill="#06D9E8" d="M151 29c-3-12-13-18-24-15-3 0-7 1-10 3L50 55C38 61 35 69 38 82c3 13 17 22 29 17l69-39c13-7 19-19 15-31Z"/>
+    <path fill="#021E3D" d="m103 86 35 16c10 5 14 15 11 26-2 8-7 14-16 18l-64 31c-12 6-26 0-30-12-5-13 0-26 13-33l39-20c9-4 11-11 12-26Z"/>
+  </svg>;
+}

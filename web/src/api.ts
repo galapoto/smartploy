@@ -259,3 +259,20 @@ export function importBrowserReceipt(
     })}
   );
 }
+
+
+export function getSearchPreferences(): Promise<import("./types").SearchPreferences> {
+  return request<import("./types").SearchPreferences>("/api/v1/search-preferences");
+}
+
+export function updateSearchPreferences(
+  preferences: import("./types").SearchPreferencesUpdate
+): Promise<import("./types").SearchPreferences> {
+  return request<import("./types").SearchPreferences>("/api/v1/search-preferences", {
+    method: "PUT", body: JSON.stringify(preferences)
+  });
+}
+
+export function getSearchResults(): Promise<import("./types").SearchResults> {
+  return request<import("./types").SearchResults>("/api/v1/search-results");
+}
