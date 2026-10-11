@@ -138,6 +138,54 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByText(/90% search match/i)).toBeNull();
   });
 
+  it("clears the previous account's CV when the signed-in identity changes", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getSession)
+      .mockResolvedValueOnce({ authenticated: true, email: "previous@smartploy.invalid" })
+      .mockResolvedValueOnce({ authenticated: true, email: "next@smartploy.invalid" });
+    vi.mocked(api.getCV)
+      .mockResolvedValueOnce({ present: true, filename: "PRIVATE-OLD-ACCOUNT-CV.docx" })
+      .mockRejectedValueOnce(new Error("new account CV API unavailable"));
+    vi.mocked(api.getProfileFacts)
+      .mockResolvedValueOnce({ facts: [{
+        fact_id: "old-fact", fact_type: "skill", value: "PRIVATE-OLD-ACCOUNT-FACT",
+        approved: true, source: "user-entered", confidence: 1,
+        created_at: "2026-10-11T10:00:00Z",
+      }], count: 1 })
+      .mockRejectedValueOnce(new Error("new account profile unavailable"));
+
+    render(<App />);
+    expect(await screen.findByText("PRIVATE-OLD-ACCOUNT-CV.docx")).toBeTruthy();
+    expect(screen.getByText("PRIVATE-OLD-ACCOUNT-FACT")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+
+    await waitFor(() => expect(api.getSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-CV.docx")).toBeNull());
+    expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-FACT")).toBeNull();
+    expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
+  });
+
+  it("removes stale private dashboard content when essential authentication fails", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getDashboard)
+      .mockResolvedValueOnce({
+        top_matches: [], possible_matches: [], source_health: [],
+        worker: { ready: true, count: 0, tasks: [] },
+        applications: { awaiting_review: 0, actually_submitted: 0 },
+      } as never)
+      .mockRejectedValueOnce(new Error("Session expired"));
+    vi.mocked(api.getCV).mockResolvedValueOnce({
+      present: true, filename: "PRIVATE-OLD-CV.pdf",
+    });
+
+    render(<App />);
+    expect(await screen.findByText("PRIVATE-OLD-CV.pdf")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByText("PRIVATE-OLD-CV.pdf")).toBeNull();
+    expect(screen.getByText("Session expired")).toBeTruthy();
+  });
+
   it("isolates a failed optional profile API without locking out jobs", async () => {
     currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
     vi.mocked(api.getProfileFacts).mockRejectedValue(new Error("profile temporarily unavailable"));
