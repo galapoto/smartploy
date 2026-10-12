@@ -12,6 +12,7 @@ must be ported back to their source PRs before any production integration.
 - Private user bookmarks backend and migration: PR #117 at `6ceb9b29e1914ebc5c335737fe1b0f5bf14e8028`
 - Account-private saved jobs UI: PR #118 at `17e82ac9c5d4b92e5b2302f6ed704510e37e7a2f`
 - Operator-only shared ATS source/ingestion API: PR #119 at `2b73d2b44a227ba488b5a28ccd025e54ca0651a6`
+- Disabled-account request gate and OIDC session revocation: PR #121 at `ba04e214ea1a3931eadc39157a7cafec9a53884a`
 
 ## Composition
 
@@ -19,8 +20,11 @@ Starting from PR #118's head (containing #112 and #115), this branch
 overlays the private-job repository, SQL migration, test module and private
 API routes from PR #117, plus the operator allowlist, service-only Docker
 environment, test module and shared source API guard from PR #119.
+It then overlays the verified request identity/status middleware and the
+OIDC-disabled-account regression module from PR #121, with the API binding
+changes applied to the existing integrated private-job/source API handlers.
 The `smartploy/api.py` composition is not an independent feature.
-Only the source PRs may be merged after external review and refreshed exact
+PR #121 is also independently review-gated. Only the source PRs may be merged after external review and refreshed exact
 main CI. CI of this branch is a **pre-merge compatibility check**, not review
 approval and not a replacement for the merged-main release gates.
 
@@ -33,7 +37,8 @@ production DB or worker feeds are changed.
 ## Acceptance
 
 - [ ] Python/PostgreSQL including private jobs, same-email owner isolation,
-  Cloudflare and OIDC operator admission/denial
+  Cloudflare and OIDC operator admission/denial,
+  disabled-account revocation and OIDC session reassignment denial
 - [ ] React tests and build
 - [ ] Synthetic Chromium first-use and private bookmarks scenarios
 - [ ] Docker fixture migrations, image checks and backup/restore recovery
