@@ -85,5 +85,7 @@ def test_worker_api_projects_running_task_without_lease_owner(scheduler):
         "configured": True,
         "ready": True,
         "count": 1,
-        "error": "",
     }
+    assert "error" not in health.json()["worker"]
+    assert "profile" not in health.json()
+    assert health.headers["cache-control"] == "no-store"
