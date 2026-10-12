@@ -6,7 +6,7 @@
  */
 import { mkdir } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
-import type { SearchJobCard, SearchPreferences, SearchResults } from "../src/types";
+import type { PrivateSavedJob, SearchJobCard, SearchPreferences, SearchResults } from "../src/types";
 
 const EMPTY_PREFERENCES: SearchPreferences = {
   completed: false, mode: "personalized", roles: [], locations: [],
@@ -46,6 +46,7 @@ type MockState = {
   preferences: SearchPreferences;
   lastSave: Record<string, unknown> | null;
   unavailableAI: boolean;
+  privateSavedJobs: Record<string, PrivateSavedJob[]>;
 };
 
 function discovery(state: MockState): SearchResults {
@@ -91,6 +92,7 @@ async function installSyntheticApi(page: Page, options: {
     preferences: { ...EMPTY_PREFERENCES, ...options.initial },
     lastSave: null,
     unavailableAI: Boolean(options.unavailableAI),
+    privateSavedJobs: {},
   };
   const response = async (
     route: import("@playwright/test").Route,
@@ -107,6 +109,35 @@ async function installSyntheticApi(page: Page, options: {
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
+
+    if (path === "/api/v1/private-jobs" && request.method() === "POST") {
+      const payload = JSON.parse(request.postData() || "{}") as Record<string, string>;
+      const item: PrivateSavedJob = {
+        saved_job_id: "saved-synthetic-" + Math.random().toString(36).slice(2),
+        company: payload.company || "", role_title: payload.role_title || "",
+        description: payload.description || "", location: payload.location || "",
+        application_url: payload.application_url || "",
+        created_at: "2026-10-12T10:00:00Z", private: true,
+        employer_availability_verified: false, external_actions_authorized: false,
+      };
+      state.privateSavedJobs[state.userId] = [
+        item, ...(state.privateSavedJobs[state.userId] || []),
+      ];
+      await response(route, { status: "saved_private", job: item }, 201);
+      return;
+    }
+    if (path.startsWith("/api/v1/private-jobs/") && request.method() === "DELETE") {
+      const savedId = decodeURIComponent(path.slice("/api/v1/private-jobs/".length));
+      const current = state.privateSavedJobs[state.userId] || [];
+      const remainder = current.filter((item) => item.saved_job_id !== savedId);
+      if (remainder.length === current.length) {
+        await response(route, { detail: "Private saved job not found" }, 404);
+      } else {
+        state.privateSavedJobs[state.userId] = remainder;
+        await response(route, { deleted: true });
+      }
+      return;
+    }
 
     if (path === "/api/v1/search-preferences" && request.method() === "PUT") {
       const input = JSON.parse(request.postData() || "{}") as Record<string, unknown>;
@@ -156,6 +187,11 @@ async function installSyntheticApi(page: Page, options: {
       "/api/v1/profile/facts": { facts: [], count: 0 },
       "/api/v1/applications": { applications: [], count: 0 },
       "/api/v1/jobs": { jobs: [], count: 0 },
+      "/api/v1/private-jobs": {
+        jobs: state.privateSavedJobs[state.userId] || [],
+        count: (state.privateSavedJobs[state.userId] || []).length,
+        private: true,
+      },
       "/api/v1/local-ai/status": {
         configured: false, ready: false, provider: "disabled",
         model: "", external_ai_forwarding: false,
@@ -346,6 +382,36 @@ test("identity switch while search Settings PUT is in flight fails closed in the
   await expect(page.getByRole("radio", { name: /Personalized jobs/i })).toBeChecked();
   await expect(page.getByPlaceholder(/Data analyst, Junior software tester/i))
     .toHaveValue("Account B role");
+});
+
+test("saved private jobs do not enter ATS discovery and vanish after account switching", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+  });
+  await page.goto("/");
+  await expect(page.getByText("General listing")).toHaveCount(2);
+  await page.getByRole("button", { name: "Find jobs" }).click();
+  await expect(page.getByRole("heading", { name: "Your saved opportunities" })).toBeVisible();
+  await page.getByRole("button", { name: "Save job" }).first().click();
+  const modal = page.getByRole("dialog", { name: "Save an opportunity" });
+  await modal.getByPlaceholder("e.g. Junior Data Analyst").fill("PRIVATE-BOOKMARK-A");
+  await modal.getByPlaceholder("Employer name").fill("Fictional Private Company");
+  await modal.getByPlaceholder("Paste the responsibilities and key requirements here.")
+    .fill("User-saved reference, not a verified posting");
+  await modal.getByRole("button", { name: "Save job" }).click();
+
+  await expect(page.getByText("PRIVATE-BOOKMARK-A")).toBeVisible();
+  expect(state.privateSavedJobs["synthetic-user-a"]).toHaveLength(1);
+  await expect(page.getByText("General listing")).toHaveCount(2);
+  await expect(page.getByText(/search match/i)).toHaveCount(0);
+
+  state.userId = "synthetic-user-b"; // same email, different authenticated ID
+  await page.getByRole("button", { name: "Refresh workspace" }).click();
+  await expect(page.getByRole("heading", { name: /Make your next move/i })).toBeVisible();
+  await page.getByRole("button", { name: "Find jobs" }).click();
+  await expect(page.getByText("PRIVATE-BOOKMARK-A")).toHaveCount(0);
+  await expect(page.getByText(/No private saved jobs yet/i)).toBeVisible();
+  expect(state.privateSavedJobs["synthetic-user-b"]).toBeUndefined();
 });
 
 test("a same-email account change resets unsaved criteria and private CV details", async ({ page }) => {
