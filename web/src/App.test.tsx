@@ -143,6 +143,107 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByText(/90% search match/i)).toBeNull();
   });
 
+  it("prevents manual refresh from replacing an in-flight General-mode save", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1,
+    };
+    let finishSave: (value: SearchPreferences) => void = () => {
+      throw new Error("Expected pending preference save");
+    };
+    vi.mocked(api.updateSearchPreferences).mockImplementationOnce(() =>
+      new Promise<SearchPreferences>((resolve) => { finishSave = resolve; })
+    );
+
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
+    expect(screen.getByRole("button", { name: /saving/i }).hasAttribute("disabled")).toBe(true);
+
+    const dashboardReadsBefore = vi.mocked(api.getDashboard).mock.calls.length;
+    const preferencesReadsBefore = vi.mocked(api.getSearchPreferences).mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    expect(api.getDashboard).toHaveBeenCalledTimes(dashboardReadsBefore);
+    expect(api.getSearchPreferences).toHaveBeenCalledTimes(preferencesReadsBefore);
+
+    await act(async () => {
+      currentPrefs = {
+        ...currentPrefs, completed: true, mode: "general",
+        revision: 2, updated_at: "2026-10-12T06:00:00Z",
+      };
+      finishSave(currentPrefs);
+    });
+    expect(await screen.findByText(/1 current job listings/i)).toBeTruthy();
+    expect(screen.queryByText(/90% search match/i)).toBeNull();
+    expect(currentPrefs.mode).toBe("general");
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    await waitFor(() => expect(api.getSearchPreferences).toHaveBeenCalledTimes(
+      preferencesReadsBefore + 1
+    ));
+    expect(await screen.findByText(/1 current job listings/i)).toBeTruthy();
+  });
+
+  it("ignores an earlier unresolved preference GET completed after saving new criteria", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1,
+    };
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+
+    const staleSnapshot = { ...currentPrefs };
+    let finishOldRead: (value: SearchPreferences) => void = () => {
+      throw new Error("Expected earlier pending preference read");
+    };
+    let oldReadStarted = false;
+    vi.mocked(api.getSearchPreferences).mockImplementationOnce(() =>
+      new Promise<SearchPreferences>((resolve) => {
+        finishOldRead = resolve;
+        oldReadStarted = true;
+      })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    await waitFor(() => expect(oldReadStarted).toBe(true));
+
+    fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
+    expect(await screen.findByText(/1 current job listings/i)).toBeTruthy();
+    expect(currentPrefs.mode).toBe("general");
+
+    await act(async () => { finishOldRead(staleSnapshot); });
+    expect(await screen.findByText(/1 current job listings/i)).toBeTruthy();
+    expect(screen.queryByText(/90% search match/i)).toBeNull();
+    expect(currentPrefs.mode).toBe("general");
+  });
+
+  it("releases the refresh lock after a failed preference save", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1,
+    };
+    vi.mocked(api.updateSearchPreferences).mockRejectedValueOnce(
+      new Error("Synthetic revision conflict")
+    );
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Synthetic revision conflict/);
+    const priorReads = vi.mocked(api.getSearchPreferences).mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    await waitFor(() => expect(api.getSearchPreferences).toHaveBeenCalledTimes(
+      priorReads + 1
+    ));
+    expect((screen.getByRole("radio", { name: /general job search/i }) as HTMLInputElement).checked)
+      .toBe(true);
+    expect(currentPrefs.mode).toBe("personalized");
+  });
+
   it("saves new personalized settings and transparently changes ranked results", async () => {
     render(<App />);
     fireEvent.change(await screen.findByPlaceholderText(/Data analyst, Junior software tester/), {
