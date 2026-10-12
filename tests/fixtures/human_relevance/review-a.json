@@ -1,0 +1,57 @@
+{
+  "contract": "smartploy.human-relevance.review.v1",
+  "dataset_id": "fictional-fi-en-v1",
+  "reviewer_alias": "synthetic-rater-a",
+  "reviewed_at": "2025-01-01T00:02:00Z",
+  "blind_to_predictions": true,
+  "rows": [
+    {
+      "id": "case-001",
+      "relevance": "relevant"
+    },
+    {
+      "id": "case-002",
+      "relevance": "relevant"
+    },
+    {
+      "id": "case-003",
+      "relevance": "unrelated"
+    },
+    {
+      "id": "case-004",
+      "relevance": "unrelated"
+    },
+    {
+      "id": "case-005",
+      "relevance": "related"
+    },
+    {
+      "id": "case-006",
+      "relevance": "related"
+    },
+    {
+      "id": "case-007",
+      "relevance": "relevant"
+    },
+    {
+      "id": "case-008",
+      "relevance": "unrelated"
+    },
+    {
+      "id": "case-009",
+      "relevance": "insufficient"
+    },
+    {
+      "id": "case-010",
+      "relevance": "relevant"
+    },
+    {
+      "id": "case-011",
+      "relevance": "insufficient"
+    },
+    {
+      "id": "case-012",
+      "relevance": "relevant"
+    }
+  ]
+}
