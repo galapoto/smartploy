@@ -9,6 +9,49 @@ permissions:
   contents: read
 
 jobs:
+  pinned-nine-source-docker-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Separate from the synthetic PostgreSQL service job: the original
+    # production-stack fixture owns a temporary Compose PostgreSQL port.
+    steps:
+      - name: Checkout CI-only harness without push permissions
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install matching Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install safe YAML parser used only for pinned CI step extraction
+        run: python -m pip install 'PyYAML==6.0.2'
+
+      - name: Verify and merge exact nine-source histories in disposable worktree
+        run: python3 -B scripts/ci_merge_rehearsal.py
+
+      - name: Run pinned fixture stack/migrations/backup/restore against ACTUAL merged tree
+        run: python3 -B scripts/ci_merged_docker_acceptance.py
+
+      - name: Collect safe Docker rehearsal receipt
+        if: always()
+        run: |
+          mkdir -p sp10-docker-artifacts
+          if test -f "$RUNNER_TEMP/smartploy-rehearsal-summary.json"; then
+            cp "$RUNNER_TEMP/smartploy-rehearsal-summary.json" sp10-docker-artifacts/
+          fi
+
+      - name: Upload read-only Docker rehearsal metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-nine-source-docker-rehearsal
+          path: sp10-docker-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
   pinned-nine-source-rehearsal:
     runs-on: ubuntu-latest
     timeout-minutes: 35
