@@ -124,13 +124,12 @@ export interface HealthResponse {
   ok: boolean;
   service: string;
   storage: { mode: string; ready: boolean; error?: string };
-  profile: ProfileStatus;
+  /** Public health intentionally contains no private profile metadata. */
   obumai_configured: boolean;
   worker: {
     configured: boolean;
     ready: boolean;
     count: number;
-    error: string;
   };
   external_actions_authorized: boolean;
 }
