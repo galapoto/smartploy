@@ -160,7 +160,9 @@ def test_explicit_same_origin_post_revokes_before_provider_redirect(monkeypatch)
     assert response.headers["location"] == "https://auth.obumai.com/oidc/v1/end_session"
     assert response.headers["cache-control"] == "no-store"
     assert "Max-Age=0" in response.headers["set-cookie"]
-    assert api.cookies.get(SESSION_COOKIE_NAME) is None
+    # TestClient's manually seeded domainless cookie is not a browser cookie
+    # jar; the server's Max-Age=0 header and revoked record are authoritative.
+    assert api.get("/api/v1/session").status_code == 401
 
 
 def test_disabled_user_can_confirm_same_origin_logout(monkeypatch):
@@ -183,7 +185,8 @@ def test_failed_provider_redirect_does_not_restore_local_session(monkeypatch):
     assert response.status_code == 303
     assert response.headers["location"] == "/auth/logged-out"
     assert sessions.get(cookie) is None
-    assert api.cookies.get(SESSION_COOKIE_NAME) is None
+    assert "Max-Age=0" in response.headers["set-cookie"]
+    assert api.get("/api/v1/session").status_code == 401
     assert "synthetic provider secret" not in response.text
 
 
@@ -201,7 +204,9 @@ def test_revocation_outage_reports_incomplete_logout_and_clears_browser_cookie(
     assert "could not confirm session revocation" in response.text
     assert "synthetic database password" not in response.text
     assert sessions.get(cookie) is not None  # Do not claim revocation.
-    assert api.cookies.get(SESSION_COOKIE_NAME) is None
+    # A failure to revoke cannot be mislabeled successful browser sign-out.
+    # The server still sends the browser a cookie deletion instruction.
+    assert "Max-Age=0" in response.headers["set-cookie"]
     assert "Max-Age=0" in response.headers["set-cookie"]
     assert provider.logout_count == 0
     assert response.headers["cache-control"] == "no-store"
