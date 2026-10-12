@@ -154,6 +154,7 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .job-byline span { display: inline-flex; gap: 3px; align-items: center; }
 .job-meta { display: flex; gap: 7px 13px; flex-wrap: wrap; font-size: 10.5px; color: #8190a4; }
 .quiet-chip { background: #ecf4ff; color: #2969ae; border-radius: 12px; padding: 2px 8px; font-weight: 700; }
+.source-observation-caution { color: #8e5808; background: #fff5e5; border: 1px solid #edd4ab; padding: 2px 7px; border-radius: 10px; font-weight: 650; }
 .score-chip { display: inline-flex; gap: 4px; align-items: center; border-radius: 17px; padding: 5px 8px; font-size: 10px; font-weight: 800; }
 .score-chip.exceptional,.score-chip.strong { background: #e3f8ef; color: #088057; }
 .score-chip.worthwhile,.score-chip.possible { background: #fff4de; color: #9a6a0d; }
