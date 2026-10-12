@@ -299,6 +299,10 @@ test("a same-email account change resets unsaved criteria and private CV details
     roles: ["Account B role"], revision: 3,
   };
   await page.getByRole("button", { name: "Refresh workspace" }).click();
+  // Switching signed-in accounts always closes the previous account's
+  // editor/Settings and returns to the new user's clean dashboard.
+  await expect(page.getByRole("heading", { name: /Make your next move/i })).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).click();
   await expect(page.getByRole("radio", { name: /General job search/i })).toBeChecked();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
   await expect(page.getByPlaceholder(/Data analyst, Junior software tester/i))
@@ -306,6 +310,63 @@ test("a same-email account change resets unsaved criteria and private CV details
   await page.getByRole("button", { name: "Dashboard", exact: true }).click();
   await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toHaveCount(0);
   await expect(page.getByText("ACCOUNT-B.pdf")).toBeVisible();
+});
+
+test("same-email account switch removes the previous user's private application editor", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: {
+      completed: true, mode: "general", revision: 1,
+    },
+    cvFilename: "ACCOUNT-A-CV.pdf",
+  });
+  await page.route("**/api/v1/application-workspaces", async (route) => {
+    const tag = state.userId === "synthetic-user-a" ? "A" : "B";
+    const workspace = {
+      workspace_id: "synthetic-private-draft-" + tag,
+      canonical_key: "synthetic-job-" + tag,
+      role_title: "Private " + tag + " role",
+      company: "Fictional Employer " + tag,
+      application_url: "https://jobs.example.invalid/" + tag,
+      cv_text: "ACCOUNT-" + tag + "-PRIVATE-CV-TEXT",
+      cover_letter_text: "ACCOUNT-" + tag + "-PRIVATE-LETTER-TEXT",
+      source_cv_sha256: "", approved_evidence_ids: [],
+      revision: 1, status: "draft",
+      self_reported_applied_at: "", self_reported_reference: "",
+      created_at: "2026-10-10T10:00:00Z", updated_at: "2026-10-10T10:00:00Z",
+      authority: {
+        may_edit: true, may_download: true,
+        may_submit_to_employer: false, has_external_submission_proof: false,
+      },
+    };
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ workspaces: [workspace], count: 1 }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "My applications" }).click();
+  await expect(page.getByRole("textbox", { name: "Editable CV text" }))
+    .toHaveValue("ACCOUNT-A-PRIVATE-CV-TEXT");
+  await page.getByRole("textbox", { name: "Editable cover letter text" })
+    .fill("UNSAVED-ACCOUNT-A-PRIVATE-LETTER");
+  state.userId = "synthetic-user-b"; // deliberately same email, different server ID
+  state.cvFilename = "ACCOUNT-B-CV.pdf";
+  state.preferences = {
+    ...EMPTY_PREFERENCES, completed: true, mode: "general",
+    revision: 1,
+  };
+  await page.getByRole("button", { name: "Refresh workspace" }).click();
+
+  await expect(page.getByRole("textbox", { name: "Editable CV text" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /Make your next move/i })).toBeVisible();
+  await expect(page.getByText("ACCOUNT-A-CV.pdf")).toHaveCount(0);
+  await page.getByRole("button", { name: "My applications" }).click();
+  await expect(page.getByRole("textbox", { name: "Editable CV text" }))
+    .toHaveValue("ACCOUNT-B-PRIVATE-CV-TEXT");
+  await expect(page.getByRole("textbox", { name: "Editable cover letter text" }))
+    .toHaveValue("ACCOUNT-B-PRIVATE-LETTER-TEXT");
+  await expect(page.getByText("Private A role")).toHaveCount(0);
 });
 
 test("mobile onboarding remains usable when the optional local AI endpoint fails", async ({ page }) => {
