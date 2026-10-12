@@ -435,34 +435,45 @@ def create_app(
         return tenant, binding
 
     @app.get("/healthz")
-    def health() -> dict[str, Any]:
+    def health() -> JSONResponse:
+        """Public liveness/provenance contract; never return account metadata.
+
+        The existing guarded release script consumes storage readiness,
+        Access posture, worker readiness/count and external-action status.
+        Keep those machine-readable *safe* fields, but not default profile
+        counts/types, tenant IDs, raw worker errors or authentication config.
+        More detailed worker and profile views require authenticated APIs.
+        """
         storage = active.storage_status()
         worker = _worker_snapshot()
-        return {
+        safe = {
             "ok": bool(storage.get("ready")),
             "service": "smartploy",
             "public_origin": app.state.public_origin,
-            "storage": storage,
-            "profile": active.profile_summary(),
-            "obumai_configured": active.obumai is not None,
-            "authentication": {
-                "mode": authentication.mode,
-                "oidc_enabled": authentication.oidc_enabled,
-                "cloudflare_fallback_enabled": authentication.cloudflare_enabled,
+            "storage": {
+                "mode": str(storage.get("mode") or "unknown"),
+                "ready": bool(storage.get("ready")),
             },
+            "obumai_configured": active.obumai is not None,
             "access": {
                 "enabled": access_settings.enabled,
                 "environment": access_settings.environment,
                 "owner_restricted": bool(access_settings.allowed_email),
             },
             "worker": {
-                "configured": worker["configured"],
-                "ready": worker["ready"],
-                "count": worker["count"],
-                "error": worker["error"],
+                "configured": bool(worker.get("configured")),
+                "ready": bool(worker.get("ready")),
+                "count": int(worker.get("count") or 0),
             },
             "external_actions_authorized": False,
         }
+        return JSONResponse(
+            content=safe,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @app.get("/auth/login")
     async def auth_login(request: Request):
