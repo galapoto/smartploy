@@ -45,6 +45,8 @@ jobs:
         run: pytest -q
       - name: Offline bilingual search-quality gate (synthetic only)
         run: python -m scripts.evaluate_search_quality
+      - name: Independent human review contract smoke (fictional cases only)
+        run: python -m scripts.evaluate_human_relevance
       - name: Lint
         run: ruff check smartploy scripts tests
 

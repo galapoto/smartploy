@@ -1,0 +1,97 @@
+{
+  "contract": "smartploy.human-relevance.set.v1",
+  "dataset_id": "fictional-fi-en-v1",
+  "dataset_kind": "synthetic",
+  "frozen_at": "2025-01-01T00:00:00Z",
+  "provenance": {
+    "source_rights_reviewed": false,
+    "applicant_data_excluded": true,
+    "restricted_data_excluded": true
+  },
+  "cases": [
+    {
+      "id": "case-001",
+      "slices": [
+        "fi",
+        "junior"
+      ]
+    },
+    {
+      "id": "case-002",
+      "slices": [
+        "en",
+        "remote"
+      ]
+    },
+    {
+      "id": "case-003",
+      "slices": [
+        "fi",
+        "public"
+      ]
+    },
+    {
+      "id": "case-004",
+      "slices": [
+        "en",
+        "experienced"
+      ]
+    },
+    {
+      "id": "case-005",
+      "slices": [
+        "bilingual",
+        "career-switch"
+      ]
+    },
+    {
+      "id": "case-006",
+      "slices": [
+        "fi",
+        "remote"
+      ]
+    },
+    {
+      "id": "case-007",
+      "slices": [
+        "en",
+        "career-switch"
+      ]
+    },
+    {
+      "id": "case-008",
+      "slices": [
+        "fi",
+        "junior"
+      ]
+    },
+    {
+      "id": "case-009",
+      "slices": [
+        "en",
+        "private"
+      ]
+    },
+    {
+      "id": "case-010",
+      "slices": [
+        "bilingual",
+        "hybrid"
+      ]
+    },
+    {
+      "id": "case-011",
+      "slices": [
+        "fi",
+        "unknown-metadata"
+      ]
+    },
+    {
+      "id": "case-012",
+      "slices": [
+        "en",
+        "onsite"
+      ]
+    }
+  ]
+}

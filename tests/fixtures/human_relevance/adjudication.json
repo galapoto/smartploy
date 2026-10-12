@@ -1,0 +1,16 @@
+{
+  "contract": "smartploy.human-relevance.adjudication.v1",
+  "dataset_id": "fictional-fi-en-v1",
+  "adjudicator_alias": "synthetic-rater-c",
+  "adjudicated_at": "2025-01-01T00:04:00Z",
+  "rows": [
+    {
+      "id": "case-005",
+      "relevance": "related"
+    },
+    {
+      "id": "case-010",
+      "relevance": "relevant"
+    }
+  ]
+}
