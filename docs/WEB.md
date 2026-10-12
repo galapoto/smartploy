@@ -114,3 +114,31 @@ authorization or [real, approved two-account browser acceptance
 mutating requests, login-cookie changes outside the SPA and real backend
 permission boundaries require separate review. No additional employer
 application or external AI permissions are granted.
+
+## Private user-saved job API — backend foundation
+
+A user-saved job is **not** an ATS feed observation and must not be stored in the
+shared discovery table. The new account-scoped `/api/v1/private-jobs` endpoints
+create, list (at most 100 per response) and delete private saved opportunities,
+identified by a server-generated opaque ID. Requests resolve a trusted
+authenticated user's profile; neither supplied profile IDs nor email addresses
+can choose the owner of a record. The backend uses a dedicated PostgreSQL
+table (migration `014_private_saved_jobs.sql`) or development-memory store.
+Responses include `Cache-Control: private, no-store`, and availability and
+external actions remain **unverified/unauthorized**.
+
+Private records never enter the global ATS source registry, source-health counts,
+public job discovery or personalized match scores. They are useful as private
+bookmarks until their full employer-source and matching requirements can be
+validated; they must not be counted as currently verified vacancies or
+application receipts.
+
+**Rollout boundary:** the current frontend's legacy *Add job* still calls
+`POST /api/v1/jobs/ingest`, which is a shared source-ingestion endpoint.
+The new private API is a backend foundation, not a completed user-facing
+migration. Do not switch the user interface or deploy multi-user OIDC until
+the client is rewired to private endpoints and privileged ingestion/source
+registration are secured separately. Real two-account user acceptance and
+operator-approved release are required. Track
+[issue #116](https://github.com/galapoto/smartploy/issues/116) and
+[issue #91](https://github.com/galapoto/smartploy/issues/91).
