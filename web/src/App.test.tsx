@@ -73,7 +73,9 @@ beforeEach(() => {
   );
   vi.mocked(api.getSession).mockResolvedValue({
     authenticated: true, email: "test@smartploy.invalid",
-  } as never);
+    user_id: "usr-synthetic-1", profile_id: "profile-synthetic-1",
+    auth_source: "fixture"
+  });
   vi.mocked(api.getHealth).mockResolvedValue({ obumai_configured: false } as never);
   vi.mocked(api.getCV).mockResolvedValue({ present: false });
   vi.mocked(api.getProfileFacts).mockResolvedValue({ facts: [], count: 0 });
@@ -262,18 +264,14 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByText(/90% search match/i)).toBeNull();
   });
 
-  it("clears the previous account's CV when the signed-in identity changes", async () => {
+  it("clears same-email account A's private CV and facts before showing account B", async () => {
     currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
-    // Same email does not mean same account; use verified user IDs.
-    vi.mocked(api.getSession)
-      .mockResolvedValueOnce({
-        authenticated: true, email: "shared@smartploy.invalid",
-        user_id: "usr-account-a", profile_id: "profile-a",
-      })
-      .mockResolvedValueOnce({
-        authenticated: true, email: "shared@smartploy.invalid",
-        user_id: "usr-account-b", profile_id: "profile-b",
-      });
+    let currentUser = "usr-account-a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@smartploy.invalid",
+      user_id: currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture"
+    }));
     vi.mocked(api.getCV)
       .mockResolvedValueOnce({ present: true, filename: "PRIVATE-OLD-ACCOUNT-CV.docx" })
       .mockRejectedValueOnce(new Error("new account CV API unavailable"));
@@ -288,12 +286,97 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     render(<App />);
     expect(await screen.findByText("PRIVATE-OLD-ACCOUNT-CV.docx")).toBeTruthy();
     expect(screen.getByText("PRIVATE-OLD-ACCOUNT-FACT")).toBeTruthy();
+    currentUser = "usr-account-b";
     fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
 
-    await waitFor(() => expect(api.getSession).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-CV.docx")).toBeNull());
     expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-FACT")).toBeNull();
     expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Dashboard$/i })).toBeTruthy();
+  });
+
+  it("fails closed when the signed-in identity flips during essential workspace reads", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    let currentUser = "usr-account-a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@smartploy.invalid",
+      user_id: currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture"
+    }));
+    vi.mocked(api.getCV).mockImplementation(async () => ({
+      present: true, filename: currentUser === "usr-account-a"
+        ? "PRIVATE-OLD-A.pdf" : "PRIVATE-NEW-B.pdf"
+    }));
+    render(<App />);
+    expect(await screen.findByText("PRIVATE-OLD-A.pdf")).toBeTruthy();
+
+    let finishRead: (value: SearchPreferences) => void = () => {
+      throw new Error("Expected pending preference read");
+    };
+    let started = false;
+    vi.mocked(api.getSearchPreferences).mockImplementationOnce(
+      () => new Promise<SearchPreferences>((resolve) => {
+        finishRead = resolve;
+        started = true;
+      })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    await waitFor(() => expect(started).toBe(true));
+    currentUser = "usr-account-b";
+    await act(async () => { finishRead({ ...currentPrefs }); });
+
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByText("PRIVATE-OLD-A.pdf")).toBeNull();
+    expect(screen.getByText(/signed-in account changed during refresh/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText("PRIVATE-NEW-B.pdf")).toBeTruthy();
+    expect(screen.queryByText("PRIVATE-OLD-A.pdf")).toBeNull();
+  });
+
+  it("rejects an old-account CV response if identity changes during optional loading", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    let currentUser = "usr-account-a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@smartploy.invalid",
+      user_id: currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture"
+    }));
+    vi.mocked(api.getCV).mockResolvedValueOnce({
+      present: true, filename: "PRIVATE-OLD-A.pdf"
+    });
+    render(<App />);
+    expect(await screen.findByText("PRIVATE-OLD-A.pdf")).toBeTruthy();
+
+    let finishCV: (value: { present: boolean; filename: string }) => void = () => {
+      throw new Error("Expected pending CV request");
+    };
+    let started = false;
+    vi.mocked(api.getCV).mockImplementationOnce(
+      () => new Promise((resolve) => { finishCV = resolve; started = true; })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    await waitFor(() => expect(started).toBe(true));
+    currentUser = "usr-account-b";
+    await act(async () => {
+      finishCV({ present: true, filename: "STALE-PRIVATE-A-RESPONSE.pdf" });
+    });
+
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByText("PRIVATE-OLD-A.pdf")).toBeNull();
+    expect(screen.queryByText("STALE-PRIVATE-A-RESPONSE.pdf")).toBeNull();
+    expect(screen.getByText(/signed-in account changed during profile loading/i)).toBeTruthy();
+  });
+
+  it("rejects email-only session responses without stable server identity", async () => {
+    vi.mocked(api.getSession).mockResolvedValue({
+      authenticated: true, email: "shared@smartploy.invalid", auth_source: "fixture"
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.getByText(/Authenticated account identity is unavailable/i)).toBeTruthy();
+    expect(api.getCV).not.toHaveBeenCalled();
+    expect(api.getSearchPreferences).not.toHaveBeenCalled();
   });
 
   it("removes stale private dashboard content when essential authentication fails", async () => {

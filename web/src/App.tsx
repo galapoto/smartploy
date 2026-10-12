@@ -90,6 +90,15 @@ function Tool(props: { title: string; description: string; icon: LucideIcon; rea
   </button>;
 }
 
+/** Require a server-issued stable identity, never an email-only fallback. */
+function sessionIdentity(who: SessionInfo): string {
+  const subject = (who.user_id || who.profile_id || who.subject_fingerprint || "").trim();
+  if (!who.authenticated || !subject) {
+    throw new Error("Authenticated account identity is unavailable. Sign in again.");
+  }
+  return JSON.stringify([subject, who.auth_source || ""]);
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -127,52 +136,75 @@ export default function App() {
   });
   const uploadRef = useRef<HTMLInputElement>(null);
 
-  // Ignore old responses after a later refresh or a user's preference change.
-  // The 60-second polling interval may overlap slow model/provider requests.
+  // Old in-flight requests must not repopulate another account's workspace.
   const loadGeneration = useRef(0);
   const lastSessionIdentity = useRef<string | null>(null);
-  // Search preference writes must be atomic from the UI's perspective.
-  // A 60-second background poll or a manual refresh must never replace an
-  // in-flight save with an older server snapshot or re-open first-use setup.
   const savingSearchPreferences = useRef(false);
   const load = useCallback(async (quiet = false) => {
     if (savingSearchPreferences.current) return;
     const generation = ++loadGeneration.current;
     if (quiet) setRefreshing(true); else setLoading(true);
-    // Start the slower optional requests in parallel, without making first
-    // use wait for AI reachability, CV extraction or application history.
-    const secondaryRequest = Promise.allSettled([
-      getApplications(), getHealth(), getCV(), getProfileFacts(),
-      getJobs(), getLocalAIStatus()
-    ]);
+
+    function clearPrivateWorkspace() {
+      setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
+      setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
+      setHealth(null); setLocalAI(null); setSelectedWorkspaceId("");
+      // A different account must not inherit an unsaved draft, editor, form,
+      // selected job or cached navigation state belonging to its predecessor.
+      setPage("dashboard"); setSearch(""); setExpandedJob("");
+      setCVPreview(false); setJobDialog(false); setNewFactValue("");
+      setConfirmFact(false); setNotice("");
+      setJobForm({
+        company: "", role_title: "", location: "",
+        description: "", application_url: ""
+      });
+    }
+
     try {
-      const [board, prefs, results, who] = await Promise.all([
-        getDashboard(), getSearchPreferences(), getSearchResults(), getSession()
+      // Establish a server-issued account identity BEFORE requesting private
+      // preferences, CVs, drafts or other tenant-scoped responses. Starting
+      // them alongside the session request could mix two browser identities.
+      const who = await getSession();
+      if (generation !== loadGeneration.current) return;
+      const identity = sessionIdentity(who);
+      if (lastSessionIdentity.current !== null &&
+          identity !== lastSessionIdentity.current) {
+        clearPrivateWorkspace();
+        setLoading(true);
+        lastSessionIdentity.current = null;
+      }
+
+      // Optional requests still run alongside the essential job reads; they
+      // must never block first-use navigation when Ollama or a CV is slow.
+      const secondaryRequest = Promise.allSettled([
+        getApplications(), getHealth(), getCV(), getProfileFacts(),
+        getJobs(), getLocalAIStatus()
+      ]);
+      const [board, prefs, results] = await Promise.all([
+        getDashboard(), getSearchPreferences(), getSearchResults()
       ]);
       if (generation !== loadGeneration.current) return;
-      const identity = JSON.stringify([
-        Boolean(who.authenticated),
-        who.user_id || who.profile_id || who.subject_fingerprint || who.email || "",
-        who.auth_source || "",
-        // The server determines tenancy; email here is only a legacy UI fallback.
-      ]);
-      if (lastSessionIdentity.current !== null && identity !== lastSessionIdentity.current) {
-        // A browser can change signed-in accounts while the SPA remains open.
-        // Never show the previous account's CV, facts or application history.
-        setApplications([]); setCV({ present: false }); setFacts([]);
-        setJobs([]); setHealth(null); setLocalAI(null);
-        setSelectedWorkspaceId("");
+
+      // Account switch during GETs: reject all mixed snapshots, rather than
+      // showing A's job/CV data under B's currently signed-in browser.
+      const verifiedWho = await getSession();
+      if (generation !== loadGeneration.current) return;
+      if (sessionIdentity(verifiedWho) !== identity) {
+        throw new Error("Your signed-in account changed during refresh. Reload this workspace.");
       }
       lastSessionIdentity.current = identity;
-      setDashboard(board); setPreferences(prefs); setDiscovery(results); setSession(who);
-      // Only essential search requests govern navigation and refresh spinners.
+      setDashboard(board); setPreferences(prefs); setDiscovery(results);
+      setSession(verifiedWho);
       setLoading(false); setRefreshing(false); setError("");
 
-      // Optional tools must not lock users out of job discovery or onboarding.
-      // Fail closed for PRIVATE data: never retain a previous account's CV
-      // or application history when those API reads cannot be authenticated.
       const secondary = await secondaryRequest;
       if (generation !== loadGeneration.current) return;
+      const finalWho = await getSession();
+      if (generation !== loadGeneration.current) return;
+      if (sessionIdentity(finalWho) !== identity) {
+        throw new Error("Your signed-in account changed during profile loading. Reload this workspace.");
+      }
+
       const [apps, ready, savedCV, profile, savedJobs, model] = secondary;
       setApplications(apps.status === "fulfilled" ? apps.value.applications : []);
       setHealth(ready.status === "fulfilled" ? ready.value : null);
@@ -180,18 +212,13 @@ export default function App() {
       setFacts(profile.status === "fulfilled" ? profile.value.facts : []);
       setJobs(savedJobs.status === "fulfilled" ? savedJobs.value.jobs : []);
       setLocalAI(model.status === "fulfilled" ? model.value : null);
-
-      setError(secondary.some((result) => result.status === "rejected")
+      setError(secondary.some((item) => item.status === "rejected")
         ? "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria."
         : "");
     } catch (exc) {
       if (generation === loadGeneration.current) {
-        // If essential authenticated APIs fail, do not keep showing the
-        // previous user's private workspace as if the session were current.
         lastSessionIdentity.current = null;
-        setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
-        setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
-        setHealth(null); setLocalAI(null); setSelectedWorkspaceId("");
+        clearPrivateWorkspace();
         setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
       }
     } finally {
@@ -355,12 +382,12 @@ export default function App() {
     return <main className="setup-landing">
       <div className="setup-brand"><BrandMark/><span><strong>SmartPloy</strong>
         <small>Job intelligence for Finland</small></span></div>
-      <SearchSetup key={session?.user_id || session?.profile_id || session?.subject_fingerprint || session?.email || "unidentified"} initial={preferences} onSave={saveSearchPreferences}/>
+      <SearchSetup key={session?.user_id || session?.profile_id || session?.subject_fingerprint || "unidentified"} initial={preferences} onSave={saveSearchPreferences}/>
       <p className="setup-privacy"><LockKeyhole size={14}/> No CV required to browse jobs. Search choices are private to your account.</p>
     </main>;
   }
 
-  const accountViewKey = session?.user_id || session?.profile_id || session?.subject_fingerprint || session?.email || "unidentified";
+  const accountViewKey = session?.user_id || session?.profile_id || session?.subject_fingerprint || "unidentified";
   const approved = facts.filter((item) => item.approved);
   const skills = approved.filter((item) => item.fact_type === "skill");
   const sourcesReady = dashboard.source_health.some((s) => s.status === "healthy");
@@ -533,7 +560,7 @@ export default function App() {
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}
           {page === "applications" ? <div className="stacked">
-            <ApplicationStudio focusId={selectedWorkspaceId} onFindJobs={() => navigate("jobs")} />
+            <ApplicationStudio key={accountViewKey} focusId={selectedWorkspaceId} onFindJobs={() => navigate("jobs")} />
             <section className="panel"><div className="panel-heading"><div><p className="section-kicker">APPLICATION TRACKER</p><h2>Your application pipeline</h2><p>A preparation draft is never counted as submitted.</p></div><span className="subtle-count">{applications.length} records</span></div>
             {applications.length ? <div className="applications-list">{applications.map((item) => <div className="application-list-row" key={item.application_id}><FileText size={20} /><div><strong>{formatState(item.state)}</strong><small>Job {item.canonical_key} · {item.updated_at ? relativeFreshness(item.updated_at) : "Updated time unknown"}</small></div><span className={cx("state-pill", item.has_been_submitted ? "good" : "waiting")}>{item.has_been_submitted ? "Submitted" : "Not submitted"}</span></div>)}</div> :
               <Empty title="No applications yet" description="When you've reviewed a job and prepared an application, the draft will appear here. No submissions are claimed without external evidence." icon={FileCheck2} action="Find jobs" onAction={() => navigate("jobs")} />}
