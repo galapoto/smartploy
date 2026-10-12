@@ -4,7 +4,6 @@ All sessions, principals and identity providers in this module are synthetic.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
