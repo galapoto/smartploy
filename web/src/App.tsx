@@ -141,25 +141,24 @@ export default function App() {
   const lastSessionIdentity = useRef<string | null>(null);
   const savingSearchPreferences = useRef(false);
   const clearPrivateWorkspace = useCallback(() => {
-      setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
-      setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
-      setHealth(null); setLocalAI(null); setSelectedWorkspaceId("");
-      // A different account must not inherit an unsaved draft, editor, form,
-      // selected job or cached navigation state belonging to its predecessor.
-      setPage("dashboard"); setSearch(""); setExpandedJob("");
-      setCVPreview(false); setJobDialog(false); setNewFactValue("");
-      setConfirmFact(false); setNotice("");
-      setJobForm({
-        company: "", role_title: "", location: "",
-        description: "", application_url: ""
-      });
+    setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
+    setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
+    setHealth(null); setLocalAI(null); setSelectedWorkspaceId("");
+    // A different account must not inherit an unsaved draft, editor, form,
+    // selected job or cached navigation state belonging to its predecessor.
+    setPage("dashboard"); setSearch(""); setExpandedJob("");
+    setCVPreview(false); setJobDialog(false); setNewFactValue("");
+    setConfirmFact(false); setNotice("");
+    setJobForm({
+      company: "", role_title: "", location: "",
+      description: "", application_url: ""
+    });
   }, []);
 
   const load = useCallback(async (quiet = false) => {
     if (savingSearchPreferences.current) return;
     const generation = ++loadGeneration.current;
     if (quiet) setRefreshing(true); else setLoading(true);
-
 
     try {
       // Establish a server-issued account identity BEFORE requesting private
