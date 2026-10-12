@@ -114,3 +114,25 @@ authorization or [real, approved two-account browser acceptance
 mutating requests, login-cookie changes outside the SPA and real backend
 permission boundaries require separate review. No additional employer
 application or external AI permissions are granted.
+
+## Search-preference saves across session changes
+
+Changing from Personalized to General search (or editing search criteria)
+writes private account preferences and then retrieves matching search results.
+The SPA now verifies its stable server-issued user/profile identity **before**
+the preferences PUT, **after** the PUT response, and **after** the corresponding
+discovery GET. If that identity is different or cannot be re-verified, the
+client clears the private workspace and requires a manual retry rather than
+showing a previous account's preference/result response. Email equality is
+not sufficient to treat two accounts as the same identity. Concurrent
+workspace refresh remains suspended during the save.
+
+**Limitations:** This is UI defense in depth, not a server transaction or a
+guarantee that a PUT never reached the backend before a session change. The
+backend must authorize each mutation and all private reads against the actual
+authenticated account, and a user should reload to inspect saved preferences
+after changing accounts. Synthetic React and built-Chromium tests cover the
+different-user-ID / same-email race; production two-account sign-in and data
+isolation acceptance under [SP-10 #91](https://github.com/galapoto/smartploy/issues/91)
+is still required. No third-party job applications or external AI sending
+become authorized.

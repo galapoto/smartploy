@@ -163,6 +163,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
     fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
     expect(screen.getByRole("button", { name: /saving/i }).hasAttribute("disabled")).toBe(true);
+    await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledTimes(1));
 
     const dashboardReadsBefore = vi.mocked(api.getDashboard).mock.calls.length;
     const preferencesReadsBefore = vi.mocked(api.getSearchPreferences).mock.calls.length;
@@ -244,6 +245,91 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect((screen.getByRole("radio", { name: /general job search/i }) as HTMLInputElement).checked)
       .toBe(true);
     expect(currentPrefs.mode).toBe("personalized");
+  });
+
+  it("does not send preference changes when the current session cannot be verified", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1,
+    };
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
+    vi.mocked(api.getSession).mockRejectedValueOnce(new Error("Synthetic authentication expiry"));
+    fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
+
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.getByText(/signed-in account changed or could not be verified/i)).toBeTruthy();
+    expect(api.updateSearchPreferences).not.toHaveBeenCalled();
+    expect(currentPrefs.mode).toBe("personalized");
+  });
+
+  it("fails closed when a different account takes over during a preference PUT", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1,
+    };
+    let currentUser = "usr-account-a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@smartploy.invalid",
+      user_id: currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture",
+    }));
+    let finishSave: (value: SearchPreferences) => void = () => {
+      throw new Error("Expected pending save");
+    };
+    vi.mocked(api.updateSearchPreferences).mockImplementationOnce(() =>
+      new Promise<SearchPreferences>((resolve) => { finishSave = resolve; })
+    );
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
+    await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledTimes(1));
+    currentUser = "usr-account-b";
+    await act(async () => {
+      finishSave({
+        ...currentPrefs, mode: "general", revision: 2,
+        updated_at: "2026-10-12T08:00:00Z",
+      });
+    });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.getByText(/signed-in account changed or could not be verified/i)).toBeTruthy();
+    expect(screen.queryByText(/90% search match/i)).toBeNull();
+    expect(api.getSearchResults).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+  });
+
+  it("does not publish stale discovery when identity flips after the preference PUT", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1,
+    };
+    let currentUser = "usr-account-a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@smartploy.invalid",
+      user_id: currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture",
+    }));
+    let finishResults: (value: SearchResults) => void = () => {
+      throw new Error("Expected pending results");
+    };
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    vi.mocked(api.getSearchResults).mockImplementationOnce(() =>
+      new Promise<SearchResults>((resolve) => { finishResults = resolve; })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
+    await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledTimes(1));
+    currentUser = "usr-account-b";
+    await act(async () => { finishResults(general); });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByText(/1 current job listings/i)).toBeNull();
   });
 
   it("saves new personalized settings and transparently changes ranked results", async () => {
