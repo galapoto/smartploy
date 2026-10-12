@@ -51,6 +51,11 @@ from .oidc import (
     clear_session_cookie,
     set_session_cookie,
 )
+from .private_saved_jobs import (
+    MemoryPrivateSavedJobRepository,
+    PostgresPrivateSavedJobRepository,
+    PrivateSavedJobError,
+)
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
 from .preparations import PreparationNotEligible
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
@@ -138,6 +143,15 @@ class CVUploadPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     filename: str = Field(min_length=1, max_length=160)
     content_base64: str = Field(min_length=24, max_length=7_000_000)
+
+
+class PrivateSavedJobPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    company: str = Field(min_length=1, max_length=160)
+    role_title: str = Field(min_length=1, max_length=160)
+    description: str = Field(min_length=1, max_length=12000)
+    location: str = Field(default="", max_length=160)
+    application_url: str = Field(default="", max_length=2048)
 
 
 class ProfileFactPayload(BaseModel):
@@ -396,6 +410,10 @@ def create_app(
     app.state.local_ai = LocalDraftClient(LocalDraftSettings.from_env())
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
+    )
+    app.state.private_saved_jobs = (
+        PostgresPrivateSavedJobRepository(dsn) if dsn
+        else MemoryPrivateSavedJobRepository()
     )
 
     def tenant_context(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
@@ -711,6 +729,54 @@ def create_app(
                 include_unknown=filters.include_unknown,
             )
         return active.ingest(observation, filters=cfg).to_dict()
+
+    def private_saved_jobs_profile(request: Request) -> str:
+        # Authenticated requests resolve their own stable profile. The legacy
+        # unprotected development fixture remains usable only in disabled mode.
+        tenant, binding = tenant_context(request)
+        if binding is None and authentication.mode != "disabled":
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return tenant.profile_repository.profile_id
+
+    @app.get("/api/v1/private-jobs")
+    def list_private_saved_jobs(request: Request, limit: int = 100) -> JSONResponse:
+        if not 1 <= limit <= 100:
+            raise HTTPException(status_code=422, detail="limit must be 1 to 100")
+        profile_id = private_saved_jobs_profile(request)
+        records = app.state.private_saved_jobs.list(profile_id, limit=limit)
+        return JSONResponse(
+            content={
+                "jobs": [item.to_dict() for item in records],
+                "count": len(records),
+                "private": True,
+            },
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.post("/api/v1/private-jobs", status_code=201)
+    def create_private_saved_job(
+        payload: PrivateSavedJobPayload, request: Request
+    ) -> JSONResponse:
+        profile_id = private_saved_jobs_profile(request)
+        try:
+            item = app.state.private_saved_jobs.save(profile_id, payload.model_dump())
+        except PrivateSavedJobError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return JSONResponse(
+            status_code=201,
+            content={"status": "saved_private", "job": item.to_dict()},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.delete("/api/v1/private-jobs/{saved_job_id}")
+    def remove_private_saved_job(saved_job_id: str, request: Request) -> JSONResponse:
+        profile_id = private_saved_jobs_profile(request)
+        if not app.state.private_saved_jobs.delete(profile_id, saved_job_id):
+            raise HTTPException(status_code=404, detail="Private saved job not found")
+        return JSONResponse(
+            content={"deleted": True},
+            headers={"Cache-Control": "private, no-store"},
+        )
 
     @app.get("/api/v1/search-preferences")
     def get_search_preferences(request: Request) -> dict[str, Any]:
