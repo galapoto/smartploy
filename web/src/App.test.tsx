@@ -247,6 +247,24 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(currentPrefs.mode).toBe("personalized");
   });
 
+  it("does not send preference changes when the current session cannot be verified", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1,
+    };
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
+    vi.mocked(api.getSession).mockRejectedValueOnce(new Error("Synthetic authentication expiry"));
+    fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
+
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.getByText(/signed-in account changed or could not be verified/i)).toBeTruthy();
+    expect(api.updateSearchPreferences).not.toHaveBeenCalled();
+    expect(currentPrefs.mode).toBe("personalized");
+  });
+
   it("fails closed when a different account takes over during a preference PUT", async () => {
     currentPrefs = {
       ...initial, completed: true, mode: "personalized",
