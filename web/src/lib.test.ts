@@ -134,7 +134,7 @@ describe("job source observation truth", () => {
     );
     expect(labels.origin).toBe("Posted 1d ago");
     expect(labels.observation).toBe("Last observed 3d ago");
-    expect(labels.caution).toMatch(/over 72h old/);
+    expect(labels.caution).toMatch(/at least 72h ago/);
   });
 
   it("handles invalid, missing and future source timestamps conservatively", () => {
