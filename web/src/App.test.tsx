@@ -4,10 +4,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 
 import * as api from "./api";
 import App from "./App";
-import type { SearchPreferences, SearchResults } from "./types";
+import type { PrivateSavedJob, SearchPreferences, SearchResults } from "./types";
 
 vi.mock("./api", () => ({
   addManualJob: vi.fn(), approveFact: vi.fn(), createFact: vi.fn(),
+  deletePrivateSavedJob: vi.fn(), getPrivateSavedJobs: vi.fn(),
   deleteCV: vi.fn(), deleteFact: vi.fn(), getApplications: vi.fn(),
   getCV: vi.fn(), getDashboard: vi.fn(), getHealth: vi.fn(),
   getJobs: vi.fn(), getProfileFacts: vi.fn(), getSession: vi.fn(),
@@ -54,10 +55,12 @@ const tailored: SearchResults = {
   }],
 };
 let currentPrefs: SearchPreferences = initial;
+let personalJobs: PrivateSavedJob[] = [];
 
 beforeEach(() => {
   vi.resetAllMocks();
   currentPrefs = { ...initial };
+  personalJobs = [];
   vi.mocked(api.getDashboard).mockResolvedValue({
     top_matches: [], possible_matches: [],
     source_health: [{
@@ -81,6 +84,22 @@ beforeEach(() => {
   vi.mocked(api.getProfileFacts).mockResolvedValue({ facts: [], count: 0 });
   vi.mocked(api.getApplications).mockResolvedValue({ applications: [], count: 0 });
   vi.mocked(api.getJobs).mockResolvedValue({ jobs: [], count: 0 });
+  vi.mocked(api.getPrivateSavedJobs).mockImplementation(async () => ({
+    jobs: [...personalJobs], count: personalJobs.length, private: true,
+  }));
+  vi.mocked(api.addManualJob).mockImplementation(async (payload) => {
+    const item: PrivateSavedJob = {
+      ...payload, saved_job_id: "saved-synthetic-" + (personalJobs.length + 1),
+      created_at: "2026-10-12T10:00:00Z", private: true,
+      employer_availability_verified: false, external_actions_authorized: false,
+    };
+    personalJobs = [item, ...personalJobs];
+    return { status: "saved_private", job: item };
+  });
+  vi.mocked(api.deletePrivateSavedJob).mockImplementation(async (id) => {
+    personalJobs = personalJobs.filter((item) => item.saved_job_id !== id);
+    return { deleted: true };
+  });
   vi.mocked(api.getLocalAIStatus).mockResolvedValue({
     configured: false, ready: false, provider: "disabled", model: "", external_ai_forwarding: false,
   });
@@ -439,6 +458,127 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
     expect((screen.getByPlaceholderText(/Python, Finnish B2, data analytics/i) as HTMLInputElement).value).toBe("");
+  });
+
+  it("saves a job privately, shows it separately, and removes it without shared ingestion", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(screen.getByRole("heading", { name: "Your saved opportunities" })).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save job" })[0]);
+    fireEvent.change(screen.getByPlaceholderText("e.g. Junior Data Analyst"), {
+      target: { value: "Private UX Researcher" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Employer name"), {
+      target: { value: "Fictional Studio Oy" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Paste the responsibilities and key requirements here."), {
+      target: { value: "Design private research studies" },
+    });
+    const form = screen.getByRole("dialog").querySelector("form");
+    if (!form) throw new Error("Private bookmark form missing");
+    fireEvent.submit(form);
+
+    expect(await screen.findByText("Private UX Researcher")).toBeTruthy();
+    expect(api.addManualJob).toHaveBeenCalledWith(expect.objectContaining({
+      role_title: "Private UX Researcher", company: "Fictional Studio Oy",
+    }));
+    expect(personalJobs).toHaveLength(1);
+    expect(personalJobs[0].private).toBe(true);
+    expect(screen.getByText(/Private bookmarks, not employer-verified/i)).toBeTruthy();
+    expect(screen.queryByText(/87% search match/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove saved job Private UX Researcher" }));
+    await waitFor(() => expect(api.deletePrivateSavedJob).toHaveBeenCalledWith(
+      "saved-synthetic-1"
+    ));
+    await waitFor(() => expect(screen.queryByText("Private UX Researcher")).toBeNull());
+    expect(personalJobs).toHaveLength(0);
+  });
+
+  it("does not show an old-account saved-job success notice after refresh changes account", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    let currentUser = "a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@example.invalid",
+      user_id: "user-" + currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture",
+    }));
+    vi.mocked(api.getPrivateSavedJobs).mockImplementation(async () => ({
+      jobs: currentUser === "a" ? [...personalJobs] : [],
+      count: currentUser === "a" ? personalJobs.length : 0, private: true,
+    }));
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    const originalReads = vi.mocked(api.getSearchPreferences).mock.calls.length;
+
+    let finishReload: (value: SearchPreferences) => void = () => {
+      throw new Error("Expected pending search-preference read");
+    };
+    vi.mocked(api.getSearchPreferences).mockImplementationOnce(() =>
+      new Promise<SearchPreferences>((resolve) => { finishReload = resolve; })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Save job" })[0]);
+    fireEvent.change(screen.getByPlaceholderText("e.g. Junior Data Analyst"), {
+      target: { value: "PRIVATE-ACCOUNT-A-JOB" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Employer name"), {
+      target: { value: "Synthetic Studio" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Paste the responsibilities and key requirements here."), {
+      target: { value: "Private fictional work only" },
+    });
+    const form = screen.getByRole("dialog").querySelector("form");
+    if (!form) throw new Error("Bookmark modal missing");
+    fireEvent.submit(form);
+    await waitFor(() => expect(api.getSearchPreferences).toHaveBeenCalledTimes(
+      originalReads + 1
+    ));
+    currentUser = "b";
+    await act(async () => { finishReload({ ...currentPrefs }); });
+
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    expect(screen.queryByText(/Job saved privately to your account/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(screen.queryByText("PRIVATE-ACCOUNT-A-JOB")).toBeNull();
+    expect(screen.getByText(/No private saved jobs yet/i)).toBeTruthy();
+  });
+
+  it("clears private saved jobs when same-email account identity changes", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    const accountA: PrivateSavedJob = {
+      saved_job_id: "saved-a", company: "Example A", role_title: "SECRET-A-BOOKMARK",
+      location: "Helsinki", description: "A only", application_url: "",
+      created_at: "2026-10-12T10:00:00Z", private: true,
+      employer_availability_verified: false, external_actions_authorized: false,
+    };
+    let currentUser = "a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@example.invalid",
+      user_id: "user-" + currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture",
+    }));
+    vi.mocked(api.getPrivateSavedJobs).mockImplementation(async () => ({
+      jobs: currentUser === "a" ? [accountA] : [],
+      count: currentUser === "a" ? 1 : 0, private: true,
+    }));
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(await screen.findByText("SECRET-A-BOOKMARK")).toBeTruthy();
+
+    currentUser = "b";
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    await waitFor(() => expect(screen.queryByText("SECRET-A-BOOKMARK")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(screen.getByText(/No private saved jobs yet/i)).toBeTruthy();
+    expect(screen.queryByText("SECRET-A-BOOKMARK")).toBeNull();
   });
 
   it("clears same-email account A's private CV and facts before showing account B", async () => {

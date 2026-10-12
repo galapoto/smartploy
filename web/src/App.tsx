@@ -7,8 +7,8 @@ import {
   WandSparkles, X, ChartNoAxesColumn, AlertCircle, type LucideIcon
 } from "lucide-react";
 import {
-  addManualJob, approveFact, createFact, deleteCV, deleteFact, getApplications,
-  getCV, getDashboard, getHealth, getJobs, getProfileFacts, getSession,
+  addManualJob, approveFact, createFact, deleteCV, deleteFact, deletePrivateSavedJob, getApplications,
+  getCV, getDashboard, getHealth, getJobs, getPrivateSavedJobs, getProfileFacts, getSession,
   startApplicationWorkspace, uploadCV,
   getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus
 } from "./api";
@@ -22,7 +22,7 @@ import SearchResultsPanel from "./SearchResultsPanel";
 import BrandMark from "./BrandMark";
 import type {
   ApplicationRecord, CandidateFact, CVDocument, Dashboard, HealthResponse,
-  ManualJobPayload, RankingCard, SavedJob, SessionInfo,
+  ManualJobPayload, PrivateSavedJob, RankingCard, SavedJob, SessionInfo,
   SearchPreferences, SearchPreferencesUpdate, SearchResults, LocalAIStatus
 } from "./types";
 
@@ -110,6 +110,7 @@ export default function App() {
   const [cv, setCV] = useState<CVDocument>({ present: false });
   const [facts, setFacts] = useState<CandidateFact[]>([]);
   const [jobs, setJobs] = useState<SavedJob[]>([]);
+  const [privateSavedJobs, setPrivateSavedJobs] = useState<PrivateSavedJob[]>([]);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [preferences, setPreferences] = useState<SearchPreferences | null>(null);
   const [discovery, setDiscovery] = useState<SearchResults | null>(null);
@@ -134,6 +135,7 @@ export default function App() {
   const [newFactValue, setNewFactValue] = useState("");
   const [confirmFact, setConfirmFact] = useState(false);
   const [manualBusy, setManualBusy] = useState(false);
+  const [removingPrivateJob, setRemovingPrivateJob] = useState("");
   const [jobForm, setJobForm] = useState<ManualJobPayload>({
     company: "", role_title: "", location: "", description: "", application_url: ""
   });
@@ -146,6 +148,7 @@ export default function App() {
   const clearPrivateWorkspace = useCallback(() => {
     setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
     setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
+    setPrivateSavedJobs([]);
     setHealth(null); setLocalAI(null); setSelectedWorkspaceId("");
     // A different account must not inherit an unsaved draft, editor, form,
     // selected job or cached navigation state belonging to its predecessor.
@@ -153,6 +156,7 @@ export default function App() {
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
     setBusyCV(false); setBusyFact(""); setPreparing(""); setManualBusy(false);
+    setRemovingPrivateJob("");
     if (uploadRef.current) uploadRef.current.value = "";
     setJobForm({
       company: "", role_title: "", location: "",
@@ -231,7 +235,7 @@ export default function App() {
       // must never block first-use navigation when Ollama or a CV is slow.
       const secondaryRequest = Promise.allSettled([
         getApplications(), getHealth(), getCV(), getProfileFacts(),
-        getJobs(), getLocalAIStatus()
+        getJobs(), getLocalAIStatus(), getPrivateSavedJobs()
       ]);
       const [board, prefs, results] = await Promise.all([
         getDashboard(), getSearchPreferences(), getSearchResults()
@@ -258,12 +262,13 @@ export default function App() {
         throw new Error("Your signed-in account changed during profile loading. Reload this workspace.");
       }
 
-      const [apps, ready, savedCV, profile, savedJobs, model] = secondary;
+      const [apps, ready, savedCV, profile, savedJobs, model, bookmarks] = secondary;
       setApplications(apps.status === "fulfilled" ? apps.value.applications : []);
       setHealth(ready.status === "fulfilled" ? ready.value : null);
       setCV(savedCV.status === "fulfilled" ? savedCV.value : { present: false });
       setFacts(profile.status === "fulfilled" ? profile.value.facts : []);
       setJobs(savedJobs.status === "fulfilled" ? savedJobs.value.jobs : []);
+      setPrivateSavedJobs(bookmarks.status === "fulfilled" ? bookmarks.value.jobs : []);
       setLocalAI(model.status === "fulfilled" ? model.value : null);
       setError(secondary.some((item) => item.status === "rejected")
         ? "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria."
@@ -477,11 +482,13 @@ export default function App() {
     setManualBusy(true);
     try {
       const result = await runPrivateMutation(() => addManualJob(payload));
-      if (result.status !== "discovered") throw new Error("The job was not accepted: " + result.status);
+      if (result.status !== "saved_private") throw new Error("The saved job was not accepted: " + result.status);
       setJobDialog(false);
       setJobForm({ company: "", role_title: "", location: "", description: "", application_url: "" });
       navigate("jobs");
-      setNotice("Job added. Add approved evidence to unlock personalised ranking.");
+      // Publish the notice before refreshing. If the account changes during
+      // that refresh, clearPrivateWorkspace() can safely discard it.
+      setNotice("Job saved privately to your account. Employer availability is unverified; it is not a ranked ATS listing.");
       await load(true);
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged)) {
@@ -489,6 +496,23 @@ export default function App() {
       }
     } finally {
       if (lastSessionIdentity.current === actionIdentity) setManualBusy(false);
+    }
+  }
+
+  async function onRemovePrivateJob(item: PrivateSavedJob) {
+    if (!window.confirm("Remove this job from your private saved list?")) return;
+    const actionIdentity = lastSessionIdentity.current;
+    setRemovingPrivateJob(item.saved_job_id);
+    try {
+      await runPrivateMutation(() => deletePrivateSavedJob(item.saved_job_id));
+      setPrivateSavedJobs((items) => items.filter((saved) => saved.saved_job_id !== item.saved_job_id));
+      setNotice("The saved job was removed from your private account.");
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to remove the saved job.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setRemovingPrivateJob("");
     }
   }
 
@@ -600,6 +624,38 @@ export default function App() {
     {!obumReady ? <div className="info-strip"><AlertCircle size={17} /> ObumAI service integration is not configured. AI generation tools stay unavailable until secure machine authentication is enabled.</div> : null}
   </section>;
 
+  const privateSavedJobsPanel = <section className="panel sources-panel" aria-label="Your private saved jobs">
+    <div className="panel-heading">
+      <div>
+        <p className="section-kicker">ONLY IN YOUR ACCOUNT</p>
+        <h2>Your saved opportunities</h2>
+        <p>Private bookmarks, not employer-verified vacancies or personalized match scores.</p>
+      </div>
+      <button className="outline-btn" type="button" onClick={() => setJobDialog(true)}>
+        <Plus size={16} /> Save job
+      </button>
+    </div>
+    {privateSavedJobs.length ? <div className="source-list">{privateSavedJobs.map((item) =>
+      <div className="source-row" key={item.saved_job_id}>
+        <span className="source-emblem"><LockKeyhole size={18} /></span>
+        <div><strong>{item.role_title}</strong>
+          <small>{item.company} · {item.location || "Location unknown"} · Employer availability unverified</small>
+        </div>
+        {item.application_url ? <a className="text-link" href={item.application_url}
+          target="_blank" rel="noopener noreferrer" title="Check the original employer posting">
+          Check posting <ArrowUpRight size={15} />
+        </a> : null}
+        <button className="icon-btn subtle" type="button"
+          aria-label={"Remove saved job " + item.role_title}
+          onClick={() => void onRemovePrivateJob(item)}
+          disabled={removingPrivateJob === item.saved_job_id}>
+          <Trash2 size={16} />
+        </button>
+      </div>
+    )}</div> :
+      <p className="muted padding-note">No private saved jobs yet. Your bookmarks appear here, separate from public job listings.</p>}
+  </section>;
+
   const sourcePanel = <section className="panel sources-panel">
     <div className="panel-heading"><div><p className="section-kicker">SOURCE MONITOR</p><h2>Job sources</h2><p>Actual ingestion status — not estimated job counts.</p></div><span className={cx("state-pill", sourcesReady ? "good" : "waiting")}>{sourcesReady ? "Receiving jobs" : "Not active"}</span></div>
     {dashboard.source_health.length ? <div className="source-list">{dashboard.source_health.map((item) =>
@@ -690,10 +746,10 @@ export default function App() {
         </> : null}
         {page !== "dashboard" ? <>
           <div className="page-intro"><div><p className="section-kicker">SMARTPLOY / {selectedNav?.label.toUpperCase()}</p><h1>{selectedNav?.label}</h1><p>{preferences?.mode === "general" ? "General search across current Finnish vacancies." : "Your private workspace, ranked by the search criteria you chose."}</p></div>
-            {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Add job</button> : null}
+            {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Save job</button> : null}
             {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}
           </div>
-          {page === "jobs" ? <div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div> : null}
+          {page === "jobs" ? <div className="stacked"><div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>{privateSavedJobsPanel}</div> : null}
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">{cvBlock}{factPanel}</div><aside>{sidePanel}</aside></div> : null}
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}
@@ -723,7 +779,7 @@ export default function App() {
     </div>
     {jobDialog ? <div className="modal-backdrop" role="presentation" onClick={() => setJobDialog(false)}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="add-job-title" onClick={(event) => event.stopPropagation()}>
-        <div className="dialog-heading"><div><p className="section-kicker">MANUAL IMPORT</p><h2 id="add-job-title">Add a job opportunity</h2><p>Save a job you've already found. It won't be submitted anywhere.</p></div><button className="icon-btn" type="button" onClick={() => setJobDialog(false)} aria-label="Close"><X size={21} /></button></div>
+        <div className="dialog-heading"><div><p className="section-kicker">PRIVATE BOOKMARK</p><h2 id="add-job-title">Save an opportunity</h2><p>Only you can see this saved job. It is not added to the public feed, ranked, verified or submitted anywhere.</p></div><button className="icon-btn" type="button" onClick={() => setJobDialog(false)} aria-label="Close"><X size={21} /></button></div>
         <form className="dialog-form" onSubmit={(event) => void onManualJob(event)}>
           <label>Job title<input required maxLength={160} value={jobForm.role_title} onChange={(event) => setJobForm({ ...jobForm, role_title: event.target.value })} placeholder="e.g. Junior Data Analyst" /></label>
           <label>Company<input required maxLength={160} value={jobForm.company} onChange={(event) => setJobForm({ ...jobForm, company: event.target.value })} placeholder="Employer name" /></label>
