@@ -20,11 +20,12 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 
 from .access import (
     ACCESS_ASSERTION_HEADER,
+    AccessPrincipal,
     AccessSettings,
     AccessVerificationError,
     CloudflareAccessVerifier,
 )
-from .identity import AuthenticatedPrincipal
+from .identity import AuthenticatedPrincipal, IdentityRepository
 
 
 SESSION_COOKIE_NAME = "__Host-smartploy_session"
@@ -580,12 +581,14 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
         authentication: AuthenticationSettings,
         sessions: MemorySessionRepository | PostgresSessionRepository,
         access_settings: AccessSettings,
+        identity_repository: IdentityRepository,
         access_verifier: CloudflareAccessVerifier | None = None,
     ) -> None:
         super().__init__(app)
         self.authentication = authentication
         self.sessions = sessions
         self.access_settings = access_settings
+        self.identity_repository = identity_repository
         self.access_verifier = access_verifier
         if (
             authentication.cloudflare_enabled
@@ -594,13 +597,57 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
         ):
             self.access_verifier = CloudflareAccessVerifier(access_settings)
 
+    async def _authorize_principal(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+        principal: AuthenticatedPrincipal,
+        *,
+        session_user_id: str = "",
+    ) -> Response:
+        # Account status is checked against the authoritative backend on EVERY
+        # protected request. A previously valid cookie or Cloudflare assertion
+        # must not outlive an account's disabled status.
+        try:
+            binding = await asyncio.to_thread(
+                self.identity_repository.resolve_or_create, principal
+            )
+        except Exception:
+            # Database outages are not a reason to reuse an old cached status.
+            return self._deny(
+                503, "identity_unavailable",
+                "SmartPloy account verification is temporarily unavailable.",
+            )
+        if binding.status != "active":
+            return self._deny(
+                403, "account_disabled", "SmartPloy account access is disabled.",
+            )
+        if session_user_id and binding.user_id != session_user_id:
+            # Identity linking after session issuance must require a new login:
+            # otherwise the old cookie could unexpectedly switch tenant.
+            return self._deny(
+                401, "session_identity_changed",
+                "The account linked to this session changed. Sign in again.",
+                login_url="/auth/login",
+            )
+
+        request.state.smartploy_principal = principal
+        request.state.smartploy_binding = binding
+        return await call_next(request)
+
     async def dispatch(
         self,
         request: Request,
         call_next: RequestResponseEndpoint,
     ) -> Response:
         path = request.url.path
-        if path in HEALTH_PATHS or self.authentication.mode == "disabled":
+        if (
+            path in HEALTH_PATHS
+            or self.authentication.mode == "disabled"
+            or (self.authentication.oidc_enabled and path in PUBLIC_AUTH_PATHS)
+        ):
+            # Logout must remain reachable even for a disabled user so that
+            # their browser can clear its old application session.
             return await call_next(request)
 
         if self.authentication.oidc_enabled:
@@ -608,9 +655,10 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
             if raw_session:
                 record = await asyncio.to_thread(self.sessions.get, raw_session)
                 if record is not None:
-                    request.state.smartploy_principal = record.principal()
-                    request.state.smartploy_session = record
-                    return await call_next(request)
+                    return await self._authorize_principal(
+                        request, call_next, record.principal(),
+                        session_user_id=record.user_id,
+                    )
 
         if self.authentication.cloudflare_enabled and self.access_settings.enabled:
             assertion = request.headers.get(ACCESS_ASSERTION_HEADER, "")
@@ -622,14 +670,24 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
                         "Cloudflare Access verification is unavailable.",
                     )
                 try:
-                    request.state.smartploy_principal = self.access_verifier.verify(assertion)
-                    return await call_next(request)
+                    verified = self.access_verifier.verify(assertion)
                 except AccessVerificationError as exc:
                     status = 403 if exc.code == "identity_denied" else 401
                     return self._deny(status, exc.code, str(exc))
-
-        if self.authentication.oidc_enabled and path in PUBLIC_AUTH_PATHS:
-            return await call_next(request)
+                if not isinstance(verified, AccessPrincipal):
+                    return self._deny(
+                        503, "identity_unavailable",
+                        "SmartPloy account verification is temporarily unavailable.",
+                    )
+                return await self._authorize_principal(
+                    request, call_next,
+                    AuthenticatedPrincipal(
+                        issuer=verified.issuer,
+                        subject=verified.subject,
+                        email=verified.email,
+                        auth_source="cloudflare_access",
+                    ).normalized(),
+                )
 
         if self.authentication.mode == "cloudflare":
             return self._deny(
