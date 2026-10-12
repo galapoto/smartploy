@@ -143,3 +143,38 @@ jobs:
           path: sp10-rehearsal-artifacts/
           if-no-files-found: ignore
           retention-days: 7
+
+  pinned-rehearsal-tree-attestation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    needs:
+      - pinned-nine-source-rehearsal
+      - pinned-nine-source-docker-stack
+    steps:
+      - name: Checkout read-only receipt verifier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download application source-tree receipt
+        uses: actions/download-artifact@v4
+        with:
+          name: smartploy-nine-source-merge-rehearsal
+          path: sp10-proof/application
+
+      - name: Download Docker fixture source-tree receipt
+        uses: actions/download-artifact@v4
+        with:
+          name: smartploy-nine-source-docker-rehearsal
+          path: sp10-proof/docker
+
+      - name: Verify identical source tree and nine pinned source PRs
+        run: python3 -B scripts/ci_cross_job_rehearsal.py
+
+      - name: Save joined provenance evidence without user data
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-nine-source-joined-evidence
+          path: sp10-joined-evidence.json
+          if-no-files-found: error
+          retention-days: 7
