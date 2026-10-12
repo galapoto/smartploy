@@ -254,11 +254,16 @@ def test_oidc_session_and_cloudflare_assertion_cannot_bypass_allowlist(monkeypat
     forbidden = api.post(
         "/api/v1/sources", json=SOURCE_PAYLOAD,
         headers={
+            "Origin": "https://smartploy.obumai.com",
+            "Sec-Fetch-Site": "same-origin",
             "X-SmartPloy-Role": "operator",
             "Cf-Access-Jwt-Assertion": "operator",
         },
     )
     assert forbidden.status_code == 403
     authenticate(operator)
-    ok = api.post("/api/v1/sources", json=SOURCE_PAYLOAD)
+    ok = api.post(
+        "/api/v1/sources", json=SOURCE_PAYLOAD,
+        headers={"Origin": "https://smartploy.obumai.com", "Sec-Fetch-Site": "same-origin"},
+    )
     assert ok.status_code == 200, ok.text
