@@ -140,12 +140,7 @@ export default function App() {
   const loadGeneration = useRef(0);
   const lastSessionIdentity = useRef<string | null>(null);
   const savingSearchPreferences = useRef(false);
-  const load = useCallback(async (quiet = false) => {
-    if (savingSearchPreferences.current) return;
-    const generation = ++loadGeneration.current;
-    if (quiet) setRefreshing(true); else setLoading(true);
-
-    function clearPrivateWorkspace() {
+  const clearPrivateWorkspace = useCallback(() => {
       setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
       setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
       setHealth(null); setLocalAI(null); setSelectedWorkspaceId("");
@@ -158,7 +153,13 @@ export default function App() {
         company: "", role_title: "", location: "",
         description: "", application_url: ""
       });
-    }
+  }, []);
+
+  const load = useCallback(async (quiet = false) => {
+    if (savingSearchPreferences.current) return;
+    const generation = ++loadGeneration.current;
+    if (quiet) setRefreshing(true); else setLoading(true);
+
 
     try {
       // Establish a server-issued account identity BEFORE requesting private
@@ -226,7 +227,7 @@ export default function App() {
         setLoading(false); setRefreshing(false);
       }
     }
-  }, []);
+  }, [clearPrivateWorkspace]);
 
   useEffect(() => {
     void load();
@@ -240,23 +241,61 @@ export default function App() {
       throw new Error("A search preference save is already in progress.");
     }
     savingSearchPreferences.current = true;
-    // Invalidate every pre-save refresh (including its pending private data).
-    // Skip any new refresh until the preference write and its matching
-    // discovery response have both settled.
+    // A concurrent refresh cannot publish an old preference snapshot while
+    // the PUT and its paired discovery GET are in progress.
     ++loadGeneration.current;
     setRefreshing(false);
+
+    const expectedIdentity = lastSessionIdentity.current;
+    let accountUnverified = false;
+    const requireSameAccount = async () => {
+      let observedIdentity: string | null = null;
+      try {
+        observedIdentity = sessionIdentity(await getSession());
+      } catch {
+        // Treat failed/unauthenticated session verification as a privacy
+        // boundary failure, not permission to publish stale private results.
+      }
+      if (!expectedIdentity || observedIdentity !== expectedIdentity ||
+          lastSessionIdentity.current !== expectedIdentity) {
+        accountUnverified = true;
+        throw new Error(
+          "The signed-in account changed or could not be verified while saving search preferences. Reload this workspace."
+        );
+      }
+    };
+
     try {
+      // Check before the mutation, after its response, and after fetching the
+      // matching search results. Never render account A's preference response
+      // under B merely because their visible email addresses are the same.
+      await requireSameAccount();
       const result = await updateSearchPreferences(next);
-      setPreferences(result);
+      await requireSameAccount();
       const fresh = await getSearchResults();
+      await requireSameAccount();
+      setPreferences(result);
       setDiscovery(fresh);
       setPage("dashboard");
       setView("top");
       setNotice(result.mode === "general"
         ? "General search enabled: all current jobs, no personalization."
         : "Your search targets were saved. Recommendations now reflect your criteria.");
+    } catch (exc) {
+      // A rejected PUT can coincide with logout/account switching. Check
+      // again before keeping the previous account's editable workspace.
+      if (!accountUnverified) await requireSameAccount();
+      throw exc;
     } finally {
       savingSearchPreferences.current = false;
+      if (accountUnverified) {
+        ++loadGeneration.current;
+        lastSessionIdentity.current = null;
+        clearPrivateWorkspace();
+        setError(
+          "The signed-in account changed or could not be verified while saving search preferences. Reload this workspace."
+        );
+      }
     }
   }
 
