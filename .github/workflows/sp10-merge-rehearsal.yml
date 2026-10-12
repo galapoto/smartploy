@@ -1,0 +1,102 @@
+name: SP-10 exact source merge rehearsal (CI only)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+# A read-only worker: no deploy keys, cloud tokens, image registries or SSH.
+permissions:
+  contents: read
+
+jobs:
+  pinned-nine-source-rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: smartploy
+          POSTGRES_PASSWORD: smartploy
+          POSTGRES_DB: smartploy_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U smartploy -d smartploy_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SMARTPLOY_TEST_DATABASE_URL: postgresql://smartploy:smartploy@127.0.0.1:5432/smartploy_test
+    steps:
+      - name: Checkout CI-only harness (not a release)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install matching Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install matching Node runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify main pin and merge all nine exact PR heads in disposable worktree
+        run: python3 -B scripts/ci_merge_rehearsal.py
+
+      - name: Install integrated Python requirements
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/smartploy-nine-source-rehearsal"
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Compile and test ACTUAL merged source tree using isolated PostgreSQL
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/smartploy-nine-source-rehearsal"
+          python -m compileall -q smartploy scripts tests
+          pytest -q
+          python -m scripts.evaluate_search_quality
+          python -m scripts.evaluate_human_relevance
+          ruff check smartploy scripts tests
+
+      - name: Install web packages and run React/build/companion checks
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/smartploy-nine-source-rehearsal/web"
+          npm install --no-audit --no-fund
+          npm run test
+          npm run build
+          cd ..
+          node --check browser-companion/logic.mjs
+          node --check browser-companion/popup.mjs
+          node --test browser-companion/tests/logic.test.mjs
+
+      - name: Install Chromium and run synthetic end-to-end tests
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/smartploy-nine-source-rehearsal/web"
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+
+      - name: Collect safe result metadata
+        if: always()
+        run: |
+          mkdir -p sp10-rehearsal-artifacts
+          if test -f "$RUNNER_TEMP/smartploy-rehearsal-summary.json"; then
+            cp "$RUNNER_TEMP/smartploy-rehearsal-summary.json" sp10-rehearsal-artifacts/
+          fi
+
+      - name: Upload rehearsal receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-nine-source-merge-rehearsal
+          path: sp10-rehearsal-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
