@@ -86,3 +86,31 @@ General and Personalized job cards now display **two separate timestamps**:
 If `last_seen_at` is missing, invalid, implausibly future-dated, or at least 72 hours old, the card conservatively asks the user to check the original employer posting. These warnings appear in both browsing modes, do not include account/profile data, and do **not** hide jobs, create fit scores in General mode, or claim that a job has been removed. They also do not automatically authorize any external application or AI processing.
 
 The source's overall worker health and freshness are a **different** signal: the optional read-only `check_ats_readiness.py --require-fresh-hours` evaluates the last successful source poll, not whether one job posting was recently observed. Operators must review source cadence and perform real browser/source acceptance separately; synthetic freshness tests are not proof of live hiring availability.
+
+
+## Session-bound private workspace refresh
+
+SmartPloy's frontend requires the backend's stable session user/profile identity.
+An email address by itself is **never** sufficient evidence that two views
+belong to the same account; the backend remains authoritative for tenant
+isolation. The frontend checks the session **before** making any tenant-scoped
+workspace reads, verifies it again after essential search/dashboard results
+and again before publishing optional private CV, facts and application-history
+results. A mismatch is **fail-closed**: the page clears old workspace data
+and asks for a reload rather than mixing responses across account identities.
+
+When an authenticated account changes during a live SPA session, SmartPloy
+also returns to the dashboard, clears unsaved text-entry state and the prior
+CV preview, and remounts its application editor using the new server identity.
+This prevents locally cached, unsaved CV/cover-letter text and browser packet
+state from being presented in the new account's application editor. Old
+background response generations cannot repopulate the new workspace.
+
+Browser and unit tests use synthetic two-account identities (including the
+same email under distinct user IDs) and fictional CV/letter text. This is
+**client-side defense in depth**, not a substitute for server tenant
+authorization or [real, approved two-account browser acceptance
+(#91)](https://github.com/galapoto/smartploy/issues/91). Authenticated
+mutating requests, login-cookie changes outside the SPA and real backend
+permission boundaries require separate review. No additional employer
+application or external AI permissions are granted.
