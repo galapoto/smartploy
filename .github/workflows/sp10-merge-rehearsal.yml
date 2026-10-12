@@ -178,3 +178,36 @@ jobs:
           path: sp10-joined-evidence.json
           if-no-files-found: error
           retention-days: 7
+
+  pinned-portable-review-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    needs: pinned-rehearsal-tree-attestation
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout CI-only read-only packaging helper
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify nine pinned PR heads in isolated worktree again
+        run: python3 -B scripts/ci_merge_rehearsal.py
+
+      - name: Retrieve application-and-Docker identical-tree attestation
+        uses: actions/download-artifact@v4
+        with:
+          name: smartploy-nine-source-joined-evidence
+          path: .
+
+      - name: Create portable review bundle from exactly the tested Git tree
+        run: python3 -B scripts/ci_portable_review_candidate.py
+
+      - name: Upload signed-in GitHub only, review-only bundle, checksums and manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-nine-source-offline-review-candidate
+          path: sp10-offline-release-candidate/
+          if-no-files-found: error
+          retention-days: 30
