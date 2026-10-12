@@ -255,3 +255,35 @@ provider-managed, so a new valid assertion is still checked against status
 on every request. Full authenticated A1–A7 acceptance, including real
 account switching, is tracked separately in
 [#91](https://github.com/galapoto/smartploy/issues/91).
+
+## Same-origin protection for OIDC cookie mutations
+
+SmartPloy's first-party OIDC session uses an HTTP-only host-only
+`__Host-smartploy_session` cookie with `Secure` and `SameSite=Lax`.
+These cookie flags do **not** by themselves protect an account-changing
+request initiated by another same-site subdomain. For protected
+`/api/*` POST/PUT/PATCH/DELETE actions authenticated with an active
+OIDC session, the backend therefore requires an exact `Origin` matching
+the configured HTTPS `SMARTPLOY_PUBLIC_ORIGIN`. Requests with missing,
+opaque, sibling, HTTP or otherwise different origins are denied with a
+no-store `403 csrf_origin_denied`. Conflicting `Sec-Fetch-Site`
+headers are denied too. The server never trusts caller-supplied `Host`
+or `X-Forwarded-Proto` to decide the allowed origin.
+
+The regular browser application uses same-origin fetch and supplies the
+required Origin automatically. An API script that deliberately uses a
+browser session cookie must explicitly send the correct Origin; only
+non-cookie Cloudflare Access bearer assertion flows retain their
+existing authorization rules. The guard does not grant source-operation
+privileges, change operator IDs, permit cross-user data access or
+authorize external employer submissions.
+
+**Scope:** This protects authenticated **API mutations**, not all possible
+browser CSRF surfaces. Public OIDC callback and logout redirects keep
+their existing provider flow; anti-forgery for logout navigation requires
+a separate design before public multi-user launch. This is code-only
+synthetic test evidence, not proof of production OIDC or Cloudflare
+configuration. The account-suspension middleware change in
+[PR #121](https://github.com/galapoto/smartploy/pull/121) must be
+independently reviewed and integrated first. Owner-approved real A1–A7
+browser verification under issue #91 is still required.

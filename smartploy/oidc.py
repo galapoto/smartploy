@@ -582,6 +582,7 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
         sessions: MemorySessionRepository | PostgresSessionRepository,
         access_settings: AccessSettings,
         identity_repository: IdentityRepository,
+        oidc_public_origin: str = "",
         access_verifier: CloudflareAccessVerifier | None = None,
     ) -> None:
         super().__init__(app)
@@ -589,6 +590,13 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
         self.sessions = sessions
         self.access_settings = access_settings
         self.identity_repository = identity_repository
+        # OIDC mode must use the configured canonical HTTPS origin, never
+        # Host/X-Forwarded-* headers supplied by an untrusted browser.
+        self.oidc_public_origin = oidc_public_origin
+        if authentication.oidc_enabled and not self.oidc_public_origin:
+            raise AuthenticationConfigurationError(
+                "OIDC cookie authentication requires a configured public origin"
+            )
         self.access_verifier = access_verifier
         if (
             authentication.cloudflare_enabled
@@ -596,6 +604,34 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
             and self.access_verifier is None
         ):
             self.access_verifier = CloudflareAccessVerifier(access_settings)
+
+    def _reject_cross_origin_cookie_mutation(self, request: Request) -> Response | None:
+        """Require an exact same-origin browser request for OIDC cookie writes.
+
+        SameSite=Lax is not sufficient against other same-site subdomains.
+        A cookie-authenticated request is a browser session, not a bearer
+        token API. Missing Origin fails closed (including non-browser POSTs).
+        Browser fetch supplies Origin on POST/PUT/PATCH/DELETE. Cloudflare-only
+        requests without an OIDC cookie keep their existing authorization.
+        """
+        if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None
+        if not request.url.path.startswith("/api/"):
+            return None
+
+        origin = request.headers.get("origin", "")
+        if origin != self.oidc_public_origin:
+            return self._deny(
+                403, "csrf_origin_denied",
+                "A same-origin SmartPloy request is required for this action.",
+            )
+        fetch_site = request.headers.get("sec-fetch-site", "").strip().casefold()
+        if fetch_site not in {"", "same-origin", "none"}:
+            return self._deny(
+                403, "csrf_origin_denied",
+                "A same-origin SmartPloy request is required for this action.",
+            )
+        return None
 
     async def _authorize_principal(
         self,
@@ -667,6 +703,9 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
             if raw_session:
                 record = await asyncio.to_thread(self.sessions.get, raw_session)
                 if record is not None:
+                    csrf_denial = self._reject_cross_origin_cookie_mutation(request)
+                    if csrf_denial is not None:
+                        return csrf_denial
                     return await self._authorize_principal(
                         request, call_next, record.principal(),
                         session_user_id=record.user_id,
