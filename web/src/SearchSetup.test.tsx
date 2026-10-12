@@ -42,9 +42,10 @@ describe("first-use choice and saved settings", () => {
     }} onSave={save} />);
     expect((screen.getByRole("radio", { name: /general job search/i }) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /browse all jobs/i }));
-    await waitFor(() => expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
       mode: "general", expected_revision: 0,
-    })));
+    }));
 
     // A genuinely newer saved revision *must* rehydrate Settings correctly.
     rerender(<SearchSetup initial={{
