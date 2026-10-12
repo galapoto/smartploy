@@ -380,6 +380,7 @@ def create_app(
         sessions=sessions,
         access_settings=access_settings,
         identity_repository=resolved_identities,
+        oidc_public_origin=oidc_settings.public_origin if oidc_settings else "",
         access_verifier=access_verifier,
     )
     app.state.smartploy = active
