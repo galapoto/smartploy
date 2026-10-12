@@ -530,13 +530,93 @@ def create_app(
         set_session_cookie(response, issued.token, oidc_settings.session_ttl_seconds)
         return response
 
-    @app.api_route("/auth/logout", methods=["GET", "POST"])
-    async def auth_logout(request: Request):
+    # These pages contain no account-specific values, cookies or identity
+    # details. A cross-site GET navigation must never revoke a session.
+    def logout_page(content: str, *, status_code: int = 200) -> Response:
+        return Response(
+            content=content,
+            status_code=status_code,
+            media_type="text/html",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+                "X-Frame-Options": "DENY",
+                "Content-Security-Policy": (
+                    "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
+                    "form-action 'self'; style-src 'unsafe-inline'"
+                ),
+            },
+        )
+
+    @app.get("/auth/logout")
+    async def auth_logout_confirmation() -> Response:
+        if oidc_settings is None:
+            raise HTTPException(status_code=404, detail="OIDC logout is not enabled")
+        return logout_page(
+            """<!doctype html><html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Sign out | SmartPloy</title><style>
+            body{background:#f5f7f8;color:#18343c;font:16px/1.6 system-ui,sans-serif;
+                 min-height:100vh;display:grid;place-items:center;margin:0;padding:1rem}
+            main{max-width:450px;background:white;padding:2rem;border-radius:20px;
+                 box-shadow:0 12px 38px #18343c12}
+            h1{font-size:1.7rem;line-height:1.25}
+            button{background:#175b62;color:white;border:0;border-radius:10px;
+                   padding:0.85rem 1.4rem;font:inherit;font-weight:650;cursor:pointer}
+            a{color:#175b62;margin-left:1rem}
+            small{display:block;margin-top:1.5rem;color:#50676b}
+            </style></head><body><main><strong>SmartPloy</strong>
+            <h1>Sign out of SmartPloy?</h1>
+            <p>Confirm to end this browser's SmartPloy session.
+            This will not submit a job application or change your profile.</p>
+            <form method="post" action="/auth/logout">
+              <button type="submit">Confirm sign out</button>
+              <a href="/">Cancel</a>
+            </form><small>Your identity provider may have its own session.</small>
+            </main></body></html>"""
+        )
+
+    @app.post("/auth/logout")
+    async def auth_logout(request: Request) -> Response:
+        if oidc_settings is None:
+            raise HTTPException(status_code=404, detail="OIDC logout is not enabled")
+
+        # A browser form POST supplies Origin. SameSite=Lax alone does not
+        # stop requests from another same-site subdomain. Do not rely on
+        # caller-controlled Host or reverse-proxy forwarding headers.
+        if (
+            request.headers.get("origin", "") != oidc_settings.public_origin
+            or request.headers.get("sec-fetch-site", "").strip().casefold()
+            not in {"", "same-origin", "none"}
+        ):
+            return SmartployAuthenticationMiddleware._deny(
+                403, "csrf_origin_denied",
+                "Confirm sign-out from the SmartPloy website.",
+            )
+
         raw_session = request.cookies.get(SESSION_COOKIE_NAME, "")
         if raw_session:
-            await __import__("asyncio").to_thread(sessions.revoke, raw_session)
+            try:
+                await asyncio.to_thread(sessions.revoke, raw_session)
+            except Exception:
+                # Clearing a browser cookie does NOT prove that the backing
+                # database session was revoked. Do not claim full sign-out or
+                # redirect to the identity provider in this failure mode.
+                response = logout_page(
+                    """<!doctype html><html lang="en"><head><meta charset="utf-8">
+                    <title>Sign-out incomplete | SmartPloy</title></head>
+                    <body><main><h1>Sign-out could not be completed</h1>
+                    <p>Your browser cookie has been cleared, but the server
+                    could not confirm session revocation. Close this browser
+                    on a shared device and contact support if necessary.</p>
+                    <a href="/auth/login">Sign in again</a></main></body></html>""",
+                    status_code=503,
+                )
+                clear_session_cookie(response)
+                return response
 
-        if oidc_settings is not None and oidc_remote is not None:
+        if oidc_remote is not None:
             request.scope.setdefault("session", {})
             try:
                 response = await oidc_remote.logout_redirect(
@@ -545,17 +625,28 @@ def create_app(
                     client_id=oidc_settings.client_id,
                 )
             except Exception:
+                # Local session is revoked; provider logout is not confirmed.
                 response = RedirectResponse(url="/auth/logged-out", status_code=303)
         else:
-            response = RedirectResponse(url="/", status_code=303)
+            response = RedirectResponse(url="/auth/logged-out", status_code=303)
         clear_session_cookie(response)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
     @app.get("/auth/logged-out")
-    async def auth_logged_out():
-        response = RedirectResponse(url="/", status_code=303)
-        clear_session_cookie(response)
-        return response
+    async def auth_logged_out() -> Response:
+        # A direct external GET must be inert: do not revoke or even clear an
+        # existing cookie here. The protected POST already did both.
+        return logout_page(
+            """<!doctype html><html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>SmartPloy sign-out</title></head><body>
+            <main><h1>SmartPloy sign-out</h1>
+            <p>If you confirmed sign-out, your local SmartPloy session has ended.
+            Signing out of your identity provider may require a separate step.</p>
+            <a href="/auth/login">Sign in</a></main></body></html>"""
+        )
 
     @app.get("/api/v1/session")
     def session(request: Request) -> dict[str, Any]:

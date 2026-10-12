@@ -186,7 +186,13 @@ def test_oidc_cookie_is_revoked_when_account_becomes_disabled(monkeypatch):
         identities._bindings[binding.user_id], status="active"
     )
     assert api.get("/api/v1/session").status_code == 401
-    logout = api.get("/auth/logout")
+    preview = api.get("/auth/logout")
+    assert preview.status_code == 200
+    assert "Confirm sign out" in preview.text
+    logout = api.post("/auth/logout", headers={
+        "Origin": "https://smartploy.obumai.com",
+        "Sec-Fetch-Site": "same-origin",
+    })
     assert logout.status_code == 303
     assert logout.headers["location"] == "/auth/logged-out"
     assert "Max-Age=0" in logout.headers["set-cookie"]
