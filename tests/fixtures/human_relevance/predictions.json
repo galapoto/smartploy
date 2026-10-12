@@ -1,0 +1,68 @@
+{
+  "contract": "smartploy.human-relevance.predictions.v1",
+  "dataset_id": "fictional-fi-en-v1",
+  "model_sha": "fc94e78e779650e781277ee1056ec92cd26a6e98",
+  "generated_at": "2025-01-01T00:01:00Z",
+  "rows": [
+    {
+      "id": "case-001",
+      "lane": "recommended",
+      "qualification_verified": false
+    },
+    {
+      "id": "case-002",
+      "lane": "recommended",
+      "qualification_verified": false
+    },
+    {
+      "id": "case-003",
+      "lane": "broader",
+      "qualification_verified": false
+    },
+    {
+      "id": "case-004",
+      "lane": "broader",
+      "qualification_verified": false
+    },
+    {
+      "id": "case-005",
+      "lane": "broader",
+      "qualification_verified": false
+    },
+    {
+      "id": "case-006",
+      "lane": "recommended",
+      "qualification_verified": false
+    },
+    {
+      "id": "case-007",
+      "lane": "broader",
+      "qualification_verified": false
+    },
+    {
+      "id": "case-008",
+      "lane": "recommended",
+      "qualification_verified": false
+    },
+    {
+      "id": "case-009",
+      "lane": "broader",
+      "qualification_verified": false
+    },
+    {
+      "id": "case-010",
+      "lane": "recommended",
+      "qualification_verified": false
+    },
+    {
+      "id": "case-011",
+      "lane": "broader",
+      "qualification_verified": false
+    },
+    {
+      "id": "case-012",
+      "lane": "recommended",
+      "qualification_verified": false
+    }
+  ]
+}
