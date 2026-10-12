@@ -279,6 +279,75 @@ test("Settings save is not overwritten by a manual refresh during an in-flight w
   await expect(page.getByText("General listing")).toHaveCount(2);
 });
 
+test("identity switch while search Settings PUT is in flight fails closed in the real SPA", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: {
+      completed: true, mode: "personalized",
+      roles: ["Account A role"], revision: 2,
+    },
+  });
+  let finishSave: () => void = () => {};
+  const saveGate = new Promise<void>((resolve) => { finishSave = resolve; });
+  let notifySaveStarted: () => void = () => {};
+  const saveStarted = new Promise<void>((resolve) => { notifySaveStarted = resolve; });
+  let interceptedSaves = 0;
+
+  // Hold account A's original PUT response. A synthetic switch to account B
+  // must not publish it, even when the visible email is unchanged.
+  await page.route("**/api/v1/search-preferences", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+    interceptedSaves += 1;
+    const payload = JSON.parse(route.request().postData() || "{}") as Record<string, unknown>;
+    expect(payload.mode).toBe("general");
+    expect(payload.expected_revision).toBe(2);
+    notifySaveStarted();
+    await saveGate;
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      headers: { "Cache-Control": "no-store" },
+      body: JSON.stringify({
+        ...EMPTY_PREFERENCES, completed: true, mode: "general",
+        roles: ["Account A role"], revision: 3,
+        updated_at: "2026-10-12T08:00:00Z",
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.getByText("87% search match")).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("radio", { name: /General job search/i }).check();
+  await page.getByRole("button", { name: /Save search preferences/i }).click();
+  await saveStarted;
+  await expect(page.getByRole("button", { name: /Saving/i })).toBeDisabled();
+
+  state.userId = "synthetic-user-b"; // the synthetic email stays identical
+  state.preferences = {
+    ...EMPTY_PREFERENCES, completed: true, mode: "personalized",
+    roles: ["Account B role"], revision: 7,
+  };
+  finishSave();
+
+  await expect(page.getByRole("heading", { name: /SmartPloy isn't available/i })).toBeVisible();
+  await expect(page.getByText(/signed-in account changed or could not be verified while saving/i))
+    .toBeVisible();
+  await expect(page.getByText("General listing")).toHaveCount(0);
+  expect(interceptedSaves).toBe(1);
+  expect(state.preferences.roles).toEqual(["Account B role"]);
+
+  // A deliberate reload of the private workspace retrieves account B's own
+  // preferences; no stale account A save result can switch B into General.
+  await page.getByRole("button", { name: /Try again/i }).click();
+  await expect(page.getByText("87% search match")).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByRole("radio", { name: /Personalized jobs/i })).toBeChecked();
+  await expect(page.getByPlaceholder(/Data analyst, Junior software tester/i))
+    .toHaveValue("Account B role");
+});
+
 test("a same-email account change resets unsaved criteria and private CV details", async ({ page }) => {
   const state = await installSyntheticApi(page, {
     initial: {
