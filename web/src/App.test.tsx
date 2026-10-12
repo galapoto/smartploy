@@ -499,6 +499,57 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(personalJobs).toHaveLength(0);
   });
 
+  it("does not show an old-account saved-job success notice after refresh changes account", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    let currentUser = "a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@example.invalid",
+      user_id: "user-" + currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture",
+    }));
+    vi.mocked(api.getPrivateSavedJobs).mockImplementation(async () => ({
+      jobs: currentUser === "a" ? [...personalJobs] : [],
+      count: currentUser === "a" ? personalJobs.length : 0, private: true,
+    }));
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    const originalReads = vi.mocked(api.getSearchPreferences).mock.calls.length;
+
+    let finishReload: (value: SearchPreferences) => void = () => {
+      throw new Error("Expected pending search-preference read");
+    };
+    vi.mocked(api.getSearchPreferences).mockImplementationOnce(() =>
+      new Promise<SearchPreferences>((resolve) => { finishReload = resolve; })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Save job" })[0]);
+    fireEvent.change(screen.getByPlaceholderText("e.g. Junior Data Analyst"), {
+      target: { value: "PRIVATE-ACCOUNT-A-JOB" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Employer name"), {
+      target: { value: "Synthetic Studio" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Paste the responsibilities and key requirements here."), {
+      target: { value: "Private fictional work only" },
+    });
+    const form = screen.getByRole("dialog").querySelector("form");
+    if (!form) throw new Error("Bookmark modal missing");
+    fireEvent.submit(form);
+    await waitFor(() => expect(api.getSearchPreferences).toHaveBeenCalledTimes(
+      originalReads + 1
+    ));
+    currentUser = "b";
+    await act(async () => { finishReload({ ...currentPrefs }); });
+
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    expect(screen.queryByText(/Job saved privately to your account/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(screen.queryByText("PRIVATE-ACCOUNT-A-JOB")).toBeNull();
+    expect(screen.getByText(/No private saved jobs yet/i)).toBeTruthy();
+  });
+
   it("clears private saved jobs when same-email account identity changes", async () => {
     currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
     const accountA: PrivateSavedJob = {
