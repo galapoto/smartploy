@@ -119,6 +119,36 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(vi.mocked(api.getSearchResults)).toHaveBeenCalled();
   });
 
+  it("offers deliberate sign-out to OIDC users without logging out from navigation", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getSession).mockResolvedValue({
+      authenticated: true, email: "oidc@example.invalid",
+      user_id: "usr-oidc-synthetic", profile_id: "profile-oidc-synthetic",
+      auth_source: "oidc",
+    });
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const signOut = await screen.findByRole("link", { name: /Sign out securely/i });
+    expect(signOut.getAttribute("href")).toBe("/auth/logout");
+    // Navigation to GET only displays a confirmation; no client-side
+    // automatic logout fetch or redirect to an unsafe external origin.
+    expect(vi.mocked(api.getSession)).toHaveBeenCalled();
+  });
+
+  it("does not offer an OIDC logout action for Cloudflare-only sessions", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getSession).mockResolvedValue({
+      authenticated: true, email: "access@example.invalid",
+      user_id: "usr-cf-synthetic", profile_id: "profile-cf-synthetic",
+      auth_source: "cloudflare_access",
+    });
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.queryByRole("link", { name: /Sign out securely/i })).toBeNull();
+  });
+
   it("supports general browsing and opens an application without personalized criteria", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("radio", { name: /general job search/i }));
