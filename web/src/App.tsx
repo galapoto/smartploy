@@ -577,6 +577,9 @@ export default function App() {
               <button className="outline-btn" type="button" onClick={() => navigate("profile")}>
                 Manage personal data <ArrowRight size={16} />
               </button>
+              {session?.auth_source === "oidc" ? <a className="outline-btn" href="/auth/logout">
+                Sign out securely <ArrowRight size={16} />
+              </a> : null}
             </section>
           </div> : null}
         </> : null}
