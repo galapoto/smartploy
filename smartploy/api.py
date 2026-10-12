@@ -38,6 +38,7 @@ from .identity import (
 )
 from .domain import JobSearchFilters, SourceObservation, SourcePolicy
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
+from .operator_access import OperatorAccessPolicy
 from .oidc import (
     AuthenticationSettings,
     MemoryOIDCStateCache,
@@ -403,6 +404,9 @@ def create_app(
     app.state.oidc_client = oidc_remote
     app.state.session_repository = sessions
     app.state.identity_repository = identity_repository or _build_identity_repository()
+    # Empty allowlist denies every authenticated browser user shared writes.
+    # Production operators must be granted an explicit stable server user ID.
+    app.state.operator_access = OperatorAccessPolicy.from_env()
     app.state.tenant_services = {}
     app.state.cv_repository = PostgresCVRepository(dsn) if dsn else MemoryCVRepository()
     app.state.workspace_repository = PostgresWorkspaceRepository(dsn) if dsn else MemoryWorkspaceRepository()
@@ -671,8 +675,26 @@ def create_app(
             raise HTTPException(status_code=404, detail="No CV uploaded")
         return {"deleted": True}
 
+    def require_shared_ingestion_operator(request: Request) -> None:
+        # Unauthenticated local test/development APIs preserve the legacy
+        # manual-ingest fixtures. Production disallows disabled auth entirely.
+        if authentication.mode == "disabled":
+            return
+
+        # The auth middleware supplies the verified principal; resolve its
+        # canonical user ID (including explicitly linked provider identities).
+        # Do not inspect email, headers, or client-provided role claims.
+        _, binding = tenant_context(request)
+        if not app.state.operator_access.allows(binding):
+            raise HTTPException(
+                status_code=403,
+                detail="Operator authorization required for shared job sources",
+                headers={"Cache-Control": "no-store"},
+            )
+
     @app.post("/api/v1/sources")
-    def register_source(payload: SourcePolicyPayload) -> dict[str, Any]:
+    def register_source(payload: SourcePolicyPayload, request: Request) -> dict[str, Any]:
+        require_shared_ingestion_operator(request)
         try:
             policy = active.register_source(
                 SourcePolicy(
@@ -702,7 +724,8 @@ def create_app(
         return item.to_dict()
 
     @app.post("/api/v1/jobs/ingest")
-    def ingest(payload: IngestPayload) -> dict[str, Any]:
+    def ingest(payload: IngestPayload, request: Request) -> dict[str, Any]:
+        require_shared_ingestion_operator(request)
         obs = payload.observation
         filters = payload.filters
         observation = SourceObservation(
