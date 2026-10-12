@@ -97,6 +97,17 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
+function switchableSession() {
+  let account = "a";
+  vi.mocked(api.getSession).mockImplementation(async () => ({
+    authenticated: true, email: "shared@smartploy.invalid",
+    user_id: "usr-account-" + account,
+    profile_id: "profile-account-" + account,
+    auth_source: "fixture",
+  }));
+  return () => { account = "b"; };
+}
+
 describe("actual SmartPloy App first-use and application handoff", () => {
   it("renders the first-use chooser even if optional AI status never returns", async () => {
     vi.mocked(api.getLocalAIStatus).mockImplementation(
@@ -348,6 +359,86 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     await waitFor(() => expect(currentPrefs.mode).toBe("general"));
     expect(await screen.findByText(/1 current job listings/i)).toBeTruthy();
     expect(screen.queryByText(/90% search match/i)).toBeNull();
+  });
+
+  it("discards an old CV upload response after the account changes", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    const switchToB = switchableSession();
+    let complete: (value: Awaited<ReturnType<typeof api.uploadCV>>) => void = () => {
+      throw new Error("Upload did not start");
+    };
+    vi.mocked(api.uploadCV).mockImplementationOnce(() =>
+      new Promise(resolve => { complete = resolve; })
+    );
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), { target: {
+      files: [new File(["synthetic"], "PRIVATE-ACCOUNT-A.pdf", { type: "application/pdf" })],
+    } });
+    await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
+    switchToB();
+    await act(async () => {
+      complete({ present: true, filename: "PRIVATE-ACCOUNT-A.pdf",
+        text_preview: "ACCOUNT-A-PRIVATE-CV-TEXT" });
+    });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByText("PRIVATE-ACCOUNT-A.pdf")).toBeNull();
+    expect(screen.getByText(/could not be verified during a private action/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    expect(screen.queryByText("PRIVATE-ACCOUNT-A.pdf")).toBeNull();
+  });
+
+  it("does not open a delayed account A application workspace for account B", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    const switchToB = switchableSession();
+    let complete: (value: Awaited<ReturnType<typeof api.startApplicationWorkspace>>) => void = () => {
+      throw new Error("Workspace did not start");
+    };
+    vi.mocked(api.startApplicationWorkspace).mockImplementationOnce(() =>
+      new Promise(resolve => { complete = resolve; })
+    );
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /prepare documents/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
+    switchToB();
+    await act(async () => {
+      complete({ workspace: { workspace_id: "PRIVATE-A-DRAFT" }, created: true } as never);
+    });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "My applications" }));
+    expect((await screen.findByTestId("application-editor")).getAttribute("data-workspace")).toBe("");
+  });
+
+  it("clears an old-account fact entry when a save finishes after account switching", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    const switchToB = switchableSession();
+    let complete: (value: Awaited<ReturnType<typeof api.createFact>>) => void = () => {
+      throw new Error("Fact save did not start");
+    };
+    vi.mocked(api.createFact).mockImplementationOnce(() =>
+      new Promise(resolve => { complete = resolve; })
+    );
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    fireEvent.change(screen.getByPlaceholderText(/Python, Finnish B2, data analytics/i), {
+      target: { value: "PRIVATE-ACCOUNT-A-FACT" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save for review" }));
+    await waitFor(() => expect(api.createFact).toHaveBeenCalledTimes(1));
+    switchToB();
+    await act(async () => { complete({ fact: { value: "PRIVATE-ACCOUNT-A-FACT" } } as never); });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByText("PRIVATE-ACCOUNT-A-FACT")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    expect((screen.getByPlaceholderText(/Python, Finnish B2, data analytics/i) as HTMLInputElement).value).toBe("");
   });
 
   it("clears same-email account A's private CV and facts before showing account B", async () => {
