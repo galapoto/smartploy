@@ -131,7 +131,12 @@ export default function App() {
   // The 60-second polling interval may overlap slow model/provider requests.
   const loadGeneration = useRef(0);
   const lastSessionIdentity = useRef<string | null>(null);
+  // Search preference writes must be atomic from the UI's perspective.
+  // A 60-second background poll or a manual refresh must never replace an
+  // in-flight save with an older server snapshot or re-open first-use setup.
+  const savingSearchPreferences = useRef(false);
   const load = useCallback(async (quiet = false) => {
+    if (savingSearchPreferences.current) return;
     const generation = ++loadGeneration.current;
     if (quiet) setRefreshing(true); else setLoading(true);
     // Start the slower optional requests in parallel, without making first
@@ -204,18 +209,28 @@ export default function App() {
 
   const navigate = (target: Page) => { setPage(target); setMobileNav(false); setNotice(""); };
   async function saveSearchPreferences(next: SearchPreferencesUpdate) {
-    // A pending automatic refresh must never overwrite this user's save.
+    if (savingSearchPreferences.current) {
+      throw new Error("A search preference save is already in progress.");
+    }
+    savingSearchPreferences.current = true;
+    // Invalidate every pre-save refresh (including its pending private data).
+    // Skip any new refresh until the preference write and its matching
+    // discovery response have both settled.
     ++loadGeneration.current;
     setRefreshing(false);
-    const result = await updateSearchPreferences(next);
-    setPreferences(result);
-    const fresh = await getSearchResults();
-    setDiscovery(fresh);
-    setPage("dashboard");
-    setView("top");
-    setNotice(result.mode === "general"
-      ? "General search enabled: all current jobs, no personalization."
-      : "Your search targets were saved. Recommendations now reflect your criteria.");
+    try {
+      const result = await updateSearchPreferences(next);
+      setPreferences(result);
+      const fresh = await getSearchResults();
+      setDiscovery(fresh);
+      setPage("dashboard");
+      setView("top");
+      setNotice(result.mode === "general"
+        ? "General search enabled: all current jobs, no personalization."
+        : "Your search targets were saved. Recommendations now reflect your criteria.");
+    } finally {
+      savingSearchPreferences.current = false;
+    }
   }
 
   async function changeSearchMode(target: "personalized" | "general") {
