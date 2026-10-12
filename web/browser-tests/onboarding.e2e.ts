@@ -230,6 +230,55 @@ test("general browsing needs no CV; Settings switches into and out of personaliz
   await expect(page.getByText(/search match/i)).toHaveCount(0);
 });
 
+test("Settings save is not overwritten by a manual refresh during an in-flight write", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: {
+      completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 2,
+    },
+  });
+  let preferenceReads = 0;
+  let notifySaveStarted: () => void = () => {};
+  const saveStarted = new Promise<void>((resolve) => { notifySaveStarted = resolve; });
+  let finishSave: () => void = () => {};
+  const saveGate = new Promise<void>((resolve) => { finishSave = resolve; });
+
+  // Route.fallback retains the approved in-test synthetic API handler;
+  // no real employer/production requests or user data are involved.
+  await page.route("**/api/v1/search-preferences", async (route) => {
+    if (route.request().method() === "PUT") {
+      notifySaveStarted();
+      await saveGate;
+    } else {
+      preferenceReads += 1;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/");
+  await expect(page.getByText("87% search match")).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("radio", { name: /General job search/i }).check();
+  const readsBeforeSave = preferenceReads;
+  await page.getByRole("button", { name: /Save search preferences/i }).click();
+  await saveStarted;
+  await expect(page.getByRole("button", { name: /Saving/i })).toBeDisabled();
+
+  await page.getByRole("button", { name: "Refresh workspace" }).click();
+  expect(preferenceReads).toBe(readsBeforeSave);
+  expect(state.preferences.mode).toBe("personalized");
+
+  finishSave();
+  await expect(page.getByRole("heading", { name: "Latest jobs in Finland" })).toBeVisible();
+  await expect(page.getByText("General listing")).toHaveCount(2);
+  await expect(page.getByText(/search match/i)).toHaveCount(0);
+  expect(state.preferences.mode).toBe("general");
+
+  await page.getByRole("button", { name: "Refresh workspace" }).click();
+  await expect.poll(() => preferenceReads).toBe(readsBeforeSave + 1);
+  await expect(page.getByText("General listing")).toHaveCount(2);
+});
+
 test("a same-email account change resets unsaved criteria and private CV details", async ({ page }) => {
   const state = await installSyntheticApi(page, {
     initial: {
