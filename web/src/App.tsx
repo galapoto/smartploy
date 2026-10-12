@@ -99,6 +99,9 @@ function sessionIdentity(who: SessionInfo): string {
   return JSON.stringify([subject, who.auth_source || ""]);
 }
 
+/** User-facing API mutations must never publish another account's response. */
+class PrivateActionIdentityChanged extends Error {}
+
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -149,11 +152,61 @@ export default function App() {
     setPage("dashboard"); setSearch(""); setExpandedJob("");
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
+    setBusyCV(false); setBusyFact(""); setPreparing(""); setManualBusy(false);
+    if (uploadRef.current) uploadRef.current.value = "";
     setJobForm({
       company: "", role_title: "", location: "",
       description: "", application_url: ""
     });
   }, []);
+
+  /** Check account identity on both sides of every private mutation.
+   *
+   * A mutation may have reached the server before an account change; this
+   * protects the rendered workspace, it does NOT undo server-side effects.
+   * Backend authorization remains mandatory for each operation.
+   */
+  const runPrivateMutation = useCallback(async <T,>(
+    action: () => Promise<T>
+  ): Promise<T> => {
+    const expectedIdentity = lastSessionIdentity.current;
+    const denyStaleAction = (): never => {
+      ++loadGeneration.current; // invalidate private GET responses in flight
+      lastSessionIdentity.current = null;
+      clearPrivateWorkspace();
+      setLoading(false);
+      setRefreshing(false);
+      setError(
+        "The signed-in account changed or could not be verified during a private action. Reload this workspace."
+      );
+      throw new PrivateActionIdentityChanged();
+    };
+    const verifyIdentity = async () => {
+      let currentIdentity: string | null = null;
+      try {
+        currentIdentity = sessionIdentity(await getSession());
+      } catch {
+        // A missing/expired session fails closed, even when email is unchanged.
+      }
+      if (!expectedIdentity || currentIdentity !== expectedIdentity ||
+          lastSessionIdentity.current !== expectedIdentity) {
+        denyStaleAction();
+      }
+    };
+
+    await verifyIdentity(); // never dispatch an action for an unverified account
+    try {
+      const result = await action();
+      await verifyIdentity(); // discard stale successful mutation responses
+      return result;
+    } catch (exc) {
+      if (exc instanceof PrivateActionIdentityChanged) throw exc;
+      // A request failure can coincide with logout. Do not display errors
+      // from account A inside B's workspace.
+      await verifyIdentity();
+      throw exc;
+    }
+  }, [clearPrivateWorkspace]);
 
   const load = useCallback(async (quiet = false) => {
     if (savingSearchPreferences.current) return;
@@ -324,93 +377,140 @@ export default function App() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    const actionIdentity = lastSessionIdentity.current;
     setBusyCV(true); setNotice("");
     try {
-      const uploaded = await uploadCV(file);
+      const uploaded = await runPrivateMutation(() => uploadCV(file));
       setCV(uploaded); setCVPreview(true); navigate("profile");
       setNotice("Your CV was uploaded privately. Review its text and confirm facts before matching.");
       await load(true);
     } catch (exc) {
+      if (exc instanceof PrivateActionIdentityChanged) return;
       navigate("profile");
       setNotice(exc instanceof Error ? exc.message : "CV upload failed.");
-    } finally { setBusyCV(false); }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setBusyCV(false);
+    }
   }
 
   async function onDeleteCV() {
     if (!window.confirm("Remove your uploaded CV? Approved profile facts will remain until you remove them separately.")) return;
+    const actionIdentity = lastSessionIdentity.current;
     setBusyCV(true);
     try {
-      await deleteCV(); setCV({ present: false }); setCVPreview(false);
+      await runPrivateMutation(deleteCV);
+      setCV({ present: false }); setCVPreview(false);
       setNotice("Your uploaded CV has been removed.");
-    } catch (exc) { setNotice(exc instanceof Error ? exc.message : "Unable to remove CV."); }
-    finally { setBusyCV(false); }
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to remove CV.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setBusyCV(false);
+    }
   }
 
   async function onAddFact(event: FormEvent) {
     event.preventDefault();
-    if (!newFactValue.trim()) return;
+    const factValue = newFactValue.trim();
+    if (!factValue) return;
+    const actionIdentity = lastSessionIdentity.current;
+    const factType = newFactType;
+    const approvedByUser = confirmFact;
     setBusyFact("new");
     try {
-      await createFact(newFactType, newFactValue.trim(), confirmFact);
+      await runPrivateMutation(() => createFact(factType, factValue, approvedByUser));
       setNewFactValue(""); setConfirmFact(false);
-      setNotice(confirmFact ? "Approved profile evidence saved." : "Fact saved for review.");
+      setNotice(approvedByUser ? "Approved profile evidence saved." : "Fact saved for review.");
       await load(true);
-    } catch (exc) { setNotice(exc instanceof Error ? exc.message : "Unable to save fact."); }
-    finally { setBusyFact(""); }
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to save fact.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setBusyFact("");
+    }
   }
 
   async function onFactApproval(fact: CandidateFact) {
+    const actionIdentity = lastSessionIdentity.current;
     setBusyFact(fact.fact_id);
     try {
-      await approveFact(fact.fact_id, !fact.approved);
+      await runPrivateMutation(() => approveFact(fact.fact_id, !fact.approved));
       await load(true);
-    } catch (exc) { setNotice(exc instanceof Error ? exc.message : "Unable to update fact."); }
-    finally { setBusyFact(""); }
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to update fact.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setBusyFact("");
+    }
   }
 
   async function onFactDelete(fact: CandidateFact) {
     if (!window.confirm("Permanently remove this profile fact?")) return;
+    const actionIdentity = lastSessionIdentity.current;
     setBusyFact(fact.fact_id);
-    try { await deleteFact(fact.fact_id); await load(true); }
-    catch (exc) { setNotice(exc instanceof Error ? exc.message : "Unable to delete fact."); }
-    finally { setBusyFact(""); }
+    try {
+      await runPrivateMutation(() => deleteFact(fact.fact_id));
+      await load(true);
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to delete fact.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setBusyFact("");
+    }
   }
 
   async function onManualJob(event: FormEvent) {
     event.preventDefault();
-    if (!jobForm.company.trim() || !jobForm.role_title.trim() || !jobForm.description.trim()) return;
-    if (jobForm.application_url.trim()) {
+    const payload = { ...jobForm };
+    if (!payload.company.trim() || !payload.role_title.trim() || !payload.description.trim()) return;
+    if (payload.application_url.trim()) {
       try {
-        const url = new URL(jobForm.application_url);
+        const url = new URL(payload.application_url);
         if (!["http:", "https:"].includes(url.protocol)) throw new Error("invalid protocol");
       } catch { setNotice("The job posting link must be a valid HTTP or HTTPS URL."); return; }
     }
+    const actionIdentity = lastSessionIdentity.current;
     setManualBusy(true);
     try {
-      const result = await addManualJob(jobForm);
+      const result = await runPrivateMutation(() => addManualJob(payload));
       if (result.status !== "discovered") throw new Error("The job was not accepted: " + result.status);
-      setJobDialog(false); setJobForm({ company: "", role_title: "", location: "", description: "", application_url: "" });
+      setJobDialog(false);
+      setJobForm({ company: "", role_title: "", location: "", description: "", application_url: "" });
+      navigate("jobs");
       setNotice("Job added. Add approved evidence to unlock personalised ranking.");
-      navigate("jobs"); await load(true);
-      setNotice("Job added. Add approved evidence to unlock personalised ranking.");
-    } catch (exc) { setNotice(exc instanceof Error ? exc.message : "Unable to add job."); }
-    finally { setManualBusy(false); }
+      await load(true);
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to add job.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setManualBusy(false);
+    }
   }
 
   async function onPrepare(canonicalKey: string) {
+    const actionIdentity = lastSessionIdentity.current;
     setPreparing(canonicalKey);
     try {
-      const response = await startApplicationWorkspace(canonicalKey);
+      const response = await runPrivateMutation(() => startApplicationWorkspace(canonicalKey));
       setSelectedWorkspaceId(response.workspace.workspace_id);
       navigate("applications");
       setNotice(response.created
         ? "Application documents are ready to edit. Review the draft before downloading or applying."
         : "Opened your existing private application documents.");
     } catch (exc) {
-      const detail = exc instanceof Error ? exc.message : "Unable to create application documents.";
-      if (/Upload a CV|approve profile facts|uploaded CV/i.test(detail)) navigate("profile");
-      setNotice(detail);
-    } finally { setPreparing(""); }
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        const detail = exc instanceof Error ? exc.message : "Unable to create application documents.";
+        if (/Upload a CV|approve profile facts|uploaded CV/i.test(detail)) navigate("profile");
+        setNotice(detail);
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setPreparing("");
+    }
   }
 
   if (loading && !dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><span className="spinner" /><p>Preparing your workspace…</p></div>;

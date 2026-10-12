@@ -136,3 +136,33 @@ different-user-ID / same-email race; production two-account sign-in and data
 isolation acceptance under [SP-10 #91](https://github.com/galapoto/smartploy/issues/91)
 is still required. No third-party job applications or external AI sending
 become authorized.
+
+## Account-switch safety for private application actions
+
+Private mutations initiated from the main SPA now revalidate the stable
+backend-issued session identity before invoking the API and again before
+publishing any successful result. The covered actions are CV upload/deletion,
+adding/approving/deleting profile facts, adding a manual job and opening a
+private application draft. If account verification fails, the SPA invalidates
+in-flight read generations, clears private editor fields, selected drafts,
+upload controls and busy indicators, and asks the user to reload. Stale
+operation errors are not displayed as if they belonged to the new account.
+An old action's completion cannot remount another account's application
+workspace.
+
+These frontend checks are **not** authorization, transaction isolation,
+request cancellation or evidence that the backend reversed a completed
+operation. An in-flight upload or mutation may already have reached the server
+before session verification failed. The FastAPI access middleware and
+profile-specific backend repositories must still enforce server-side
+authorization for every endpoint. A browser session switch between
+verification and sending a request remains a possible TOCTOU window until
+there is stronger backend request binding. Account IDs are never derived from
+email, and neither CV text nor submission authority is forwarded externally.
+
+Synthetic Vitest/Chromium checks reproduce a **same-email, different-user-ID**
+account change while CV, profile or draft actions are awaiting a response.
+They do not count as owner-authenticated live A1–A7 acceptance under
+[#91](https://github.com/galapoto/smartploy/issues/91). This implementation is
+reviewed separately under [#113](https://github.com/galapoto/smartploy/issues/113)
+and depends on prior [PR #112](https://github.com/galapoto/smartploy/pull/112).
