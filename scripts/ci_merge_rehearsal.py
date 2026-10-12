@@ -217,10 +217,14 @@ def main() -> int:
     if git("status", "--porcelain", cwd=worktree).stdout.strip():
         raise RehearsalError("Worktree not clean after final merge")
     final = git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
+    final_tree = git("rev-parse", "HEAD^{tree}", cwd=worktree).stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", final_tree):
+        raise RehearsalError("Unexpected source tree object SHA")
     report = {
         "format": "smartploy-nine-source-local-rehearsal-v1",
         "main_baseline": MAIN,
         "final_ephemeral_commit": final,
+        "final_tree_sha": final_tree,
         "merges": done,
         "never_pushed": True,
         "production_unmodified": True,
@@ -230,6 +234,7 @@ def main() -> int:
     )
     print("ALL NINE SOURCE MERGES PASSED; WORKTREE=" + str(worktree), flush=True)
     print("EPHEMERAL REHEARSAL SHA=" + final, flush=True)
+    print("MERGED CODE TREE SHA=" + final_tree, flush=True)
     return 0
 
 
