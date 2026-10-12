@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import * as api from "./api";
 import App from "./App";
@@ -118,6 +118,29 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledWith("test-analyst"));
     expect(await screen.findByTestId("application-editor")).toBeTruthy();
     expect(screen.getByTestId("application-editor").getAttribute("data-workspace")).toMatch(/^kit-/);
+  });
+
+  it("keeps General selected while optional user-profile requests finish in the background", async () => {
+    let finishCV = () => {};
+    vi.mocked(api.getCV).mockImplementationOnce(() => new Promise((resolve) => {
+      finishCV = () => resolve({ present: false });
+    }));
+
+    render(<App />);
+    const generalRadio = await screen.findByRole("radio", { name: /general job search/i });
+    fireEvent.click(generalRadio);
+    expect((generalRadio as HTMLInputElement).checked).toBe(true);
+
+    // This is the async first-use hydration race observed intermittently
+    // under CI load. No CV or model is required for General search.
+    await act(async () => { finishCV(); });
+    expect((screen.getByRole("radio", { name: /general job search/i }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /browse all jobs/i }));
+    await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "general", expected_revision: 0 })
+    ));
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    expect(screen.queryByText(/90% search match/i)).toBeNull();
   });
 
   it("saves new personalized settings and transparently changes ranked results", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, BriefcaseBusiness, Check, Compass, Globe2, MapPin, RotateCcw, SlidersHorizontal, Sparkles } from "lucide-react";
 import type { SearchPreferences, SearchPreferencesUpdate } from "./types";
 
@@ -44,8 +44,15 @@ export default function SearchSetup(props: {
   const [seniority, setSeniority] = useState(props.initial.seniority);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  // The initial form state was already hydrated by useState. A redundant
+  // mount-time effect can overwrite an immediate General-mode click when
+  // the parent is still finishing its asynchronous workspace loading.
+  // Only an actual saved preference revision should replace local edits.
+  const hydratedRevision = useRef(props.initial.revision);
 
   useEffect(() => {
+    if (hydratedRevision.current === props.initial.revision) return;
+    hydratedRevision.current = props.initial.revision;
     setMode(props.initial.mode);
     setRoles(props.initial.roles.join(", "));
     setLocations(props.initial.locations.join(", "));
