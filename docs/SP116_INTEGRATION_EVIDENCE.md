@@ -10,7 +10,7 @@ must be ported back to their source PRs before any production integration.
 - Search preference mutation privacy: PR #112 at `394ac40aa40a5433149657e85b9a0c7ab781986d`
 - Private CV/fact/application action privacy: PR #115 at `c8a0905570e680d92590d9fdc74994d08fc9b699`
 - Private user bookmarks backend and migration: PR #117 at `6ceb9b29e1914ebc5c335737fe1b0f5bf14e8028`
-- Account-private saved jobs UI: PR #118 at `ca07045b9b628fc8b0d19ee8c690ee9e9abed137`
+- Account-private saved jobs UI: PR #118 at `17e82ac9c5d4b92e5b2302f6ed704510e37e7a2f`
 - Operator-only shared ATS source/ingestion API: PR #119 at `2b73d2b44a227ba488b5a28ccd025e54ca0651a6`
 
 ## Composition
