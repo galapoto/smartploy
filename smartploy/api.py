@@ -384,6 +384,7 @@ def create_app(
         oidc_registry = build_oidc_registry(oidc_settings, state_cache)
         oidc_remote = oidc_registry.create_client("obum_identity")
 
+    resolved_identities = identity_repository or _build_identity_repository()
     app = FastAPI(title="Smartploy API", version="0.5.0")
     allowed_hosts = _allowed_hosts()
     if allowed_hosts:
@@ -393,6 +394,7 @@ def create_app(
         authentication=authentication,
         sessions=sessions,
         access_settings=access_settings,
+        identity_repository=resolved_identities,
         access_verifier=access_verifier,
     )
     app.state.smartploy = active
@@ -403,7 +405,7 @@ def create_app(
     app.state.oidc_registry = oidc_registry
     app.state.oidc_client = oidc_remote
     app.state.session_repository = sessions
-    app.state.identity_repository = identity_repository or _build_identity_repository()
+    app.state.identity_repository = resolved_identities
     # Empty allowlist denies every authenticated browser user shared writes.
     # Production operators must be granted an explicit stable server user ID.
     app.state.operator_access = OperatorAccessPolicy.from_env()
@@ -425,7 +427,15 @@ def create_app(
         if principal is None:
             return active, None
 
-        binding = app.state.identity_repository.resolve_or_create(principal)
+        binding = getattr(request.state, "smartploy_binding", None)
+        if not isinstance(binding, UserProfileBinding):
+            # Auth-disabled fixtures have no verified principal; otherwise
+            # request middleware must have validated and bound this account.
+            if authentication.mode != "disabled":
+                raise HTTPException(status_code=503, detail="Verified account binding is unavailable")
+            binding = app.state.identity_repository.resolve_or_create(principal)
+        if binding.status != "active":
+            raise HTTPException(status_code=403, detail="SmartPloy account access is disabled")
         request.state.smartploy_binding = binding
 
         cached = app.state.tenant_services.get(binding.profile_id)
@@ -521,7 +531,14 @@ def create_app(
             auth_source="oidc",
             claims={},
         ).normalized()
-        binding = app.state.identity_repository.resolve_or_create(principal)
+        binding = await asyncio.to_thread(
+            app.state.identity_repository.resolve_or_create, principal
+        )
+        if binding.status != "active":
+            raise HTTPException(
+                status_code=403, detail="SmartPloy account access is disabled",
+                headers={"Cache-Control": "no-store"},
+            )
         issued = await asyncio.to_thread(
             sessions.create,
             user_id=binding.user_id,

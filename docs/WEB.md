@@ -225,3 +225,33 @@ Do not merge or deploy a new OIDC public access policy until source/operator
 permissions, account-private saved jobs (#116), verified sign-in (#91),
 and release evidence are accepted. No automatic employer submission, new
 ATS activation, or external AI forwarding is authorized by this feature.
+
+## Disabled-account and OIDC session status enforcement
+
+For authenticated OIDC, Cloudflare or hybrid traffic, SmartPloy now resolves
+the stable server-side user identity and checks the authoritative account's
+`active` status **on every protected HTTP request**, including read-only
+catalog and profile endpoints. A disabled account receives a no-store
+`403 account_disabled` response, even when its browser has a previously
+valid OIDC cookie or a still-valid Cloudflare assertion. An unavailable
+identity database fails closed with a no-store `503 identity_unavailable`;
+it does not restore cached account privileges.
+
+OIDC sessions also bind to their originally issued server user ID. If a
+verified provider identity is subsequently relinked to a different SmartPloy
+user, the old session returns `401 session_identity_changed`, rather than
+silently opening a different account. The affected OIDC cookie is revoked
+server-side. A cookie observed for a disabled user is likewise revoked;
+re-enabling that user requires a fresh sign-in. The OIDC callback will not
+issue a new session for an already-disabled account. Logout and the public
+health endpoint remain accessible during account suspension.
+
+This is **request-boundary** enforcement; it does not interrupt an operation
+that began before disabling an account, and it does not enable client-driven
+role grants or modify Cloudflare Access or provider identity policy. Account
+status must only be changed by an authorized backend administrator; the
+public API exposes no account re-enable endpoint. Cloudflare tokens remain
+provider-managed, so a new valid assertion is still checked against status
+on every request. Full authenticated A1–A7 acceptance, including real
+account switching, is tracked separately in
+[#91](https://github.com/galapoto/smartploy/issues/91).
