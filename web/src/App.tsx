@@ -99,6 +99,9 @@ function sessionIdentity(who: SessionInfo): string {
   return JSON.stringify([subject, who.auth_source || ""]);
 }
 
+/** User-facing API mutations must never publish another account's response. */
+class PrivateActionIdentityChanged extends Error {}
+
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -149,11 +152,61 @@ export default function App() {
     setPage("dashboard"); setSearch(""); setExpandedJob("");
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
+    setBusyCV(false); setBusyFact(""); setPreparing(""); setManualBusy(false);
+    if (uploadRef.current) uploadRef.current.value = "";
     setJobForm({
       company: "", role_title: "", location: "",
       description: "", application_url: ""
     });
   }, []);
+
+  /** Check account identity on both sides of every private mutation.
+   *
+   * A mutation may have reached the server before an account change; this
+   * protects the rendered workspace, it does NOT undo server-side effects.
+   * Backend authorization remains mandatory for each operation.
+   */
+  const runPrivateMutation = useCallback(async <T,>(
+    action: () => Promise<T>
+  ): Promise<T> => {
+    const expectedIdentity = lastSessionIdentity.current;
+    const denyStaleAction = (): never => {
+      ++loadGeneration.current; // invalidate private GET responses in flight
+      lastSessionIdentity.current = null;
+      clearPrivateWorkspace();
+      setLoading(false);
+      setRefreshing(false);
+      setError(
+        "The signed-in account changed or could not be verified during a private action. Reload this workspace."
+      );
+      throw new PrivateActionIdentityChanged();
+    };
+    const verifyIdentity = async () => {
+      let currentIdentity: string | null = null;
+      try {
+        currentIdentity = sessionIdentity(await getSession());
+      } catch {
+        // A missing/expired session fails closed, even when email is unchanged.
+      }
+      if (!expectedIdentity || currentIdentity !== expectedIdentity ||
+          lastSessionIdentity.current !== expectedIdentity) {
+        denyStaleAction();
+      }
+    };
+
+    await verifyIdentity(); // never dispatch an action for an unverified account
+    try {
+      const result = await action();
+      await verifyIdentity(); // discard stale successful mutation responses
+      return result;
+    } catch (exc) {
+      if (exc instanceof PrivateActionIdentityChanged) throw exc;
+      // A request failure can coincide with logout. Do not display errors
+      // from account A inside B's workspace.
+      await verifyIdentity();
+      throw exc;
+    }
+  }, [clearPrivateWorkspace]);
 
   const load = useCallback(async (quiet = false) => {
     if (savingSearchPreferences.current) return;
