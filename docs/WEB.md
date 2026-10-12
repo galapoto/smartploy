@@ -345,3 +345,23 @@ The retained status keys deliberately preserve
 release still requires separate backup, provenance, TLS/Cloudflare and
 signed-in A1–A7 checks. No source activation, identity cutover or employer
 application sending is authorized by this change.
+
+## Private saved-jobs view (dependent frontend)
+The **Find jobs** page now includes **Your saved opportunities** in a separate
+private panel. The Add/Save job modal sends a validated bookmark to
+`POST /api/v1/private-jobs` rather than the privileged shared
+`/api/v1/jobs/ingest` endpoint. Saved entries can be deleted from their
+own account and optionally opened at the supplied employer link. They do
+not add to the number of current public listings, source-health counts,
+personalized match percentages, draft packages or application receipts.
+Employer availability remains unverified.
+
+This frontend PR depends on the backend private-job API in [PR
+#117](https://github.com/galapoto/smartploy/pull/117) and the preceding UI
+account-switch protections in [PR #115](https://github.com/galapoto/smartploy/pull/115).
+Its synthetic browser test switches same-email accounts and asserts saved
+bookmarks never cross the account boundary. This is not real SSO acceptance.
+Merge all dependencies and verify the integrated **exact main SHA** with
+separate CI before considering an operator-reviewed production release.
+Privileged shared source endpoints remain a distinct authorization task
+under [#116](https://github.com/galapoto/smartploy/issues/116).

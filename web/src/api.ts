@@ -8,6 +8,8 @@ import type {
   SessionInfo,
   JobsResponse,
   ManualJobPayload,
+  PrivateSavedJob,
+  PrivateSavedJobsResponse,
   PreparationResponse,
   ApplicationWorkspace,
   ApplicationWorkspacesResponse
@@ -129,20 +131,23 @@ export function deleteFact(fact_id: string): Promise<{ deleted: boolean }> {
   });
 }
 
-export function addManualJob(job: ManualJobPayload): Promise<{ status: string }> {
-  return request<{ status: string }>("/api/v1/jobs/ingest", {
+/** Save a private bookmark; never submit a listing to the shared ATS registry. */
+export function addManualJob(job: ManualJobPayload): Promise<{ status: "saved_private"; job: PrivateSavedJob }> {
+  return request<{ status: "saved_private"; job: PrivateSavedJob }>("/api/v1/private-jobs", {
     method: "POST",
-    body: JSON.stringify({
-      observation: {
-        source_id: "manual-import",
-        source_mode: "manual",
-        source_url: job.application_url,
-        raw_text: job.role_title + " " + job.company + " " + job.description,
-        observed_at: new Date().toISOString(),
-        payload: job
-      }
-    })
+    body: JSON.stringify(job)
   });
+}
+
+export function getPrivateSavedJobs(): Promise<PrivateSavedJobsResponse> {
+  return request<PrivateSavedJobsResponse>("/api/v1/private-jobs");
+}
+
+export function deletePrivateSavedJob(savedJobId: string): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(
+    "/api/v1/private-jobs/" + encodeURIComponent(savedJobId),
+    { method: "DELETE" }
+  );
 }
 
 
