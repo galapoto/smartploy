@@ -163,6 +163,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
     fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
     expect(screen.getByRole("button", { name: /saving/i }).hasAttribute("disabled")).toBe(true);
+    await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledTimes(1));
 
     const dashboardReadsBefore = vi.mocked(api.getDashboard).mock.calls.length;
     const preferencesReadsBefore = vi.mocked(api.getSearchPreferences).mock.calls.length;
