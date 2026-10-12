@@ -186,7 +186,10 @@ def test_oidc_cookie_is_revoked_when_account_becomes_disabled(monkeypatch):
         identities._bindings[binding.user_id], status="active"
     )
     assert api.get("/api/v1/session").status_code == 401
-    assert api.get("/auth/logout").status_code == 302
+    logout = api.get("/auth/logout")
+    assert logout.status_code == 303
+    assert logout.headers["location"] == "/auth/logged-out"
+    assert "Max-Age=0" in logout.headers["set-cookie"]
 
 
 def test_oidc_callback_rejects_disabled_identity_without_issuing_cookie(monkeypatch):
