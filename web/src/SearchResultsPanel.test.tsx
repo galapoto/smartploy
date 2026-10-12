@@ -105,3 +105,53 @@ describe("job discovery mode semantics", () => {
     expect(common.onChangeMode).toHaveBeenCalledWith("personalized");
   });
 });
+
+describe("job-date and source observation accuracy", () => {
+  it("shows old publication and fresh source observation as different facts", () => {
+    const now = Date.now();
+    const old = new Date(now - 25 * 86_400_000).toISOString();
+    const recent = new Date(now - 3_600_000).toISOString();
+    const one: SearchResults = {
+      ...general, available_count: 1,
+      all_jobs: [{ ...job, job: {
+        ...baseJob, posted_at: old, first_seen_at: old, last_seen_at: recent
+      } }]
+    };
+
+    render(<SearchResultsPanel {...common} data={one} />);
+    expect(screen.getByText(/Posted 25d ago/)).toBeTruthy();
+    expect(screen.getByText(/Last observed 1h ago/)).toBeTruthy();
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(screen.queryByText(/search match/i)).toBeNull();
+  });
+
+  it("warns without hiding an old-source job or pretending to verify employer availability", () => {
+    const old = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    const one: SearchResults = {
+      ...personalized,
+      recommendations: [{ ...personalized.recommendations[0], job: {
+        ...baseJob, posted_at: "", first_seen_at: old, last_seen_at: old
+      } }]
+    };
+    render(<SearchResultsPanel {...common} data={one} />);
+    expect(screen.getByText(/First discovered 7d ago/)).toBeTruthy();
+    expect(screen.getByText(/Last observed 7d ago/)).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toMatch(/confirm on employer site/);
+    expect(screen.getByText("Junior Data Analyst")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /prepare documents/i }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("marks unavailable observation timestamps unknown in unprofiled General mode", () => {
+    const one: SearchResults = {
+      ...general, available_count: 1,
+      all_jobs: [{ ...job, job: {
+        ...baseJob, posted_at: "", first_seen_at: "", last_seen_at: ""
+      } }]
+    };
+    render(<SearchResultsPanel {...common} data={one} />);
+    expect(screen.getByText("Publication date unknown")).toBeTruthy();
+    expect(screen.getByText("Last source observation unknown")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toMatch(/time is unknown/);
+    expect(screen.queryByText(/search match/i)).toBeNull();
+  });
+});
