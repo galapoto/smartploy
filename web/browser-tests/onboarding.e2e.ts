@@ -381,6 +381,51 @@ test("a same-email account change resets unsaved criteria and private CV details
   await expect(page.getByText("ACCOUNT-B.pdf")).toBeVisible();
 });
 
+test("a delayed application-draft response is discarded after same-email account switch", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+  });
+  let release: () => void = () => {};
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let notifyStarted: () => void = () => {};
+  const started = new Promise<void>(resolve => { notifyStarted = resolve; });
+  let calls = 0;
+
+  // All data is fictional and requests stay inside the Playwright router.
+  await page.route("**/api/v1/jobs/*/application-workspace", async route => {
+    calls += 1;
+    notifyStarted();
+    await pending;
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      headers: { "Cache-Control": "no-store" },
+      body: JSON.stringify({
+        created: true, workspace: {
+          workspace_id: "PRIVATE-ACCOUNT-A-DRAFT-NEVER-RENDER",
+          canonical_key: "synthetic-analyst",
+        },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.getByText("Junior Data Analyst")).toBeVisible();
+  await page.getByRole("button", { name: /Prepare documents/i }).first().click();
+  await started;
+  state.userId = "synthetic-user-b"; // email intentionally stays the same
+  release();
+
+  await expect(page.getByRole("heading", { name: /SmartPloy isn't available/i })).toBeVisible();
+  await expect(page.getByText(/could not be verified during a private action/i)).toBeVisible();
+  await expect(page.getByText("PRIVATE-ACCOUNT-A-DRAFT-NEVER-RENDER")).toHaveCount(0);
+  expect(calls).toBe(1);
+  await page.getByRole("button", { name: /Try again/i }).click();
+  await expect(page.getByText("Junior Data Analyst")).toBeVisible();
+  await page.getByRole("button", { name: "My applications" }).click();
+  await expect(page.getByRole("heading", { name: "My applications" })).toBeVisible();
+  await expect(page.getByText("PRIVATE-ACCOUNT-A-DRAFT-NEVER-RENDER")).toHaveCount(0);
+});
+
 test("same-email account switch removes the previous user's private application editor", async ({ page }) => {
   const state = await installSyntheticApi(page, {
     initial: {
