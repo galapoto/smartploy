@@ -66,9 +66,11 @@ def main() -> None:
 
     receipt = json.loads(evidence.read_text(encoding="utf-8"))
     actual_head = run_git(merged, "rev-parse", "HEAD")
+    actual_tree = run_git(merged, "rev-parse", "HEAD^{tree}")
     if (
         receipt.get("main_baseline") != BASE_SHA
         or receipt.get("final_ephemeral_commit") != actual_head
+        or receipt.get("final_tree_sha") != actual_tree
         or receipt.get("never_pushed") is not True
         or receipt.get("production_unmodified") is not True
         or len(receipt.get("merges", [])) != 9
@@ -112,6 +114,7 @@ def main() -> None:
 
     print("MERGED-STACK DOCKER/MIGRATION/BACKUP/RESTORE PASS", flush=True)
     print("INTEGRATED EPHEMERAL SHA:", actual_head, flush=True)
+    print("INTEGRATED CODE TREE SHA:", actual_tree, flush=True)
     print("NO DEPLOYMENT TO OVH OR MAIN", flush=True)
 
 
