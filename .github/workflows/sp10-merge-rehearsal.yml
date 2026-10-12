@@ -211,3 +211,105 @@ jobs:
           path: sp10-offline-release-candidate/
           if-no-files-found: error
           retention-days: 30
+
+  publish-nine-source-review-ref:
+    # This is a new, immutable REVIEW branch only, NOT main, deployment or auth.
+    # The only write-permission job starts after *all four* CI verification
+    # steps succeed. Fork PRs and other contributors cannot invoke it.
+    needs: pinned-portable-review-candidate
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 126 && github.event.pull_request.head.repo.full_name == 'galapoto/smartploy' && github.event.pull_request.head.ref == 'ci-only/sp10-source-merge-rehearsal-v1' && github.actor == 'galapoto'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    steps:
+      - name: Download proven same-source package from completed prerequisites
+        uses: actions/download-artifact@v4
+        with:
+          name: smartploy-nine-source-offline-review-candidate
+          path: sp10-verified-package
+
+      - name: Verify manifest pins and archive SHA256 before repository credentials
+        run: |
+          set -Eeuo pipefail
+          cd sp10-verified-package
+          sha256sum -c SHA256SUMS
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          if os.environ.get("GITHUB_REPOSITORY") != "galapoto/smartploy":
+              raise SystemExit("STOP: unexpected repository")
+          data = json.loads(Path("REVIEW-MANIFEST.json").read_text())
+          expected = [
+              (112, "394ac40aa40a5433149657e85b9a0c7ab781986d"),
+              (115, "c8a0905570e680d92590d9fdc74994d08fc9b699"),
+              (117, "6ceb9b29e1914ebc5c335737fe1b0f5bf14e8028"),
+              (119, "5f1cd20a55cc7c6a04b6c9b65cd0e28f2f559f22"),
+              (121, "ba04e214ea1a3931eadc39157a7cafec9a53884a"),
+              (123, "7f8d32ec8539b4a0a849d4ca881a8e62e8335ea2"),
+              (125, "2f00bbe5d2f73426a58ed1de6c9492dbceb78c48"),
+              (122, "6623f7308f3f9b926063b4733678fceefeef5e4c"),
+              (118, "17e82ac9c5d4b92e5b2302f6ed704510e37e7a2f"),
+          ]
+          if data.get("format") != "smartploy-nine-source-portable-review-v1":
+              raise SystemExit("STOP: invalid review package contract")
+          if data.get("main_baseline") != "d0ebe59a576f7814c7c3ecb5bc64b104afbf16b1":
+              raise SystemExit("STOP: main baseline mismatch")
+          if data.get("merged_source_tree_sha") != "7561381b2047ddce5416acfeb2124291a73f7402":
+              raise SystemExit("STOP: untested tree")
+          if [(row["number"], row["sha"]) for row in data.get("source_prs", [])] != expected:
+              raise SystemExit("STOP: modified source PR set")
+          if any(data.get(field) is not False for field in (
+                  "approved_for_main_merge", "approved_for_ovh_deploy",
+                  "production_sign_in_acceptance_done")):
+              raise SystemExit("STOP: package incorrectly claims release authorization")
+          if data.get("offline_review_only") is not True:
+              raise SystemExit("STOP: not the review-only candidate")
+          print("PASS: all nine source PRs, code tree, immutable baseline, review-only policy")
+          PY
+
+      - name: Checkout safe pinned main solely as authenticated Git transport
+        uses: actions/checkout@v4
+        with:
+          ref: d0ebe59a576f7814c7c3ecb5bc64b104afbf16b1
+          fetch-depth: 1
+          path: sp10-git-publisher
+          persist-credentials: true
+
+      - name: Publish ONLY missing immutable review branch; never update main
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          dir="$GITHUB_WORKSPACE/sp10-git-publisher"
+          bundle="$GITHUB_WORKSPACE/sp10-verified-package/smartploy-nine-source-review.bundle"
+          target="refs/heads/review/sp10-nine-source-7561381b-v1"
+          expected_tree="7561381b2047ddce5416acfeb2124291a73f7402"
+          expected_base="d0ebe59a576f7814c7c3ecb5bc64b104afbf16b1"
+
+          git -C "$dir" bundle verify "$bundle"
+          git -C "$dir" fetch --no-tags "$bundle" HEAD
+          candidate="$(git -C "$dir" rev-parse FETCH_HEAD)"
+          tree="$(git -C "$dir" rev-parse "FETCH_HEAD^{tree}")"
+          test "$tree" = "$expected_tree"
+          git -C "$dir" merge-base --is-ancestor "$expected_base" "$candidate"
+          test "$(git -C "$dir" rev-parse HEAD)" = "$expected_base"
+
+          existing="$(git -C "$dir" ls-remote origin "$target" | cut -f1)"
+          if test -z "$existing"; then
+            # Lease on the empty ref proves an atomic *creation only*;
+            # a race cannot silently modify an existing review branch.
+            git -C "$dir" push --force-with-lease="$target:" origin "$candidate:$target"
+            echo "New review branch created (NOT MAIN)."
+          else
+            echo "Review ref already exists; refusing to replace its commit."
+          fi
+
+          git -C "$dir" fetch --no-tags origin "$target"
+          remote="$(git -C "$dir" rev-parse FETCH_HEAD)"
+          remote_tree="$(git -C "$dir" rev-parse "FETCH_HEAD^{tree}")"
+          test "$remote_tree" = "$expected_tree"
+          git -C "$dir" merge-base --is-ancestor "$expected_base" "$remote"
+          printf 'REVIEW_BRANCH=%s\nVERIFIED_TREE=%s\n' "$target" "$remote_tree"
+          echo "NO PUSH TO MAIN, NO DEPLOYMENT, NO REVIEW EXCEPTION"
