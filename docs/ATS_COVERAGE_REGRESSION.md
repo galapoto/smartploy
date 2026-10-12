@@ -24,15 +24,15 @@ to ObumAI or authorize applications.
 ## Private operator procedure
 
 On the OVH host, collect a sanitized baseline **before** deploying a separately
-approved immutable release. Keep both files in the restricted deploy-state
-directory and do not put them into GitHub or share raw snapshots.
+approved immutable release. Keep both files in an operator-owned private directory, separate from
+root-owned deployment/backup state, and do not put them into GitHub.
 
 ~~~bash
 (
   set -Eeuo pipefail
   umask 077
   cd /srv/obum/stacks/smartploy
-  SNAP=/srv/obum/data/smartploy/deploy-state
+  SNAP="$HOME/.local/share/smartploy-ats-acceptance"
   install -d -m 700 "$SNAP"
   sudo docker exec smartploy-worker-1 \
     python scripts/check_ats_readiness.py > "$SNAP/ats-before.json"
@@ -49,7 +49,7 @@ pass, collect the later report and compare.
   set -Eeuo pipefail
   umask 077
   cd /srv/obum/stacks/smartploy
-  SNAP=/srv/obum/data/smartploy/deploy-state
+  SNAP="$HOME/.local/share/smartploy-ats-acceptance"
   sudo docker exec smartploy-worker-1 \
     python scripts/check_ats_readiness.py > "$SNAP/ats-after.json"
   chmod 600 "$SNAP/ats-after.json"
