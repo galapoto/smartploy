@@ -114,3 +114,34 @@ authorization or [real, approved two-account browser acceptance
 mutating requests, login-cookie changes outside the SPA and real backend
 permission boundaries require separate review. No additional employer
 application or external AI permissions are granted.
+
+## Operator-only global job ingestion and source writes
+
+Shared employer-source mutations are privileged operations, not jobseeker
+features. In any authenticated Cloudflare Access, hybrid, or OIDC deployment,
+`POST /api/v1/sources` and `POST /api/v1/jobs/ingest` require an **explicitly
+authorized backend-resolved user ID** in `SMARTPLOY_OPERATOR_USER_IDS`.
+This is a comma-separated list of at most 16 stable `usr-...` IDs, never
+emails, identity-provider roles, HTTP headers or frontend profile fields.
+
+The default is empty: even an authenticated owner **cannot** modify global
+sources using the HTTP API without explicit operator approval. Fetch your
+own verified `user_id` from `GET /api/v1/session` through the existing
+authenticated connection and have an authorized server operator populate
+`deploy/personal/env` (mode 0600) before intentionally enabling these
+privileges. Production refuses malformed/wildcard/email entries. The
+allowlist passes only to the API container; it is not available to the
+browser or worker.
+
+The existing private source worker uses direct, independently configured
+Python ingestion and continues operating with its preapproved feeds. The
+read-only source-health and job search APIs do not require operator roles.
+The legacy unauthenticated **development/test-only** mode preserves local
+fixture ingestion; production rejects disabled authentication entirely.
+
+These checks protect shared API writes but do not establish full
+multi-tenant isolation, live job availability, or authentication recovery.
+Do not merge or deploy a new OIDC public access policy until source/operator
+permissions, account-private saved jobs (#116), verified sign-in (#91),
+and release evidence are accepted. No automatic employer submission, new
+ATS activation, or external AI forwarding is authorized by this feature.
