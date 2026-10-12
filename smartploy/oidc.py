@@ -604,6 +604,7 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
         principal: AuthenticatedPrincipal,
         *,
         session_user_id: str = "",
+        session_token: str = "",
     ) -> Response:
         # Account status is checked against the authoritative backend on EVERY
         # protected request. A previously valid cookie or Cloudflare assertion
@@ -619,12 +620,23 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
                 "SmartPloy account verification is temporarily unavailable.",
             )
         if binding.status != "active":
+            # Revoke this OIDC cookie as well as denying this request. Its
+            # privilege must not silently reappear if an admin re-enables the
+            # account before the old cookie would have expired.
+            if session_token:
+                try:
+                    await asyncio.to_thread(self.sessions.revoke, session_token)
+                except Exception:
+                    pass  # Still deny even if the revocation store is down.
             return self._deny(
                 403, "account_disabled", "SmartPloy account access is disabled.",
             )
         if session_user_id and binding.user_id != session_user_id:
-            # Identity linking after session issuance must require a new login:
-            # otherwise the old cookie could unexpectedly switch tenant.
+            if session_token:
+                try:
+                    await asyncio.to_thread(self.sessions.revoke, session_token)
+                except Exception:
+                    pass
             return self._deny(
                 401, "session_identity_changed",
                 "The account linked to this session changed. Sign in again.",
@@ -658,6 +670,7 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
                     return await self._authorize_principal(
                         request, call_next, record.principal(),
                         session_user_id=record.user_id,
+                        session_token=raw_session,
                     )
 
         if self.authentication.cloudflare_enabled and self.access_settings.enabled:
