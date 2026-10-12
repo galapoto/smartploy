@@ -20,26 +20,26 @@ production database, web browsing, AI provider or external ATS is involved.
    profile features, account identifiers, form answers and access tokens are
    never copied into the evaluation inputs or CI artifacts. Store original
    permitted job materials in separately access-controlled private storage.
-   Assign random non-identifying IDs such as \`case-00001\`, not titles or URLs.
-2. **Freeze a dataset manifest** (\`smartploy.human-relevance.set.v1\`) with
-   \`dataset_id\`, categorical slice flags, a timestamp and reviewed provenance
+   Assign random non-identifying IDs such as `case-00001`, not titles or URLs.
+2. **Freeze a dataset manifest** (`smartploy.human-relevance.set.v1`) with
+   `dataset_id`, categorical slice flags, a timestamp and reviewed provenance
    booleans. Real datasets require the source-rights approval attestation,
    confirmation that applicant/restricted content is excluded, at least
    30 anonymous cases, and at least five Finnish and five English cases.
    These booleans are operator **attestations**: the program cannot perform
    legal review.
 3. **Freeze SmartPloy predictions** before the human reviewers start, in
-   \`smartploy.human-relevance.predictions.v1\`. Pin the complete 40-character
+   `smartploy.human-relevance.predictions.v1`. Pin the complete 40-character
    model/code commit SHA, timestamp and the per-case **recommended** or
    **broader** lane. All predictions must explicitly set
-   \`qualification_verified: false\`; the search match is *not* a skill,
+   `qualification_verified: false`; the search match is *not* a skill,
    degree, legal eligibility or employment outcome verdict.
 4. Have **two independent reviewers** label relevance as **relevant**,
    **related**, **unrelated**, or **insufficient**. Reviewers assess the
    original separately stored, approved job/target context without seeing
    SmartPloy's predicted lane or the other reviewer's label. Their separate
    files contain only case IDs and categories. The runner requires
-   \`blind_to_predictions: true\`, a reviewer self-attestation, but cannot
+   `blind_to_predictions: true`, a reviewer self-attestation, but cannot
    independently prove blindness or reviewer identity.
 5. If any labels differ, a **third, distinct adjudicator** resolves exactly
    those cases without changing the raw reviewers' agreement. A missing or
@@ -66,8 +66,8 @@ pytest -q tests/test_human_relevance_evaluation.py
 ~~~
 
 The demonstration's five JSON documents live in
-\`tests/fixtures/human_relevance/\`: \`set.json\`, \`predictions.json\`,
-\`review-a.json\`, \`review-b.json\`, \`adjudication.json\`.
+`tests/fixtures/human_relevance/`: `set.json`, `predictions.json`,
+`review-a.json`, `review-b.json`, `adjudication.json`.
 
 For privately approved source samples, keep the five files **outside the
 repository** and pass explicit paths:
@@ -98,10 +98,10 @@ adjudication (no metrics); **2** = malformed, oversized or unsafe evidence.
 
 ## Metric interpretation
 
-The conservative \`precision_at_recommended_in_reviewed_sample\` is the
+The conservative `precision_at_recommended_in_reviewed_sample` is the
 fraction of all recommended cases explicitly adjudicated **relevant**.
-A \`related\`, \`unrelated\`, or \`insufficient\` case does not count as a
-positive. \`recall_of_relevant_in_reviewed_sample\` measures the fraction of
+A `related`, `unrelated`, or `insufficient` case does not count as a
+positive. `recall_of_relevant_in_reviewed_sample` measures the fraction of
 all explicitly relevant cases appearing in the recommended lane. If either
 denominator is zero, the rate is **null**, never 100% by default.
 
