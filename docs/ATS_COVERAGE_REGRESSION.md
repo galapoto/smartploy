@@ -64,14 +64,14 @@ pass, collect the later report and compare.
 
 ### Root-managed OVH checkout: permission recovery
 
-On \`obum-core-01\`, the repository may be readable only by root. Running
-\`python -m scripts.compare_ats_readiness\` as the normal \`ubuntu\` user then
-raises \`PermissionError\` for the source script **after deployment has already
+On `obum-core-01`, the repository may be readable only by root. Running
+`python -m scripts.compare_ats_readiness` as the normal `ubuntu` user then
+raises `PermissionError` for the source script **after deployment has already
 completed**. Do not loosen repository/file permissions, re-run deployment, or
 copy private source files into a public location merely to finish this check.
 
 For an **immediate** after-deploy comparison (no fresh poll cycle required),
-run the validated, standard-library-only script under \`sudo\`:
+run the validated, standard-library-only script under `sudo`:
 
 ~~~bash
 (
@@ -90,9 +90,9 @@ run the validated, standard-library-only script under \`sudo\`:
 ~~~
 
 This is a recovery example for the reviewed 12 October 2026 release
-\`fc94e78\`, not permission to deploy a moving branch. Result \`pass\` is
+`fc94e78`, not permission to deploy a moving branch. Result `pass` is
 evidence of the configured source-comparison policy only. Result
-\`review_required\` (exit 3) must be inspected privately; neither result
+`review_required` (exit 3) must be inspected privately; neither result
 automatically rolls back the live stack. Permission errors must not be
 misreported as deployment failures.
 
