@@ -486,8 +486,10 @@ export default function App() {
       setJobDialog(false);
       setJobForm({ company: "", role_title: "", location: "", description: "", application_url: "" });
       navigate("jobs");
-      await load(true);
+      // Publish the notice before refreshing. If the account changes during
+      // that refresh, clearPrivateWorkspace() can safely discard it.
       setNotice("Job saved privately to your account. Employer availability is unverified; it is not a ranked ATS listing.");
+      await load(true);
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged)) {
         setNotice(exc instanceof Error ? exc.message : "Unable to add job.");
