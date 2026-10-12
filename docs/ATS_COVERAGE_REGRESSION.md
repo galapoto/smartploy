@@ -53,11 +53,48 @@ pass, collect the later report and compare.
   sudo docker exec smartploy-worker-1 \
     python scripts/check_ats_readiness.py > "$SNAP/ats-after.json"
   chmod 600 "$SNAP/ats-after.json"
-  python -m scripts.compare_ats_readiness \
+  # The OVH checkout is root-managed; use root only to read its script.
+  # The comparison itself performs no network calls or database writes.
+  sudo /usr/bin/python3 \
+    /srv/obum/stacks/smartploy/scripts/compare_ats_readiness.py \
     "$SNAP/ats-before.json" "$SNAP/ats-after.json" \
     --max-job-drop-percent 50 --require-new-poll
 )
 ~~~
+
+### Root-managed OVH checkout: permission recovery
+
+On \`obum-core-01\`, the repository may be readable only by root. Running
+\`python -m scripts.compare_ats_readiness\` as the normal \`ubuntu\` user then
+raises \`PermissionError\` for the source script **after deployment has already
+completed**. Do not loosen repository/file permissions, re-run deployment, or
+copy private source files into a public location merely to finish this check.
+
+For an **immediate** after-deploy comparison (no fresh poll cycle required),
+run the validated, standard-library-only script under \`sudo\`:
+
+~~~bash
+(
+  set -Eeuo pipefail
+  umask 077
+  REPO=/srv/obum/stacks/smartploy
+  SNAP="$HOME/.local/share/smartploy-ats-acceptance"
+  SHA=fc94e78e779650e781277ee1056ec92cd26a6e98
+  test "$(sudo git -C "$REPO" rev-parse HEAD)" = "$SHA"
+  test -s "$SNAP/before.json"
+  test -s "$SNAP/after.json"
+  sudo /usr/bin/python3 "$REPO/scripts/compare_ats_readiness.py" \
+    "$SNAP/before.json" "$SNAP/after.json" \
+    --max-job-drop-percent 50 --json
+)
+~~~
+
+This is a recovery example for the reviewed 12 October 2026 release
+\`fc94e78\`, not permission to deploy a moving branch. Result \`pass\` is
+evidence of the configured source-comparison policy only. Result
+\`review_required\` (exit 3) must be inspected privately; neither result
+automatically rolls back the live stack. Permission errors must not be
+misreported as deployment failures.
 
 The optional **--require-new-poll** flag should only be used after every
 source's reviewed polling interval has elapsed. Omit it for an immediate
