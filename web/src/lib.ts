@@ -99,7 +99,7 @@ export function listingObservationLabels(
     origin,
     observation: "Last observed " + ageWords(observedAge),
     caution: observedAge >= SOURCE_AGE_CAUTION_MS
-      ? "Last source observation is over 72h old — confirm on employer site."
+      ? "Source was last observed at least 72h ago — confirm on employer site."
       : null
   };
 }
