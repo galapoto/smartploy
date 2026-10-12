@@ -113,7 +113,7 @@ async function installSyntheticApi(page: Page, options: {
     if (path === "/api/v1/private-jobs" && request.method() === "POST") {
       const payload = JSON.parse(request.postData() || "{}") as Record<string, string>;
       const item: PrivateSavedJob = {
-        saved_job_id: "saved-synthetic-" + Math.random().toString(36).slice(2),
+        saved_job_id: "saved-synthetic-" + state.userId + "-" + ((state.privateSavedJobs[state.userId] || []).length + 1),
         company: payload.company || "", role_title: payload.role_title || "",
         description: payload.description || "", location: payload.location || "",
         application_url: payload.application_url || "",
