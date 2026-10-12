@@ -240,7 +240,17 @@ def test_logout_revokes_local_session_before_provider_redirect(monkeypatch):
     raw = api.cookies.get(SESSION_COOKIE_NAME)
     assert raw and sessions.get(raw) is not None
 
-    logout = api.get("/auth/logout")
+    preview = api.get("/auth/logout")
+    assert preview.status_code == 200
+    assert "Confirm sign out" in preview.text
+    assert sessions.get(raw) is not None
+    assert provider.logout_called is False
+    assert "set-cookie" not in preview.headers
+
+    logout = api.post("/auth/logout", headers={
+        "Origin": "https://smartploy.obumai.com",
+        "Sec-Fetch-Site": "same-origin",
+    })
     assert logout.status_code == 302
     assert provider.logout_called is True
     assert sessions.get(raw) is None
