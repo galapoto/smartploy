@@ -701,7 +701,19 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
         if self.authentication.oidc_enabled:
             raw_session = request.cookies.get(SESSION_COOKIE_NAME, "")
             if raw_session:
-                record = await asyncio.to_thread(self.sessions.get, raw_session)
+                try:
+                    record = await asyncio.to_thread(self.sessions.get, raw_session)
+                except Exception:
+                    # An unreachable session store is not proof that an
+                    # opaque cookie is invalid. In hybrid mode especially,
+                    # never downgrade an unverified cookie request to a
+                    # different Cloudflare principal during an outage.
+                    # Return the same bounded, non-cacheable error regardless
+                    # of the backend exception or any supplied assertion.
+                    return self._deny(
+                        503, "session_unavailable",
+                        "SmartPloy session verification is temporarily unavailable.",
+                    )
                 if record is not None:
                     csrf_denial = self._reject_cross_origin_cookie_mutation(request)
                     if csrf_denial is not None:
