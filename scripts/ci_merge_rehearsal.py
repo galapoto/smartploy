@@ -20,7 +20,7 @@ SOURCES = (
     (112, "394ac40aa40a5433149657e85b9a0c7ab781986d"),
     (115, "c8a0905570e680d92590d9fdc74994d08fc9b699"),
     (117, "6ceb9b29e1914ebc5c335737fe1b0f5bf14e8028"),
-    (119, "2b73d2b44a227ba488b5a28ccd025e54ca0651a6"),
+    (119, "5f1cd20a55cc7c6a04b6c9b65cd0e28f2f559f22"),
     (121, "ba04e214ea1a3931eadc39157a7cafec9a53884a"),
     (123, "7f8d32ec8539b4a0a849d4ca881a8e62e8335ea2"),
     (125, "2f00bbe5d2f73426a58ed1de6c9492dbceb78c48"),
@@ -110,7 +110,8 @@ def resolve_docs(worktree: Path) -> None:
     if not (ours.startswith(base) and theirs.startswith(base)):
         raise RehearsalError("Docs conflict is NOT safe append-only; human review required")
     our_suffix, their_suffix = ours[len(base):], theirs[len(base):]
-    headings = lambda data: set(re.findall(rb"(?m)^## (.+)$", data))
+    def headings(data: bytes) -> set[bytes]:
+        return set(re.findall(rb"(?m)^## (.+)$", data))
     if not their_suffix.lstrip().startswith(b"## ") or headings(our_suffix) & headings(their_suffix):
         raise RehearsalError("Unexpected or duplicate documentation headings")
     (worktree / path).write_bytes(ours + their_suffix)
