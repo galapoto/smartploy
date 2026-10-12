@@ -13,6 +13,7 @@ must be ported back to their source PRs before any production integration.
 - Account-private saved jobs UI: PR #118 at `17e82ac9c5d4b92e5b2302f6ed704510e37e7a2f`
 - Operator-only shared ATS source/ingestion API: PR #119 at `2b73d2b44a227ba488b5a28ccd025e54ca0651a6`
 - Disabled-account request gate and OIDC session revocation: PR #121 at `ba04e214ea1a3931eadc39157a7cafec9a53884a`
+- Public health endpoint privacy redaction with unchanged release invariants: PR #122 at `6623f7308f3f9b926063b4733678fceefeef5e4c`
 
 ## Composition
 
@@ -23,8 +24,11 @@ environment, test module and shared source API guard from PR #119.
 It then overlays the verified request identity/status middleware and the
 OIDC-disabled-account regression module from PR #121, with the API binding
 changes applied to the existing integrated private-job/source API handlers.
+It also overlays only PR #122's public-health implementation, web health
+response schema, redaction tests and documentation; the existing authenticated
+worker and private profile routes remain untouched.
 The `smartploy/api.py` composition is not an independent feature.
-PR #121 is also independently review-gated. Only the source PRs may be merged after external review and refreshed exact
+PRs #121 and #122 are also independently review-gated. Only the source PRs may be merged after external review and refreshed exact
 main CI. CI of this branch is a **pre-merge compatibility check**, not review
 approval and not a replacement for the merged-main release gates.
 
