@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import sys
 
-from scripts.ci_merge_rehearsal import MAIN, REPO, SOURCES
+from ci_merge_rehearsal import MAIN, REPO, SOURCES
 
 ROOT = Path("sp10-proof")
 APP_RECEIPT = ROOT / "application" / "smartploy-rehearsal-summary.json"
