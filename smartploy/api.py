@@ -38,6 +38,7 @@ from .identity import (
 )
 from .domain import JobSearchFilters, SourceObservation, SourcePolicy
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
+from .operator_access import OperatorAccessPolicy
 from .oidc import (
     AuthenticationSettings,
     MemoryOIDCStateCache,
@@ -50,6 +51,11 @@ from .oidc import (
     build_oidc_registry,
     clear_session_cookie,
     set_session_cookie,
+)
+from .private_saved_jobs import (
+    MemoryPrivateSavedJobRepository,
+    PostgresPrivateSavedJobRepository,
+    PrivateSavedJobError,
 )
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
 from .preparations import PreparationNotEligible
@@ -138,6 +144,15 @@ class CVUploadPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     filename: str = Field(min_length=1, max_length=160)
     content_base64: str = Field(min_length=24, max_length=7_000_000)
+
+
+class PrivateSavedJobPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    company: str = Field(min_length=1, max_length=160)
+    role_title: str = Field(min_length=1, max_length=160)
+    description: str = Field(min_length=1, max_length=12000)
+    location: str = Field(default="", max_length=160)
+    application_url: str = Field(default="", max_length=2048)
 
 
 class ProfileFactPayload(BaseModel):
@@ -369,6 +384,7 @@ def create_app(
         oidc_registry = build_oidc_registry(oidc_settings, state_cache)
         oidc_remote = oidc_registry.create_client("obum_identity")
 
+    resolved_identities = identity_repository or _build_identity_repository()
     app = FastAPI(title="Smartploy API", version="0.5.0")
     allowed_hosts = _allowed_hosts()
     if allowed_hosts:
@@ -378,6 +394,8 @@ def create_app(
         authentication=authentication,
         sessions=sessions,
         access_settings=access_settings,
+        identity_repository=resolved_identities,
+        oidc_public_origin=oidc_settings.public_origin if oidc_settings else "",
         access_verifier=access_verifier,
     )
     app.state.smartploy = active
@@ -388,7 +406,9 @@ def create_app(
     app.state.oidc_registry = oidc_registry
     app.state.oidc_client = oidc_remote
     app.state.session_repository = sessions
-    app.state.identity_repository = identity_repository or _build_identity_repository()
+    app.state.identity_repository = resolved_identities
+    # Unconfigured authenticated operators cannot mutate global job inventory.
+    app.state.operator_access = OperatorAccessPolicy.from_env()
     app.state.tenant_services = {}
     app.state.cv_repository = PostgresCVRepository(dsn) if dsn else MemoryCVRepository()
     app.state.workspace_repository = PostgresWorkspaceRepository(dsn) if dsn else MemoryWorkspaceRepository()
@@ -397,13 +417,25 @@ def create_app(
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
     )
+    app.state.private_saved_jobs = (
+        PostgresPrivateSavedJobRepository(dsn) if dsn
+        else MemoryPrivateSavedJobRepository()
+    )
 
     def tenant_context(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
         principal = _principal_from_request(request)
         if principal is None:
             return active, None
 
-        binding = app.state.identity_repository.resolve_or_create(principal)
+        binding = getattr(request.state, "smartploy_binding", None)
+        if not isinstance(binding, UserProfileBinding):
+            # Auth-disabled fixtures have no verified principal; otherwise
+            # request middleware must have validated and bound this account.
+            if authentication.mode != "disabled":
+                raise HTTPException(status_code=503, detail="Verified account binding is unavailable")
+            binding = app.state.identity_repository.resolve_or_create(principal)
+        if binding.status != "active":
+            raise HTTPException(status_code=403, detail="SmartPloy account access is disabled")
         request.state.smartploy_binding = binding
 
         cached = app.state.tenant_services.get(binding.profile_id)
@@ -435,34 +467,45 @@ def create_app(
         return tenant, binding
 
     @app.get("/healthz")
-    def health() -> dict[str, Any]:
+    def health() -> JSONResponse:
+        """Public liveness/provenance contract; never return account metadata.
+
+        The existing guarded release script consumes storage readiness,
+        Access posture, worker readiness/count and external-action status.
+        Keep those machine-readable *safe* fields, but not default profile
+        counts/types, tenant IDs, raw worker errors or authentication config.
+        More detailed worker and profile views require authenticated APIs.
+        """
         storage = active.storage_status()
         worker = _worker_snapshot()
-        return {
+        safe = {
             "ok": bool(storage.get("ready")),
             "service": "smartploy",
             "public_origin": app.state.public_origin,
-            "storage": storage,
-            "profile": active.profile_summary(),
-            "obumai_configured": active.obumai is not None,
-            "authentication": {
-                "mode": authentication.mode,
-                "oidc_enabled": authentication.oidc_enabled,
-                "cloudflare_fallback_enabled": authentication.cloudflare_enabled,
+            "storage": {
+                "mode": str(storage.get("mode") or "unknown"),
+                "ready": bool(storage.get("ready")),
             },
+            "obumai_configured": active.obumai is not None,
             "access": {
                 "enabled": access_settings.enabled,
                 "environment": access_settings.environment,
                 "owner_restricted": bool(access_settings.allowed_email),
             },
             "worker": {
-                "configured": worker["configured"],
-                "ready": worker["ready"],
-                "count": worker["count"],
-                "error": worker["error"],
+                "configured": bool(worker.get("configured")),
+                "ready": bool(worker.get("ready")),
+                "count": int(worker.get("count") or 0),
             },
             "external_actions_authorized": False,
         }
+        return JSONResponse(
+            content=safe,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @app.get("/auth/login")
     async def auth_login(request: Request):
@@ -499,7 +542,14 @@ def create_app(
             auth_source="oidc",
             claims={},
         ).normalized()
-        binding = app.state.identity_repository.resolve_or_create(principal)
+        binding = await asyncio.to_thread(
+            app.state.identity_repository.resolve_or_create, principal
+        )
+        if binding.status != "active":
+            raise HTTPException(
+                status_code=403, detail="SmartPloy account access is disabled",
+                headers={"Cache-Control": "no-store"},
+            )
         issued = await asyncio.to_thread(
             sessions.create,
             user_id=binding.user_id,
@@ -512,13 +562,93 @@ def create_app(
         set_session_cookie(response, issued.token, oidc_settings.session_ttl_seconds)
         return response
 
-    @app.api_route("/auth/logout", methods=["GET", "POST"])
-    async def auth_logout(request: Request):
+    # These pages contain no account-specific values, cookies or identity
+    # details. A cross-site GET navigation must never revoke a session.
+    def logout_page(content: str, *, status_code: int = 200) -> Response:
+        return Response(
+            content=content,
+            status_code=status_code,
+            media_type="text/html",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+                "X-Frame-Options": "DENY",
+                "Content-Security-Policy": (
+                    "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
+                    "form-action 'self'; style-src 'unsafe-inline'"
+                ),
+            },
+        )
+
+    @app.get("/auth/logout")
+    async def auth_logout_confirmation() -> Response:
+        if oidc_settings is None:
+            raise HTTPException(status_code=404, detail="OIDC logout is not enabled")
+        return logout_page(
+            """<!doctype html><html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Sign out | SmartPloy</title><style>
+            body{background:#f5f7f8;color:#18343c;font:16px/1.6 system-ui,sans-serif;
+                 min-height:100vh;display:grid;place-items:center;margin:0;padding:1rem}
+            main{max-width:450px;background:white;padding:2rem;border-radius:20px;
+                 box-shadow:0 12px 38px #18343c12}
+            h1{font-size:1.7rem;line-height:1.25}
+            button{background:#175b62;color:white;border:0;border-radius:10px;
+                   padding:0.85rem 1.4rem;font:inherit;font-weight:650;cursor:pointer}
+            a{color:#175b62;margin-left:1rem}
+            small{display:block;margin-top:1.5rem;color:#50676b}
+            </style></head><body><main><strong>SmartPloy</strong>
+            <h1>Sign out of SmartPloy?</h1>
+            <p>Confirm to end this browser's SmartPloy session.
+            This will not submit a job application or change your profile.</p>
+            <form method="post" action="/auth/logout">
+              <button type="submit">Confirm sign out</button>
+              <a href="/">Cancel</a>
+            </form><small>Your identity provider may have its own session.</small>
+            </main></body></html>"""
+        )
+
+    @app.post("/auth/logout")
+    async def auth_logout(request: Request) -> Response:
+        if oidc_settings is None:
+            raise HTTPException(status_code=404, detail="OIDC logout is not enabled")
+
+        # A browser form POST supplies Origin. SameSite=Lax alone does not
+        # stop requests from another same-site subdomain. Do not rely on
+        # caller-controlled Host or reverse-proxy forwarding headers.
+        if (
+            request.headers.get("origin", "") != oidc_settings.public_origin
+            or request.headers.get("sec-fetch-site", "").strip().casefold()
+            not in {"", "same-origin", "none"}
+        ):
+            return SmartployAuthenticationMiddleware._deny(
+                403, "csrf_origin_denied",
+                "Confirm sign-out from the SmartPloy website.",
+            )
+
         raw_session = request.cookies.get(SESSION_COOKIE_NAME, "")
         if raw_session:
-            await __import__("asyncio").to_thread(sessions.revoke, raw_session)
+            try:
+                await asyncio.to_thread(sessions.revoke, raw_session)
+            except Exception:
+                # Clearing a browser cookie does NOT prove that the backing
+                # database session was revoked. Do not claim full sign-out or
+                # redirect to the identity provider in this failure mode.
+                response = logout_page(
+                    """<!doctype html><html lang="en"><head><meta charset="utf-8">
+                    <title>Sign-out incomplete | SmartPloy</title></head>
+                    <body><main><h1>Sign-out could not be completed</h1>
+                    <p>Your browser cookie has been cleared, but the server
+                    could not confirm session revocation. Close this browser
+                    on a shared device and contact support if necessary.</p>
+                    <a href="/auth/login">Sign in again</a></main></body></html>""",
+                    status_code=503,
+                )
+                clear_session_cookie(response)
+                return response
 
-        if oidc_settings is not None and oidc_remote is not None:
+        if oidc_remote is not None:
             request.scope.setdefault("session", {})
             try:
                 response = await oidc_remote.logout_redirect(
@@ -527,17 +657,28 @@ def create_app(
                     client_id=oidc_settings.client_id,
                 )
             except Exception:
+                # Local session is revoked; provider logout is not confirmed.
                 response = RedirectResponse(url="/auth/logged-out", status_code=303)
         else:
-            response = RedirectResponse(url="/", status_code=303)
+            response = RedirectResponse(url="/auth/logged-out", status_code=303)
         clear_session_cookie(response)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
     @app.get("/auth/logged-out")
-    async def auth_logged_out():
-        response = RedirectResponse(url="/", status_code=303)
-        clear_session_cookie(response)
-        return response
+    async def auth_logged_out() -> Response:
+        # A direct external GET must be inert: do not revoke or even clear an
+        # existing cookie here. The protected POST already did both.
+        return logout_page(
+            """<!doctype html><html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>SmartPloy sign-out</title></head><body>
+            <main><h1>SmartPloy sign-out</h1>
+            <p>If you confirmed sign-out, your local SmartPloy session has ended.
+            Signing out of your identity provider may require a separate step.</p>
+            <a href="/auth/login">Sign in</a></main></body></html>"""
+        )
 
     @app.get("/api/v1/session")
     def session(request: Request) -> dict[str, Any]:
@@ -653,8 +794,22 @@ def create_app(
             raise HTTPException(status_code=404, detail="No CV uploaded")
         return {"deleted": True}
 
+    def require_shared_ingestion_operator(request: Request) -> None:
+        # Only local, auth-disabled development/test fixtures can use legacy
+        # unscoped HTTP ingestion. Production rejects disabled authentication.
+        if authentication.mode == "disabled":
+            return
+        _, binding = tenant_context(request)
+        if not app.state.operator_access.allows(binding):
+            raise HTTPException(
+                status_code=403,
+                detail="Operator authorization required for shared job sources",
+                headers={"Cache-Control": "no-store"},
+            )
+
     @app.post("/api/v1/sources")
-    def register_source(payload: SourcePolicyPayload) -> dict[str, Any]:
+    def register_source(payload: SourcePolicyPayload, request: Request) -> dict[str, Any]:
+        require_shared_ingestion_operator(request)
         try:
             policy = active.register_source(
                 SourcePolicy(
@@ -684,7 +839,8 @@ def create_app(
         return item.to_dict()
 
     @app.post("/api/v1/jobs/ingest")
-    def ingest(payload: IngestPayload) -> dict[str, Any]:
+    def ingest(payload: IngestPayload, request: Request) -> dict[str, Any]:
+        require_shared_ingestion_operator(request)
         obs = payload.observation
         filters = payload.filters
         observation = SourceObservation(
@@ -711,6 +867,54 @@ def create_app(
                 include_unknown=filters.include_unknown,
             )
         return active.ingest(observation, filters=cfg).to_dict()
+
+    def private_saved_jobs_profile(request: Request) -> str:
+        # Authenticated requests resolve their own stable profile. The legacy
+        # unprotected development fixture remains usable only in disabled mode.
+        tenant, binding = tenant_context(request)
+        if binding is None and authentication.mode != "disabled":
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return tenant.profile_repository.profile_id
+
+    @app.get("/api/v1/private-jobs")
+    def list_private_saved_jobs(request: Request, limit: int = 100) -> JSONResponse:
+        if not 1 <= limit <= 100:
+            raise HTTPException(status_code=422, detail="limit must be 1 to 100")
+        profile_id = private_saved_jobs_profile(request)
+        records = app.state.private_saved_jobs.list(profile_id, limit=limit)
+        return JSONResponse(
+            content={
+                "jobs": [item.to_dict() for item in records],
+                "count": len(records),
+                "private": True,
+            },
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.post("/api/v1/private-jobs", status_code=201)
+    def create_private_saved_job(
+        payload: PrivateSavedJobPayload, request: Request
+    ) -> JSONResponse:
+        profile_id = private_saved_jobs_profile(request)
+        try:
+            item = app.state.private_saved_jobs.save(profile_id, payload.model_dump())
+        except PrivateSavedJobError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return JSONResponse(
+            status_code=201,
+            content={"status": "saved_private", "job": item.to_dict()},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.delete("/api/v1/private-jobs/{saved_job_id}")
+    def remove_private_saved_job(saved_job_id: str, request: Request) -> JSONResponse:
+        profile_id = private_saved_jobs_profile(request)
+        if not app.state.private_saved_jobs.delete(profile_id, saved_job_id):
+            raise HTTPException(status_code=404, detail="Private saved job not found")
+        return JSONResponse(
+            content={"deleted": True},
+            headers={"Cache-Control": "private, no-store"},
+        )
 
     @app.get("/api/v1/search-preferences")
     def get_search_preferences(request: Request) -> dict[str, Any]:
