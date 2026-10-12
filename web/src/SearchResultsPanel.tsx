@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, ChevronDown, Globe2, MapPin, Search, SlidersHorizontal, Target } from "lucide-react";
 import type { SearchResults, SearchJobCard } from "./types";
-import { relativeFreshness, scoreBand, sectorLabel, type SectorFilter, type DisplayMode } from "./lib";
+import { listingObservationLabels, scoreBand, sectorLabel, type SectorFilter, type DisplayMode } from "./lib";
 
 function JobCard(props: {
   item: SearchJobCard; displayMode: DisplayMode; busy: boolean; onPrepare: () => void;
@@ -10,6 +10,7 @@ function JobCard(props: {
   const [showWhy, setShowWhy] = useState(false);
   const job = item.job;
   const hasScore = typeof item.preference_score === "number";
+  const sourceDates = listingObservationLabels(job.posted_at, job.first_seen_at, job.last_seen_at);
   return <article className="job-item search-result-card">
     <div className="job-avatar" aria-hidden="true">{(job.company || "J").slice(0,1).toUpperCase()}</div>
     <div className="job-details">
@@ -27,7 +28,9 @@ function JobCard(props: {
         <span className="quiet-chip">{item.lane === "all" ? "General listing" :
           item.lane === "recommended" ? "Matches search targets" : "Explore another role"}</span>
         <span>{sectorLabel(job.employer_sector)}</span>
-        <span>{relativeFreshness(job.posted_at || job.first_seen_at)}</span>
+        <span>{sourceDates.origin}</span>
+        <span>{sourceDates.observation}</span>
+        {sourceDates.caution ? <span role="note" className="source-observation-caution">{sourceDates.caution}</span> : null}
         {job.source_attribution ? <span>· {job.source_attribution}</span> : null}
       </div>
       {hasScore && props.displayMode === "heatmap" ? <div

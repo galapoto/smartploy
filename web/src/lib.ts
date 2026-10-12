@@ -47,6 +47,63 @@ export function relativeFreshness(value: string, now = new Date()): string {
   return "Seen " + days + "d ago";
 }
 
+/** Separate a vacancy's publication/discovery date from when its source last showed it.
+ * No source observation proves that an employer is still accepting applicants.
+ */
+export interface ListingObservationLabels {
+  origin: string;
+  observation: string;
+  caution: string | null;
+}
+
+const SOURCE_AGE_CAUTION_MS = 72 * 60 * 60 * 1000;
+const ALLOWED_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+function observationAgeMs(value: string, now: Date): number | null {
+  if (!value || !Number.isFinite(now.getTime())) return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  const elapsed = now.getTime() - timestamp;
+  if (elapsed < -ALLOWED_CLOCK_SKEW_MS) return null;
+  return Math.max(0, elapsed);
+}
+
+function ageWords(elapsed: number): string {
+  if (elapsed < 60_000) return "just now";
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 60) return minutes + "m ago";
+  const hours = Math.floor(elapsed / 3_600_000);
+  if (hours < 24) return hours + "h ago";
+  return Math.floor(elapsed / 86_400_000) + "d ago";
+}
+
+export function listingObservationLabels(
+  postedAt: string, firstSeenAt: string, lastSeenAt: string, now = new Date()
+): ListingObservationLabels {
+  const postedAge = observationAgeMs(postedAt, now);
+  const firstAge = observationAgeMs(firstSeenAt, now);
+  const observedAge = observationAgeMs(lastSeenAt, now);
+
+  const origin = postedAge !== null ? "Posted " + ageWords(postedAge)
+    : firstAge !== null ? "First discovered " + ageWords(firstAge)
+    : "Publication date unknown";
+
+  if (observedAge === null) {
+    return {
+      origin, observation: "Last source observation unknown",
+      caution: "Source observation time is unknown — confirm on employer site."
+    };
+  }
+
+  return {
+    origin,
+    observation: "Last observed " + ageWords(observedAge),
+    caution: observedAge >= SOURCE_AGE_CAUTION_MS
+      ? "Source was last observed at least 72h ago — confirm on employer site."
+      : null
+  };
+}
+
 export function formatState(state: string): string {
   return state.replaceAll("_", " ");
 }

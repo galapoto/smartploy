@@ -4,6 +4,7 @@ import {
   formatCadence,
   queueLabel,
   relativeFreshness,
+  listingObservationLabels,
   relativeSchedule,
   scoreBand
 } from "./lib";
@@ -98,5 +99,55 @@ describe("ObumAI product navigation contract", () => {
       '<a className="obumai-brand" href="https://app.obumai.com/" target="_self" title="Open ObumAI">'
     );
     expect(source.default).not.toContain("https://app.obumai.com/?token=");
+  });
+});
+
+describe("job source observation truth", () => {
+  const now = new Date("2026-10-12T12:00:00Z");
+
+  it("keeps old publication dates distinct from a recent successful source observation", () => {
+    expect(listingObservationLabels(
+      "2026-09-20T12:00:00Z",
+      "2026-09-21T12:00:00Z",
+      "2026-10-12T11:00:00Z",
+      now
+    )).toEqual({
+      origin: "Posted 22d ago",
+      observation: "Last observed 1h ago",
+      caution: null
+    });
+  });
+
+  it("uses first discovery when no genuine publication date is provided", () => {
+    const labels = listingObservationLabels(
+      "", "2026-10-10T12:00:00Z", "2026-10-12T11:00:00Z", now
+    );
+    expect(labels.origin).toBe("First discovered 2d ago");
+    expect(labels.observation).toBe("Last observed 1h ago");
+    expect(labels.caution).toBeNull();
+  });
+
+  it("cautions rather than claiming still open when source observation is older than 72h", () => {
+    const labels = listingObservationLabels(
+      "2026-10-11T12:00:00Z", "2026-10-11T12:00:00Z",
+      "2026-10-09T12:00:00Z", now
+    );
+    expect(labels.origin).toBe("Posted 1d ago");
+    expect(labels.observation).toBe("Last observed 3d ago");
+    expect(labels.caution).toMatch(/at least 72h ago/);
+  });
+
+  it("handles invalid, missing and future source timestamps conservatively", () => {
+    const invalid = listingObservationLabels("", "invalid", "", now);
+    expect(invalid.origin).toBe("Publication date unknown");
+    expect(invalid.observation).toBe("Last source observation unknown");
+    expect(invalid.caution).toMatch(/confirm on employer site/);
+    const future = listingObservationLabels(
+      "2026-11-01T12:00:00Z", "2026-10-12T11:00:00Z",
+      "2026-10-20T12:00:00Z", now
+    );
+    expect(future.origin).toBe("First discovered 1h ago");
+    expect(future.observation).toBe("Last source observation unknown");
+    expect(future.caution).not.toBeNull();
   });
 });
