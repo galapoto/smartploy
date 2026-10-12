@@ -10,7 +10,7 @@ import sys
 import pytest
 
 from scripts.evaluate_human_relevance import (
-    ADJUDICATION, DEFAULT_DIR, REPORT, ReviewContractError,
+    DEFAULT_DIR, REPORT, ReviewContractError,
     evaluate_review, read_document,
 )
 
