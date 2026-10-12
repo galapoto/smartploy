@@ -195,6 +195,26 @@ export interface JobsResponse {
   count: number;
 }
 
+/** User-owned bookmark, never an employer-verified ATS vacancy. */
+export interface PrivateSavedJob {
+  saved_job_id: string;
+  company: string;
+  role_title: string;
+  location: string;
+  description: string;
+  application_url: string;
+  created_at: string;
+  private: true;
+  employer_availability_verified: false;
+  external_actions_authorized: false;
+}
+
+export interface PrivateSavedJobsResponse {
+  jobs: PrivateSavedJob[];
+  count: number;
+  private: true;
+}
+
 export interface ManualJobPayload {
   company: string;
   role_title: string;
