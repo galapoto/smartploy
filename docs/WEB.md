@@ -243,3 +243,36 @@ configuration. The account-suspension middleware change in
 [PR #121](https://github.com/galapoto/smartploy/pull/121) must be
 independently reviewed and integrated first. Owner-approved real A1–A7
 browser verification under issue #91 is still required.
+
+## Confirmation-first OIDC sign-out
+
+The SmartPloy Settings page shows **Sign out securely** when the active
+workspace uses a first-party OIDC application session. This link opens
+`GET /auth/logout`, an inert no-store confirmation page. It never revokes
+a cookie or contacts the identity provider merely because a user or external
+website navigated to the URL.
+
+The confirmation form uses `POST /auth/logout`, which requires an
+`Origin` exactly matching the configured HTTPS
+`SMARTPLOY_PUBLIC_ORIGIN` and rejects conflicting `Sec-Fetch-Site`.
+A successful explicit POST revokes the server-side SmartPloy session
+**before** initiating provider end-session and clears the host-only browser
+cookie. Cross-site POSTs are denied with `403 csrf_origin_denied`, with
+no user-data or session changes. The public `GET /auth/logged-out` page
+is also inert: merely visiting it cannot revoke a session or clear cookies.
+
+If the session store cannot confirm revocation, the server returns a
+no-store 503 page, clears the browser cookie, and **does not claim**
+server revocation or provider logout. A provider redirect failure after a
+successful revocation falls back to the neutral logged-out information
+page; this does not prove the identity provider itself signed out.
+The confirmation POST can still work when the application account has
+been administratively disabled, because the logout route deliberately
+does not require an active account binding.
+
+Logout safety is specifically a first-party **browser OIDC session** feature.
+It does not change Cloudflare Access owner policy or independently sign a
+user out of other ObumAI tools. Exact-head CI and signed-in owner/browser
+acceptance remain separate requirements before any public OIDC cutover.
+See [issue #124](https://github.com/galapoto/smartploy/issues/124)
+and [PR #123](https://github.com/galapoto/smartploy/pull/123).
