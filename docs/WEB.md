@@ -186,3 +186,28 @@ Merge all dependencies and verify the integrated **exact main SHA** with
 separate CI before considering an operator-reviewed production release.
 Privileged shared source endpoints remain a distinct authorization task
 under [#116](https://github.com/galapoto/smartploy/issues/116).
+
+## Public health privacy boundary
+
+`GET /healthz` is intentionally available without a login for load balancers,
+container health checks and the pinned OVH release evidence contract. It
+returns only the stable, bounded status needed for those checks: `ok`,
+service, public origin, storage mode/readiness, worker readiness and task count,
+approved-edge Access posture, optional ObumAI availability, and the explicit
+`external_actions_authorized=false` flag.
+
+**It never returns** a candidate's profile ID, fact counts/types, CV data,
+private applications, raw worker/database errors, task metadata or
+internal authentication configuration. Public health responses have
+`Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
+Authenticated users can use `/api/v1/profile/status` and the dashboard or
+`/api/v1/worker/tasks` for their permitted diagnostics; those URLs remain
+under the configured authentication middleware. Public health is not a
+substitute for real login or job availability tests.
+
+The retained status keys deliberately preserve
+`smartploy.live_acceptance.validate_origin_health` and the operator's
+`deploy/personal/scripts/release-evidence.sh` read-only contract. The
+release still requires separate backup, provenance, TLS/Cloudflare and
+signed-in A1–A7 checks. No source activation, identity cutover or employer
+application sending is authorized by this change.
