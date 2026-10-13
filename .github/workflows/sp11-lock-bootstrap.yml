@@ -39,8 +39,10 @@ jobs:
           const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
           const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
           if (lock.lockfileVersion !== 3 || lock.name !== pkg.name ||
-              JSON.stringify(lock.packages[""].dependencies) !== JSON.stringify(pkg.dependencies) ||
-              JSON.stringify(lock.packages[""].devDependencies) !== JSON.stringify(pkg.devDependencies)) {
+              JSON.stringify(Object.entries(lock.packages[""].dependencies || {}).sort()) !==
+              JSON.stringify(Object.entries(pkg.dependencies || {}).sort()) ||
+              JSON.stringify(Object.entries(lock.packages[""].devDependencies || {}).sort()) !==
+              JSON.stringify(Object.entries(pkg.devDependencies || {}).sort())) {
             throw new Error("Lockfile root does not match web/package.json");
           }
           const entries = Object.entries(lock.packages).filter(([key]) => key);
@@ -103,8 +105,10 @@ jobs:
           const pkg = JSON.parse(fs.readFileSync("web/package.json", "utf8"));
           const lock = JSON.parse(fs.readFileSync("web/package-lock.json", "utf8"));
           if (lock.lockfileVersion !== 3 ||
-              JSON.stringify(pkg.dependencies) !== JSON.stringify(lock.packages[""].dependencies) ||
-              JSON.stringify(pkg.devDependencies) !== JSON.stringify(lock.packages[""].devDependencies)) {
+              JSON.stringify(Object.entries(pkg.dependencies || {}).sort()) !==
+              JSON.stringify(Object.entries(lock.packages[""].dependencies || {}).sort()) ||
+              JSON.stringify(Object.entries(pkg.devDependencies || {}).sort()) !==
+              JSON.stringify(Object.entries(lock.packages[""].devDependencies || {}).sort())) {
             throw new Error("Lockfile manifest mismatch; refusing source commit");
           }
           JS
