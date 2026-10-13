@@ -365,3 +365,9 @@ Merge all dependencies and verify the integrated **exact main SHA** with
 separate CI before considering an operator-reviewed production release.
 Privileged shared source endpoints remain a distinct authorization task
 under [#116](https://github.com/galapoto/smartploy/issues/116).
+
+## Reproducible npm installs (SP-11)
+
+The React/browser dependency graph is pinned in `web/package-lock.json` (npm lockfile v3), generated with **npm 10.9.2** on Node 22. All GitHub Actions web and Chromium jobs and the production web Docker image run `npm ci --no-audit --no-fund` instead of resolving floating semver ranges via `npm install`. An explicitly mismatched manifest/lockfile must make the CI negative-control test fail; `npm ci` must not edit either tracked package file.
+
+To reproduce locally with Node 22: `npm install --global npm@10.9.2`, then `cd web && npm ci --no-audit --no-fund && npm run test && npm run build`. Only update the lockfile in a separate reviewed dependency-update PR, inspect its resolved package versions and vulnerability/license inventory, rerun the complete React/Chromium/Docker/backup CI, and pin the resulting NEW Git tree before any approved release. `npm audit` evidence does not substitute for application tests or independent source review.

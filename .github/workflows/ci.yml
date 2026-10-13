@@ -58,9 +58,38 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Pin npm 10.9.2 toolchain
+        run: |
+          set -Eeuo pipefail
+          npm install --global npm@10.9.2 --no-audit --no-fund
+          test "$(npm --version)" = "10.9.2"
       - name: Install web dependencies
         working-directory: web
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
+      - name: Assert immutable package lock and fail on deliberately mismatched manifest
+        run: |
+          set -Eeuo pipefail
+          test "$(npm --version)" = "10.9.2"
+          git diff --exit-code -- web/package.json web/package-lock.json
+          scratch="$(mktemp -d)"
+          trap 'rm -rf -- "$scratch"' EXIT
+          cp web/package.json web/package-lock.json "$scratch/"
+          node - "$scratch/package.json" <<'NODE'
+          const fs = require("node:fs");
+          const path = process.argv[2];
+          const packageJson = JSON.parse(fs.readFileSync(path, "utf8"));
+          packageJson.dependencies.react = "0.0.0";
+          fs.writeFileSync(path, JSON.stringify(packageJson));
+          NODE
+          if (cd "$scratch" && npm ci --offline --ignore-scripts --no-audit --no-fund > npm-ci.log 2>&1); then
+            echo "Lock integrity gate failed: mismatched manifest was accepted" >&2
+            exit 1
+          fi
+          grep -qiE 'EUSAGE|does not satisfy|Invalid:|can only install packages' "$scratch/npm-ci.log" || {
+            echo "Expected lockfile mismatch error was not observed" >&2
+            exit 1
+          }
+          git diff --exit-code -- web/package.json web/package-lock.json
       - name: Web tests
         working-directory: web
         run: npm run test
@@ -81,9 +110,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Pin npm 10.9.2 toolchain
+        run: |
+          set -Eeuo pipefail
+          npm install --global npm@10.9.2 --no-audit --no-fund
+          test "$(npm --version)" = "10.9.2"
       - name: Install web dependencies
         working-directory: web
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Install Chromium and OS libraries
         working-directory: web
         run: npx playwright install --with-deps chromium
