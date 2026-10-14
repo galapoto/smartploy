@@ -158,10 +158,10 @@ def test_browser_mutation_account_precondition_rejects_before_side_effects(authe
     fact_id = accepted.json()["fact"]["fact_id"]
 
     # Wrong-account PATCH and DELETE must fail before a tenant repository call.
-    for method in (client.patch, client.delete):
-        response = method(
-            f"/api/v1/profile/facts/{fact_id}", headers=wrong,
-            **({"json": {"approved": True}} if method is client.patch else {}),
+    for method in ("PATCH", "DELETE"):
+        response = client.request(
+            method, f"/api/v1/profile/facts/{fact_id}", headers=wrong,
+            **({"json": {"approved": True}} if method == "PATCH" else {}),
         )
         assert response.status_code == 409, response.text
     facts = client.get("/api/v1/profile/facts", headers=headers).json()["facts"]
