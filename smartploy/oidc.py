@@ -681,7 +681,17 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
 
         request.state.smartploy_principal = principal
         request.state.smartploy_binding = binding
-        return await call_next(request)
+        response = await call_next(request)
+        # Successful protected API responses can contain CV text, private
+        # profile facts, search settings or draft applications. Protect the
+        # complete /api/ surface, not only the handful of endpoints that
+        # happen to set cache headers themselves. A CDN/browser must never
+        # retain one account's private JSON for a later browser session.
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "private, no-store"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
 
     async def dispatch(
         self,
