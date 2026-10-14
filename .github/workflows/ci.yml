@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# Only cancel superseded pull-request builds, not main-push or manual runs.
+concurrency:
+  group: smartploy-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -58,6 +63,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          # Cache tarballs only: npm ci still verifies lockfile integrity.
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - name: Pin npm 10.9.2 toolchain
         run: |
           set -Eeuo pipefail
@@ -111,6 +119,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          # Cache tarballs only: npm ci still verifies lockfile integrity.
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - name: Pin npm 10.9.2 toolchain
         run: |
           set -Eeuo pipefail
@@ -197,8 +208,14 @@ jobs:
           trap cleanup EXIT
 
           "${COMPOSE[@]}" config > /tmp/smartploy-compose.yml
-          "${COMPOSE[@]}" build api web
-          "${COMPOSE[@]}" up -d --wait postgres
+          # Postgres startup is independent of API/web image builds; overlap
+          # the work, then REQUIRE both steps to finish before migrations.
+          "${COMPOSE[@]}" up -d --wait postgres &
+          postgres_start_pid=$!
+          image_build_status=0
+          "${COMPOSE[@]}" build api web || image_build_status=$?
+          wait "$postgres_start_pid"
+          test "$image_build_status" -eq 0
           "${COMPOSE[@]}" run --rm --no-deps api python scripts/migrate.py
           "${COMPOSE[@]}" up -d --wait --wait-timeout 120 --no-deps --force-recreate api
           "${COMPOSE[@]}" up -d --no-deps --force-recreate worker web
@@ -336,3 +353,30 @@ jobs:
           ! grep -Fq 'ci.cloudflareaccess.com' "${EVIDENCE_FILE}"
           ! grep -Fq 'ci-smartploy-access-audience-123456' "${EVIDENCE_FILE}"
           ! grep -Fq 'ci@example.com' "${EVIDENCE_FILE}"
+
+  review-receipt:
+    name: Exact-checkout review receipt (not release approval)
+    needs: [test, web, browser, deploy-stack]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert all CI gates and generate a review-only receipt
+        env:
+          SMARTPLOY_CI_TEST: ${{ needs.test.result }}
+          SMARTPLOY_CI_WEB: ${{ needs.web.result }}
+          SMARTPLOY_CI_BROWSER: ${{ needs.browser.result }}
+          SMARTPLOY_CI_DEPLOY_STACK: ${{ needs.deploy-stack.result }}
+          SMARTPLOY_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          SMARTPLOY_RECEIPT_DIRECTORY: ${{ runner.temp }}/smartploy-ci-receipt
+        run: python -m scripts.ci_review_receipt
+      - name: Verify receipt checksum
+        working-directory: ${{ runner.temp }}/smartploy-ci-receipt
+        run: sha256sum -c SHA256SUMS
+      - name: Upload review-only receipt (no secrets)
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-ci-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/smartploy-ci-receipt/
+          if-no-files-found: error
+          retention-days: 30
