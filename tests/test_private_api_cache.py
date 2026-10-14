@@ -131,3 +131,78 @@ def test_public_health_contract_stays_separate(authenticated_client):
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     assert response.json()["service"] == "smartploy"
+
+
+def test_browser_mutation_account_precondition_rejects_before_side_effects(authenticated_client):
+    """A's delayed POST cannot change B's data after browser credentials switch."""
+    client, headers = authenticated_client
+    user_id = client.get("/api/v1/session", headers=headers).json()["user_id"]
+    assert user_id
+    wrong = {**headers, "X-Smartploy-Expected-User-Id": "usr-other-account"}
+
+    rejected = client.post(
+        "/api/v1/profile/facts", headers=wrong,
+        json={"fact_type": "skill", "value": "Must not be saved", "approved": True},
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["error"]["code"] == "account_precondition_failed"
+    assert rejected.headers["cache-control"] == "no-store"
+    assert client.get("/api/v1/profile/facts", headers=headers).json()["count"] == 0
+
+    accepted = client.post(
+        "/api/v1/profile/facts",
+        headers={**headers, "X-Smartploy-Expected-User-Id": user_id},
+        json={"fact_type": "skill", "value": "A's own approved skill", "approved": False},
+    )
+    assert accepted.status_code == 201, accepted.text
+    fact_id = accepted.json()["fact"]["fact_id"]
+
+    # Wrong-account PATCH and DELETE must fail before a tenant repository call.
+    for method in ("PATCH", "DELETE"):
+        response = client.request(
+            method, f"/api/v1/profile/facts/{fact_id}", headers=wrong,
+            **({"json": {"approved": True}} if method == "PATCH" else {}),
+        )
+        assert response.status_code == 409, response.text
+    facts = client.get("/api/v1/profile/facts", headers=headers).json()["facts"]
+    assert len(facts) == 1 and facts[0]["approved"] is False
+
+
+def test_search_preferences_account_precondition_preserves_old_revision(authenticated_client):
+    client, headers = authenticated_client
+    current = client.get("/api/v1/search-preferences", headers=headers).json()
+    revision = current["revision"]
+    requested = {
+        "mode": "general",
+        "roles": [], "keywords": [],
+        "expected_revision": revision,
+    }
+    response = client.put(
+        "/api/v1/search-preferences",
+        headers={**headers, "X-Smartploy-Expected-User-Id": "usr-old-browser-account"},
+        json=requested,
+    )
+    assert response.status_code == 409, response.text
+    unchanged = client.get("/api/v1/search-preferences", headers=headers).json()
+    assert unchanged["revision"] == revision
+    assert unchanged["mode"] == current["mode"]
+
+    session = client.get("/api/v1/session", headers=headers).json()
+    accepted = client.put(
+        "/api/v1/search-preferences",
+        headers={**headers, "X-Smartploy-Expected-User-Id": session["user_id"]},
+        json=requested,
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["mode"] == "general"
+
+
+def test_existing_authenticated_api_clients_without_account_header_are_not_broken(authenticated_client):
+    """No header is still authenticated normally; the header never grants identity."""
+    client, headers = authenticated_client
+    accepted = client.post(
+        "/api/v1/profile/facts", headers=headers,
+        json={"fact_type": "skill", "value": "Legacy authenticated writer", "approved": False},
+    )
+    assert accepted.status_code == 201, accepted.text
+    assert client.get("/api/v1/profile/facts", headers=headers).json()["count"] == 1

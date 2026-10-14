@@ -23,7 +23,7 @@ function safePostingLink(url: string): string {
 }
 
 export default function ApplicationStudio(props: {
-  focusId: string; onFindJobs: () => void;
+  focusId: string; expectedUserId: string; onFindJobs: () => void;
 }) {
   const [workspaces, setWorkspaces] = useState<ApplicationWorkspace[]>([]);
   const [selectedId, setSelectedId] = useState(props.focusId);
@@ -122,7 +122,7 @@ export default function ApplicationStudio(props: {
     setBusy(true); setMessage(""); setError("");
     try {
       const result = await editApplicationWorkspace(
-        selected.workspace_id, selected.revision, cvText, letterText
+        selected.workspace_id, selected.revision, cvText, letterText, props.expectedUserId
       );
       updateItem(result.workspace);
       setMessage("Your edits were saved. Downloaded documents will contain this version.");
@@ -142,7 +142,7 @@ export default function ApplicationStudio(props: {
     if (!ok) return;
     setAIBusy(true); setError(""); setMessage(""); setAISuggestion(null);
     try {
-      const response = await requestLocalAISuggestions(selected.workspace_id, selected.revision);
+      const response = await requestLocalAISuggestions(selected.workspace_id, selected.revision, props.expectedUserId);
       setAISuggestion(response.suggestion);
       setMessage("Local AI returned draft suggestions. Review them and choose whether to insert them.");
     } catch (exc) {
@@ -179,7 +179,7 @@ export default function ApplicationStudio(props: {
     )) return;
     setHandoffBusy(true); setError(""); setMessage("");
     try {
-      const response = await createBrowserHandoffPacket(selected.workspace_id, selected.revision);
+      const response = await createBrowserHandoffPacket(selected.workspace_id, selected.revision, props.expectedUserId);
       const json = JSON.stringify(response.packet);
       setHandoffPacketText(json);
       if (navigator.clipboard?.writeText) {
@@ -220,7 +220,7 @@ export default function ApplicationStudio(props: {
     )) return;
     setReceiptBusy(true); setError(""); setMessage("");
     try {
-      const response = await importBrowserReceipt(selected.workspace_id, parsed);
+      const response = await importBrowserReceipt(selected.workspace_id, parsed, props.expectedUserId);
       setBrowserReceipt(response.receipt);
       setReceiptOpen(false); setReceiptInput("");
       setMessage("Employer confirmation was recorded as browser-observed, not independently verified.");
@@ -241,7 +241,7 @@ export default function ApplicationStudio(props: {
     setBusy(true); setError(""); setMessage("");
     try {
       const result = await markApplicationManuallySent(
-        selected.workspace_id, selected.revision, reference
+        selected.workspace_id, selected.revision, reference, props.expectedUserId
       );
       updateItem(result.workspace);
       setMessage("Recorded as personally reported applied, not independently verified by the employer.");
@@ -256,7 +256,7 @@ export default function ApplicationStudio(props: {
     )) return;
     setBusy(true); setError(""); setMessage("");
     try {
-      await deleteApplicationWorkspace(selected.workspace_id);
+      await deleteApplicationWorkspace(selected.workspace_id, props.expectedUserId);
       const remaining = workspaces.filter((item) => item.workspace_id !== selected.workspace_id);
       setWorkspaces(remaining);
       setSelectedId(remaining[0]?.workspace_id || "");

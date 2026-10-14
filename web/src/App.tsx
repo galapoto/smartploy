@@ -171,9 +171,12 @@ export default function App() {
    * Backend authorization remains mandatory for each operation.
    */
   const runPrivateMutation = useCallback(async <T,>(
-    action: () => Promise<T>
+    action: (expectedUserId: string) => Promise<T>
   ): Promise<T> => {
+    // Capture the initiating account synchronously, *before* the preflight
+    // await. The server must reject if a later browser cookie belongs to B.
     const expectedIdentity = lastSessionIdentity.current;
+    const expectedUserId = session?.user_id?.trim() || "";
     const denyStaleAction = (): never => {
       ++loadGeneration.current; // invalidate private GET responses in flight
       lastSessionIdentity.current = null;
@@ -198,9 +201,14 @@ export default function App() {
       }
     };
 
+    // The identity loaded in this React view must be the verified account,
+    // not an older session object left behind during a concurrent refresh.
+    if (!session || !expectedUserId || sessionIdentity(session) !== expectedIdentity) {
+      denyStaleAction();
+    }
     await verifyIdentity(); // never dispatch an action for an unverified account
     try {
-      const result = await action();
+      const result = await action(expectedUserId);
       await verifyIdentity(); // discard stale successful mutation responses
       return result;
     } catch (exc) {
@@ -210,7 +218,7 @@ export default function App() {
       await verifyIdentity();
       throw exc;
     }
-  }, [clearPrivateWorkspace]);
+  }, [clearPrivateWorkspace, session]);
 
   const load = useCallback(async (quiet = false) => {
     if (savingSearchPreferences.current) return;
@@ -304,6 +312,7 @@ export default function App() {
     setRefreshing(false);
 
     const expectedIdentity = lastSessionIdentity.current;
+    const expectedUserId = session?.user_id?.trim() || "";
     let accountUnverified = false;
     const requireSameAccount = async () => {
       let observedIdentity: string | null = null;
@@ -313,7 +322,9 @@ export default function App() {
         // Treat failed/unauthenticated session verification as a privacy
         // boundary failure, not permission to publish stale private results.
       }
-      if (!expectedIdentity || observedIdentity !== expectedIdentity ||
+      if (!expectedIdentity || !session || !expectedUserId ||
+          sessionIdentity(session) !== expectedIdentity ||
+          observedIdentity !== expectedIdentity ||
           lastSessionIdentity.current !== expectedIdentity) {
         accountUnverified = true;
         throw new Error(
@@ -327,7 +338,7 @@ export default function App() {
       // matching search results. Never render account A's preference response
       // under B merely because their visible email addresses are the same.
       await requireSameAccount();
-      const result = await updateSearchPreferences(next);
+      const result = await updateSearchPreferences(next, expectedUserId);
       await requireSameAccount();
       const fresh = await getSearchResults();
       await requireSameAccount();
@@ -385,7 +396,7 @@ export default function App() {
     const actionIdentity = lastSessionIdentity.current;
     setBusyCV(true); setNotice("");
     try {
-      const uploaded = await runPrivateMutation(() => uploadCV(file));
+      const uploaded = await runPrivateMutation((userId) => uploadCV(file, userId));
       setCV(uploaded); setCVPreview(true); navigate("profile");
       setNotice("Your CV was uploaded privately. Review its text and confirm facts before matching.");
       await load(true);
@@ -403,7 +414,7 @@ export default function App() {
     const actionIdentity = lastSessionIdentity.current;
     setBusyCV(true);
     try {
-      await runPrivateMutation(deleteCV);
+      await runPrivateMutation((userId) => deleteCV(userId));
       setCV({ present: false }); setCVPreview(false);
       setNotice("Your uploaded CV has been removed.");
     } catch (exc) {
@@ -424,7 +435,7 @@ export default function App() {
     const approvedByUser = confirmFact;
     setBusyFact("new");
     try {
-      await runPrivateMutation(() => createFact(factType, factValue, approvedByUser));
+      await runPrivateMutation((userId) => createFact(factType, factValue, approvedByUser, userId));
       setNewFactValue(""); setConfirmFact(false);
       setNotice(approvedByUser ? "Approved profile evidence saved." : "Fact saved for review.");
       await load(true);
@@ -441,7 +452,7 @@ export default function App() {
     const actionIdentity = lastSessionIdentity.current;
     setBusyFact(fact.fact_id);
     try {
-      await runPrivateMutation(() => approveFact(fact.fact_id, !fact.approved));
+      await runPrivateMutation((userId) => approveFact(fact.fact_id, !fact.approved, userId));
       await load(true);
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged)) {
@@ -457,7 +468,7 @@ export default function App() {
     const actionIdentity = lastSessionIdentity.current;
     setBusyFact(fact.fact_id);
     try {
-      await runPrivateMutation(() => deleteFact(fact.fact_id));
+      await runPrivateMutation((userId) => deleteFact(fact.fact_id, userId));
       await load(true);
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged)) {
@@ -481,7 +492,7 @@ export default function App() {
     const actionIdentity = lastSessionIdentity.current;
     setManualBusy(true);
     try {
-      const result = await runPrivateMutation(() => addManualJob(payload));
+      const result = await runPrivateMutation((userId) => addManualJob(payload, userId));
       if (result.status !== "saved_private") throw new Error("The saved job was not accepted: " + result.status);
       setJobDialog(false);
       setJobForm({ company: "", role_title: "", location: "", description: "", application_url: "" });
@@ -504,7 +515,7 @@ export default function App() {
     const actionIdentity = lastSessionIdentity.current;
     setRemovingPrivateJob(item.saved_job_id);
     try {
-      await runPrivateMutation(() => deletePrivateSavedJob(item.saved_job_id));
+      await runPrivateMutation((userId) => deletePrivateSavedJob(item.saved_job_id, userId));
       setPrivateSavedJobs((items) => items.filter((saved) => saved.saved_job_id !== item.saved_job_id));
       setNotice("The saved job was removed from your private account.");
     } catch (exc) {
@@ -520,7 +531,7 @@ export default function App() {
     const actionIdentity = lastSessionIdentity.current;
     setPreparing(canonicalKey);
     try {
-      const response = await runPrivateMutation(() => startApplicationWorkspace(canonicalKey));
+      const response = await runPrivateMutation((userId) => startApplicationWorkspace(canonicalKey, userId));
       setSelectedWorkspaceId(response.workspace.workspace_id);
       navigate("applications");
       setNotice(response.created
@@ -754,7 +765,7 @@ export default function App() {
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}
           {page === "applications" ? <div className="stacked">
-            <ApplicationStudio key={accountViewKey} focusId={selectedWorkspaceId} onFindJobs={() => navigate("jobs")} />
+            <ApplicationStudio key={accountViewKey} focusId={selectedWorkspaceId} expectedUserId={session?.user_id || ""} onFindJobs={() => navigate("jobs")} />
             <section className="panel"><div className="panel-heading"><div><p className="section-kicker">APPLICATION TRACKER</p><h2>Your application pipeline</h2><p>A preparation draft is never counted as submitted.</p></div><span className="subtle-count">{applications.length} records</span></div>
             {applications.length ? <div className="applications-list">{applications.map((item) => <div className="application-list-row" key={item.application_id}><FileText size={20} /><div><strong>{formatState(item.state)}</strong><small>Job {item.canonical_key} · {item.updated_at ? relativeFreshness(item.updated_at) : "Updated time unknown"}</small></div><span className={cx("state-pill", item.has_been_submitted ? "good" : "waiting")}>{item.has_been_submitted ? "Submitted" : "Not submitted"}</span></div>)}</div> :
               <Empty title="No applications yet" description="When you've reviewed a job and prepared an application, the draft will appear here. No submissions are claimed without external evidence." icon={FileCheck2} action="Find jobs" onAction={() => navigate("jobs")} />}
