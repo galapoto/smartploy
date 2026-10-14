@@ -679,6 +679,21 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
                 login_url="/auth/login",
             )
 
+        # A delayed browser mutation must never write to account B merely
+        # because the browser switched cookies after account A's preflight.
+        # This is an optional *precondition*, NOT authorization: the verified
+        # principal/binding above is always authoritative. Existing non-web
+        # clients without the header retain their current API contract.
+        if request.url.path.startswith("/api/") and request.method.upper() in {
+            "POST", "PUT", "PATCH", "DELETE"
+        }:
+            expected_user = request.headers.get("x-smartploy-expected-user-id")
+            if expected_user is not None and expected_user != binding.user_id:
+                return self._deny(
+                    409, "account_precondition_failed",
+                    "Your signed-in account changed before this action. Reload SmartPloy.",
+                )
+
         request.state.smartploy_principal = principal
         request.state.smartploy_binding = binding
         response = await call_next(request)
