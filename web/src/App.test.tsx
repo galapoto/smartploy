@@ -177,7 +177,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByText(/90% search match/i)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /prepare documents/i }));
-    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledWith("test-analyst"));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledWith("test-analyst", "usr-synthetic-1"));
     expect(await screen.findByTestId("application-editor")).toBeTruthy();
     expect(screen.getByTestId("application-editor").getAttribute("data-workspace")).toMatch(/^kit-/);
   });
@@ -199,7 +199,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect((screen.getByRole("radio", { name: /general job search/i }) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /browse all jobs/i }));
     await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: "general", expected_revision: 0 })
+      expect.objectContaining({ mode: "general", expected_revision: 0 }), "usr-synthetic-1"
     ));
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     expect(screen.queryByText(/90% search match/i)).toBeNull();
@@ -515,7 +515,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByText("Private UX Researcher")).toBeTruthy();
     expect(api.addManualJob).toHaveBeenCalledWith(expect.objectContaining({
       role_title: "Private UX Researcher", company: "Fictional Studio Oy",
-    }));
+    }), "usr-synthetic-1");
     expect(personalJobs).toHaveLength(1);
     expect(personalJobs[0].private).toBe(true);
     expect(screen.getByText(/Private bookmarks, not employer-verified/i)).toBeTruthy();
@@ -523,7 +523,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Remove saved job Private UX Researcher" }));
     await waitFor(() => expect(api.deletePrivateSavedJob).toHaveBeenCalledWith(
-      "saved-synthetic-1"
+      "saved-synthetic-1", "usr-synthetic-1"
     ));
     await waitFor(() => expect(screen.queryByText("Private UX Researcher")).toBeNull());
     expect(personalJobs).toHaveLength(0);
