@@ -688,7 +688,14 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
         # happen to set cache headers themselves. A CDN/browser must never
         # retain one account's private JSON for a later browser session.
         if request.url.path.startswith("/api/"):
-            response.headers["Cache-Control"] = "private, no-store"
+            # Keep explicit no-store policies (including authorization
+            # denials); override only an absent or cacheable policy.
+            directives = {
+                part.strip().casefold()
+                for part in response.headers.get("Cache-Control", "").split(",")
+            }
+            if "no-store" not in directives:
+                response.headers["Cache-Control"] = "private, no-store"
             response.headers["Pragma"] = "no-cache"
             response.headers["X-Content-Type-Options"] = "nosniff"
         return response
