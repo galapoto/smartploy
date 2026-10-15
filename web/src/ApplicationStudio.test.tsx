@@ -79,9 +79,29 @@ beforeEach(() => {
     will_require_manual_review: true, files_attached: false,
   });
   vi.mocked(api.getBrowserReceipt).mockResolvedValue({ present: false, receipt: null });
+  vi.mocked(api.editApplicationWorkspace).mockImplementation(async (_, __, cvText, coverLetterText) =>
+    ({ workspace: { ...job("A"), cv_text: cvText, cover_letter_text: coverLetterText, revision: 2 } })
+  );
+  vi.mocked(api.requestLocalAISuggestions).mockResolvedValue({
+    workspace_revision: 1,
+    suggestion: {
+      provider: "local_obumai_ollama", model: "synthetic-fixture", approved_evidence_ids: [],
+      external_actions_performed: false, suggestions_applied: false, requires_owner_review: true,
+      proposal: {
+        schema: "smartploy.local_draft.v1",
+        cv_headline: "Synthetic job title", cv_summary: "Synthetic approved evidence",
+        cover_letter: "Synthetic cover letter", highlights: [], risks: [], review_notes: [],
+      },
+    },
+  });
+  vi.mocked(api.markApplicationManuallySent).mockResolvedValue({
+    workspace: { ...job("A"), status: "self_reported_applied", revision: 2 },
+    external_confirmation_verified: false,
+  });
+  vi.mocked(api.deleteApplicationWorkspace).mockResolvedValue({ deleted: true });
 });
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Application Studio private-read account boundary", () => {
   it("keeps normal same-account loading, edits and refresh available", async () => {
@@ -183,5 +203,221 @@ describe("Application Studio private-read account boundary", () => {
     expect(screen.queryByRole("textbox", { name: "Editable CV text" })).toBeNull();
     expect(screen.queryByText("PRIVATE-LETTER-A")).toBeNull();
     expect(screen.queryByRole("button", { name: /copy approved autofill packet/i })).toBeNull();
+  });
+});
+
+
+describe("Application Studio delayed mutation and private clipboard safeguards", () => {
+  it("saves a same-user draft and retains editable text, using A's user precondition", async () => {
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Editable CV text" }), {
+      target: { value: "PRIVATE-CV-A updated after review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", 1, "PRIVATE-CV-A updated after review", "PRIVATE-LETTER-A", "usr-a"
+    ));
+    expect(await screen.findByText(/Your edits were saved/)).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
+      .toBe("PRIVATE-CV-A updated after review");
+    expect(screen.queryByRole("heading", { name: "Account verification required" })).toBeNull();
+  });
+
+  it("does not dispatch a draft save if the account changed before verification", async () => {
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Editable CV text" }), {
+      target: { value: "PRIVATE-CV-A secret unsaved edit" },
+    });
+    activeUser = "usr-b";
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByRole("heading", { name: "Account verification required" })).toBeTruthy();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Your edits were saved/)).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Editable CV text" })).toBeNull();
+  });
+
+  it("rejects A's delayed successful draft save response when cookies now belong to B", async () => {
+    const pending = deferred<{ workspace: ApplicationWorkspace }>();
+    vi.mocked(api.editApplicationWorkspace).mockImplementationOnce(() => pending.promise);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Editable CV text" }), {
+      target: { value: "PRIVATE-CV-A edited" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledTimes(1));
+    activeUser = "usr-b";
+    await act(async () => { pending.resolve({ workspace: { ...job("A"), cv_text: "PRIVATE-CV-A saved", revision: 2 } }); });
+    expect(await screen.findByRole("heading", { name: "Account verification required" })).toBeTruthy();
+    expect(screen.queryByText(/Your edits were saved/)).toBeNull();
+    expect(screen.queryByText("PRIVATE-CV-A saved")).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Editable CV text" })).toBeNull();
+  });
+
+  it("rejects even a failed old-user save without showing that failure under account B", async () => {
+    const pending = deferred<{ workspace: ApplicationWorkspace }>();
+    vi.mocked(api.editApplicationWorkspace).mockImplementationOnce(() => pending.promise);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Editable CV text" }), {
+      target: { value: "PRIVATE-CV-A changed" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledTimes(1));
+    activeUser = "usr-b";
+    await act(async () => { pending.reject(new Error("private A user-only server error")); });
+    expect(await screen.findByRole("heading", { name: "Account verification required" })).toBeTruthy();
+    expect(screen.queryByText(/private A user-only server error/)).toBeNull();
+  });
+
+  it("discards A's delayed AI suggestion after an account switch", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.requestLocalAISuggestions>>>();
+    vi.mocked(api.requestLocalAISuggestions).mockImplementationOnce(() => pending.promise);
+    vi.mocked(api.getLocalAIStatus).mockResolvedValue({
+      configured: true, ready: true, provider: "local_obumai_ollama",
+      model: "synthetic-fixture", external_ai_forwarding: false,
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const suggest = screen.getByRole("button", { name: /Suggest tailored wording/ });
+    await waitFor(() => expect(suggest.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(suggest);
+    await waitFor(() => expect(api.requestLocalAISuggestions).toHaveBeenCalledWith("workspace-A", 1, "usr-a"));
+    activeUser = "usr-b";
+    await act(async () => {
+      pending.resolve({
+        workspace_revision: 1,
+        suggestion: {
+          provider: "local_obumai_ollama", model: "synthetic-private-A",
+          approved_evidence_ids: [], external_actions_performed: false,
+          suggestions_applied: false, requires_owner_review: true,
+          proposal: {
+            schema: "smartploy.local_draft.v1", cv_headline: "A-only resume",
+            cv_summary: "PRIVATE-A-ONLY-SUMMARY", cover_letter: "PRIVATE-A-ONLY-LETTER",
+            highlights: [], risks: [], review_notes: [],
+          },
+        },
+      });
+    });
+    expect(await screen.findByRole("heading", { name: "Account verification required" })).toBeTruthy();
+    expect(screen.queryByText("PRIVATE-A-ONLY-SUMMARY")).toBeNull();
+    expect(screen.queryByText(/Insert into editor/)).toBeNull();
+  });
+
+  it("never copies or renders the old account's delayed browser handoff packet", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.createBrowserHandoffPacket>>>();
+    vi.mocked(api.createBrowserHandoffPacket).mockImplementationOnce(() => pending.promise);
+    const copy = vi.fn(async (_s: string) => {});
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true, value: { writeText: copy },
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const button = screen.getByRole("button", { name: /Copy approved autofill packet/ });
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(button);
+    await waitFor(() => expect(api.createBrowserHandoffPacket).toHaveBeenCalledWith("workspace-A", 1, "usr-a"));
+    activeUser = "usr-b";
+    await act(async () => {
+      pending.resolve({ packet: {
+        schema: "smartploy.browser_handoff.v1",
+        workspace_id: "workspace-A",
+        fields: { full_name: "PRIVATE-ACCOUNT-A-NAME" },
+      } } as never);
+    });
+    expect(await screen.findByRole("heading", { name: "Account verification required" })).toBeTruthy();
+    expect(copy).not.toHaveBeenCalled();
+    expect(screen.queryByText(/PRIVATE-ACCOUNT-A-NAME/)).toBeNull();
+    expect(screen.queryByRole("textbox", { name: /Select and copy the private/i })).toBeNull();
+  });
+
+  it("blocks a copied packet's delayed clipboard-completion message after account change", async () => {
+    const pending = deferred<void>();
+    const copy = vi.fn(() => pending.promise);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true, value: { writeText: copy },
+    });
+    vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({ packet: {
+      schema: "smartploy.browser_handoff.v1",
+      fields: { full_name: "PRIVATE-A" },
+    } } as never);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const button = screen.getByRole("button", { name: /Copy approved autofill packet/ });
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(button);
+    await waitFor(() => expect(copy).toHaveBeenCalledTimes(1));
+    activeUser = "usr-b";
+    await act(async () => { pending.resolve(); });
+    expect(await screen.findByRole("heading", { name: "Account verification required" })).toBeTruthy();
+    expect(screen.queryByText(/Private packet copied/)).toBeNull();
+    expect(screen.queryByText(/PRIVATE-A/)).toBeNull();
+  });
+
+  it("does not publish a delayed manually reported application state under B", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.markApplicationManuallySent>>>();
+    vi.mocked(api.markApplicationManuallySent).mockImplementationOnce(() => pending.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(window, "prompt").mockReturnValue("FICTITIOUS-REFERENCE-A");
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /I applied on employer site/ }));
+    await waitFor(() => expect(api.markApplicationManuallySent).toHaveBeenCalledWith(
+      "workspace-A", 1, "FICTITIOUS-REFERENCE-A", "usr-a"
+    ));
+    activeUser = "usr-b";
+    await act(async () => {
+      pending.resolve({
+        workspace: { ...job("A"), status: "self_reported_applied", revision: 2 },
+        external_confirmation_verified: false,
+      });
+    });
+    expect(await screen.findByRole("heading", { name: "Account verification required" })).toBeTruthy();
+    expect(screen.queryByText(/Recorded as personally reported applied/)).toBeNull();
+    expect(screen.queryByText(/FICTITIOUS-REFERENCE-A/)).toBeNull();
+  });
+
+  it("does not show A's delayed draft deletion success under B", async () => {
+    const pending = deferred<{ deleted: true }>();
+    vi.mocked(api.deleteApplicationWorkspace).mockImplementationOnce(() => pending.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Delete this private draft/ }));
+    await waitFor(() => expect(api.deleteApplicationWorkspace).toHaveBeenCalledWith("workspace-A", "usr-a"));
+    activeUser = "usr-b";
+    await act(async () => { pending.resolve({ deleted: true }); });
+    expect(await screen.findByRole("heading", { name: "Account verification required" })).toBeTruthy();
+    expect(screen.queryByText(/Draft removed from SmartPloy/)).toBeNull();
+    expect(screen.queryByText("A private role")).toBeNull();
+  });
+
+  it("does not publish an old account's imported browser receipt", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.importBrowserReceipt>>>();
+    vi.mocked(api.importBrowserReceipt).mockImplementationOnce(() => pending.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Import observed receipt/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Paste receipt from the companion" }), {
+      target: { value: JSON.stringify({
+        schema: "smartploy.browser_receipt.v1", workspace_id: "workspace-A",
+        document_revision: 1, confirmed_visible: true,
+      }) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Store observed confirmation/ }));
+    await waitFor(() => expect(api.importBrowserReceipt).toHaveBeenCalledTimes(1));
+    activeUser = "usr-b";
+    await act(async () => { pending.resolve({ receipt: {
+      workspace_id: "workspace-A", reference: "PRIVATE-A-RECEIPT", status: "browser_observed_unverified",
+    } } as never); });
+    expect(await screen.findByRole("heading", { name: "Account verification required" })).toBeTruthy();
+    expect(screen.queryByText(/PRIVATE-A-RECEIPT/)).toBeNull();
+    expect(screen.queryByText(/Employer confirmation was recorded/)).toBeNull();
   });
 });

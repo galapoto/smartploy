@@ -65,6 +65,7 @@ export default function ApplicationStudio(props: {
     setHandoff(null); setHandoffPacketText("");
     setBrowserReceipt(null); setReceiptOpen(false); setReceiptInput("");
     setMessage(""); setError(ACCOUNT_CHANGED_NOTICE);
+    setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false);
     setAccountBlocked(true); setLoading(false);
   }, []);
 
@@ -85,6 +86,33 @@ export default function ApplicationStudio(props: {
       throw new StudioAccountChanged();
     }
   }, [blockAccount, props.expectedAuthSource, props.expectedUserId]);
+
+  // A private mutation is scoped to the identity that initiated it.
+  // Backend expected-user headers still enforce ownership before writes;
+  // these checks prevent publishing an old request's result into a new
+  // browser account. A successful backend write is NOT rolled back.
+  const runPrivateAction = useCallback(async <T,>(
+    action: () => Promise<T>
+  ): Promise<T> => {
+    await verifyAccount();
+    if (!mountedRef.current || accountBlockedRef.current) throw new StudioAccountChanged();
+    try {
+      const result = await action();
+      await verifyAccount();
+      return result;
+    } catch (exc) {
+      if (exc instanceof StudioAccountChanged) throw exc;
+      // Even a 401/network failure can happen during an identity switch.
+      // Do not render A's error or a stale success in account B's editor.
+      await verifyAccount();
+      throw exc;
+    }
+  }, [verifyAccount]);
+
+  function reportActionError(exc: unknown, fallback: string) {
+    if (exc instanceof StudioAccountChanged || !mountedRef.current || accountBlockedRef.current) return;
+    setError(exc instanceof Error ? exc.message : fallback);
+  }
 
   const reload = useCallback(async () => {
     if (accountBlockedRef.current) return;
@@ -200,14 +228,15 @@ export default function ApplicationStudio(props: {
     if (!selected || selected.status !== "draft" || browserReceipt) return;
     setBusy(true); setMessage(""); setError("");
     try {
-      const result = await editApplicationWorkspace(
+      const result = await runPrivateAction(() => editApplicationWorkspace(
         selected.workspace_id, selected.revision, cvText, letterText, props.expectedUserId
-      );
+      ));
+      if (accountBlockedRef.current || !mountedRef.current) return;
       updateItem(result.workspace);
       setMessage("Your edits were saved. Downloaded documents will contain this version.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Draft could not be saved.");
-    } finally { setBusy(false); }
+      reportActionError(exc, "Draft could not be saved.");
+    } finally { if (mountedRef.current && !accountBlockedRef.current) setBusy(false); }
   }
 
   async function askLocalAI() {
@@ -221,21 +250,26 @@ export default function ApplicationStudio(props: {
     if (!ok) return;
     setAIBusy(true); setError(""); setMessage(""); setAISuggestion(null);
     try {
-      const response = await requestLocalAISuggestions(selected.workspace_id, selected.revision, props.expectedUserId);
+      const response = await runPrivateAction(() =>
+        requestLocalAISuggestions(selected.workspace_id, selected.revision, props.expectedUserId)
+      );
+      if (accountBlockedRef.current || !mountedRef.current) return;
       setAISuggestion(response.suggestion);
       setMessage("Local AI returned draft suggestions. Review them and choose whether to insert them.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Local AI is currently unavailable.");
-    } finally { setAIBusy(false); }
+      reportActionError(exc, "Local AI is currently unavailable.");
+    } finally { if (mountedRef.current && !accountBlockedRef.current) setAIBusy(false); }
   }
 
-  function insertAISuggestion() {
+  async function insertAISuggestion() {
     if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt) return;
     const draft = aiSuggestion.proposal;
     if (!window.confirm(
       "Insert these AI suggestions into your editable CV and cover letter? " +
       "They may contain mistakes. Nothing is saved or sent until you review and click Save changes."
     )) return;
+    try { await verifyAccount(); } catch { return; }
+    if (accountBlockedRef.current || !mountedRef.current) return;
     setCvText((old) =>
       "TARGET ROLE: " + selected.role_title + " — " + selected.company +
       "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
@@ -258,22 +292,36 @@ export default function ApplicationStudio(props: {
     )) return;
     setHandoffBusy(true); setError(""); setMessage("");
     try {
-      const response = await createBrowserHandoffPacket(selected.workspace_id, selected.revision, props.expectedUserId);
+      const response = await runPrivateAction(() =>
+        createBrowserHandoffPacket(selected.workspace_id, selected.revision, props.expectedUserId)
+      );
+      if (accountBlockedRef.current || !mountedRef.current) return;
       const json = JSON.stringify(response.packet);
-      setHandoffPacketText(json);
       if (navigator.clipboard?.writeText) {
+        let copied = false;
         try {
           await navigator.clipboard.writeText(json);
-          setMessage("Private packet copied. Open the employer posting and use the browser companion within 15 minutes. Review and attach CV before submitting.");
+          copied = true;
         } catch {
-          setMessage("Your private packet is ready below. Select and copy it manually, then open the employer posting and browser companion.");
+          // Clipboard permissions may be denied; allow deliberate manual copy.
         }
+        // A browser sign-in can change while the clipboard API is pending.
+        // Do not show a former user's packet or a success notice afterwards.
+        await verifyAccount();
+        if (accountBlockedRef.current || !mountedRef.current) return;
+        setHandoffPacketText(json);
+        setMessage(copied
+          ? "Private packet copied. Open the employer posting and use the browser companion within 15 minutes. Review and attach CV before submitting."
+          : "Your private packet is ready below. Select and copy it manually, then open the employer posting and browser companion.");
       } else {
+        await verifyAccount();
+        if (accountBlockedRef.current || !mountedRef.current) return;
+        setHandoffPacketText(json);
         setMessage("Your private packet is ready below. Select and copy it manually into the browser companion.");
       }
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to copy the application packet.");
-    } finally { setHandoffBusy(false); }
+      reportActionError(exc, "Unable to copy the application packet.");
+    } finally { if (mountedRef.current && !accountBlockedRef.current) setHandoffBusy(false); }
   }
 
   async function onImportObservedReceipt() {
@@ -299,13 +347,16 @@ export default function ApplicationStudio(props: {
     )) return;
     setReceiptBusy(true); setError(""); setMessage("");
     try {
-      const response = await importBrowserReceipt(selected.workspace_id, parsed, props.expectedUserId);
+      const response = await runPrivateAction(() =>
+        importBrowserReceipt(selected.workspace_id, parsed, props.expectedUserId)
+      );
+      if (accountBlockedRef.current || !mountedRef.current) return;
       setBrowserReceipt(response.receipt);
       setReceiptOpen(false); setReceiptInput("");
       setMessage("Employer confirmation was recorded as browser-observed, not independently verified.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to store this browser receipt.");
-    } finally { setReceiptBusy(false); }
+      reportActionError(exc, "Unable to store this browser receipt.");
+    } finally { if (mountedRef.current && !accountBlockedRef.current) setReceiptBusy(false); }
   }
 
   async function markApplied() {
@@ -319,14 +370,17 @@ export default function ApplicationStudio(props: {
     if (reference === null) return;
     setBusy(true); setError(""); setMessage("");
     try {
-      const result = await markApplicationManuallySent(
-        selected.workspace_id, selected.revision, reference, props.expectedUserId
+      const result = await runPrivateAction(() =>
+        markApplicationManuallySent(
+          selected.workspace_id, selected.revision, reference, props.expectedUserId
+        )
       );
+      if (accountBlockedRef.current || !mountedRef.current) return;
       updateItem(result.workspace);
       setMessage("Recorded as personally reported applied, not independently verified by the employer.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to record this application.");
-    } finally { setBusy(false); }
+      reportActionError(exc, "Unable to record this application.");
+    } finally { if (mountedRef.current && !accountBlockedRef.current) setBusy(false); }
   }
 
   async function remove() {
@@ -335,14 +389,17 @@ export default function ApplicationStudio(props: {
     )) return;
     setBusy(true); setError(""); setMessage("");
     try {
-      await deleteApplicationWorkspace(selected.workspace_id, props.expectedUserId);
+      await runPrivateAction(() =>
+        deleteApplicationWorkspace(selected.workspace_id, props.expectedUserId)
+      );
+      if (accountBlockedRef.current || !mountedRef.current) return;
       const remaining = workspaces.filter((item) => item.workspace_id !== selected.workspace_id);
       setWorkspaces(remaining);
       setSelectedId(remaining[0]?.workspace_id || "");
       setMessage("Draft removed from SmartPloy.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to delete this draft.");
-    } finally { setBusy(false); }
+      reportActionError(exc, "Unable to delete this draft.");
+    } finally { if (mountedRef.current && !accountBlockedRef.current) setBusy(false); }
   }
 
   if (accountBlocked) {
@@ -443,7 +500,7 @@ export default function ApplicationStudio(props: {
             <div className="studio-ai-preview-title">
               <strong>Unverified AI proposal · {aiSuggestion.model}</strong>
               <button className="navy-btn compact" type="button"
-                onClick={insertAISuggestion}>Insert into editor <ArrowRight size={14}/></button>
+                onClick={() => void insertAISuggestion()}>Insert into editor <ArrowRight size={14}/></button>
             </div>
             <h4>{aiSuggestion.proposal.cv_headline}</h4>
             <p>{aiSuggestion.proposal.cv_summary}</p>

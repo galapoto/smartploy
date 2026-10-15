@@ -446,3 +446,33 @@ device/browser's session changed. Server authorization, account-precondition
 headers on mutations, and the explicit per-application employer-submit
 consent remain required. This candidate is still a draft; no production
 auth/ingress change or employer action is authorized.
+
+## Application Studio delayed private-action responses (review-only)
+
+In the same Application Studio component, authenticated reads were guarded
+but mutation responses (draft save/delete, suggested wording, account-local
+browser handoff packet, browser-observed receipt import and manual
+application-status updates) could still update React after a browser account
+switch. Each backend mutation already has a server-checked expected-user
+precondition; this was a **client-side stale-response publication** issue,
+not evidence of cross-tenant server authorization bypass.
+
+These editor actions now verify the server-issued stable user ID and
+authentication source **before dispatching** and **after completing**, including
+when the underlying API returns a failed request. A mismatch or unverified
+session clears the old private draft/AI/receipt/handoff UI and blocks the
+editor. Private packets are not shown or copied when a mismatch is discovered
+before the clipboard write. The result of an in-flight clipboard write is
+also followed by identity verification before showing a copy-success message.
+A clipboard write that finishes *during* an external sign-in change cannot
+be retroactively retracted; users should still treat manually copied packets
+as sensitive. Applying a local AI suggestion also verifies the session after
+the user's confirmation.
+
+A successful backend mutation may already have been committed when the
+browser account changes. UI protection does **not** roll it back. Application
+sending is still external and manual; browser-observed confirmations remain
+unverified and no employer submission is authorized by this change.
+Only synthetic tests and the exact candidate CI run establish code-level
+behavior. Independent review, merge, release and real authenticated two-user
+A1-A7 acceptance remain required.
