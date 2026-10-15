@@ -191,3 +191,66 @@ def test_hybrid_cannot_bypass_cookie_csrf_with_access_header(monkeypatch):
     )
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "csrf_origin_denied"
+
+@pytest.mark.parametrize("mode", ["cloudflare", "hybrid"])
+@pytest.mark.parametrize("origin,fetch_site", [
+    ("https://other.obumai.com", "same-site"),
+    ("https://smartploy.obumai.com.attacker.invalid", "cross-site"),
+    ("null", "none"),
+    (ORIGIN, "cross-site"),
+    (None, "cross-site"),
+])
+def test_access_browser_write_rejects_foreign_origin_or_fetch_metadata(
+    monkeypatch, mode, origin, fetch_site
+):
+    """A valid edge assertion must not authorize a sibling-site browser POST."""
+    configure(monkeypatch, mode="hybrid")
+    monkeypatch.setenv("SMARTPLOY_AUTH_MODE", mode)
+    with TestClient(
+        create_app(
+            SmartployService(), oidc_client=object(),
+            access_verifier=FixtureAccessVerifier(),
+        ), base_url=ORIGIN,
+    ) as api:
+        headers = {
+            "Cf-Access-Jwt-Assertion": "valid-fixture-access",
+            "Sec-Fetch-Site": fetch_site,
+        }
+        if origin is not None:
+            headers["Origin"] = origin
+        blocked = api.post("/api/v1/profile/facts", headers=headers, json=FACT)
+        assert blocked.status_code == 403, blocked.text
+        assert blocked.json()["error"]["code"] == "csrf_origin_denied"
+        assert blocked.headers["cache-control"] == "no-store"
+        assert api.get("/api/v1/profile/facts", headers={
+            "Cf-Access-Jwt-Assertion": "valid-fixture-access",
+        }).json()["count"] == 0
+
+
+@pytest.mark.parametrize("mode", ["cloudflare", "hybrid"])
+def test_access_same_origin_write_and_legacy_originless_client_remain_usable(
+    monkeypatch, mode
+):
+    """Existing server-to-server callers remain compatible without Origin."""
+    configure(monkeypatch, mode="hybrid")
+    monkeypatch.setenv("SMARTPLOY_AUTH_MODE", mode)
+    with TestClient(
+        create_app(
+            SmartployService(), oidc_client=object(),
+            access_verifier=FixtureAccessVerifier(),
+        ), base_url=ORIGIN,
+    ) as api:
+        token = {"Cf-Access-Jwt-Assertion": "valid-fixture-access"}
+        browser = api.post(
+            "/api/v1/profile/facts", json=FACT,
+            headers={**token, "Origin": ORIGIN, "Sec-Fetch-Site": "same-origin"},
+        )
+        assert browser.status_code == 201, browser.text
+        legacy = api.post(
+            "/api/v1/profile/facts",
+            json={"fact_type": "skill", "value": "Synthetic other skill",
+                  "approved": False},
+            headers=token,
+        )
+        assert legacy.status_code == 201, legacy.text
+        assert api.get("/api/v1/profile/facts", headers=token).json()["count"] == 2

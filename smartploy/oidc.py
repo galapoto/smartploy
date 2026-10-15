@@ -605,6 +605,34 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
         ):
             self.access_verifier = CloudflareAccessVerifier(access_settings)
 
+    def _reject_cross_origin_access_mutation(self, request: Request) -> Response | None:
+        """Reject browser cross-site writes even with valid Cloudflare Access.
+
+        Access can authenticate the browser cookie at the edge and then supply
+        a JWT header to this service; the JWT alone does not establish the
+        initiating browser origin. Keep authenticated originless machine clients
+        temporarily compatible until a dedicated machine-auth contract exists.
+        """
+        if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None
+        if not request.url.path.startswith("/api/"):
+            return None
+        origin = request.headers.get("origin")
+        fetch_site = request.headers.get("sec-fetch-site", "").strip().casefold()
+        if origin is not None and (
+            not self.oidc_public_origin or origin != self.oidc_public_origin
+        ):
+            return self._deny(
+                403, "csrf_origin_denied",
+                "A same-origin SmartPloy request is required for this action.",
+            )
+        if fetch_site and fetch_site not in {"same-origin", "none"}:
+            return self._deny(
+                403, "csrf_origin_denied",
+                "A same-origin SmartPloy request is required for this action.",
+            )
+        return None
+
     def _reject_cross_origin_cookie_mutation(self, request: Request) -> Response | None:
         """Require an exact same-origin browser request for OIDC cookie writes.
 
@@ -775,6 +803,9 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
                         503, "identity_unavailable",
                         "SmartPloy account verification is temporarily unavailable.",
                     )
+                access_origin_denial = self._reject_cross_origin_access_mutation(request)
+                if access_origin_denial is not None:
+                    return access_origin_denial
                 return await self._authorize_principal(
                     request, call_next,
                     AuthenticatedPrincipal(

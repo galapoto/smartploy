@@ -371,3 +371,23 @@ under [#116](https://github.com/galapoto/smartploy/issues/116).
 The React/browser dependency graph is pinned in `web/package-lock.json` (npm lockfile v3), generated with **npm 10.9.2** on Node 22. All GitHub Actions web and Chromium jobs and the production web Docker image run `npm ci --no-audit --no-fund` instead of resolving floating semver ranges via `npm install`. An explicitly mismatched manifest/lockfile must make the CI negative-control test fail; `npm ci` must not edit either tracked package file.
 
 To reproduce locally with Node 22: `npm install --global npm@10.9.2`, then `cd web && npm ci --no-audit --no-fund && npm run test && npm run build`. Only update the lockfile in a separate reviewed dependency-update PR, inspect its resolved package versions and vulnerability/license inventory, rerun the complete React/Chromium/Docker/backup CI, and pin the resulting NEW Git tree before any approved release. `npm audit` evidence does not substitute for application tests or independent source review.
+
+## Cloudflare Access browser-origin guard (review candidate)
+
+A verified Cloudflare Access assertion proves who the requester is, not that a
+state-changing browser request came from SmartPloy's own page. In Cloudflare-only
+mode and in hybrid mode without a valid OIDC cookie, the app now rejects API
+`POST`/`PUT`/`PATCH`/`DELETE` requests carrying a foreign/opaque
+`Origin` or suspicious `Sec-Fetch-Site` (`same-site` or `cross-site`).
+The origin is compared with the configured exact `SMARTPLOY_PUBLIC_ORIGIN`,
+not with user-controlled Host or proxy headers. The production Compose file
+supplies the canonical SmartPloy origin.
+
+OIDC cookie mutations **still require** an explicit same-origin `Origin`;
+the Cloudflare assertion path intentionally preserves *originless* authenticated
+machine/API clients until a separate machine-authentication contract can be
+introduced. This means this Access-path change is **defense in depth, not a
+complete CSRF guarantee** for legacy browsers/clients sending neither header.
+Keep Cloudflare Access edge policy, operator-only ingestion authorization and
+per-mutation account binding enabled. Do not claim first-party identity cutover
+or live browser acceptance from these synthetic tests.

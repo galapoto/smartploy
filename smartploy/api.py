@@ -368,6 +368,7 @@ def create_app(
         require_enabled_in_production=authentication.cloudflare_enabled
     )
     oidc_settings = OIDCSettings.from_env(authentication)
+    public_origin = _public_origin()
     dsn = os.getenv("SMARTPLOY_DATABASE_URL", "").strip()
 
     sessions = session_repository
@@ -395,11 +396,11 @@ def create_app(
         sessions=sessions,
         access_settings=access_settings,
         identity_repository=resolved_identities,
-        oidc_public_origin=oidc_settings.public_origin if oidc_settings else "",
+        oidc_public_origin=oidc_settings.public_origin if oidc_settings else public_origin,
         access_verifier=access_verifier,
     )
     app.state.smartploy = active
-    app.state.public_origin = _public_origin()
+    app.state.public_origin = public_origin
     app.state.authentication = authentication
     app.state.access_settings = access_settings
     app.state.oidc_settings = oidc_settings
