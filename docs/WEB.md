@@ -391,3 +391,28 @@ complete CSRF guarantee** for legacy browsers/clients sending neither header.
 Keep Cloudflare Access edge policy, operator-only ingestion authorization and
 per-mutation account binding enabled. Do not claim first-party identity cutover
 or live browser acceptance from these synthetic tests.
+
+## Invalid/revoked OIDC cookies in hybrid authentication (review-only)
+
+In `hybrid` mode, a **valid** OIDC cookie takes precedence over a Cloudflare
+Access assertion. Previously, an **unknown, expired or revoked** OIDC cookie
+could instead fall through to the Cloudflare identity on that same protected
+request. If their backend identities differed, a stale session could
+unexpectedly open the other person's workspace or mutate it through older
+API clients without an account precondition header.
+
+The middleware now responds `401 session_expired` with a safe
+`/auth/login` pointer and expires the invalid host-only cookie **before**
+considering any Cloudflare identity. It does not resolve or mutate private
+tenant state on that request. This also applies in OIDC-only mode. A request
+with **no OIDC cookie** can still explicitly follow the configured Cloudflare
+fallback, and an **unavailable session store** still returns `503` without
+clearing the cookie. Same-email synthetic users, revoked/expired/unknown
+cookie variants, safe GET/POST behavior, and the subsequent cookie-free
+fallback are covered by regression tests.
+
+This avoids one specific silent account downgrade; it does not prevent
+ordinary fallback on an already cookie-free browser, replace the source
+of user authentication, or count as real two-account browser acceptance.
+Do not disable Cloudflare Access or enable first-party production OIDC
+based on these tests alone.

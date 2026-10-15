@@ -774,15 +774,27 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
                         503, "session_unavailable",
                         "SmartPloy session verification is temporarily unavailable.",
                     )
-                if record is not None:
-                    csrf_denial = self._reject_cross_origin_cookie_mutation(request)
-                    if csrf_denial is not None:
-                        return csrf_denial
-                    return await self._authorize_principal(
-                        request, call_next, record.principal(),
-                        session_user_id=record.user_id,
-                        session_token=raw_session,
+                if record is None:
+                    # An unknown, expired or revoked application cookie is NOT
+                    # permission to silently switch to an unrelated Cloudflare
+                    # identity. Only cookie-free requests may use that fallback.
+                    # Do not clear the cookie on a storage outage (handled
+                    # separately above): that case is not a verified expiry.
+                    response = self._deny(
+                        401, "session_expired",
+                        "Your SmartPloy sign-in expired or was revoked. Sign in again.",
+                        login_url="/auth/login",
                     )
+                    clear_session_cookie(response)
+                    return response
+                csrf_denial = self._reject_cross_origin_cookie_mutation(request)
+                if csrf_denial is not None:
+                    return csrf_denial
+                return await self._authorize_principal(
+                    request, call_next, record.principal(),
+                    session_user_id=record.user_id,
+                    session_token=raw_session,
+                )
 
         if self.authentication.cloudflare_enabled and self.access_settings.enabled:
             assertion = request.headers.get(ACCESS_ASSERTION_HEADER, "")
