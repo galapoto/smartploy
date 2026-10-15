@@ -416,3 +416,33 @@ ordinary fallback on an already cookie-free browser, replace the source
 of user authentication, or count as real two-account browser acceptance.
 Do not disable Cloudflare Access or enable first-party production OIDC
 based on these tests alone.
+
+## Application Studio private read-publication boundary (review-only)
+
+The parent React workspace already verifies a stable server user before and
+after loading its main dashboard and before/after account-bound mutations.
+The child Application Studio had a narrower gap: its standalone **Refresh
+drafts** request and selected draft's receipt/handoff reads could complete
+after a browser login switch without independently verifying that the
+responding account matched the parent's captured user. Backend GETs still
+enforce the authenticated tenant; the risk was publishing an unexpected
+account's read response in a previously mounted editor (not bypassing
+backend tenant authorization).
+
+The editor now checks `getSession()` on both sides of its private draft GET
+and on both sides of the selected-draft receipt/handoff GETs, matching the
+server-issued `user_id` **and** `auth_source` against the parent account.
+Missing/failed or changed identity invalidates pending reads, clears local
+CV and letter text, AI suggestions, browser packet and receipt state and
+blocks the editor with an account-verification warning. A second refresh
+cannot be overwritten by an older completed refresh. The normal same-user
+path preserves unsaved edits when the selected draft revision is unchanged.
+
+Synthetic React regression checks exercise real account A/B values with the
+same email, identity changes before and during manual refresh, identity
+lookup errors, overlapping refreshes and delayed receipt/handoff reads.
+They do **not** replace live A1–A7 browser acceptance or prove that another
+device/browser's session changed. Server authorization, account-precondition
+headers on mutations, and the explicit per-application employer-submit
+consent remain required. This candidate is still a draft; no production
+auth/ingress change or employer action is authorized.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, Clock3,
   Download, FileCheck2, FileText, LockKeyhole, RefreshCw, Save, ShieldCheck,
@@ -9,9 +9,14 @@ import {
   getApplicationWorkspaces, markApplicationManuallySent,
   getLocalAIStatus, requestLocalAISuggestions,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
-  getBrowserReceipt, importBrowserReceipt
+  getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
 import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
+
+const ACCOUNT_CHANGED_NOTICE =
+  "Your signed-in SmartPloy account changed or could not be verified. Reload SmartPloy to continue safely.";
+
+class StudioAccountChanged extends Error {}
 
 function safePostingLink(url: string): string {
   try {
@@ -23,7 +28,7 @@ function safePostingLink(url: string): string {
 }
 
 export default function ApplicationStudio(props: {
-  focusId: string; expectedUserId: string; onFindJobs: () => void;
+  focusId: string; expectedUserId: string; expectedAuthSource: string; onFindJobs: () => void;
 }) {
   const [workspaces, setWorkspaces] = useState<ApplicationWorkspace[]>([]);
   const [selectedId, setSelectedId] = useState(props.focusId);
@@ -43,10 +48,58 @@ export default function ApplicationStudio(props: {
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [accountBlocked, setAccountBlocked] = useState(false);
+  const mountedRef = useRef(false);
+  const accountBlockedRef = useRef(false);
+  const reloadGenerationRef = useRef(0);
+
+  // The parent page normally remounts this component on an account switch.
+  // Local refreshes and delayed responses still need their own boundary:
+  // an unchanged email is not proof of an unchanged server-side account.
+  const blockAccount = useCallback(() => {
+    if (!mountedRef.current || accountBlockedRef.current) return;
+    accountBlockedRef.current = true;
+    ++reloadGenerationRef.current;
+    setWorkspaces([]); setSelectedId("");
+    setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
+    setHandoff(null); setHandoffPacketText("");
+    setBrowserReceipt(null); setReceiptOpen(false); setReceiptInput("");
+    setMessage(""); setError(ACCOUNT_CHANGED_NOTICE);
+    setAccountBlocked(true); setLoading(false);
+  }, []);
+
+  const verifyAccount = useCallback(async () => {
+    if (!mountedRef.current || accountBlockedRef.current) throw new StudioAccountChanged();
+    let who;
+    try {
+      who = await getSession();
+    } catch {
+      blockAccount();
+      throw new StudioAccountChanged();
+    }
+    if (!mountedRef.current || accountBlockedRef.current) throw new StudioAccountChanged();
+    if (!props.expectedUserId.trim() || !who.authenticated ||
+        who.user_id?.trim() !== props.expectedUserId.trim() ||
+        (who.auth_source || "") !== props.expectedAuthSource) {
+      blockAccount();
+      throw new StudioAccountChanged();
+    }
+  }, [blockAccount, props.expectedAuthSource, props.expectedUserId]);
 
   const reload = useCallback(async () => {
+    if (accountBlockedRef.current) return;
+    const generation = ++reloadGenerationRef.current;
+    const active = () => mountedRef.current && !accountBlockedRef.current &&
+      generation === reloadGenerationRef.current;
     try {
+      // Verify BEFORE the private GET, and again BEFORE publishing it.
+      // The latter covers cookie changes while the request is in flight.
+      await verifyAccount();
+      if (!active()) return;
       const result = await getApplicationWorkspaces();
+      if (!active()) return;
+      await verifyAccount();
+      if (!active()) return;
       setWorkspaces(result.workspaces);
       setSelectedId((current) => {
         const wanted = props.focusId || current;
@@ -55,13 +108,31 @@ export default function ApplicationStudio(props: {
       });
       setError("");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to load your application drafts.");
-    } finally { setLoading(false); }
-  }, [props.focusId]);
+      if (!active()) return;
+      // Even an HTTP/network error may conceal a cookie switch.
+      // Preserve existing same-account edits only after re-verification.
+      try { await verifyAccount(); } catch { return; }
+      if (active()) {
+        setError(exc instanceof Error ? exc.message : "Unable to load your application drafts.");
+      }
+    } finally {
+      if (active()) setLoading(false);
+    }
+  }, [props.focusId, verifyAccount]);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; ++reloadGenerationRef.current; };
+  }, []);
   useEffect(() => { void reload(); }, [reload]);
   useEffect(() => {
-    void getLocalAIStatus().then(setAIStatus).catch(() => setAIStatus(null));
+    let alive = true;
+    void getLocalAIStatus().then((status) => {
+      if (alive && !accountBlockedRef.current) setAIStatus(status);
+    }).catch(() => {
+      if (alive && !accountBlockedRef.current) setAIStatus(null);
+    });
+    return () => { alive = false; };
   }, []);
 
   const selected = useMemo(
@@ -76,30 +147,38 @@ export default function ApplicationStudio(props: {
 
   useEffect(() => {
     setHandoffPacketText("");
-    if (!selected) { setHandoff(null); return; }
-    let alive = true;
-    setHandoff(null);
-    void getBrowserHandoffReadiness(selected.workspace_id).then((result) => {
-      if (alive) setHandoff(result);
-    }).catch(() => {
-      if (alive) setHandoff(null);
-    });
-    return () => { alive = false; };
-  }, [selected?.workspace_id, selected?.revision]);
-
-  useEffect(() => {
     setReceiptOpen(false);
     setReceiptInput("");
+    setHandoff(null);
     setBrowserReceipt(null);
-    if (!selected?.workspace_id) return;
+    if (!selected?.workspace_id || accountBlockedRef.current) return;
     let alive = true;
-    void getBrowserReceipt(selected.workspace_id).then((state) => {
-      if (alive) setBrowserReceipt(state.receipt);
-    }).catch(() => {
-      if (alive) setBrowserReceipt(null);
-    });
+    const workspaceId = selected.workspace_id;
+    void (async () => {
+      try {
+        await verifyAccount();
+        if (!alive || accountBlockedRef.current) return;
+        // Both reads are tenant-scoped. Check identity once around the
+        // parallel pair; never publish a late cross-account response.
+        const [handoffResult, receiptResult] = await Promise.allSettled([
+          getBrowserHandoffReadiness(workspaceId),
+          getBrowserReceipt(workspaceId),
+        ]);
+        if (!alive || accountBlockedRef.current) return;
+        await verifyAccount();
+        if (!alive || accountBlockedRef.current) return;
+        setHandoff(handoffResult.status === "fulfilled" ? handoffResult.value : null);
+        setBrowserReceipt(receiptResult.status === "fulfilled" ? receiptResult.value.receipt : null);
+      } catch {
+        // verifyAccount clears private state and blocks the editor on any
+        // missing or different session. Ordinary API failures show no data.
+        if (alive && !accountBlockedRef.current) {
+          setHandoff(null); setBrowserReceipt(null);
+        }
+      }
+    })();
     return () => { alive = false; };
-  }, [selected?.workspace_id]);
+  }, [selected?.workspace_id, selected?.revision, verifyAccount]);
 
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
@@ -264,6 +343,14 @@ export default function ApplicationStudio(props: {
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Unable to delete this draft.");
     } finally { setBusy(false); }
+  }
+
+  if (accountBlocked) {
+    return <section className="panel studio-loading" role="alert">
+      <LockKeyhole size={23}/>
+      <h3>Account verification required</h3>
+      <p>{ACCOUNT_CHANGED_NOTICE}</p>
+    </section>;
   }
 
   if (loading) {
