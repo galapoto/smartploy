@@ -220,8 +220,11 @@ def test_hybrid_stale_oidc_cookie_never_switches_to_cloudflare_owner(
         assert "Max-Age=0" in result.headers["set-cookie"]
         assert verifier.calls == 0
 
-        # After the rejected response has cleared the browser's old cookie,
-        # a fresh cookie-free Access request still follows the old fallback.
+        # The response's Set-Cookie tombstone is asserted above. httpx's
+        # manually injected fixture cookie has no browser host binding, so
+        # explicitly model the browser applying that tombstone before the
+        # separate no-cookie Cloudflare compatibility request.
+        api.cookies.clear()
         cookie_free = api.get("/api/v1/session", headers=headers)
         assert cookie_free.status_code == 200, cookie_free.text
         assert cookie_free.json()["auth_source"] == "cloudflare_access"
