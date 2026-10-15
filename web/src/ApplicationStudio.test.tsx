@@ -78,7 +78,7 @@ beforeEach(() => {
     contact_fields_ready: true, employer_submission_performed: false,
     will_require_manual_review: true, files_attached: false,
   });
-  vi.mocked(api.getBrowserReceipt).mockResolvedValue({ receipt: null });
+  vi.mocked(api.getBrowserReceipt).mockResolvedValue({ present: false, receipt: null });
 });
 
 afterEach(() => cleanup());
@@ -172,13 +172,13 @@ describe("Application Studio private-read account boundary", () => {
   });
 
   it("fails closed for selected receipt/handoff reads completed under account B", async () => {
-    const receipt = deferred<{ receipt: null }>();
+    const receipt = deferred<{ present: boolean; receipt: null }>();
     vi.mocked(api.getBrowserReceipt).mockImplementationOnce(() => receipt.promise);
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
     await waitFor(() => expect(api.getBrowserReceipt).toHaveBeenCalledTimes(1));
     activeUser = "usr-b";
-    await act(async () => { receipt.resolve({ receipt: null }); });
+    await act(async () => { receipt.resolve({ present: false, receipt: null }); });
     expect(await screen.findByRole("heading", { name: "Account verification required" })).toBeTruthy();
     expect(screen.queryByRole("textbox", { name: "Editable CV text" })).toBeNull();
     expect(screen.queryByText("PRIVATE-LETTER-A")).toBeNull();
