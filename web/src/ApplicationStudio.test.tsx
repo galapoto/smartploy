@@ -421,3 +421,198 @@ describe("Application Studio delayed mutation and private clipboard safeguards",
     expect(screen.queryByText(/Employer confirmation was recorded/)).toBeNull();
   });
 });
+
+
+describe("Application Studio per-draft result isolation", () => {
+  const twoDrafts = () =>
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [job("A"), job("B")], count: 2,
+    });
+
+  function selectB() {
+    fireEvent.click(screen.getByRole("button", { name: /B private role/ }));
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+  }
+
+  it("does not switch from B back to A when A's saved draft completes", async () => {
+    twoDrafts();
+    const pending = deferred<{ workspace: ApplicationWorkspace }>();
+    vi.mocked(api.editApplicationWorkspace).mockImplementationOnce(() => pending.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Editable CV text" }), {
+      target: { value: "unsaved A-only text" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledTimes(1));
+    selectB();
+    await act(async () => {
+      pending.resolve({ workspace: { ...job("A"), revision: 2, cv_text: "SAVED-A-ONLY" } });
+    });
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
+      .toBe("PRIVATE-CV-B");
+    expect(screen.queryByText(/Your edits were saved/)).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Account verification required" })).toBeNull();
+  });
+
+  it("does not publish an A-only AI proposal in B's job draft", async () => {
+    twoDrafts();
+    const pending = deferred<Awaited<ReturnType<typeof api.requestLocalAISuggestions>>>();
+    vi.mocked(api.requestLocalAISuggestions).mockImplementationOnce(() => pending.promise);
+    vi.mocked(api.getLocalAIStatus).mockResolvedValue({
+      configured: true, ready: true, provider: "local_obumai_ollama",
+      model: "synthetic-model", external_ai_forwarding: false,
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const suggest = screen.getByRole("button", { name: /Suggest tailored wording/ });
+    await waitFor(() => expect(suggest.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(suggest);
+    await waitFor(() => expect(api.requestLocalAISuggestions).toHaveBeenCalledWith(
+      "workspace-A", 1, "usr-a"
+    ));
+    selectB();
+    await act(async () => {
+      pending.resolve({
+        workspace_revision: 1,
+        suggestion: {
+          provider: "local_obumai_ollama", model: "synthetic",
+          approved_evidence_ids: [], external_actions_performed: false,
+          suggestions_applied: false, requires_owner_review: true,
+          proposal: {
+            schema: "smartploy.local_draft.v1", cv_headline: "A only",
+            cv_summary: "A-ONLY-PRIVATE-AI-SUMMARY",
+            cover_letter: "A-ONLY-PRIVATE-COVER-LETTER",
+            highlights: [], risks: [], review_notes: [],
+          },
+        },
+      });
+    });
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect(screen.queryByText("A-ONLY-PRIVATE-AI-SUMMARY")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Insert into editor/ })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Account verification required" })).toBeNull();
+  });
+
+  it("does not copy an A-only browser packet after the user selects B", async () => {
+    twoDrafts();
+    const pending = deferred<Awaited<ReturnType<typeof api.createBrowserHandoffPacket>>>();
+    vi.mocked(api.createBrowserHandoffPacket).mockImplementationOnce(() => pending.promise);
+    const clipboardCopy = vi.fn(async (_s: string) => {});
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true, value: { writeText: clipboardCopy },
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const copyButton = screen.getByRole("button", { name: /Copy approved autofill packet/ });
+    await waitFor(() => expect(copyButton.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(copyButton);
+    await waitFor(() => expect(api.createBrowserHandoffPacket).toHaveBeenCalledTimes(1));
+    selectB();
+    await act(async () => {
+      pending.resolve({ packet: {
+        schema: "smartploy.browser_handoff.v1",
+        workspace_id: "workspace-A",
+        fields: { full_name: "A-ONLY-PRIVATE-PACKET" },
+      } } as never);
+    });
+    expect(clipboardCopy).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: /Select and copy the private/i })).toBeNull();
+    expect(screen.queryByText(/Private packet copied/)).toBeNull();
+  });
+
+  it("does not publish A's pending receipt into B's receipt area", async () => {
+    twoDrafts();
+    const pending = deferred<Awaited<ReturnType<typeof api.importBrowserReceipt>>>();
+    vi.mocked(api.importBrowserReceipt).mockImplementationOnce(() => pending.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Import observed receipt/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Paste receipt from the companion" }), {
+      target: { value: JSON.stringify({
+        schema: "smartploy.browser_receipt.v1", workspace_id: "workspace-A",
+        document_revision: 1, confirmed_visible: true,
+      }) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Store observed confirmation/ }));
+    await waitFor(() => expect(api.importBrowserReceipt).toHaveBeenCalledTimes(1));
+    selectB();
+    await act(async () => { pending.resolve({ receipt: {
+      workspace_id: "workspace-A", reference: "A-ONLY-RECEIPT",
+      status: "browser_observed_unverified",
+    } } as never); });
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect(screen.queryByText("A-ONLY-RECEIPT")).toBeNull();
+    expect(screen.queryByText(/Employer confirmation was recorded/)).toBeNull();
+    expect(screen.getByRole("button", { name: /Import observed receipt/ })).toBeTruthy();
+  });
+
+  it("does not publish A's manual application status after switching to B", async () => {
+    twoDrafts();
+    const pending = deferred<Awaited<ReturnType<typeof api.markApplicationManuallySent>>>();
+    vi.mocked(api.markApplicationManuallySent).mockImplementationOnce(() => pending.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(window, "prompt").mockReturnValue("A-ONLY-REFERENCE");
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /I applied on employer site/ }));
+    await waitFor(() => expect(api.markApplicationManuallySent).toHaveBeenCalledTimes(1));
+    selectB();
+    await act(async () => { pending.resolve({
+      workspace: { ...job("A"), revision: 2, status: "self_reported_applied" },
+      external_confirmation_verified: false,
+    }); });
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect(screen.queryByText(/Recorded as personally reported applied/)).toBeNull();
+    expect(screen.queryByText("A-ONLY-REFERENCE")).toBeNull();
+  });
+
+  it("does not jump away from B when A's deletion finishes late", async () => {
+    twoDrafts();
+    const pending = deferred<{ deleted: true }>();
+    vi.mocked(api.deleteApplicationWorkspace).mockImplementationOnce(() => pending.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Delete this private draft/ }));
+    await waitFor(() => expect(api.deleteApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", "usr-a"
+    ));
+    selectB();
+    await act(async () => { pending.resolve({ deleted: true }); });
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect(screen.queryByText(/Draft removed from SmartPloy/)).toBeNull();
+  });
+
+  it("rejects A's AI insertion if the user switches to B during identity verification", async () => {
+    twoDrafts();
+    vi.mocked(api.getLocalAIStatus).mockResolvedValue({
+      configured: true, ready: true, provider: "local_obumai_ollama",
+      model: "synthetic", external_ai_forwarding: false,
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const suggest = screen.getByRole("button", { name: /Suggest tailored wording/ });
+    await waitFor(() => expect(suggest.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(suggest);
+    expect(await screen.findByText(/Synthetic approved evidence/)).toBeTruthy();
+    const verification = deferred<SessionInfo>();
+    vi.mocked(api.getSession).mockImplementationOnce(() => verification.promise);
+    fireEvent.click(screen.getByRole("button", { name: /Insert into editor/ }));
+    await waitFor(() => expect(api.getSession).toHaveBeenCalled());
+    selectB();
+    await act(async () => { verification.resolve(session("usr-a")); });
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
+      .toBe("PRIVATE-CV-B");
+    expect((screen.getByRole("textbox", { name: "Editable cover letter text" }) as HTMLTextAreaElement).value)
+      .toBe("PRIVATE-LETTER-B");
+  });
+});

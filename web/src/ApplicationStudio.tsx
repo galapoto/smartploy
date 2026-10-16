@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, Clock3,
   Download, FileCheck2, FileText, LockKeyhole, RefreshCw, Save, ShieldCheck,
@@ -17,6 +17,11 @@ const ACCOUNT_CHANGED_NOTICE =
   "Your signed-in SmartPloy account changed or could not be verified. Reload SmartPloy to continue safely.";
 
 class StudioAccountChanged extends Error {}
+class StudioSelectionChanged extends Error {}
+
+// A draft's identity is its workspace ID, revision, AND the viewer's
+// selection epoch. Switching away and back must not resurrect late results.
+type DraftTicket = { key: string; epoch: number };
 
 function safePostingLink(url: string): string {
   try {
@@ -52,6 +57,17 @@ export default function ApplicationStudio(props: {
   const mountedRef = useRef(false);
   const accountBlockedRef = useRef(false);
   const reloadGenerationRef = useRef(0);
+  const selectedDraftRef = useRef<DraftTicket>({ key: "", epoch: 0 });
+
+  const isCurrentDraft = useCallback((ticket: DraftTicket) =>
+    mountedRef.current && !accountBlockedRef.current &&
+    selectedDraftRef.current.key === ticket.key &&
+    selectedDraftRef.current.epoch === ticket.epoch, []);
+
+  const captureDraft = (item: ApplicationWorkspace): DraftTicket => ({
+    key: JSON.stringify([item.workspace_id, item.revision]),
+    epoch: selectedDraftRef.current.epoch,
+  });
 
   // The parent page normally remounts this component on an account switch.
   // Local refreshes and delayed responses still need their own boundary:
@@ -60,6 +76,7 @@ export default function ApplicationStudio(props: {
     if (!mountedRef.current || accountBlockedRef.current) return;
     accountBlockedRef.current = true;
     ++reloadGenerationRef.current;
+    ++selectedDraftRef.current.epoch;
     setWorkspaces([]); setSelectedId("");
     setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
     setHandoff(null); setHandoffPacketText("");
@@ -92,25 +109,28 @@ export default function ApplicationStudio(props: {
   // these checks prevent publishing an old request's result into a new
   // browser account. A successful backend write is NOT rolled back.
   const runPrivateAction = useCallback(async <T,>(
-    action: () => Promise<T>
+    action: () => Promise<T>, ticket: DraftTicket
   ): Promise<T> => {
     await verifyAccount();
-    if (!mountedRef.current || accountBlockedRef.current) throw new StudioAccountChanged();
+    if (!isCurrentDraft(ticket)) throw new StudioSelectionChanged();
     try {
       const result = await action();
       await verifyAccount();
+      if (!isCurrentDraft(ticket)) throw new StudioSelectionChanged();
       return result;
     } catch (exc) {
-      if (exc instanceof StudioAccountChanged) throw exc;
-      // Even a 401/network failure can happen during an identity switch.
-      // Do not render A's error or a stale success in account B's editor.
+      if (exc instanceof StudioAccountChanged || exc instanceof StudioSelectionChanged) throw exc;
+      // A network failure may hide an account switch; verify before showing
+      // an error, and never publish the former draft's error in the new one.
       await verifyAccount();
+      if (!isCurrentDraft(ticket)) throw new StudioSelectionChanged();
       throw exc;
     }
-  }, [verifyAccount]);
+  }, [isCurrentDraft, verifyAccount]);
 
   function reportActionError(exc: unknown, fallback: string) {
-    if (exc instanceof StudioAccountChanged || !mountedRef.current || accountBlockedRef.current) return;
+    if (exc instanceof StudioAccountChanged || exc instanceof StudioSelectionChanged ||
+        !mountedRef.current || accountBlockedRef.current) return;
     setError(exc instanceof Error ? exc.message : fallback);
   }
 
@@ -167,6 +187,12 @@ export default function ApplicationStudio(props: {
     () => workspaces.find((item) => item.workspace_id === selectedId) || null,
     [workspaces, selectedId]
   );
+  useLayoutEffect(() => {
+    const key = selected ? JSON.stringify([selected.workspace_id, selected.revision]) : "";
+    if (selectedDraftRef.current.key !== key) {
+      selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
+    }
+  }, [selected?.workspace_id, selected?.revision]);
   useEffect(() => {
     setAISuggestion(null);
     setCvText(selected?.cv_text || "");
@@ -214,6 +240,7 @@ export default function ApplicationStudio(props: {
 
   function pick(id: string) {
     if (dirty && !window.confirm("Discard unsaved changes and open another draft?")) return;
+    if (id !== selectedId) ++selectedDraftRef.current.epoch;
     setSelectedId(id);
     setMessage("");
     setError("");
@@ -226,12 +253,13 @@ export default function ApplicationStudio(props: {
 
   async function save() {
     if (!selected || selected.status !== "draft" || browserReceipt) return;
+    const ticket = captureDraft(selected);
     setBusy(true); setMessage(""); setError("");
     try {
       const result = await runPrivateAction(() => editApplicationWorkspace(
         selected.workspace_id, selected.revision, cvText, letterText, props.expectedUserId
-      ));
-      if (accountBlockedRef.current || !mountedRef.current) return;
+      ), ticket);
+      if (!isCurrentDraft(ticket)) return;
       updateItem(result.workspace);
       setMessage("Your edits were saved. Downloaded documents will contain this version.");
     } catch (exc) {
@@ -248,12 +276,14 @@ export default function ApplicationStudio(props: {
       "proposal only and must be reviewed before saving."
     );
     if (!ok) return;
+    const ticket = captureDraft(selected);
     setAIBusy(true); setError(""); setMessage(""); setAISuggestion(null);
     try {
       const response = await runPrivateAction(() =>
-        requestLocalAISuggestions(selected.workspace_id, selected.revision, props.expectedUserId)
+        requestLocalAISuggestions(selected.workspace_id, selected.revision, props.expectedUserId),
+        ticket
       );
-      if (accountBlockedRef.current || !mountedRef.current) return;
+      if (!isCurrentDraft(ticket)) return;
       setAISuggestion(response.suggestion);
       setMessage("Local AI returned draft suggestions. Review them and choose whether to insert them.");
     } catch (exc) {
@@ -264,12 +294,13 @@ export default function ApplicationStudio(props: {
   async function insertAISuggestion() {
     if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt) return;
     const draft = aiSuggestion.proposal;
+    const ticket = captureDraft(selected);
     if (!window.confirm(
       "Insert these AI suggestions into your editable CV and cover letter? " +
       "They may contain mistakes. Nothing is saved or sent until you review and click Save changes."
     )) return;
     try { await verifyAccount(); } catch { return; }
-    if (accountBlockedRef.current || !mountedRef.current) return;
+    if (!isCurrentDraft(ticket)) return;
     setCvText((old) =>
       "TARGET ROLE: " + selected.role_title + " — " + selected.company +
       "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
@@ -290,12 +321,14 @@ export default function ApplicationStudio(props: {
       "to your computer clipboard. Keep it private; you will paste it into the " +
       "optional SmartPloy browser companion. No form is filled or submitted by this action."
     )) return;
+    const ticket = captureDraft(selected);
     setHandoffBusy(true); setError(""); setMessage("");
     try {
       const response = await runPrivateAction(() =>
-        createBrowserHandoffPacket(selected.workspace_id, selected.revision, props.expectedUserId)
+        createBrowserHandoffPacket(selected.workspace_id, selected.revision, props.expectedUserId),
+        ticket
       );
-      if (accountBlockedRef.current || !mountedRef.current) return;
+      if (!isCurrentDraft(ticket)) return;
       const json = JSON.stringify(response.packet);
       if (navigator.clipboard?.writeText) {
         let copied = false;
@@ -308,14 +341,14 @@ export default function ApplicationStudio(props: {
         // A browser sign-in can change while the clipboard API is pending.
         // Do not show a former user's packet or a success notice afterwards.
         await verifyAccount();
-        if (accountBlockedRef.current || !mountedRef.current) return;
+        if (!isCurrentDraft(ticket)) return;
         setHandoffPacketText(json);
         setMessage(copied
           ? "Private packet copied. Open the employer posting and use the browser companion within 15 minutes. Review and attach CV before submitting."
           : "Your private packet is ready below. Select and copy it manually, then open the employer posting and browser companion.");
       } else {
         await verifyAccount();
-        if (accountBlockedRef.current || !mountedRef.current) return;
+        if (!isCurrentDraft(ticket)) return;
         setHandoffPacketText(json);
         setMessage("Your private packet is ready below. Select and copy it manually into the browser companion.");
       }
@@ -345,12 +378,14 @@ export default function ApplicationStudio(props: {
       "Store this browser-observed employer confirmation? The employer has NOT independently "
       + "verified it through SmartPloy. This action does not count as a verified submission."
     )) return;
+    const ticket = captureDraft(selected);
     setReceiptBusy(true); setError(""); setMessage("");
     try {
       const response = await runPrivateAction(() =>
-        importBrowserReceipt(selected.workspace_id, parsed, props.expectedUserId)
+        importBrowserReceipt(selected.workspace_id, parsed, props.expectedUserId),
+        ticket
       );
-      if (accountBlockedRef.current || !mountedRef.current) return;
+      if (!isCurrentDraft(ticket)) return;
       setBrowserReceipt(response.receipt);
       setReceiptOpen(false); setReceiptInput("");
       setMessage("Employer confirmation was recorded as browser-observed, not independently verified.");
@@ -368,14 +403,15 @@ export default function ApplicationStudio(props: {
     )) return;
     const reference = window.prompt("Optional employer confirmation/reference (leave blank if unavailable):", "");
     if (reference === null) return;
+    const ticket = captureDraft(selected);
     setBusy(true); setError(""); setMessage("");
     try {
       const result = await runPrivateAction(() =>
         markApplicationManuallySent(
           selected.workspace_id, selected.revision, reference, props.expectedUserId
-        )
+        ), ticket
       );
-      if (accountBlockedRef.current || !mountedRef.current) return;
+      if (!isCurrentDraft(ticket)) return;
       updateItem(result.workspace);
       setMessage("Recorded as personally reported applied, not independently verified by the employer.");
     } catch (exc) {
@@ -387,12 +423,14 @@ export default function ApplicationStudio(props: {
     if (!selected || !window.confirm(
       "Permanently delete this application workspace and its document text? Original CV and profile facts remain."
     )) return;
+    const ticket = captureDraft(selected);
     setBusy(true); setError(""); setMessage("");
     try {
       await runPrivateAction(() =>
-        deleteApplicationWorkspace(selected.workspace_id, props.expectedUserId)
+        deleteApplicationWorkspace(selected.workspace_id, props.expectedUserId),
+        ticket
       );
-      if (accountBlockedRef.current || !mountedRef.current) return;
+      if (!isCurrentDraft(ticket)) return;
       const remaining = workspaces.filter((item) => item.workspace_id !== selected.workspace_id);
       setWorkspaces(remaining);
       setSelectedId(remaining[0]?.workspace_id || "");

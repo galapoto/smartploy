@@ -476,3 +476,30 @@ unverified and no employer submission is authorized by this change.
 Only synthetic tests and the exact candidate CI run establish code-level
 behavior. Independent review, merge, release and real authenticated two-user
 A1-A7 acceptance remain required.
+
+## Application Studio per-draft delayed results (review-only)
+
+Private account verification does not by itself prevent mixing *different job
+drafts belonging to the same account*. Before this change a user could click
+from draft A to draft B while a save, local AI generation, handoff packet,
+browser-observed receipt import, manual-applied status update or deletion was
+pending. The late A result might then reselect A, show A's sensitive packet in
+B's editor, or present A's AI text/receipt as if it belonged to B.
+
+The editor now captures a **workspace ID + revision + selection epoch** for
+every private action and checks it both after the identity preflight and after
+the action. Switching drafts immediately invalidates the previous epoch;
+switching away and back does not revive stale results. Account-bound mutation
+authorization and explicit user confirmation remain unchanged. The optional
+clipboard is never written with an old draft's packet after a *detected*
+selection change, including if the packet generation finished later. Manual
+AI proposal insertion rechecks the same draft context after its session
+lookup, before changing CV/letter fields.
+
+A successful backend save/delete/status mutation cannot be undone by
+discarding its stale response. If the user switches while a mutation runs,
+the current draft remains visible without an unrelated result; use Refresh
+drafts to reconcile old draft state. This does **not** submit applications
+to employers and does not independently verify browser receipts. Deterministic
+synthetic React tests cover both same-account drafts, including late AI,
+packet, receipt, save, delete, reported-applied and AI insertion cases.
