@@ -561,6 +561,14 @@ describe("Application Studio per-draft result isolation", () => {
     vi.spyOn(window, "prompt").mockReturnValue("A-ONLY-REFERENCE");
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    // Wait for the selected draft's editor synchronization effect. The
+    // first heading render can precede textarea hydration in React tests.
+    await waitFor(() => {
+      expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
+        .toBe("PRIVATE-CV-A");
+      expect((screen.getByRole("textbox", { name: "Editable cover letter text" }) as HTMLTextAreaElement).value)
+        .toBe("PRIVATE-LETTER-A");
+    });
     fireEvent.click(screen.getByRole("button", { name: /I applied on employer site/ }));
     await waitFor(() => expect(api.markApplicationManuallySent).toHaveBeenCalledTimes(1));
     selectB();
