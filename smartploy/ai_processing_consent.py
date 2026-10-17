@@ -489,7 +489,7 @@ class PostgresJobAIConsentRepository:
     ) -> Iterator[JobAIConsent]:
         """Hold DB row locks across ONE bounded outbound dispatch attempt.
 
-        A revocation or regrant UPDATE waits for this block to finish. If it
+        A concurrent dispatch, revocation or regrant waits for this block. If it
         commits before these locks are obtained, a new dispatch is rejected.
         This serializes future sends with withdrawal, without falsely claiming
         that withdrawal cancels already in-flight requests.
@@ -514,7 +514,7 @@ class PostgresJobAIConsentRepository:
                           AND profile_id = %s AND canonical_key = %s
                           AND job_snapshot_sha256 = %s AND evidence_sha256 = %s
                           AND revoked_at IS NULL
-                        FOR SHARE
+                        FOR UPDATE
                     """,
                     (
                         _consent_id(binding.user_id, binding.profile_id, canonical_key),
