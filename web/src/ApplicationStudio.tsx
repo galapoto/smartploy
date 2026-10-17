@@ -12,6 +12,7 @@ import {
   getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
 import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
+import { safeExternalJobUrl } from "./lib";
 
 const ACCOUNT_CHANGED_NOTICE =
   "Your signed-in SmartPloy account changed or could not be verified. Reload SmartPloy to continue safely.";
@@ -23,14 +24,7 @@ class StudioSelectionChanged extends Error {}
 // selection epoch. Switching away and back must not resurrect late results.
 type DraftTicket = { key: string; epoch: number };
 
-function safePostingLink(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : "";
-  } catch {
-    return "";
-  }
-}
+const safePostingLink = safeExternalJobUrl;
 
 export default function ApplicationStudio(props: {
   focusId: string; expectedUserId: string; expectedAuthSource: string; onFindJobs: () => void;

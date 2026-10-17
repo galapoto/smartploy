@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, ChevronDown, Globe2, MapPin, Search, SlidersHorizontal, Target } from "lucide-react";
 import type { SearchResults, SearchJobCard } from "./types";
-import { listingObservationLabels, scoreBand, sectorLabel, type SectorFilter, type DisplayMode } from "./lib";
+import { listingObservationLabels, safeExternalJobUrl, scoreBand, sectorLabel, type SectorFilter, type DisplayMode } from "./lib";
 
 function JobCard(props: {
   item: SearchJobCard; displayMode: DisplayMode; busy: boolean; onPrepare: () => void;
@@ -11,6 +11,7 @@ function JobCard(props: {
   const job = item.job;
   const hasScore = typeof item.preference_score === "number";
   const sourceDates = listingObservationLabels(job.posted_at, job.first_seen_at, job.last_seen_at);
+  const postingUrl = safeExternalJobUrl(job.application_url);
   return <article className="job-item search-result-card">
     <div className="job-avatar" aria-hidden="true">{(job.company || "J").slice(0,1).toUpperCase()}</div>
     <div className="job-details">
@@ -50,8 +51,9 @@ function JobCard(props: {
       {hasScore ? <button type="button" className="text-btn" onClick={() => setShowWhy(!showWhy)}>
         {showWhy ? "Hide explanation" : "Why shown"} <ChevronDown size={13}/>
       </button> : null}
-      {job.application_url ? <a href={job.application_url} className="outline-btn compact"
-        target="_blank" rel="noopener noreferrer">Job posting <ArrowUpRight size={14}/></a> : null}
+      {postingUrl ? <a href={postingUrl} className="outline-btn compact"
+        target="_blank" rel="noopener noreferrer">Job posting <ArrowUpRight size={14}/></a> :
+        <span className="muted">Employer link unavailable — verify with the source.</span>}
       <button type="button" className="navy-btn compact" onClick={props.onPrepare} disabled={props.busy || !job.source_current}>
         {props.busy ? "Opening…" : "Prepare documents"} <ArrowRight size={15}/>
       </button>
