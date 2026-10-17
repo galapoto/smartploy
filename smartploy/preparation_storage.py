@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 from psycopg import connect
@@ -24,6 +25,7 @@ class PreparationRepository(Protocol):
     def get_by_obum_job_id(self, job_id: str) -> ApplicationPreparation | None: ...
     def list(self, *, limit: int = 100) -> list[ApplicationPreparation]: ...
     def list_refresh_candidates(self, *, limit: int = 100) -> list[ApplicationPreparation]: ...
+    def defer_failed_refresh(self, package_id: str, obum_job_id: str) -> bool: ...
 
 
 class MemoryPreparationRepository:
@@ -104,6 +106,31 @@ class MemoryPreparationRepository:
             ),
             key=lambda item: (item.updated_at, item.package_id),
         )[:bounded]
+
+    def defer_failed_refresh(self, package_id: str, obum_job_id: str) -> bool:
+        """Rotate a failed status lookup without modifying the remote job state.
+
+        A package whose remote ID/status changed during the lookup is left
+        untouched. Failed remote lookups must not monopolize the next batch.
+        """
+        current = self.get(package_id)
+        if (
+            current is None
+            or current.status not in REFRESHABLE_PREPARATION_STATES
+            or not obum_job_id
+            or current.obum_job_id != obum_job_id
+        ):
+            return False
+        previous = datetime.fromisoformat(current.updated_at)
+        if previous.tzinfo is None:
+            previous = previous.replace(tzinfo=timezone.utc)
+        attempted_at = max(
+            datetime.now(timezone.utc), previous + timedelta(microseconds=1)
+        )
+        self._items[package_id] = replace(
+            current, updated_at=attempted_at.isoformat()
+        ).normalized()
+        return True
 
 
 class PostgresPreparationRepository:
@@ -322,6 +349,29 @@ class PostgresPreparationRepository:
                 cur.execute(query, tuple(params))
                 rows = cur.fetchall()
         return [self._from_row(row) for row in rows]
+
+    def defer_failed_refresh(self, package_id: str, obum_job_id: str) -> bool:
+        """Move a failed in-flight lookup to the tail of the refresh queue.
+
+        Conditional update prevents a stale retry from touching a newly
+        replaced remote job or a completed/cancelled package.
+        """
+        query = """
+            UPDATE smartploy_application_preparations
+            SET updated_at = GREATEST(updated_at + INTERVAL '1 microsecond', now())
+            WHERE package_id = %s
+              AND obum_job_id = %s
+              AND status IN ('queued', 'running', 'blocked')
+        """
+        params: list[Any] = [package_id, obum_job_id]
+        if self.profile_id:
+            query += " AND profile_id = %s"
+            params.append(self.profile_id)
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, tuple(params))
+                changed = cur.rowcount == 1
+        return changed
 
 
 def with_runtime(

@@ -136,6 +136,17 @@ def test_preparation_survives_repository_recreation(repositories):
     assert [item.package_id for item in preparations.list_refresh_candidates(limit=1)] == [
         second_source.package_id
     ]
-    assert [item.package_id for item in PostgresPreparationRepository(
-        DSN, profile_id="other-synthetic-tenant"
-    ).list_refresh_candidates(limit=10)] == [second_source.package_id]
+    scoped = PostgresPreparationRepository(DSN, profile_id="other-synthetic-tenant")
+    assert [item.package_id for item in scoped.list_refresh_candidates(limit=10)] == [
+        second_source.package_id
+    ]
+    before_attempt = scoped.get(second_source.package_id)
+    assert before_attempt is not None
+    assert scoped.defer_failed_refresh(second_source.package_id, "wrong-remote") is False
+    assert scoped.defer_failed_refresh(second_source.package_id, "remote-second") is True
+    after_attempt = scoped.get(second_source.package_id)
+    assert after_attempt is not None
+    assert after_attempt.status == before_attempt.status
+    assert datetime.fromisoformat(after_attempt.updated_at) > datetime.fromisoformat(
+        before_attempt.updated_at
+    )

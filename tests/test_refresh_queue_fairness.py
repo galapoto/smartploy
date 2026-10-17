@@ -69,6 +69,26 @@ def test_refresh_candidates_filter_before_limit_and_rotate_after_update():
     ]
 
 
+def test_transient_lookup_failure_rotates_even_if_remote_state_does_not_change():
+    repo = MemoryPreparationRepository()
+    first = _package("failed-first", status="queued",
+                     updated="2026-10-14T10:00:00+00:00")
+    second = _package("failed-second", status="running",
+                      updated="2026-10-15T10:00:00+00:00")
+    repo.create_or_get(first)
+    repo.create_or_get(second)
+    assert repo.list_refresh_candidates(limit=1)[0].package_id == first.package_id
+    assert repo.defer_failed_refresh(first.package_id, "wrong-remote") is False
+    assert repo.list_refresh_candidates(limit=1)[0].package_id == first.package_id
+
+    assert repo.defer_failed_refresh(first.package_id, first.obum_job_id)
+    assert repo.list_refresh_candidates(limit=1)[0].package_id == second.package_id
+    assert repo.get(first.package_id).status == "queued"
+    assert repo.defer_failed_refresh(second.package_id, second.obum_job_id)
+    assert repo.list_refresh_candidates(limit=1)[0].package_id == first.package_id
+    assert repo.get(second.package_id).status == "running"
+
+
 def test_refresh_candidates_respect_profile_scope():
     repo = MemoryPreparationRepository(profile_id="profile-a")
     current = _package("owner", status="queued")
@@ -92,6 +112,7 @@ def test_worker_refresh_reads_only_refresh_candidates_and_continues_after_errors
     monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")
     monkeypatch.setenv("SMARTPLOY_WORKER_REFRESH_CADENCE_SECONDS", "60")
     seen: list[str] = []
+    deferred: list[tuple[str, str]] = []
 
     class FakeRepository:
         def __init__(self, dsn: str):
@@ -111,6 +132,10 @@ def test_worker_refresh_reads_only_refresh_candidates_and_continues_after_errors
                                 obum_job_id="remote-live"),
             ]
 
+        def defer_failed_refresh(self, package_id: str, obum_job_id: str):
+            deferred.append((package_id, obum_job_id))
+            return True
+
     class FakeService:
         def refresh_preparation(self, package_id: str):
             seen.append(package_id)
@@ -129,4 +154,8 @@ def test_worker_refresh_reads_only_refresh_candidates_and_continues_after_errors
     assert result.status == "degraded"
     assert result.details["updated_count"] == 1
     assert result.details["failure_count"] == 2
+    assert deferred == [
+        ("stale-removed", "remote-old"),
+        ("bad-remote", "remote-failed"),
+    ]
     assert result.details["external_actions_authorized"] is False

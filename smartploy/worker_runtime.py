@@ -240,8 +240,10 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
                 try:
                     current = service.refresh_preparation(item.package_id)
                 except (ObumAIError, KeyError):
-                    # A concurrent deletion or failure of one remote job must
-                    # not stop the worker from refreshing the remaining jobs.
+                    # Rotate a failed lookup to avoid repeatedly selecting the
+                    # same remote failure ahead of healthy pending packages.
+                    # The repository must not modify cancelled/replaced jobs.
+                    preparations.defer_failed_refresh(item.package_id, item.obum_job_id)
                     failures += 1
                     continue
                 updated += 1

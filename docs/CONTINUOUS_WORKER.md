@@ -49,7 +49,9 @@ development fixtures; this global switch is **not per-user consent**.
 Refresh selection filters to queued, running or blocked records with an assigned
 ObumAI job ID *before* applying the batch limit. The least recently updated
 records go first; this avoids completed history crowding out unfinished work and
-rotates polling fairly across active jobs. Migration 015 provides a partial index.
+rotates polling across active jobs. A failed lookup also advances its refresh
+position (without changing the remote job state), preventing persistent errors
+from hogging the batch. Migration 015 provides a partial index.
 It never starts a new ObumAI inference request.
 
 Tasks that were previously registered but are no longer configured are disabled.
