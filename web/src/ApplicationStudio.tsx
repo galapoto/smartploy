@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, Clock3,
   Download, FileCheck2, FileText, LockKeyhole, RefreshCw, Save, ShieldCheck,
@@ -9,21 +9,25 @@ import {
   getApplicationWorkspaces, markApplicationManuallySent,
   getLocalAIStatus, requestLocalAISuggestions,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
-  getBrowserReceipt, importBrowserReceipt
+  getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
 import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
+import { safeExternalJobUrl } from "./lib";
 
-function safePostingLink(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : "";
-  } catch {
-    return "";
-  }
-}
+const ACCOUNT_CHANGED_NOTICE =
+  "Your signed-in SmartPloy account changed or could not be verified. Reload SmartPloy to continue safely.";
+
+class StudioAccountChanged extends Error {}
+class StudioSelectionChanged extends Error {}
+
+// A draft's identity is its workspace ID, revision, AND the viewer's
+// selection epoch. Switching away and back must not resurrect late results.
+type DraftTicket = { key: string; epoch: number };
+
+const safePostingLink = safeExternalJobUrl;
 
 export default function ApplicationStudio(props: {
-  focusId: string; onFindJobs: () => void;
+  focusId: string; expectedUserId: string; expectedAuthSource: string; onFindJobs: () => void;
 }) {
   const [workspaces, setWorkspaces] = useState<ApplicationWorkspace[]>([]);
   const [selectedId, setSelectedId] = useState(props.focusId);
@@ -43,10 +47,101 @@ export default function ApplicationStudio(props: {
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [accountBlocked, setAccountBlocked] = useState(false);
+  const mountedRef = useRef(false);
+  const accountBlockedRef = useRef(false);
+  const reloadGenerationRef = useRef(0);
+  const selectedDraftRef = useRef<DraftTicket>({ key: "", epoch: 0 });
+
+  const isCurrentDraft = useCallback((ticket: DraftTicket) =>
+    mountedRef.current && !accountBlockedRef.current &&
+    selectedDraftRef.current.key === ticket.key &&
+    selectedDraftRef.current.epoch === ticket.epoch, []);
+
+  const captureDraft = (item: ApplicationWorkspace): DraftTicket => ({
+    key: JSON.stringify([item.workspace_id, item.revision]),
+    epoch: selectedDraftRef.current.epoch,
+  });
+
+  // The parent page normally remounts this component on an account switch.
+  // Local refreshes and delayed responses still need their own boundary:
+  // an unchanged email is not proof of an unchanged server-side account.
+  const blockAccount = useCallback(() => {
+    if (!mountedRef.current || accountBlockedRef.current) return;
+    accountBlockedRef.current = true;
+    ++reloadGenerationRef.current;
+    ++selectedDraftRef.current.epoch;
+    setWorkspaces([]); setSelectedId("");
+    setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
+    setHandoff(null); setHandoffPacketText("");
+    setBrowserReceipt(null); setReceiptOpen(false); setReceiptInput("");
+    setMessage(""); setError(ACCOUNT_CHANGED_NOTICE);
+    setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false);
+    setAccountBlocked(true); setLoading(false);
+  }, []);
+
+  const verifyAccount = useCallback(async () => {
+    if (!mountedRef.current || accountBlockedRef.current) throw new StudioAccountChanged();
+    let who;
+    try {
+      who = await getSession();
+    } catch {
+      blockAccount();
+      throw new StudioAccountChanged();
+    }
+    if (!mountedRef.current || accountBlockedRef.current) throw new StudioAccountChanged();
+    if (!props.expectedUserId.trim() || !who.authenticated ||
+        who.user_id?.trim() !== props.expectedUserId.trim() ||
+        (who.auth_source || "") !== props.expectedAuthSource) {
+      blockAccount();
+      throw new StudioAccountChanged();
+    }
+  }, [blockAccount, props.expectedAuthSource, props.expectedUserId]);
+
+  // A private mutation is scoped to the identity that initiated it.
+  // Backend expected-user headers still enforce ownership before writes;
+  // these checks prevent publishing an old request's result into a new
+  // browser account. A successful backend write is NOT rolled back.
+  const runPrivateAction = useCallback(async <T,>(
+    action: () => Promise<T>, ticket: DraftTicket
+  ): Promise<T> => {
+    await verifyAccount();
+    if (!isCurrentDraft(ticket)) throw new StudioSelectionChanged();
+    try {
+      const result = await action();
+      await verifyAccount();
+      if (!isCurrentDraft(ticket)) throw new StudioSelectionChanged();
+      return result;
+    } catch (exc) {
+      if (exc instanceof StudioAccountChanged || exc instanceof StudioSelectionChanged) throw exc;
+      // A network failure may hide an account switch; verify before showing
+      // an error, and never publish the former draft's error in the new one.
+      await verifyAccount();
+      if (!isCurrentDraft(ticket)) throw new StudioSelectionChanged();
+      throw exc;
+    }
+  }, [isCurrentDraft, verifyAccount]);
+
+  function reportActionError(exc: unknown, fallback: string) {
+    if (exc instanceof StudioAccountChanged || exc instanceof StudioSelectionChanged ||
+        !mountedRef.current || accountBlockedRef.current) return;
+    setError(exc instanceof Error ? exc.message : fallback);
+  }
 
   const reload = useCallback(async () => {
+    if (accountBlockedRef.current) return;
+    const generation = ++reloadGenerationRef.current;
+    const active = () => mountedRef.current && !accountBlockedRef.current &&
+      generation === reloadGenerationRef.current;
     try {
+      // Verify BEFORE the private GET, and again BEFORE publishing it.
+      // The latter covers cookie changes while the request is in flight.
+      await verifyAccount();
+      if (!active()) return;
       const result = await getApplicationWorkspaces();
+      if (!active()) return;
+      await verifyAccount();
+      if (!active()) return;
       setWorkspaces(result.workspaces);
       setSelectedId((current) => {
         const wanted = props.focusId || current;
@@ -55,51 +150,83 @@ export default function ApplicationStudio(props: {
       });
       setError("");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to load your application drafts.");
-    } finally { setLoading(false); }
-  }, [props.focusId]);
+      if (!active()) return;
+      // Even an HTTP/network error may conceal a cookie switch.
+      // Preserve existing same-account edits only after re-verification.
+      try { await verifyAccount(); } catch { return; }
+      if (active()) {
+        setError(exc instanceof Error ? exc.message : "Unable to load your application drafts.");
+      }
+    } finally {
+      if (active()) setLoading(false);
+    }
+  }, [props.focusId, verifyAccount]);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; ++reloadGenerationRef.current; };
+  }, []);
   useEffect(() => { void reload(); }, [reload]);
   useEffect(() => {
-    void getLocalAIStatus().then(setAIStatus).catch(() => setAIStatus(null));
+    let alive = true;
+    void getLocalAIStatus().then((status) => {
+      if (alive && !accountBlockedRef.current) setAIStatus(status);
+    }).catch(() => {
+      if (alive && !accountBlockedRef.current) setAIStatus(null);
+    });
+    return () => { alive = false; };
   }, []);
 
   const selected = useMemo(
     () => workspaces.find((item) => item.workspace_id === selectedId) || null,
     [workspaces, selectedId]
   );
-  useEffect(() => {
-    setAISuggestion(null);
-    setCvText(selected?.cv_text || "");
-    setLetterText(selected?.cover_letter_text || "");
+  // Clear draft-local editor content, receipt/packet previews AND pending
+  // indicators before a different draft can paint. The old draft's promise
+  // may still finish; its completion must never unlock the new draft.
+  useLayoutEffect(() => {
+    const key = selected ? JSON.stringify([selected.workspace_id, selected.revision]) : "";
+    if (selectedDraftRef.current.key !== key) {
+      selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
+      setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false);
+      setAISuggestion(null);
+      setCvText(selected?.cv_text || "");
+      setLetterText(selected?.cover_letter_text || "");
+      setHandoffPacketText("");
+      setReceiptOpen(false); setReceiptInput("");
+      setHandoff(null); setBrowserReceipt(null);
+    }
   }, [selected?.workspace_id, selected?.revision]);
 
   useEffect(() => {
-    setHandoffPacketText("");
-    if (!selected) { setHandoff(null); return; }
+    if (!selected?.workspace_id || accountBlockedRef.current) return;
     let alive = true;
-    setHandoff(null);
-    void getBrowserHandoffReadiness(selected.workspace_id).then((result) => {
-      if (alive) setHandoff(result);
-    }).catch(() => {
-      if (alive) setHandoff(null);
-    });
+    const workspaceId = selected.workspace_id;
+    void (async () => {
+      try {
+        await verifyAccount();
+        if (!alive || accountBlockedRef.current) return;
+        // Both reads are tenant-scoped. Check identity once around the
+        // parallel pair; never publish a late cross-account response.
+        const [handoffResult, receiptResult] = await Promise.allSettled([
+          getBrowserHandoffReadiness(workspaceId),
+          getBrowserReceipt(workspaceId),
+        ]);
+        if (!alive || accountBlockedRef.current) return;
+        await verifyAccount();
+        if (!alive || accountBlockedRef.current) return;
+        setHandoff(handoffResult.status === "fulfilled" ? handoffResult.value : null);
+        setBrowserReceipt(receiptResult.status === "fulfilled" ? receiptResult.value.receipt : null);
+      } catch {
+        // verifyAccount clears private state and blocks the editor on any
+        // missing or different session. Ordinary API failures show no data.
+        if (alive && !accountBlockedRef.current) {
+          setHandoff(null); setBrowserReceipt(null);
+        }
+      }
+    })();
     return () => { alive = false; };
-  }, [selected?.workspace_id, selected?.revision]);
-
-  useEffect(() => {
-    setReceiptOpen(false);
-    setReceiptInput("");
-    setBrowserReceipt(null);
-    if (!selected?.workspace_id) return;
-    let alive = true;
-    void getBrowserReceipt(selected.workspace_id).then((state) => {
-      if (alive) setBrowserReceipt(state.receipt);
-    }).catch(() => {
-      if (alive) setBrowserReceipt(null);
-    });
-    return () => { alive = false; };
-  }, [selected?.workspace_id]);
+  }, [selected?.workspace_id, selected?.revision, verifyAccount]);
 
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
@@ -107,6 +234,7 @@ export default function ApplicationStudio(props: {
 
   function pick(id: string) {
     if (dirty && !window.confirm("Discard unsaved changes and open another draft?")) return;
+    if (id !== selectedId) ++selectedDraftRef.current.epoch;
     setSelectedId(id);
     setMessage("");
     setError("");
@@ -119,16 +247,18 @@ export default function ApplicationStudio(props: {
 
   async function save() {
     if (!selected || selected.status !== "draft" || browserReceipt) return;
+    const ticket = captureDraft(selected);
     setBusy(true); setMessage(""); setError("");
     try {
-      const result = await editApplicationWorkspace(
-        selected.workspace_id, selected.revision, cvText, letterText
-      );
+      const result = await runPrivateAction(() => editApplicationWorkspace(
+        selected.workspace_id, selected.revision, cvText, letterText, props.expectedUserId
+      ), ticket);
+      if (!isCurrentDraft(ticket)) return;
       updateItem(result.workspace);
       setMessage("Your edits were saved. Downloaded documents will contain this version.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Draft could not be saved.");
-    } finally { setBusy(false); }
+      reportActionError(exc, "Draft could not be saved.");
+    } finally { if (isCurrentDraft(ticket)) setBusy(false); }
   }
 
   async function askLocalAI() {
@@ -140,23 +270,31 @@ export default function ApplicationStudio(props: {
       "proposal only and must be reviewed before saving."
     );
     if (!ok) return;
+    const ticket = captureDraft(selected);
     setAIBusy(true); setError(""); setMessage(""); setAISuggestion(null);
     try {
-      const response = await requestLocalAISuggestions(selected.workspace_id, selected.revision);
+      const response = await runPrivateAction(() =>
+        requestLocalAISuggestions(selected.workspace_id, selected.revision, props.expectedUserId),
+        ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
       setAISuggestion(response.suggestion);
       setMessage("Local AI returned draft suggestions. Review them and choose whether to insert them.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Local AI is currently unavailable.");
-    } finally { setAIBusy(false); }
+      reportActionError(exc, "Local AI is currently unavailable.");
+    } finally { if (isCurrentDraft(ticket)) setAIBusy(false); }
   }
 
-  function insertAISuggestion() {
+  async function insertAISuggestion() {
     if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt) return;
     const draft = aiSuggestion.proposal;
+    const ticket = captureDraft(selected);
     if (!window.confirm(
       "Insert these AI suggestions into your editable CV and cover letter? " +
       "They may contain mistakes. Nothing is saved or sent until you review and click Save changes."
     )) return;
+    try { await verifyAccount(); } catch { return; }
+    if (!isCurrentDraft(ticket)) return;
     setCvText((old) =>
       "TARGET ROLE: " + selected.role_title + " — " + selected.company +
       "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
@@ -177,24 +315,40 @@ export default function ApplicationStudio(props: {
       "to your computer clipboard. Keep it private; you will paste it into the " +
       "optional SmartPloy browser companion. No form is filled or submitted by this action."
     )) return;
+    const ticket = captureDraft(selected);
     setHandoffBusy(true); setError(""); setMessage("");
     try {
-      const response = await createBrowserHandoffPacket(selected.workspace_id, selected.revision);
+      const response = await runPrivateAction(() =>
+        createBrowserHandoffPacket(selected.workspace_id, selected.revision, props.expectedUserId),
+        ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
       const json = JSON.stringify(response.packet);
-      setHandoffPacketText(json);
       if (navigator.clipboard?.writeText) {
+        let copied = false;
         try {
           await navigator.clipboard.writeText(json);
-          setMessage("Private packet copied. Open the employer posting and use the browser companion within 15 minutes. Review and attach CV before submitting.");
+          copied = true;
         } catch {
-          setMessage("Your private packet is ready below. Select and copy it manually, then open the employer posting and browser companion.");
+          // Clipboard permissions may be denied; allow deliberate manual copy.
         }
+        // A browser sign-in can change while the clipboard API is pending.
+        // Do not show a former user's packet or a success notice afterwards.
+        await verifyAccount();
+        if (!isCurrentDraft(ticket)) return;
+        setHandoffPacketText(json);
+        setMessage(copied
+          ? "Private packet copied. Open the employer posting and use the browser companion within 15 minutes. Review and attach CV before submitting."
+          : "Your private packet is ready below. Select and copy it manually, then open the employer posting and browser companion.");
       } else {
+        await verifyAccount();
+        if (!isCurrentDraft(ticket)) return;
+        setHandoffPacketText(json);
         setMessage("Your private packet is ready below. Select and copy it manually into the browser companion.");
       }
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to copy the application packet.");
-    } finally { setHandoffBusy(false); }
+      reportActionError(exc, "Unable to copy the application packet.");
+    } finally { if (isCurrentDraft(ticket)) setHandoffBusy(false); }
   }
 
   async function onImportObservedReceipt() {
@@ -218,15 +372,20 @@ export default function ApplicationStudio(props: {
       "Store this browser-observed employer confirmation? The employer has NOT independently "
       + "verified it through SmartPloy. This action does not count as a verified submission."
     )) return;
+    const ticket = captureDraft(selected);
     setReceiptBusy(true); setError(""); setMessage("");
     try {
-      const response = await importBrowserReceipt(selected.workspace_id, parsed);
+      const response = await runPrivateAction(() =>
+        importBrowserReceipt(selected.workspace_id, parsed, props.expectedUserId),
+        ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
       setBrowserReceipt(response.receipt);
       setReceiptOpen(false); setReceiptInput("");
       setMessage("Employer confirmation was recorded as browser-observed, not independently verified.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to store this browser receipt.");
-    } finally { setReceiptBusy(false); }
+      reportActionError(exc, "Unable to store this browser receipt.");
+    } finally { if (isCurrentDraft(ticket)) setReceiptBusy(false); }
   }
 
   async function markApplied() {
@@ -238,32 +397,49 @@ export default function ApplicationStudio(props: {
     )) return;
     const reference = window.prompt("Optional employer confirmation/reference (leave blank if unavailable):", "");
     if (reference === null) return;
+    const ticket = captureDraft(selected);
     setBusy(true); setError(""); setMessage("");
     try {
-      const result = await markApplicationManuallySent(
-        selected.workspace_id, selected.revision, reference
+      const result = await runPrivateAction(() =>
+        markApplicationManuallySent(
+          selected.workspace_id, selected.revision, reference, props.expectedUserId
+        ), ticket
       );
+      if (!isCurrentDraft(ticket)) return;
       updateItem(result.workspace);
       setMessage("Recorded as personally reported applied, not independently verified by the employer.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to record this application.");
-    } finally { setBusy(false); }
+      reportActionError(exc, "Unable to record this application.");
+    } finally { if (isCurrentDraft(ticket)) setBusy(false); }
   }
 
   async function remove() {
     if (!selected || !window.confirm(
       "Permanently delete this application workspace and its document text? Original CV and profile facts remain."
     )) return;
+    const ticket = captureDraft(selected);
     setBusy(true); setError(""); setMessage("");
     try {
-      await deleteApplicationWorkspace(selected.workspace_id);
+      await runPrivateAction(() =>
+        deleteApplicationWorkspace(selected.workspace_id, props.expectedUserId),
+        ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
       const remaining = workspaces.filter((item) => item.workspace_id !== selected.workspace_id);
       setWorkspaces(remaining);
       setSelectedId(remaining[0]?.workspace_id || "");
       setMessage("Draft removed from SmartPloy.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to delete this draft.");
-    } finally { setBusy(false); }
+      reportActionError(exc, "Unable to delete this draft.");
+    } finally { if (isCurrentDraft(ticket)) setBusy(false); }
+  }
+
+  if (accountBlocked) {
+    return <section className="panel studio-loading" role="alert">
+      <LockKeyhole size={23}/>
+      <h3>Account verification required</h3>
+      <p>{ACCOUNT_CHANGED_NOTICE}</p>
+    </section>;
   }
 
   if (loading) {
@@ -356,7 +532,7 @@ export default function ApplicationStudio(props: {
             <div className="studio-ai-preview-title">
               <strong>Unverified AI proposal · {aiSuggestion.model}</strong>
               <button className="navy-btn compact" type="button"
-                onClick={insertAISuggestion}>Insert into editor <ArrowRight size={14}/></button>
+                onClick={() => void insertAISuggestion()}>Insert into editor <ArrowRight size={14}/></button>
             </div>
             <h4>{aiSuggestion.proposal.cv_headline}</h4>
             <p>{aiSuggestion.proposal.cv_summary}</p>

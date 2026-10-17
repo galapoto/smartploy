@@ -155,3 +155,33 @@ describe("job-date and source observation accuracy", () => {
     expect(screen.queryByText(/search match/i)).toBeNull();
   });
 });
+
+describe("job posting link safety", () => {
+  it("keeps real employer links clickable without changing their target", () => {
+    render(<SearchResultsPanel {...common} data={general} />);
+    const anchors = screen.getAllByRole("link", { name: /Job posting/i });
+    expect(anchors).toHaveLength(2);
+    expect(anchors[0].getAttribute("href")).toBe("https://jobs.example.fi/analyst");
+    expect(anchors[0].getAttribute("rel")).toBe("noopener noreferrer");
+    expect(anchors[0].getAttribute("target")).toBe("_blank");
+  });
+
+  it("never creates a clickable executable or credentialed link from untrusted source data", () => {
+    const unsafe = [
+      "javascript:alert('unsafe')", "data:text/html,unsafe",
+      "//untrusted.invalid/redirect", "https://person:secret@jobs.example.fi/posting",
+    ];
+    const records: SearchResults = {
+      ...general, available_count: unsafe.length,
+      all_jobs: unsafe.map((application_url, index) => ({
+        ...job, canonical_key: "unsafe-" + index,
+        job: { ...baseJob, role_title: "Unsafe synthetic " + index, application_url },
+      })),
+    };
+    render(<SearchResultsPanel {...common} data={records} />);
+    expect(screen.queryByRole("link", { name: /Job posting/ })).toBeNull();
+    expect(screen.getAllByText(/Employer link unavailable/)).toHaveLength(unsafe.length);
+    expect(screen.getAllByRole("button", { name: /Prepare documents/ })).toHaveLength(unsafe.length);
+    expect(common.onPrepare).not.toHaveBeenCalled();
+  });
+});

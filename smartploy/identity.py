@@ -263,7 +263,9 @@ class PostgresIdentityRepository:
                 cur.execute(
                     """
                     UPDATE smartploy_users
-                    SET email = CASE WHEN %s <> '' THEN %s ELSE email END,
+                    SET email = CASE
+                            WHEN status <> 'active' THEN ''
+                            WHEN %s <> '' THEN %s ELSE email END,
                         updated_at = now(),
                         last_seen_at = now()
                     WHERE user_id = %s
@@ -300,11 +302,14 @@ class PostgresIdentityRepository:
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT 1 FROM smartploy_users WHERE user_id = %s FOR UPDATE",
+                    "SELECT status FROM smartploy_users WHERE user_id = %s FOR UPDATE",
                     (value,),
                 )
-                if cur.fetchone() is None:
+                row = cur.fetchone()
+                if row is None:
                     raise KeyError(value)
+                if str(row[0]) != "active":
+                    raise ValueError("Disabled accounts may not link additional identities")
 
                 cur.execute(
                     """
@@ -349,7 +354,7 @@ class PostgresIdentityRepository:
                         """
                         UPDATE smartploy_users
                         SET email = %s, updated_at = now(), last_seen_at = now()
-                        WHERE user_id = %s
+                        WHERE user_id = %s AND status = 'active'
                         """,
                         (item.email, value),
                     )
@@ -368,6 +373,8 @@ class PostgresIdentityRepository:
             raise ValueError("legacy_profile_id is required")
 
         binding = self.resolve_or_create(principal)
+        if binding.status != "active":
+            raise ValueError("Disabled accounts may not claim legacy profiles")
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
