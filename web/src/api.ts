@@ -294,3 +294,31 @@ export function updateSearchPreferences(
 export function getSearchResults(): Promise<import("./types").SearchResults> {
   return request<import("./types").SearchResults>("/api/v1/search-results");
 }
+
+/** Inspect saved permissions without triggering an AI request. */
+export function getJobAIConsents(): Promise<import("./types").JobAIConsentsResponse> {
+  return request<import("./types").JobAIConsentsResponse>("/api/v1/ai-processing-consents");
+}
+
+export function getJobAIConsentEvents(): Promise<import("./types").JobAIConsentEventsResponse> {
+  return request<import("./types").JobAIConsentEventsResponse>("/api/v1/ai-processing-consents/events");
+}
+
+/** The literal true opt-in is sent only from a separate, confirmed user action. */
+export function grantJobAIConsent(canonicalKey: string, expectedUserId: string):
+    Promise<{ consent: import("./types").JobAIProcessingConsent; created_or_updated: boolean;
+              processing_started: false; external_actions_authorized: false }> {
+  return request("/api/v1/ai-processing-consents", {
+    method: "POST",
+    body: JSON.stringify({
+      canonical_key: canonicalKey, acknowledge_obumai_processing: true
+    })
+  }, expectedUserId);
+}
+
+export function revokeJobAIConsent(consentId: string, expectedUserId: string):
+    Promise<{ consent: import("./types").JobAIProcessingConsent; revoked: true }> {
+  return request("/api/v1/ai-processing-consents/" + encodeURIComponent(consentId), {
+    method: "DELETE"
+  }, expectedUserId);
+}

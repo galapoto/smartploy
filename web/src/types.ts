@@ -180,6 +180,46 @@ export interface SessionInfo {
   subject_fingerprint?: string;
 }
 
+export interface JobAIProcessingConsent {
+  consent_id: string;
+  canonical_key: string;
+  processor: "obumai";
+  purpose: "application_draft";
+  mode: "unattended";
+  job_snapshot_sha256: string;
+  evidence_sha256: string;
+  revision: number;
+  granted_at: string;
+  revoked_at: string;
+  active: boolean;
+  processing_started: false;
+  employer_actions_authorized: false;
+}
+
+export interface JobAIProcessingConsentEvent {
+  event_id: string;
+  consent_id: string;
+  event_type: "granted" | "revoked";
+  revision: number;
+  job_snapshot_sha256: string;
+  evidence_sha256: string;
+  occurred_at: string;
+}
+
+export interface JobAIConsentsResponse {
+  consents: JobAIProcessingConsent[];
+  count: number;
+  private: true;
+  unattended_processing_enabled: false;
+}
+
+export interface JobAIConsentEventsResponse {
+  events: JobAIProcessingConsentEvent[];
+  count: number;
+  private: true;
+  history_type: "consent_grant_and_withdrawal_only";
+}
+
 export interface SavedJob {
   canonical_key: string;
   source_current: boolean;
