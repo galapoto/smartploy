@@ -20,11 +20,12 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 
 from .access import (
     ACCESS_ASSERTION_HEADER,
+    AccessPrincipal,
     AccessSettings,
     AccessVerificationError,
     CloudflareAccessVerifier,
 )
-from .identity import AuthenticatedPrincipal
+from .identity import AuthenticatedPrincipal, IdentityRepository
 
 
 SESSION_COOKIE_NAME = "__Host-smartploy_session"
@@ -580,12 +581,22 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
         authentication: AuthenticationSettings,
         sessions: MemorySessionRepository | PostgresSessionRepository,
         access_settings: AccessSettings,
+        identity_repository: IdentityRepository,
+        oidc_public_origin: str = "",
         access_verifier: CloudflareAccessVerifier | None = None,
     ) -> None:
         super().__init__(app)
         self.authentication = authentication
         self.sessions = sessions
         self.access_settings = access_settings
+        self.identity_repository = identity_repository
+        # OIDC mode must use the configured canonical HTTPS origin, never
+        # Host/X-Forwarded-* headers supplied by an untrusted browser.
+        self.oidc_public_origin = oidc_public_origin
+        if authentication.oidc_enabled and not self.oidc_public_origin:
+            raise AuthenticationConfigurationError(
+                "OIDC cookie authentication requires a configured public origin"
+            )
         self.access_verifier = access_verifier
         if (
             authentication.cloudflare_enabled
@@ -594,23 +605,196 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
         ):
             self.access_verifier = CloudflareAccessVerifier(access_settings)
 
+    def _reject_cross_origin_access_mutation(self, request: Request) -> Response | None:
+        """Reject browser cross-site writes even with valid Cloudflare Access.
+
+        Access can authenticate the browser cookie at the edge and then supply
+        a JWT header to this service; the JWT alone does not establish the
+        initiating browser origin. Keep authenticated originless machine clients
+        temporarily compatible until a dedicated machine-auth contract exists.
+        """
+        if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None
+        if not request.url.path.startswith("/api/"):
+            return None
+        origin = request.headers.get("origin")
+        fetch_site = request.headers.get("sec-fetch-site", "").strip().casefold()
+        if origin is not None and (
+            not self.oidc_public_origin or origin != self.oidc_public_origin
+        ):
+            return self._deny(
+                403, "csrf_origin_denied",
+                "A same-origin SmartPloy request is required for this action.",
+            )
+        if fetch_site and fetch_site not in {"same-origin", "none"}:
+            return self._deny(
+                403, "csrf_origin_denied",
+                "A same-origin SmartPloy request is required for this action.",
+            )
+        return None
+
+    def _reject_cross_origin_cookie_mutation(self, request: Request) -> Response | None:
+        """Require an exact same-origin browser request for OIDC cookie writes.
+
+        SameSite=Lax is not sufficient against other same-site subdomains.
+        A cookie-authenticated request is a browser session, not a bearer
+        token API. Missing Origin fails closed (including non-browser POSTs).
+        Browser fetch supplies Origin on POST/PUT/PATCH/DELETE. Cloudflare-only
+        requests without an OIDC cookie keep their existing authorization.
+        """
+        if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None
+        if not request.url.path.startswith("/api/"):
+            return None
+
+        origin = request.headers.get("origin", "")
+        if origin != self.oidc_public_origin:
+            return self._deny(
+                403, "csrf_origin_denied",
+                "A same-origin SmartPloy request is required for this action.",
+            )
+        fetch_site = request.headers.get("sec-fetch-site", "").strip().casefold()
+        if fetch_site not in {"", "same-origin", "none"}:
+            return self._deny(
+                403, "csrf_origin_denied",
+                "A same-origin SmartPloy request is required for this action.",
+            )
+        return None
+
+    async def _authorize_principal(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+        principal: AuthenticatedPrincipal,
+        *,
+        session_user_id: str = "",
+        session_token: str = "",
+    ) -> Response:
+        # Account status is checked against the authoritative backend on EVERY
+        # protected request. A previously valid cookie or Cloudflare assertion
+        # must not outlive an account's disabled status.
+        try:
+            binding = await asyncio.to_thread(
+                self.identity_repository.resolve_or_create, principal
+            )
+        except Exception:
+            # Database outages are not a reason to reuse an old cached status.
+            return self._deny(
+                503, "identity_unavailable",
+                "SmartPloy account verification is temporarily unavailable.",
+            )
+        if binding.status != "active":
+            # Revoke this OIDC cookie as well as denying this request. Its
+            # privilege must not silently reappear if an admin re-enables the
+            # account before the old cookie would have expired.
+            if session_token:
+                try:
+                    await asyncio.to_thread(self.sessions.revoke, session_token)
+                except Exception:
+                    pass  # Still deny even if the revocation store is down.
+            return self._deny(
+                403, "account_disabled", "SmartPloy account access is disabled.",
+            )
+        if session_user_id and binding.user_id != session_user_id:
+            if session_token:
+                try:
+                    await asyncio.to_thread(self.sessions.revoke, session_token)
+                except Exception:
+                    pass
+            return self._deny(
+                401, "session_identity_changed",
+                "The account linked to this session changed. Sign in again.",
+                login_url="/auth/login",
+            )
+
+        # A delayed browser mutation must never write to account B merely
+        # because the browser switched cookies after account A's preflight.
+        # This is an optional *precondition*, NOT authorization: the verified
+        # principal/binding above is always authoritative. Existing non-web
+        # clients without the header retain their current API contract.
+        if request.url.path.startswith("/api/") and request.method.upper() in {
+            "POST", "PUT", "PATCH", "DELETE"
+        }:
+            expected_user = request.headers.get("x-smartploy-expected-user-id")
+            if expected_user is not None and expected_user != binding.user_id:
+                return self._deny(
+                    409, "account_precondition_failed",
+                    "Your signed-in account changed before this action. Reload SmartPloy.",
+                )
+
+        request.state.smartploy_principal = principal
+        request.state.smartploy_binding = binding
+        response = await call_next(request)
+        # Successful protected API responses can contain CV text, private
+        # profile facts, search settings or draft applications. Protect the
+        # complete /api/ surface, not only the handful of endpoints that
+        # happen to set cache headers themselves. A CDN/browser must never
+        # retain one account's private JSON for a later browser session.
+        if request.url.path.startswith("/api/"):
+            # Keep explicit no-store policies (including authorization
+            # denials); override only an absent or cacheable policy.
+            directives = {
+                part.strip().casefold()
+                for part in response.headers.get("Cache-Control", "").split(",")
+            }
+            if "no-store" not in directives:
+                response.headers["Cache-Control"] = "private, no-store"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
     async def dispatch(
         self,
         request: Request,
         call_next: RequestResponseEndpoint,
     ) -> Response:
         path = request.url.path
-        if path in HEALTH_PATHS or self.authentication.mode == "disabled":
+        if (
+            path in HEALTH_PATHS
+            or self.authentication.mode == "disabled"
+            or (self.authentication.oidc_enabled and path in PUBLIC_AUTH_PATHS)
+        ):
+            # Logout must remain reachable even for a disabled user so that
+            # their browser can clear its old application session.
             return await call_next(request)
 
         if self.authentication.oidc_enabled:
             raw_session = request.cookies.get(SESSION_COOKIE_NAME, "")
             if raw_session:
-                record = await asyncio.to_thread(self.sessions.get, raw_session)
-                if record is not None:
-                    request.state.smartploy_principal = record.principal()
-                    request.state.smartploy_session = record
-                    return await call_next(request)
+                try:
+                    record = await asyncio.to_thread(self.sessions.get, raw_session)
+                except Exception:
+                    # An unreachable session store is not proof that an
+                    # opaque cookie is invalid. In hybrid mode especially,
+                    # never downgrade an unverified cookie request to a
+                    # different Cloudflare principal during an outage.
+                    # Return the same bounded, non-cacheable error regardless
+                    # of the backend exception or any supplied assertion.
+                    return self._deny(
+                        503, "session_unavailable",
+                        "SmartPloy session verification is temporarily unavailable.",
+                    )
+                if record is None:
+                    # An unknown, expired or revoked application cookie is NOT
+                    # permission to silently switch to an unrelated Cloudflare
+                    # identity. Only cookie-free requests may use that fallback.
+                    # Do not clear the cookie on a storage outage (handled
+                    # separately above): that case is not a verified expiry.
+                    response = self._deny(
+                        401, "session_expired",
+                        "Your SmartPloy sign-in expired or was revoked. Sign in again.",
+                        login_url="/auth/login",
+                    )
+                    clear_session_cookie(response)
+                    return response
+                csrf_denial = self._reject_cross_origin_cookie_mutation(request)
+                if csrf_denial is not None:
+                    return csrf_denial
+                return await self._authorize_principal(
+                    request, call_next, record.principal(),
+                    session_user_id=record.user_id,
+                    session_token=raw_session,
+                )
 
         if self.authentication.cloudflare_enabled and self.access_settings.enabled:
             assertion = request.headers.get(ACCESS_ASSERTION_HEADER, "")
@@ -622,14 +806,27 @@ class SmartployAuthenticationMiddleware(BaseHTTPMiddleware):
                         "Cloudflare Access verification is unavailable.",
                     )
                 try:
-                    request.state.smartploy_principal = self.access_verifier.verify(assertion)
-                    return await call_next(request)
+                    verified = self.access_verifier.verify(assertion)
                 except AccessVerificationError as exc:
                     status = 403 if exc.code == "identity_denied" else 401
                     return self._deny(status, exc.code, str(exc))
-
-        if self.authentication.oidc_enabled and path in PUBLIC_AUTH_PATHS:
-            return await call_next(request)
+                if not isinstance(verified, AccessPrincipal):
+                    return self._deny(
+                        503, "identity_unavailable",
+                        "SmartPloy account verification is temporarily unavailable.",
+                    )
+                access_origin_denial = self._reject_cross_origin_access_mutation(request)
+                if access_origin_denial is not None:
+                    return access_origin_denial
+                return await self._authorize_principal(
+                    request, call_next,
+                    AuthenticatedPrincipal(
+                        issuer=verified.issuer,
+                        subject=verified.subject,
+                        email=verified.email,
+                        auth_source="cloudflare_access",
+                    ).normalized(),
+                )
 
         if self.authentication.mode == "cloudflare":
             return self._deny(

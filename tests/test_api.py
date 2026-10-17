@@ -23,9 +23,12 @@ def test_health_and_manual_ingest_without_obumai():
     health = api.get("/healthz")
     assert health.status_code == 200
     assert health.json()["obumai_configured"] is False
-    assert health.json()["profile"]["approved_fact_count"] == 0
+    assert "profile" not in health.json()
+    assert "authentication" not in health.json()
     assert health.json()["worker"]["configured"] is False
     assert health.json()["worker"]["ready"] is False
+    assert "error" not in health.json()["worker"]
+    assert health.headers["cache-control"] == "no-store"
 
     response = api.post(
         "/api/v1/jobs/ingest",
@@ -78,7 +81,7 @@ def test_obumai_request_is_truthfully_unavailable_when_not_configured():
     key = created["candidate"]["canonical_key"]
     result = api.post(
         f"/api/v1/jobs/{key}/obumai",
-        json={"action": "fit_analysis"},
+        json={"action": "fit_analysis", "acknowledge_obumai_processing": True},
     )
     assert result.status_code == 503
     assert "not configured" in result.json()["detail"]
@@ -127,3 +130,6 @@ def test_worker_schema_failure_is_reported_without_breaking_memory_dashboard(mon
     assert health.status_code == 200
     assert health.json()["ok"] is True
     assert health.json()["worker"]["ready"] is False
+    assert "error" not in health.json()["worker"]
+    assert "error" not in health.json()["storage"]
+    assert "not-a-postgresql-dsn" not in health.text

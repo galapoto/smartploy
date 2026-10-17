@@ -8,6 +8,8 @@ import type {
   SessionInfo,
   JobsResponse,
   ManualJobPayload,
+  PrivateSavedJob,
+  PrivateSavedJobsResponse,
   PreparationResponse,
   ApplicationWorkspace,
   ApplicationWorkspacesResponse
@@ -15,12 +17,23 @@ import type {
 
 const API_BASE = (import.meta.env.VITE_SMARTPLOY_API_BASE ?? "").replace(/\/$/, "");
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** Browser mutations must carry the account captured BEFORE any async wait.
+ * The server compares it with the authenticated user binding before side effects.
+ * This header is a precondition, never a replacement for authentication.
+ */
+async function request<T>(path: string, init?: RequestInit, expectedUserId?: string): Promise<T> {
+  const method = (init?.method || "GET").toUpperCase();
+  const isMutation = path.startsWith("/api/") &&
+    ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  if (isMutation && (!expectedUserId || !expectedUserId.trim())) {
+    throw new Error("Your verified SmartPloy account is required before making changes. Reload the page.");
+  }
   const response = await fetch(API_BASE + path, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...(init?.headers ?? {})
+      ...(init?.headers ?? {}),
+      ...(isMutation ? { "X-Smartploy-Expected-User-Id": expectedUserId! } : {})
     }
   });
 
@@ -64,10 +77,10 @@ export function getHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/healthz");
 }
 
-export function prepareJob(canonicalKey: string): Promise<PreparationResponse> {
+export function prepareJob(canonicalKey: string, expectedUserId: string): Promise<PreparationResponse> {
   return request<PreparationResponse>(
     "/api/v1/jobs/" + encodeURIComponent(canonicalKey) + "/prepare",
-    { method: "POST" }
+    { method: "POST" }, expectedUserId
   );
 }
 
@@ -87,7 +100,7 @@ export function getProfileFacts(): Promise<ProfileFactsResponse> {
   return request<ProfileFactsResponse>("/api/v1/profile/facts");
 }
 
-export async function uploadCV(file: File): Promise<CVDocument> {
+export async function uploadCV(file: File, expectedUserId: string): Promise<CVDocument> {
   if (file.size > 5 * 1024 * 1024) {
     throw new Error("Your CV is too large. Please use a PDF or DOCX under 5 MB.");
   }
@@ -102,54 +115,57 @@ export async function uploadCV(file: File): Promise<CVDocument> {
   return request<CVDocument>("/api/v1/profile/cv", {
     method: "POST",
     body: JSON.stringify({ filename: file.name, content_base64: btoa(encoded) })
-  });
+  }, expectedUserId);
 }
 
-export function deleteCV(): Promise<{ deleted: boolean }> {
-  return request<{ deleted: boolean }>("/api/v1/profile/cv", { method: "DELETE" });
+export function deleteCV(expectedUserId: string): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>("/api/v1/profile/cv", { method: "DELETE" }, expectedUserId);
 }
 
-export function createFact(fact_type: string, value: string, approved: boolean): Promise<{ fact: CandidateFact }> {
+export function createFact(fact_type: string, value: string, approved: boolean, expectedUserId: string): Promise<{ fact: CandidateFact }> {
   return request<{ fact: CandidateFact }>("/api/v1/profile/facts", {
     method: "POST",
     body: JSON.stringify({ fact_type, value, approved })
-  });
+  }, expectedUserId);
 }
 
-export function approveFact(fact_id: string, approved: boolean): Promise<{ fact: CandidateFact }> {
+export function approveFact(fact_id: string, approved: boolean, expectedUserId: string): Promise<{ fact: CandidateFact }> {
   return request<{ fact: CandidateFact }>("/api/v1/profile/facts/" + encodeURIComponent(fact_id), {
     method: "PATCH",
     body: JSON.stringify({ approved })
-  });
+  }, expectedUserId);
 }
 
-export function deleteFact(fact_id: string): Promise<{ deleted: boolean }> {
+export function deleteFact(fact_id: string, expectedUserId: string): Promise<{ deleted: boolean }> {
   return request<{ deleted: boolean }>("/api/v1/profile/facts/" + encodeURIComponent(fact_id), {
     method: "DELETE"
-  });
+  }, expectedUserId);
 }
 
-export function addManualJob(job: ManualJobPayload): Promise<{ status: string }> {
-  return request<{ status: string }>("/api/v1/jobs/ingest", {
+/** Save a private bookmark; never submit a listing to the shared ATS registry. */
+export function addManualJob(job: ManualJobPayload, expectedUserId: string): Promise<{ status: "saved_private"; job: PrivateSavedJob }> {
+  return request<{ status: "saved_private"; job: PrivateSavedJob }>("/api/v1/private-jobs", {
     method: "POST",
-    body: JSON.stringify({
-      observation: {
-        source_id: "manual-import",
-        source_mode: "manual",
-        source_url: job.application_url,
-        raw_text: job.role_title + " " + job.company + " " + job.description,
-        observed_at: new Date().toISOString(),
-        payload: job
-      }
-    })
-  });
+    body: JSON.stringify(job)
+  }, expectedUserId);
+}
+
+export function getPrivateSavedJobs(): Promise<PrivateSavedJobsResponse> {
+  return request<PrivateSavedJobsResponse>("/api/v1/private-jobs");
+}
+
+export function deletePrivateSavedJob(savedJobId: string, expectedUserId: string): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(
+    "/api/v1/private-jobs/" + encodeURIComponent(savedJobId),
+    { method: "DELETE" }, expectedUserId
+  );
 }
 
 
-export function startApplicationWorkspace(canonicalKey: string): Promise<{ workspace: ApplicationWorkspace; created: boolean }> {
+export function startApplicationWorkspace(canonicalKey: string, expectedUserId: string): Promise<{ workspace: ApplicationWorkspace; created: boolean }> {
   return request<{ workspace: ApplicationWorkspace; created: boolean }>(
     "/api/v1/jobs/" + encodeURIComponent(canonicalKey) + "/application-workspace",
-    { method: "POST" }
+    { method: "POST" }, expectedUserId
   );
 }
 
@@ -158,7 +174,8 @@ export function getApplicationWorkspaces(): Promise<ApplicationWorkspacesRespons
 }
 
 export function editApplicationWorkspace(
-  workspaceId: string, expectedRevision: number, cvText: string, coverLetterText: string
+  workspaceId: string, expectedRevision: number, cvText: string, coverLetterText: string,
+  expectedUserId: string
 ): Promise<{ workspace: ApplicationWorkspace }> {
   return request<{ workspace: ApplicationWorkspace }>(
     "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId),
@@ -169,12 +186,12 @@ export function editApplicationWorkspace(
         cv_text: cvText,
         cover_letter_text: coverLetterText
       })
-    }
+    }, expectedUserId
   );
 }
 
 export function markApplicationManuallySent(
-  workspaceId: string, expectedRevision: number, reference: string
+  workspaceId: string, expectedRevision: number, reference: string, expectedUserId: string
 ): Promise<{ workspace: ApplicationWorkspace; external_confirmation_verified: false }> {
   return request<{ workspace: ApplicationWorkspace; external_confirmation_verified: false }>(
     "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/report-applied",
@@ -185,14 +202,14 @@ export function markApplicationManuallySent(
         confirmed_external_application: true,
         reference
       })
-    }
+    }, expectedUserId
   );
 }
 
-export function deleteApplicationWorkspace(workspaceId: string): Promise<{ deleted: true }> {
+export function deleteApplicationWorkspace(workspaceId: string, expectedUserId: string): Promise<{ deleted: true }> {
   return request<{ deleted: true }>(
     "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId),
-    { method: "DELETE" }
+    { method: "DELETE" }, expectedUserId
   );
 }
 
@@ -209,14 +226,14 @@ export function getLocalAIStatus(): Promise<import("./types").LocalAIStatus> {
 }
 
 export function requestLocalAISuggestions(
-  workspaceId: string, expectedRevision: number
+  workspaceId: string, expectedRevision: number, expectedUserId: string
 ): Promise<{ suggestion: import("./types").LocalAISuggestion; workspace_revision: number }> {
   return request<{ suggestion: import("./types").LocalAISuggestion; workspace_revision: number }>(
     "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/ai-suggestions",
     { method: "POST", body: JSON.stringify({
       expected_revision: expectedRevision,
       acknowledge_local_ai_processing: true
-    }) }
+    }) }, expectedUserId
   );
 }
 
@@ -228,14 +245,14 @@ export function getBrowserHandoffReadiness(workspaceId: string): Promise<import(
 }
 
 export function createBrowserHandoffPacket(
-  workspaceId: string, revision: number
+  workspaceId: string, revision: number, expectedUserId: string
 ): Promise<{ packet: import("./types").BrowserHandoffPacket; external_actions_performed: false }> {
   return request<{ packet: import("./types").BrowserHandoffPacket; external_actions_performed: false }>(
     "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/browser-packet",
     { method: "POST", body: JSON.stringify({
       expected_revision: revision,
       confirm_private_data_transfer: true
-    }) }
+    }) }, expectedUserId
   );
 }
 
@@ -249,14 +266,15 @@ export function getBrowserReceipt(
 }
 
 export function importBrowserReceipt(
-  workspaceId: string, receipt: import("./types").BrowserReceiptImport
+  workspaceId: string, receipt: import("./types").BrowserReceiptImport,
+  expectedUserId: string
 ): Promise<{ receipt: import("./types").BrowserObservedReceipt; external_confirmation_verified: false }> {
   return request<{ receipt: import("./types").BrowserObservedReceipt; external_confirmation_verified: false }>(
     "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/browser-receipt",
     { method: "POST", body: JSON.stringify({
       confirm_user_observed: true,
       receipt
-    })}
+    })}, expectedUserId
   );
 }
 
@@ -266,13 +284,41 @@ export function getSearchPreferences(): Promise<import("./types").SearchPreferen
 }
 
 export function updateSearchPreferences(
-  preferences: import("./types").SearchPreferencesUpdate
+  preferences: import("./types").SearchPreferencesUpdate, expectedUserId: string
 ): Promise<import("./types").SearchPreferences> {
   return request<import("./types").SearchPreferences>("/api/v1/search-preferences", {
     method: "PUT", body: JSON.stringify(preferences)
-  });
+  }, expectedUserId);
 }
 
 export function getSearchResults(): Promise<import("./types").SearchResults> {
   return request<import("./types").SearchResults>("/api/v1/search-results");
+}
+
+/** Inspect saved permissions without triggering an AI request. */
+export function getJobAIConsents(): Promise<import("./types").JobAIConsentsResponse> {
+  return request<import("./types").JobAIConsentsResponse>("/api/v1/ai-processing-consents");
+}
+
+export function getJobAIConsentEvents(): Promise<import("./types").JobAIConsentEventsResponse> {
+  return request<import("./types").JobAIConsentEventsResponse>("/api/v1/ai-processing-consents/events");
+}
+
+/** The literal true opt-in is sent only from a separate, confirmed user action. */
+export function grantJobAIConsent(canonicalKey: string, expectedUserId: string):
+    Promise<{ consent: import("./types").JobAIProcessingConsent; created_or_updated: boolean;
+              processing_started: false; external_actions_authorized: false }> {
+  return request("/api/v1/ai-processing-consents", {
+    method: "POST",
+    body: JSON.stringify({
+      canonical_key: canonicalKey, acknowledge_obumai_processing: true
+    })
+  }, expectedUserId);
+}
+
+export function revokeJobAIConsent(consentId: string, expectedUserId: string):
+    Promise<{ consent: import("./types").JobAIProcessingConsent; revoked: true }> {
+  return request("/api/v1/ai-processing-consents/" + encodeURIComponent(consentId), {
+    method: "DELETE"
+  }, expectedUserId);
 }

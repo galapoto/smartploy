@@ -12,10 +12,11 @@ from typing import Any, Mapping, Optional
 import hashlib
 import json
 import os
+import re
 
 import httpx
 
-from .domain import JobCandidate, canonical_json
+from .domain import JobCandidate, canonical_json, source_ai_forwarding_permitted
 
 
 class ObumAIError(RuntimeError):
@@ -151,20 +152,26 @@ class ObumAIClient:
         candidate: JobCandidate,
         candidate_evidence: Mapping[str, Any],
         instructions: str = "",
+        client_request_id_override: str | None = None,
     ) -> dict[str, Any]:
         if not candidate.source_current:
             raise ObumAIError("cannot submit reasoning for a closed/stale job")
-        if candidate.job.raw.get("external_ai_forwarding_allowed") is False:
+        if not source_ai_forwarding_permitted(candidate):
             raise ObumAIError(
                 "source terms restrict forwarding this job posting to external AI processing"
             )
 
-        request_id = self.client_request_id(
-            action=action,
-            candidate=candidate,
-            candidate_evidence=candidate_evidence,
-            instructions=instructions,
-        )
+        if client_request_id_override is not None:
+            if not re.fullmatch(r"smartploy:[A-Za-z0-9:._-]{1,220}", client_request_id_override):
+                raise ValueError("A bounded SmartPloy-owned idempotency key is required")
+            request_id = client_request_id_override
+        else:
+            request_id = self.client_request_id(
+                action=action,
+                candidate=candidate,
+                candidate_evidence=candidate_evidence,
+                instructions=instructions,
+            )
         payload = {
             "agent_id": self.settings.agent_id,
             "prompt": self._prompt(
