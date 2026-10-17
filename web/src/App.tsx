@@ -672,7 +672,7 @@ export default function App() {
           <a className="text-link" href={safeExternalJobUrl(item.application_url)}
             target="_blank" rel="noopener noreferrer" title="Check the original employer posting">
             Check posting <ArrowUpRight size={15} />
-          </a> : item.application_url ? <span className="muted">Posting link unavailable</span> : null
+          </a> : item.application_url ? <span className="muted">Posting link unavailable</span> : null}
         <button className="icon-btn subtle" type="button"
           aria-label={"Remove saved job " + item.role_title}
           onClick={() => void onRemovePrivateJob(item)}
