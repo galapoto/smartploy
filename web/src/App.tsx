@@ -9,7 +9,8 @@ import {
 import {
   addManualJob, approveFact, createFact, deleteCV, deleteFact, deletePrivateSavedJob, getApplications,
   getCV, getDashboard, getHealth, getJobs, getPrivateSavedJobs, getProfileFacts, getSession,
-  startApplicationWorkspace, uploadCV,
+  startApplicationWorkspace, uploadCV, getJobAIConsents, getJobAIConsentEvents,
+  grantJobAIConsent, revokeJobAIConsent,
   getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus
 } from "./api";
 import {
@@ -20,10 +21,12 @@ import ApplicationStudio from "./ApplicationStudio";
 import SearchSetup from "./SearchSetup";
 import SearchResultsPanel from "./SearchResultsPanel";
 import BrandMark from "./BrandMark";
+import AIConsentSettings from "./AIConsentSettings";
 import type {
   ApplicationRecord, CandidateFact, CVDocument, Dashboard, HealthResponse,
   ManualJobPayload, PrivateSavedJob, RankingCard, SavedJob, SessionInfo,
-  SearchPreferences, SearchPreferencesUpdate, SearchResults, LocalAIStatus
+  SearchPreferences, SearchPreferencesUpdate, SearchResults, LocalAIStatus,
+  JobAIProcessingConsent, JobAIProcessingConsentEvent
 } from "./types";
 
 type Page = "dashboard" | "jobs" | "applications" | "profile" | "tools" | "insights" | "sources" | "settings";
@@ -111,6 +114,10 @@ export default function App() {
   const [facts, setFacts] = useState<CandidateFact[]>([]);
   const [jobs, setJobs] = useState<SavedJob[]>([]);
   const [privateSavedJobs, setPrivateSavedJobs] = useState<PrivateSavedJob[]>([]);
+  const [aiConsents, setAIConsents] = useState<JobAIProcessingConsent[]>([]);
+  const [aiConsentEvents, setAIConsentEvents] = useState<JobAIProcessingConsentEvent[]>([]);
+  const [aiConsentStatus, setAIConsentStatus] = useState<"ready" | "unavailable">("unavailable");
+  const [aiConsentBusy, setAIConsentBusy] = useState(false);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [preferences, setPreferences] = useState<SearchPreferences | null>(null);
   const [discovery, setDiscovery] = useState<SearchResults | null>(null);
@@ -145,10 +152,13 @@ export default function App() {
   const loadGeneration = useRef(0);
   const lastSessionIdentity = useRef<string | null>(null);
   const savingSearchPreferences = useRef(false);
+  const savingAIConsent = useRef(false);
   const clearPrivateWorkspace = useCallback(() => {
     setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
     setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
     setPrivateSavedJobs([]);
+    setAIConsents([]); setAIConsentEvents([]);
+    setAIConsentStatus("unavailable"); setAIConsentBusy(false);
     setHealth(null); setLocalAI(null); setSelectedWorkspaceId("");
     // A different account must not inherit an unsaved draft, editor, form,
     // selected job or cached navigation state belonging to its predecessor.
@@ -221,7 +231,7 @@ export default function App() {
   }, [clearPrivateWorkspace, session]);
 
   const load = useCallback(async (quiet = false) => {
-    if (savingSearchPreferences.current) return;
+    if (savingSearchPreferences.current || savingAIConsent.current) return;
     const generation = ++loadGeneration.current;
     if (quiet) setRefreshing(true); else setLoading(true);
 
@@ -246,7 +256,7 @@ export default function App() {
       const localAIRequest = Promise.allSettled([getLocalAIStatus()]);
       const secondaryRequest = Promise.allSettled([
         getApplications(), getHealth(), getCV(), getProfileFacts(),
-        getJobs(), getPrivateSavedJobs()
+        getJobs(), getPrivateSavedJobs(), getJobAIConsents(), getJobAIConsentEvents()
       ]);
       const [board, prefs, results] = await Promise.all([
         getDashboard(), getSearchPreferences(), getSearchResults()
@@ -286,14 +296,17 @@ export default function App() {
         throw new Error("Your signed-in account changed during profile loading. Reload this workspace.");
       }
 
-      const [apps, ready, savedCV, profile, savedJobs, bookmarks] = secondary;
+      const [apps, ready, savedCV, profile, savedJobs, bookmarks, grants, grantEvents] = secondary;
       setApplications(apps.status === "fulfilled" ? apps.value.applications : []);
       setHealth(ready.status === "fulfilled" ? ready.value : null);
       setCV(savedCV.status === "fulfilled" ? savedCV.value : { present: false });
       setFacts(profile.status === "fulfilled" ? profile.value.facts : []);
       setJobs(savedJobs.status === "fulfilled" ? savedJobs.value.jobs : []);
       setPrivateSavedJobs(bookmarks.status === "fulfilled" ? bookmarks.value.jobs : []);
-      if (secondary.some((item) => item.status === "rejected")) {
+      setAIConsents(grants.status === "fulfilled" ? grants.value.consents : []);
+      setAIConsentEvents(grantEvents.status === "fulfilled" ? grantEvents.value.events : []);
+      setAIConsentStatus(grants.status === "fulfilled" ? "ready" : "unavailable");
+      if (secondary.slice(0, 6).some((item) => item.status === "rejected")) {
         setError((current) => current ||
           "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria.");
       }
@@ -382,6 +395,46 @@ export default function App() {
       }
     }
   }
+
+  async function changeAIConsent(action: (userId: string) => Promise<unknown>, message: string) {
+    if (savingAIConsent.current || aiConsentStatus !== "ready") return;
+    const originatingIdentity = lastSessionIdentity.current;
+    savingAIConsent.current = true;
+    ++loadGeneration.current; // Invalidate older private GET responses.
+    setRefreshing(false); // A cancelled refresh must not leave its spinner stuck.
+    setAIConsentBusy(true);
+    try {
+      const data = await runPrivateMutation(async (userId) => {
+        await action(userId);
+        const [consents, events] = await Promise.all([
+          getJobAIConsents(), getJobAIConsentEvents()
+        ]);
+        return { consents, events };
+      });
+      setAIConsents(data.consents.consents);
+      setAIConsentEvents(data.events.events);
+      setAIConsentStatus("ready");
+      setNotice(message);
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Could not change your AI permission.");
+      }
+    } finally {
+      savingAIConsent.current = false;
+      if (originatingIdentity === lastSessionIdentity.current) setAIConsentBusy(false);
+    }
+  }
+
+  const grantConsent = (key: string) =>
+    changeAIConsent(
+      (userId) => grantJobAIConsent(key, userId),
+      "Permission saved for this job and approved evidence only. No AI request was started."
+    );
+  const revokeConsent = (id: string) =>
+    changeAIConsent(
+      (userId) => revokeJobAIConsent(id, userId),
+      "Permission withdrawn. Future unattended AI processing is not authorized."
+    );
 
   async function changeSearchMode(target: "personalized" | "general") {
     if (!preferences || preferences.mode === target) return;
@@ -792,6 +845,10 @@ export default function App() {
           {page === "insights" ? <div className="secondary-grid"><section className="panel insights-panel"><p className="section-kicker">PROFILE INSIGHTS</p><h2>Your evidence, at a glance</h2><p className="muted">These figures come from your own verified profile, not estimates.</p><div className="insight-numbers"><div><strong>{facts.length}</strong><span>Total facts</span></div><div><strong>{approved.length}</strong><span>Approved facts</span></div><div><strong>{dashboard.top_matches.length + dashboard.possible_matches.length}</strong><span>Ranked matches</span></div></div><button className="primary-btn" type="button" onClick={() => navigate("profile")}>Improve profile <ArrowRight size={16} /></button></section><aside>{sourcePanel}</aside></div> : null}
           {page === "settings" && preferences ? <div className="stacked">
             <SearchSetup key={accountViewKey} initial={preferences} settings onSave={saveSearchPreferences} />
+            <AIConsentSettings key={accountViewKey + "-ai-consent"}
+              jobs={jobs} consents={aiConsents} events={aiConsentEvents}
+              status={aiConsentStatus} busy={aiConsentBusy}
+              onGrant={grantConsent} onRevoke={revokeConsent} />
             <section className="panel settings-panel">
               <h2>Privacy and account</h2>
               <p>Your search choices belong to your signed-in SmartPloy profile.
