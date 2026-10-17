@@ -147,13 +147,15 @@ def test_preview_uses_verified_individual_profile_and_returns_only_aggregate_cou
             return True
 
     class FakeIdentities:
-        def __init__(self, dsn): pass
+        def __init__(self, dsn):
+            pass
         def get(self, user_id):
             details.append(("identity", user_id))
             return fake_users.get(user_id)
 
     class FakeJobs:
-        def __init__(self, dsn): pass
+        def __init__(self, dsn):
+            pass
         def get(self, key):
             details.append(("job", key))
             return job if key == job.canonical_key else None
