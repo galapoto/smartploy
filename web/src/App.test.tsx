@@ -831,6 +831,75 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.getByText("Session expired")).toBeTruthy();
   });
 
+
+  it("requires explicit per-job consent in Settings and supports account-bound withdrawal", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getJobs).mockResolvedValue({
+      jobs: [{
+        canonical_key: "test-analyst", source_current: true,
+        source_ids: ["test-ats"], posted_at: "2026-10-11T10:00:00Z",
+        first_seen_at: "2026-10-11T10:00:00Z", job: listing.job,
+      }], count: 1,
+    });
+    const consents: Array<import("./types").JobAIProcessingConsent> = [];
+    vi.mocked(api.getJobAIConsents).mockImplementation(async () => ({
+      consents: [...consents], count: consents.length, private: true,
+      unattended_processing_enabled: false,
+    }));
+    vi.mocked(api.grantJobAIConsent).mockImplementation(async (key, userId) => {
+      expect(key).toBe("test-analyst");
+      expect(userId).toBe("usr-synthetic-1");
+      const item: import("./types").JobAIProcessingConsent = {
+        consent_id: "consent-fixture", canonical_key: key, processor: "obumai",
+        purpose: "application_draft", mode: "unattended",
+        job_snapshot_sha256: "a".repeat(64), evidence_sha256: "b".repeat(64),
+        revision: 1, granted_at: "2026-10-17T10:00:00Z", revoked_at: "",
+        active: true, processing_started: false,
+        employer_actions_authorized: false,
+      };
+      consents.push(item);
+      return { consent: item, created_or_updated: true,
+        processing_started: false, external_actions_authorized: false };
+    });
+    vi.mocked(api.revokeJobAIConsent).mockImplementation(async (id, userId) => {
+      expect(id).toBe("consent-fixture");
+      expect(userId).toBe("usr-synthetic-1");
+      const revoked = { ...consents[0], revision: 2, active: false,
+        revoked_at: "2026-10-17T10:05:00Z" };
+      consents[0] = revoked;
+      return { consent: revoked, revoked: true };
+    });
+
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const jobOption = await screen.findByRole("option", {
+      name: /Junior Data Analyst — Example Oy/i,
+    });
+    const jobSelect = screen.getByRole("combobox", {
+      name: /choose a currently approved job/i,
+    });
+    fireEvent.change(jobSelect, { target: { value: (jobOption as HTMLOptionElement).value } });
+    const savePermission = screen.getByRole("button", {
+      name: /save job-specific permission/i,
+    }) as HTMLButtonElement;
+    expect(savePermission.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: /i explicitly allow obumai/i }));
+    fireEvent.click(savePermission);
+    await waitFor(() => expect(api.grantJobAIConsent).toHaveBeenCalledWith(
+      "test-analyst", "usr-synthetic-1",
+    ));
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: /withdraw permission/i,
+    })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /withdraw permission/i }));
+    await waitFor(() => expect(api.revokeJobAIConsent).toHaveBeenCalledWith(
+      "consent-fixture", "usr-synthetic-1",
+    ));
+    await waitFor(() => expect(screen.getByText("Withdrawn")).toBeTruthy());
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
   it("isolates a failed optional profile API without locking out jobs", async () => {
     currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
     vi.mocked(api.getProfileFacts).mockRejectedValue(new Error("profile temporarily unavailable"));

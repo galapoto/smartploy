@@ -401,6 +401,7 @@ export default function App() {
     const originatingIdentity = lastSessionIdentity.current;
     savingAIConsent.current = true;
     ++loadGeneration.current; // Invalidate older private GET responses.
+    setRefreshing(false); // A cancelled refresh must not leave its spinner stuck.
     setAIConsentBusy(true);
     try {
       const data = await runPrivateMutation(async (userId) => {
