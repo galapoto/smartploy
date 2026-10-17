@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from hashlib import sha256
-from types import SimpleNamespace
 import json
 
 import pytest
