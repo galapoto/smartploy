@@ -13,7 +13,7 @@ from authlib.integrations.base_client import OAuthError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response, JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 import uvicorn
 
 from .access import AccessPrincipal, AccessSettings, CloudflareAccessVerifier
@@ -58,7 +58,7 @@ from .private_saved_jobs import (
     PrivateSavedJobError,
 )
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
-from .preparations import PreparationNotEligible
+from .preparations import PREPARATION_ACTION, PreparationNotEligible
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
 from .search_preferences import SearchPreferenceConflict, SearchPreferenceError, search_jobs
 from .search_preference_storage import MemorySearchPreferenceRepository, PostgresSearchPreferenceRepository
@@ -212,10 +212,20 @@ class WorkspaceAppliedPayload(BaseModel):
     reference: str = Field(default="", max_length=250)
 
 
-class ObumAITaskPayload(BaseModel):
+class AIProcessingConsentPayload(BaseModel):
+    """A per-job, literal-true opt-in for legacy durable ObumAI processing."""
     model_config = ConfigDict(extra="forbid")
+    acknowledge_obumai_processing: StrictBool
+
+
+class ObumAITaskPayload(AIProcessingConsentPayload):
     action: str = Field(min_length=1, max_length=64)
     instructions: str = Field(default="", max_length=20_000)
+
+
+# These are reasoning/draft tasks; an arbitrary action string must never be
+# interpreted by a downstream agent as permission for external side effects.
+SELF_SERVICE_OBUMAI_ACTIONS = frozenset({"fit_analysis", PREPARATION_ACTION})
 
 
 def _sanitize_worker_metadata(value: Any) -> Any:
@@ -973,7 +983,16 @@ def create_app(
             raise HTTPException(status_code=404, detail="job not found") from exc
 
     @app.post("/api/v1/jobs/{canonical_key}/prepare")
-    def prepare_job(canonical_key: str, request: Request) -> dict[str, Any]:
+    def prepare_job(
+        canonical_key: str, payload: AIProcessingConsentPayload, request: Request
+    ) -> dict[str, Any]:
+        # Legacy /prepare submits approved profile evidence and job text to
+        # ObumAI. Unlike /application-workspace, this is NOT local-only editing.
+        if payload.acknowledge_obumai_processing is not True:
+            raise HTTPException(
+                status_code=422,
+                detail="Explicit per-job consent for ObumAI processing is required",
+            )
         tenant, _ = tenant_context(request)
         try:
             return tenant.prepare_job(canonical_key).to_dict()
@@ -1287,6 +1306,16 @@ def create_app(
         payload: ObumAITaskPayload,
         request: Request,
     ) -> dict[str, Any]:
+        if payload.acknowledge_obumai_processing is not True:
+            raise HTTPException(
+                status_code=422,
+                detail="Explicit per-job consent for ObumAI processing is required",
+            )
+        if payload.action not in SELF_SERVICE_OBUMAI_ACTIONS:
+            raise HTTPException(
+                status_code=422,
+                detail="Only approved SmartPloy reasoning or document-draft actions are allowed",
+            )
         tenant, _ = tenant_context(request)
         try:
             return tenant.submit_obumai(

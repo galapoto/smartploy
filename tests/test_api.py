@@ -81,7 +81,7 @@ def test_obumai_request_is_truthfully_unavailable_when_not_configured():
     key = created["candidate"]["canonical_key"]
     result = api.post(
         f"/api/v1/jobs/{key}/obumai",
-        json={"action": "fit_analysis"},
+        json={"action": "fit_analysis", "acknowledge_obumai_processing": True},
     )
     assert result.status_code == 503
     assert "not configured" in result.json()["detail"]

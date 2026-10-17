@@ -544,3 +544,32 @@ The review branch includes deterministic synthetic tests for safe/unsafe links,
 profile hydration under a stalled AI endpoint, and superseded account/AI
 status responses. Live signed-in two-user acceptance, human review and
 operator-approved deployment are still required.
+
+## Legacy ObumAI forwarding requires explicit per-job opt-in (review-only)
+
+The older HTTP routes `POST /api/v1/jobs/{canonical_key}/prepare` and
+`POST /api/v1/jobs/{canonical_key}/obumai` can send a job posting and
+**approved candidate evidence** to the durable ObumAI reasoning service.
+They no longer accept implicit consent from a POST request alone.
+
+Every such request must include JSON
+`{"acknowledge_obumai_processing":true}`. Only a literal JSON boolean
+`true` is accepted, not a string, number, absent field or `false`.
+The legacy `/obumai` endpoint additionally accepts only the existing
+`fit_analysis` or `application_package_v1` reasoning/draft actions,
+never arbitrary user-provided agent action labels. All existing server-side
+source-terms checks, approved-evidence checks, zero-employer-submission
+constraints, and tenant authentication remain in effect. The older
+`/prepare` route intentionally changes its request contract; callers
+must display an explicit purpose/consent confirmation before invoking it.
+
+The modern `/api/v1/jobs/{canonical_key}/application-workspace` flow
+remains a separate human-review draft preparation route and does **not**
+require or imply consent for AI forwarding. Private local AI suggestions
+retain their own explicit processing acknowledgment.
+
+This patch gates **external HTTP entrypoints** only. Internal worker
+auto-preparation retains its existing service contract and must be separately
+reviewed before allowing unattended production processing. Synthetic
+contract regressions use a stubbed service with no real ObumAI calls.
+The candidate has not been merged or deployed to OVH.
