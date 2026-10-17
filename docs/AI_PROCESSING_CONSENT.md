@@ -120,3 +120,43 @@ are independent release gates. Green synthetic CI does not satisfy them.
 
 Related tracking: GitHub SmartPloy issue #139, source draft #137 and the
 status-queue draft #140. Do not merge this stacked draft directly to main.
+
+
+## Durable one-shot draft dispatch (PR #143, NOT SCHEDULED)
+
+Migration 017 and smartploy.obumai_dispatch_storage introduce a durable,
+tenant- and snapshot-specific attempt table with states sending,
+acknowledged and uncertain. Each package has at most one attempt. An
+ObumAI provider request ID is deterministic from the immutable preparation
+package ID, not from volatile source-poll freshness timestamps. A remote
+HTTP timeout, invalid acceptance response, lost worker or database failure
+can never silently trigger a second POST through this path.
+
+The internal dispatch_consented_draft_once function:
+- Requires a positive maximum 30-second HTTP timeout and a real PostgreSQL DB.
+- Re-fetches the verified active account, exact profile, current job,
+  source forwarding authorization and approved facts under the consent row
+  lock, independently revalidates fit/priority, then hashes all draft inputs.
+- Creates and commits the one-shot sending marker before opening the remote
+  model request. A parallel worker cannot reserve a second attempt.
+- Holds the revocation lock during the single outbound call, then stores
+  accepted provider job ID before updating the existing preparation and
+  application records.
+- Marks failed or malformed request outcomes uncertain with a fixed,
+  non-sensitive code. Never retries when it cannot know what the processor
+  accepted.
+
+An internal reconcile_acknowledged_draft_once can repair an already
+acknowledged job by **GET** of its persisted ObumAI job ID. It checks live
+owner and still-active matching consent, exact attempt metadata and
+matching original private preparation. No prompt/CV/job data is resent.
+Sending or uncertain attempts *without* a confirmed remote ID cannot be
+resolved by guessing or POST retry; these need operator/provider-side
+reconciliation using the saved request ID. Provider deletion, retention,
+unapproved resends and ambiguous in-flight requests remain privacy gates.
+
+This internal capability is NOT wired into build_worker_task_specs, a cron,
+an API route, onboarding, or Settings. Granting permission does NOT call it.
+Green CI is synthetic; no actual user data was delivered to ObumAI.
+Transactional locks across remote HTTP remain an architectural security
+review item and no automatic production rollout is authorized.

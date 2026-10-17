@@ -13,7 +13,9 @@ from .ai_processing_consent import JobAIConsent, PostgresJobAIConsentRepository
 from .consented_worker_readiness import assess_consent_readiness
 from .identity import PostgresIdentityRepository
 from .obumai import ObumAIClient, ObumAIError
-from .obumai_dispatch_storage import PostgresDraftDispatchRepository
+from .obumai_dispatch_storage import (
+    DraftDispatchAttempt, PostgresDraftDispatchRepository,
+)
 from .preparations import (
     APPLICATION_DRAFT_INSTRUCTIONS, PREPARATION_ACTION,
     approved_evidence_snapshot, build_preparation,
@@ -156,3 +158,78 @@ def dispatch_consented_draft_once(
         stored = service.preparation_repository.save(updated)
         service._sync_application(stored)
         return _report("acknowledged", model_attempted=True)
+
+
+def reconcile_acknowledged_draft_once(
+    dsn: str, attempt: DraftDispatchAttempt, client: ObumAIClient,
+) -> dict[str, object]:
+    """GET an accepted remote job and repair materialization, NEVER re-POST.
+
+    This deliberately excludes 'sending' and 'uncertain' requests: they need
+    provider-side idempotency-key lookup and human incident review.
+    Revoked/disabled users fail closed even though a remote draft exists.
+    This method is NOT registered with any automatic worker task.
+    """
+    if attempt.state != "acknowledged" or not attempt.obum_job_id:
+        return _report("requires_operator_reconciliation")
+    identity = PostgresIdentityRepository(dsn).get(attempt.user_id)
+    if (
+        identity is None or identity.status != "active"
+        or identity.profile_id != attempt.profile_id
+    ):
+        return _report("owner_inactive")
+
+    ledger = PostgresJobAIConsentRepository(dsn)
+    with ledger.hold_authorized_dispatch(
+        identity, attempt.canonical_key,
+        attempt.job_snapshot_sha256, attempt.evidence_sha256,
+    ) as locked:
+        if (
+            locked.consent_id != attempt.consent_id
+            or locked.revision != attempt.consent_revision
+        ):
+            return _report("consent_changed")
+        persisted = PostgresDraftDispatchRepository(dsn).get(
+            attempt.package_id, profile_id=attempt.profile_id,
+        )
+        if (
+            persisted is None or persisted.state != "acknowledged"
+            or persisted.obum_job_id != attempt.obum_job_id
+            or persisted.obum_request_id != attempt.obum_request_id
+            or persisted.profile_id != attempt.profile_id
+        ):
+            return _report("attempt_changed")
+
+        service = _scoped_application_service(dsn, client, attempt.profile_id)
+        preparation = service.get_preparation(attempt.package_id)
+        if (
+            preparation is None
+            or preparation.profile_id != attempt.profile_id
+            or preparation.canonical_key != attempt.canonical_key
+            or preparation.job_snapshot_sha256 != attempt.job_snapshot_sha256
+            or preparation.evidence_sha256 != attempt.evidence_sha256
+        ):
+            return _report("preparation_missing_or_changed")
+        if preparation.status in {
+            "completed", "completed_unparsed", "cancelled",
+        }:
+            return _report("already_finalized")
+        try:
+            # GET is safe to repeat. No prompt or approved evidence is sent.
+            job = client.get_job(attempt.obum_job_id)
+        except ObumAIError:
+            return _report("remote_lookup_failed")
+        if (
+            not isinstance(job, dict)
+            or str(job.get("id") or "").strip() != attempt.obum_job_id
+            or str(job.get("state") or "").strip().casefold()
+            not in {"queued", "running", "blocked", "completed", "failed", "cancelled"}
+        ):
+            return _report("invalid_remote_projection")
+
+        updated = service._apply_obum_job(
+            preparation, job, client_request_id=attempt.obum_request_id,
+        )
+        saved = service.preparation_repository.save(updated)
+        service._sync_application(saved)
+        return _report("remote_refreshed")
