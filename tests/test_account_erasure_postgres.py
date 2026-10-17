@@ -18,6 +18,7 @@ from psycopg.types.json import Jsonb
 
 from smartploy.account_erasure import (
     ErasureIdentityMismatch, PostgresAccountErasureRepository,
+    inspect_quarantined_account,
 )
 from smartploy.ai_processing_consent import (
     ConsentDispatchDenied, ConsentIdentityError, PostgresJobAIConsentRepository,
@@ -25,6 +26,7 @@ from smartploy.ai_processing_consent import (
 from smartploy.identity import AuthenticatedPrincipal, PostgresIdentityRepository
 from smartploy.domain import canonical_json
 from smartploy.obumai_dispatch_storage import PostgresDraftDispatchRepository
+from smartploy.preparation_storage import PostgresPreparationRepository, with_runtime
 from smartploy.preparations import ApplicationPreparation, PREPARATION_CONTRACT
 from smartploy.storage import PostgresJobRepository
 
@@ -93,6 +95,20 @@ def scoped():
         conn.execute(
             "DELETE FROM smartploy_account_erasure_requests WHERE user_id IN (%s,%s)",
             (a.user_id, b.user_id),
+        )
+        for table in (
+            "smartploy_browser_receipts", "smartploy_application_workspaces",
+            "smartploy_profile_facts", "smartploy_cv_files",
+            "smartploy_search_preferences", "smartploy_private_saved_jobs",
+            "smartploy_application_preparations", "smartploy_applications",
+        ):
+            conn.execute(
+                f"DELETE FROM {table} WHERE profile_id IN (%s,%s)",
+                (a.profile_id, b.profile_id),
+            )
+        conn.execute(
+            "DELETE FROM smartploy_jobs WHERE canonical_key IN (%s,%s)",
+            ("job-" + nonce + "-a", "job-" + nonce + "-b"),
         )
         for table in (
             "smartploy_obumai_dispatch_attempts",
@@ -252,3 +268,136 @@ def test_quarantine_waits_until_an_in_flight_protected_send_finishes(scoped):
             a, key, grant.job_snapshot_sha256, grant.evidence_sha256,
         ):
             pytest.fail("Closing an account cannot permit a new dispatch")
+
+
+
+def test_private_data_inventory_is_owner_scoped_and_redacted(scoped):
+    a, b, _, _, _, _, _, _, _ = scoped
+    with connect(DSN) as conn:
+        conn.execute(
+            """
+            INSERT INTO smartploy_profile_facts (
+                profile_id, fact_id, fact_type, value, normalized_value, source,
+                approved, created_at
+            ) VALUES (%s,'fact-private','skill','Sensitive skill','sensitive skill',
+                      'synthetic',true,now())
+            """, (a.profile_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO smartploy_cv_files (
+                profile_id,filename,media_type,content,extracted_text,sha256
+            ) VALUES (%s,'private.pdf','application/pdf',%s,
+                      'Private CV',%s)
+            """, (a.profile_id, b"%PDF-1.4 fixture", "a" * 64),
+        )
+        conn.execute(
+            """
+            INSERT INTO smartploy_search_preferences (profile_id,mode,revision)
+            VALUES (%s,'personalized',1)
+            """, (a.profile_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO smartploy_private_saved_jobs (
+                profile_id,saved_job_id,company,role_title,description
+            ) VALUES (%s,'saved-fixture','Private Inc','Role','Confidential')
+            """, (a.profile_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO smartploy_application_workspaces (
+                workspace_id,profile_id,canonical_key,role_title,company,
+                cv_text,cover_letter_text,job_fingerprint
+            ) VALUES ('workspace-a-fixture',%s,'private-job',
+                      'Role','Private Inc','Private CV',
+                      'Private letter','fingerprint')
+            """, (a.profile_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO smartploy_browser_receipts (
+                profile_id,workspace_id,document_revision,document_sha256,
+                reference,confirmation_page_url,confirmation_page_sha256,
+                observed_at,evidence_digest
+            ) VALUES (%s,'workspace-a-fixture',1,%s,
+                      'TEST01','https://example.invalid/confirmation',
+                      %s,now(),%s)
+            """, (a.profile_id, "b" * 64, "c" * 64, "d" * 64),
+        )
+    with pytest.raises(ErasureIdentityMismatch):
+        inspect_quarantined_account(DSN, a.user_id, a.profile_id)
+    q = PostgresAccountErasureRepository(DSN)
+    state = q.quarantine(a.user_id, a.profile_id)
+    inventory = inspect_quarantined_account(DSN, a.user_id, a.profile_id)
+    assert inventory.request_id == state.request_id
+    assert inventory.counts["identities"] == 1
+    assert inventory.counts["sessions"] == 1
+    assert inventory.counts["profile_facts"] == 1
+    assert inventory.counts["cv_files"] == 1
+    assert inventory.counts["search_preferences"] == 1
+    assert inventory.counts["private_saved_jobs"] == 1
+    assert inventory.counts["application_workspaces"] == 1
+    assert inventory.counts["browser_receipts"] == 1
+    assert inventory.counts["consents"] == 1
+    assert inventory.counts["consent_events"] == 2
+    assert inventory.counts["dispatch_attempts"] == 0
+    assert inventory.unknown_owner_tables == ()
+    report = inventory.to_dict()
+    assert report["local_purge_completed"] is False
+    assert report["hard_purge_authorized"] is False
+    assert report["untracked_remote_history_may_exist"] is True
+    serialized = json.dumps(report)
+    for secret in (
+        a.user_id, a.profile_id, "Sensitive skill", "Private CV",
+        "Private Inc", "private.pdf", "sensitive@example.invalid",
+    ):
+        assert secret not in serialized
+    with pytest.raises(ErasureIdentityMismatch):
+        inspect_quarantined_account(DSN, b.user_id, b.profile_id)
+
+
+def test_refresh_excludes_quarantined_owner_without_starving_other_jobs(scoped):
+    a, b, _, _, _, ka, kb, _, _ = scoped
+    with connect(DSN) as conn:
+        for key in (ka, kb):
+            conn.execute(
+                """
+                INSERT INTO smartploy_jobs (
+                    canonical_key,job_id,company,role_title,candidate,
+                    first_seen_at,last_seen_at,source_current
+                ) VALUES (%s,%s,'Fictional Ltd','Synthetic Developer',%s,
+                          now(),now(),true)
+                """,
+                (key, key, Jsonb({})),
+            )
+    prep = PostgresPreparationRepository(DSN)
+    for user, key, timestamp in (
+        (a, ka, "2026-10-17T10:00:00+00:00"),
+        (b, kb, "2026-10-17T11:00:00+00:00"),
+    ):
+        job, evidence = {"job": key}, {"profile_id": user.profile_id}
+        item = ApplicationPreparation(
+            package_id="prep-refresh-" + key,
+            profile_id=user.profile_id, canonical_key=key,
+            preparation_contract=PREPARATION_CONTRACT,
+            job_snapshot_sha256=_sha(job), evidence_sha256=_sha(evidence),
+            job_snapshot=job, evidence_snapshot=evidence, score_snapshot={},
+            requested_at=timestamp, updated_at=timestamp,
+        ).normalized()
+        saved, created = prep.create_or_get(item)
+        assert created
+        prep.save(with_runtime(
+            saved, status="queued", obum_job_id="remote-" + key,
+            updated_at=timestamp,
+        ))
+    assert [v.profile_id for v in prep.list_refresh_candidates(limit=2)] == [
+        a.profile_id, b.profile_id,
+    ]
+    q = PostgresAccountErasureRepository(DSN)
+    report = q.quarantine(a.user_id, a.profile_id)
+    assert report.pending_provider_obligations == 1
+    remaining = prep.list_refresh_candidates(limit=2)
+    assert [v.profile_id for v in remaining] == [b.profile_id]
+    assert remaining[0].obum_job_id == "remote-" + kb
+    assert len(q.list_operator_obligations(report.request_id)) == 1
