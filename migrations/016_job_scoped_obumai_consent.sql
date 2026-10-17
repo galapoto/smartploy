@@ -1,5 +1,5 @@
 -- Job-specific, revocable ObumAI processing consent. Consent alone NEVER starts AI.
--- User/profile binding is re-verified atomically against the identity tables on grant;
+-- User/profile binding is re-verified atomically against identity tables on grant.
 -- deliberately no foreign keys to avoid changing existing legacy-owner TRUNCATE flows.
 -- Account removal workflows must delete both tables under the privacy retention policy.
 CREATE TABLE IF NOT EXISTS smartploy_obumai_consents (
