@@ -110,14 +110,18 @@ def test_missing_rights_block_approved_profile_service_paths():
     assert svc.preparation_repository.list() == []
 
 
-def test_old_candidate_raw_true_but_explicit_merged_metadata_false_is_denied():
+def test_old_raw_true_without_fresh_provenance_or_with_merged_veto_is_denied():
     candidate = job(forwarding=True)
-    old = replace(candidate, metadata={
-        "legacy": True,
-        "external_ai_forwarding_allowed": False,
-    })
+    # Older normalizer silently used True as a DEFAULT, not as permission.
+    old = replace(candidate, metadata={"legacy": True})
     assert not source_ai_forwarding_permitted(old)
-    assert not old.to_obumai_handoff()["authority"]["may_reason"]
+    assert old.to_obumai_handoff()["authority"]["may_reason"] is False
+
+    restricted = replace(candidate, metadata={
+        "legacy": True, "external_ai_forwarding_allowed": False,
+    })
+    assert not source_ai_forwarding_permitted(restricted)
+    assert not restricted.to_obumai_handoff()["authority"]["may_reason"]
 
 
 def test_source_posting_remains_visible_with_unknown_ai_rights():

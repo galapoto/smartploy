@@ -387,17 +387,16 @@ class JobCandidate:
 
 
 def source_ai_forwarding_permitted(candidate: JobCandidate) -> bool:
-    """External AI data forwarding requires affirmative publisher permission.
+    """Require affirmative rights with evidence of the NEW import contract.
 
-    Legacy candidates without an independent metadata decision may rely on
-    explicit raw=True. Any restricted duplicate source vetoes forwarding.
+    Old stored jobs can have raw=True supplied by the previous *default*,
+    even when their real source never granted that right. Until they are
+    revalidated under the reviewed publisher policy and re-imported, missing
+    metadata MUST be denied. Merged unknown/restricted sources also veto.
     """
     return (
         candidate.job.raw.get("external_ai_forwarding_allowed") is True
-        and (
-            "external_ai_forwarding_allowed" not in candidate.metadata
-            or candidate.metadata["external_ai_forwarding_allowed"] is True
-        )
+        and candidate.metadata.get("external_ai_forwarding_allowed") is True
     )
 
 

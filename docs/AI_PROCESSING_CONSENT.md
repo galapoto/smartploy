@@ -174,9 +174,10 @@ ObumAIClient.submit_reasoning, SmartployService.submit_obumai,
 SmartployService.prepare_job, JobCandidate.to_obumai_handoff and the
 existing consented internal worker readiness check. A merged duplicate
 with one source denying permission remains denied, independent of which
-source supplied the longer description. Historic persisted jobs with raw
-literal True and no separate metadata decision retain that explicit
-authorization unless a merged restriction was recorded.
+source supplied the longer description. Historic persisted jobs with raw literal True but no independent
+metadata decision are DENIED: prior ingestion could silently default
+the raw flag to True. They require fresh, source-reviewed permission
+and a new vetted observation, not automatic grandfathering.
 
 User consent and publisher content permission are independent checks.
 Neither a configured ObumAI endpoint nor a user action can grant missing
