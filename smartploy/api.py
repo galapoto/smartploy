@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
+from hashlib import sha256
 import os
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
@@ -17,6 +18,10 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool
 import uvicorn
 
 from .access import AccessPrincipal, AccessSettings, CloudflareAccessVerifier
+from .ai_processing_consent import (
+    ConsentIdentityError, JobAIConsentRepository, MemoryJobAIConsentRepository,
+    PostgresJobAIConsentRepository,
+)
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
@@ -36,7 +41,7 @@ from .identity import (
     PostgresIdentityRepository,
     UserProfileBinding,
 )
-from .domain import JobSearchFilters, SourceObservation, SourcePolicy
+from .domain import JobSearchFilters, SourceObservation, SourcePolicy, canonical_json
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
 from .operator_access import OperatorAccessPolicy
 from .oidc import (
@@ -58,7 +63,10 @@ from .private_saved_jobs import (
     PrivateSavedJobError,
 )
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
-from .preparations import PREPARATION_ACTION, PreparationNotEligible
+from .preparations import (
+    PREPARATION_ACTION, PreparationNotEligible,
+    approved_evidence_snapshot, preparation_job_snapshot,
+)
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
 from .search_preferences import SearchPreferenceConflict, SearchPreferenceError, search_jobs
 from .search_preference_storage import MemorySearchPreferenceRepository, PostgresSearchPreferenceRepository
@@ -223,6 +231,13 @@ class ObumAITaskPayload(AIProcessingConsentPayload):
     instructions: str = Field(default="", max_length=20_000)
 
 
+class GrantUnattendedAIConsentPayload(BaseModel):
+    """Grant one future-draft permission for today's job + approved facts."""
+    model_config = ConfigDict(extra="forbid")
+    canonical_key: str = Field(min_length=1, max_length=256)
+    acknowledge_obumai_processing: StrictBool
+
+
 # These are reasoning/draft tasks; an arbitrary action string must never be
 # interpreted by a downstream agent as permission for external side effects.
 SELF_SERVICE_OBUMAI_ACTIONS = frozenset({"fit_analysis", PREPARATION_ACTION})
@@ -371,6 +386,7 @@ def create_app(
     oidc_client: Any | None = None,
     session_repository: Any | None = None,
     oidc_state_cache: Any | None = None,
+    processing_consent_repository: JobAIConsentRepository | None = None,
 ) -> FastAPI:
     active = service or _build_service()
     authentication = AuthenticationSettings.from_env()
@@ -432,6 +448,10 @@ def create_app(
     app.state.private_saved_jobs = (
         PostgresPrivateSavedJobRepository(dsn) if dsn
         else MemoryPrivateSavedJobRepository()
+    )
+    app.state.processing_consents = processing_consent_repository or (
+        PostgresJobAIConsentRepository(dsn) if dsn
+        else MemoryJobAIConsentRepository()
     )
 
     def tenant_context(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
@@ -931,6 +951,90 @@ def create_app(
             content={"deleted": True},
             headers={"Cache-Control": "private, no-store"},
         )
+
+    # This is a permission ledger, not an automatic AI scheduler or a consent
+    # inferred from configuring ObumAI. All operations need verified identity.
+    def consent_context(request: Request) -> tuple[SmartployService, UserProfileBinding]:
+        tenant, binding = tenant_context(request)
+        if binding is None:
+            raise HTTPException(status_code=401, detail="Verified sign-in is required for AI processing consent")
+        return tenant, binding
+
+    @app.get("/api/v1/ai-processing-consents")
+    def ai_processing_consents(request: Request, limit: int = 100) -> dict[str, Any]:
+        if not 1 <= limit <= 100:
+            raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
+        _, binding = consent_context(request)
+        items = app.state.processing_consents.list(binding, limit=limit)
+        return {
+            "consents": [item.to_dict() for item in items],
+            "count": len(items),
+            "private": True,
+            "unattended_processing_enabled": False,
+        }
+
+    @app.get("/api/v1/ai-processing-consents/events")
+    def ai_processing_consent_events(request: Request, limit: int = 100) -> dict[str, Any]:
+        if not 1 <= limit <= 100:
+            raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
+        _, binding = consent_context(request)
+        events = app.state.processing_consents.events(binding, limit=limit)
+        return {
+            "events": [event.to_dict() for event in events],
+            "count": len(events),
+            "private": True,
+            "history_type": "consent_grant_and_withdrawal_only",
+        }
+
+    @app.post("/api/v1/ai-processing-consents")
+    def grant_ai_processing_consent(
+        payload: GrantUnattendedAIConsentPayload, request: Request,
+    ) -> dict[str, Any]:
+        if payload.acknowledge_obumai_processing is not True:
+            raise HTTPException(status_code=422, detail="Explicit ObumAI consent is required")
+        tenant, binding = consent_context(request)
+        candidate = tenant.get_job(payload.canonical_key)
+        if candidate is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if not candidate.source_current:
+            raise HTTPException(status_code=409, detail="This job is no longer current")
+        # A source without an explicitly affirmative forwarding decision
+        # cannot be turned into a third-party AI permission by the user.
+        if candidate.job.raw.get("external_ai_forwarding_allowed") is not True:
+            raise HTTPException(status_code=409, detail="Job source does not authorize AI forwarding")
+        evidence = approved_evidence_snapshot(tenant.profile())
+        if not evidence.get("approved_fact_count"):
+            raise HTTPException(status_code=409, detail="Approve profile evidence before consenting")
+        job_snapshot = preparation_job_snapshot(candidate)
+        job_hash = sha256(canonical_json(job_snapshot).encode("utf-8")).hexdigest()
+        evidence_hash = sha256(canonical_json(evidence).encode("utf-8")).hexdigest()
+        try:
+            item, changed = app.state.processing_consents.grant(
+                binding, candidate.canonical_key, job_hash, evidence_hash,
+            )
+        except ConsentIdentityError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        # No AI request, automatic preparation registration, or employer action.
+        return {
+            "consent": item.to_dict(),
+            "created_or_updated": changed,
+            "processing_started": False,
+            "external_actions_authorized": False,
+        }
+
+    @app.delete("/api/v1/ai-processing-consents/{consent_id}")
+    def revoke_ai_processing_consent(consent_id: str, request: Request) -> dict[str, Any]:
+        _, binding = consent_context(request)
+        item = app.state.processing_consents.revoke(binding, consent_id)
+        if item is None:
+            # Another user's consent ID is indistinguishable from a missing ID.
+            raise HTTPException(status_code=404, detail="consent not found")
+        return {
+            "consent": item.to_dict(),
+            "revoked": True,
+            "future_processing_authorized": False,
+            "external_actions_authorized": False,
+        }
 
     @app.get("/api/v1/search-preferences")
     def get_search_preferences(request: Request) -> dict[str, Any]:
