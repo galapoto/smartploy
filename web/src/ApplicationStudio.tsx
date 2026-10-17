@@ -187,24 +187,24 @@ export default function ApplicationStudio(props: {
     () => workspaces.find((item) => item.workspace_id === selectedId) || null,
     [workspaces, selectedId]
   );
+  // Clear draft-local editor content, receipt/packet previews AND pending
+  // indicators before a different draft can paint. The old draft's promise
+  // may still finish; its completion must never unlock the new draft.
   useLayoutEffect(() => {
     const key = selected ? JSON.stringify([selected.workspace_id, selected.revision]) : "";
     if (selectedDraftRef.current.key !== key) {
       selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
+      setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false);
+      setAISuggestion(null);
+      setCvText(selected?.cv_text || "");
+      setLetterText(selected?.cover_letter_text || "");
+      setHandoffPacketText("");
+      setReceiptOpen(false); setReceiptInput("");
+      setHandoff(null); setBrowserReceipt(null);
     }
-  }, [selected?.workspace_id, selected?.revision]);
-  useEffect(() => {
-    setAISuggestion(null);
-    setCvText(selected?.cv_text || "");
-    setLetterText(selected?.cover_letter_text || "");
   }, [selected?.workspace_id, selected?.revision]);
 
   useEffect(() => {
-    setHandoffPacketText("");
-    setReceiptOpen(false);
-    setReceiptInput("");
-    setHandoff(null);
-    setBrowserReceipt(null);
     if (!selected?.workspace_id || accountBlockedRef.current) return;
     let alive = true;
     const workspaceId = selected.workspace_id;
@@ -264,7 +264,7 @@ export default function ApplicationStudio(props: {
       setMessage("Your edits were saved. Downloaded documents will contain this version.");
     } catch (exc) {
       reportActionError(exc, "Draft could not be saved.");
-    } finally { if (mountedRef.current && !accountBlockedRef.current) setBusy(false); }
+    } finally { if (isCurrentDraft(ticket)) setBusy(false); }
   }
 
   async function askLocalAI() {
@@ -288,7 +288,7 @@ export default function ApplicationStudio(props: {
       setMessage("Local AI returned draft suggestions. Review them and choose whether to insert them.");
     } catch (exc) {
       reportActionError(exc, "Local AI is currently unavailable.");
-    } finally { if (mountedRef.current && !accountBlockedRef.current) setAIBusy(false); }
+    } finally { if (isCurrentDraft(ticket)) setAIBusy(false); }
   }
 
   async function insertAISuggestion() {
@@ -354,7 +354,7 @@ export default function ApplicationStudio(props: {
       }
     } catch (exc) {
       reportActionError(exc, "Unable to copy the application packet.");
-    } finally { if (mountedRef.current && !accountBlockedRef.current) setHandoffBusy(false); }
+    } finally { if (isCurrentDraft(ticket)) setHandoffBusy(false); }
   }
 
   async function onImportObservedReceipt() {
@@ -391,7 +391,7 @@ export default function ApplicationStudio(props: {
       setMessage("Employer confirmation was recorded as browser-observed, not independently verified.");
     } catch (exc) {
       reportActionError(exc, "Unable to store this browser receipt.");
-    } finally { if (mountedRef.current && !accountBlockedRef.current) setReceiptBusy(false); }
+    } finally { if (isCurrentDraft(ticket)) setReceiptBusy(false); }
   }
 
   async function markApplied() {
@@ -416,7 +416,7 @@ export default function ApplicationStudio(props: {
       setMessage("Recorded as personally reported applied, not independently verified by the employer.");
     } catch (exc) {
       reportActionError(exc, "Unable to record this application.");
-    } finally { if (mountedRef.current && !accountBlockedRef.current) setBusy(false); }
+    } finally { if (isCurrentDraft(ticket)) setBusy(false); }
   }
 
   async function remove() {
@@ -437,7 +437,7 @@ export default function ApplicationStudio(props: {
       setMessage("Draft removed from SmartPloy.");
     } catch (exc) {
       reportActionError(exc, "Unable to delete this draft.");
-    } finally { if (mountedRef.current && !accountBlockedRef.current) setBusy(false); }
+    } finally { if (isCurrentDraft(ticket)) setBusy(false); }
   }
 
   if (accountBlocked) {

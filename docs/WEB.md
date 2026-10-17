@@ -503,3 +503,21 @@ drafts to reconcile old draft state. This does **not** submit applications
 to employers and does not independently verify browser receipts. Deterministic
 synthetic React tests cover both same-account drafts, including late AI,
 packet, receipt, save, delete, reported-applied and AI insertion cases.
+
+## Switching between drafts during pending actions (review-only)
+
+The Application Studio now resets draft-specific busy indicators
+(`busy`, `aiBusy`, `handoffBusy`, `receiptBusy`) *before paint* when the
+selected workspace or revision changes. It also clears local AI proposals,
+CV/letter editor snapshots and any private handoff or receipt preview at this
+layout boundary. Previously Job A's slow save/AI/packet/receipt could hold Job
+B's controls disabled, or Job A's late `finally` block could erroneously
+unlock an unrelated in-flight Job B action.
+
+Each completion now clears its loading flag only if its original
+workspace+revision+selection-epoch ticket is still current. Selecting B allows
+a new action even when A's request is stuck; late A completion cannot clear
+B's active pending flag or publish A content. No network call is silently
+canceled or backend mutation rolled back. Synthetic two-draft React tests
+exercise overlapping saves and AI suggestions in both completion orders.
+This fix is on the **draft review branch only**, not production.

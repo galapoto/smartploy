@@ -624,3 +624,112 @@ describe("Application Studio per-draft result isolation", () => {
       .toBe("PRIVATE-LETTER-B");
   });
 });
+
+
+describe("Application Studio draft-scoped pending indicators", () => {
+  const twoDrafts = () =>
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [job("A"), job("B")], count: 2,
+    });
+
+  async function pickB() {
+    fireEvent.click(screen.getByRole("button", { name: /B private role/ }));
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+    await waitFor(() => {
+      expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
+        .toBe("PRIVATE-CV-B");
+    });
+  }
+
+  it("unlocks Job B despite Job A's unfinished save and keeps B locked if A finishes first", async () => {
+    twoDrafts();
+    const oldSave = deferred<{ workspace: ApplicationWorkspace }>();
+    const newSave = deferred<{ workspace: ApplicationWorkspace }>();
+    vi.mocked(api.editApplicationWorkspace)
+      .mockImplementationOnce(() => oldSave.promise)
+      .mockImplementationOnce(() => newSave.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Editable CV text" }), {
+      target: { value: "A unsaved changes" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", 1, "A unsaved changes", "PRIVATE-LETTER-A", "usr-a"
+    ));
+    await pickB();
+    fireEvent.change(screen.getByRole("textbox", { name: "Editable CV text" }), {
+      target: { value: "B unsaved changes" },
+    });
+    const bSaveButton = screen.getByRole("button", { name: "Save changes" });
+    expect(bSaveButton.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(bSaveButton);
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-B", 1, "B unsaved changes", "PRIVATE-LETTER-B", "usr-a"
+    ));
+    expect(screen.getByRole("button", { name: "Working…" }).hasAttribute("disabled")).toBe(true);
+    await act(async () => { oldSave.resolve({
+      workspace: { ...job("A"), cv_text: "saved A", revision: 2 },
+    }); });
+    // A's finally block must not unlock B's still-pending save.
+    expect(screen.getByRole("button", { name: "Working…" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+    await act(async () => { newSave.resolve({
+      workspace: { ...job("B"), cv_text: "B unsaved changes", revision: 2 },
+    }); });
+    expect(await screen.findByText(/Your edits were saved/)).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
+      .toBe("B unsaved changes");
+  });
+
+  it("unlocks B's AI action while A is pending and does not clear B's new AI spinner", async () => {
+    twoDrafts();
+    vi.mocked(api.getLocalAIStatus).mockResolvedValue({
+      configured: true, ready: true, provider: "local_obumai_ollama",
+      model: "synthetic-only", external_ai_forwarding: false,
+    });
+    const oldAI = deferred<Awaited<ReturnType<typeof api.requestLocalAISuggestions>>>();
+    const newAI = deferred<Awaited<ReturnType<typeof api.requestLocalAISuggestions>>>();
+    vi.mocked(api.requestLocalAISuggestions)
+      .mockImplementationOnce(() => oldAI.promise)
+      .mockImplementationOnce(() => newAI.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const aButton = screen.getByRole("button", { name: /Suggest tailored wording/ });
+    await waitFor(() => expect(aButton.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(aButton);
+    await waitFor(() => expect(api.requestLocalAISuggestions).toHaveBeenCalledWith(
+      "workspace-A", 1, "usr-a"
+    ));
+    await pickB();
+    const bButton = screen.getByRole("button", { name: /Suggest tailored wording/ });
+    expect(bButton.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(bButton);
+    await waitFor(() => expect(api.requestLocalAISuggestions).toHaveBeenCalledWith(
+      "workspace-B", 1, "usr-a"
+    ));
+    const suggestion = (tag: string): Awaited<ReturnType<typeof api.requestLocalAISuggestions>> => ({
+      workspace_revision: 1,
+      suggestion: {
+        provider: "local_obumai_ollama", model: "synthetic-only",
+        approved_evidence_ids: [], external_actions_performed: false,
+        suggestions_applied: false, requires_owner_review: true,
+        proposal: {
+          schema: "smartploy.local_draft.v1", cv_headline: tag + " headline",
+          cv_summary: tag + " summary", cover_letter: tag + " letter",
+          highlights: [], risks: [], review_notes: [],
+        },
+      },
+    });
+    await act(async () => { oldAI.resolve(suggestion("A-ONLY")); });
+    expect(screen.getByRole("button", { name: /Generating with the local model/ })
+      .hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByText("A-ONLY summary")).toBeNull();
+    await act(async () => { newAI.resolve(suggestion("B-ONLY")); });
+    expect(await screen.findByText("B-ONLY summary")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Generating with the local model/ })).toBeNull();
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+  });
+});
