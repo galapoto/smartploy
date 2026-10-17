@@ -100,6 +100,9 @@ services:
     environment:
       SMARTPLOY_DATABASE_URL: postgresql://${POSTGRES_USER:-smartploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smartploy}
       SMARTPLOY_PROFILE_ID: ${SMARTPLOY_PROFILE_ID:-default}
+      # Explicit runtime classification; production refuses global unattended
+      # candidate-data forwarding even if the operator flag is accidentally true.
+      SMARTPLOY_ENVIRONMENT: ${SMARTPLOY_ENVIRONMENT:-production}
 
       OBUMAI_BASE_URL: ${OBUMAI_BASE_URL:-}
       OBUMAI_AGENT_ID: ${OBUMAI_AGENT_ID:-obum-assistant}

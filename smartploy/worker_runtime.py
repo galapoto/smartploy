@@ -59,6 +59,17 @@ def _auto_prepare_opt_in() -> bool:
         raise ValueError(
             "SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED must be literal true or false"
         )
+    if raw == "true":
+        # A global operator switch cannot establish revocable consent from
+        # individual account holders. Legacy auto-prep is restricted to
+        # explicitly configured nonproduction fixtures until a tenant-scoped,
+        # per-job consent ledger is enforced at every dispatch/retry.
+        environment = os.getenv("SMARTPLOY_ENVIRONMENT", "production").strip().casefold()
+        if environment not in {"development", "test"}:
+            raise ValueError(
+                "Unattended ObumAI preparation is unavailable in production "
+                "without per-account processing consent"
+            )
     return raw == "true"
 
 

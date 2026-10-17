@@ -600,3 +600,23 @@ environment, the release owner must separately approve a pinned rollout,
 back up the database, restart the worker, and verify its persisted
 `application:prepare-eligible` task is disabled. Existing in-flight
 AI calls are not retroactively revoked. This candidate is **not deployed**.
+
+## Production multi-user protection for legacy unattended processing
+
+The legacy `SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED` global switch **is not
+individual user consent**. Until a tenant-scoped consent ledger, withdrawal
+controls and dispatch-time checks are released, `true` is rejected for
+`SMARTPLOY_ENVIRONMENT=production`, unrecognized environments or an unset
+worker environment. Explicit `test` or `development` can still exercise
+the old single-profile worker in synthetic fixtures, but must not process real
+candidate data. Compose now passes `SMARTPLOY_ENVIRONMENT` to the worker
+with a production default. This is a defense against accidental global opt-in,
+not completion of [consent issue #139](https://github.com/galapoto/smartploy/issues/139).
+Misconfigured production `true` fails worker startup **loudly**; operators
+must set the flag to `false` to resume independent ATS/source polling and
+already-queued status refreshes. Existing in-flight requests cannot be
+recalled by this configuration check. Synthetic tests cover each state.
+
+No setting, environment, database schema or running process on OVH was
+changed by the review-branch code update. Production changes require
+separate owner approval.
