@@ -244,3 +244,165 @@ class PostgresAccountErasureRepository:
             )
             for row in rows
         ]
+
+
+# Tables with a user_id or profile_id column introduced by current migrations.
+# New owner-scoped storage must be added here before a full erasure is approved.
+# Unrecognized owner tables are surfaced in the inventory; never ignored.
+EXPECTED_OWNER_TABLES = frozenset({
+    "smartploy_users", "smartploy_user_identities",
+    "smartploy_user_profiles", "smartploy_sessions",
+    "smartploy_profile_facts", "smartploy_cv_files",
+    "smartploy_application_preparations", "smartploy_applications",
+    "smartploy_application_workspaces", "smartploy_browser_receipts",
+    "smartploy_search_preferences", "smartploy_private_saved_jobs",
+    "smartploy_obumai_consents", "smartploy_obumai_consent_events",
+    "smartploy_obumai_dispatch_attempts",
+    "smartploy_account_erasure_requests",
+})
+
+
+@dataclass(frozen=True)
+class ErasureInventory:
+    request_id: str
+    counts: dict[str, int]
+    unknown_owner_tables: tuple[str, ...]
+    pending_provider_obligations: int
+
+    def to_dict(self) -> dict[str, object]:
+        # This is not a deletion certificate. The opaque OIDC state cache,
+        # signed backups and external ObumAI/processor data remain out of scope.
+        return {
+            "request_id": self.request_id,
+            "known_private_row_counts": dict(self.counts),
+            "unknown_owner_tables": list(self.unknown_owner_tables),
+            "pending_provider_obligations": self.pending_provider_obligations,
+            "local_purge_completed": False,
+            "external_processor_erasure_verified": False,
+            "untracked_remote_history_may_exist": True,
+            "backup_retention_covered": False,
+            "hard_purge_authorized": False,
+            "requires_operator_review": True,
+        }
+
+
+def inspect_quarantined_account(
+    dsn: str, user_id: str, profile_id: str,
+) -> ErasureInventory:
+    """Read-only consistent private-row inventory for an exact disabled owner.
+
+    The profile must be quarantined, not simply signed in. Never accept an
+    arbitrary email or a profile ID from an unverified browser as authority.
+    """
+    PostgresAccountErasureRepository._validate(user_id, profile_id)
+    # Fixed SQL statements, no dynamic user- or profile-provided table names.
+    sources = {
+        "identities": (
+            "SELECT count(*) FROM smartploy_user_identities WHERE user_id=%s",
+            (user_id,),
+        ),
+        "sessions": (
+            "SELECT count(*) FROM smartploy_sessions WHERE user_id=%s",
+            (user_id,),
+        ),
+        "profile_facts": (
+            "SELECT count(*) FROM smartploy_profile_facts WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "cv_files": (
+            "SELECT count(*) FROM smartploy_cv_files WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "search_preferences": (
+            "SELECT count(*) FROM smartploy_search_preferences WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "private_saved_jobs": (
+            "SELECT count(*) FROM smartploy_private_saved_jobs WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "application_workspaces": (
+            "SELECT count(*) FROM smartploy_application_workspaces WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "browser_receipts": (
+            "SELECT count(*) FROM smartploy_browser_receipts WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "preparations": (
+            "SELECT count(*) FROM smartploy_application_preparations WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "applications": (
+            "SELECT count(*) FROM smartploy_applications WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "application_events": (
+            """
+            SELECT count(*) FROM smartploy_application_events AS e
+            JOIN smartploy_applications AS a ON a.application_id=e.application_id
+            WHERE a.profile_id=%s
+            """,
+            (profile_id,),
+        ),
+        "consents": (
+            "SELECT count(*) FROM smartploy_obumai_consents WHERE user_id=%s AND profile_id=%s",
+            (user_id, profile_id),
+        ),
+        "consent_events": (
+            "SELECT count(*) FROM smartploy_obumai_consent_events WHERE user_id=%s AND profile_id=%s",
+            (user_id, profile_id),
+        ),
+        "dispatch_attempts": (
+            "SELECT count(*) FROM smartploy_obumai_dispatch_attempts WHERE user_id=%s AND profile_id=%s",
+            (user_id, profile_id),
+        ),
+    }
+    with connect(dsn) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            cur.execute(
+                """
+                SELECT req.request_id
+                FROM smartploy_account_erasure_requests AS req
+                JOIN smartploy_users AS u ON u.user_id=req.user_id
+                JOIN smartploy_user_profiles AS p
+                  ON p.user_id=u.user_id AND p.profile_id=req.profile_id
+                WHERE req.user_id=%s AND req.profile_id=%s
+                  AND req.state='quarantined' AND u.status='disabled'
+                """,
+                (user_id, profile_id),
+            )
+            found = cur.fetchone()
+            if found is None:
+                raise ErasureIdentityMismatch(
+                    "Only the exact disabled quarantined account may be inspected"
+                )
+            request_id = str(found[0])
+            counts: dict[str, int] = {}
+            for category, (query, params) in sources.items():
+                cur.execute(query, params)
+                counts[category] = int(cur.fetchone()[0])
+            cur.execute(
+                """
+                SELECT count(*) FROM smartploy_obumai_erasure_obligations
+                WHERE request_id=%s AND state='requires_provider_followup'
+                """,
+                (request_id,),
+            )
+            pending = int(cur.fetchone()[0])
+            cur.execute(
+                """
+                SELECT DISTINCT table_name FROM information_schema.columns
+                WHERE table_schema=current_schema()
+                  AND table_name LIKE 'smartploy_%'
+                  AND column_name IN ('user_id','profile_id')
+                ORDER BY table_name
+                """
+            )
+            actual = {str(row[0]) for row in cur.fetchall()}
+    return ErasureInventory(
+        request_id=request_id, counts=counts,
+        unknown_owner_tables=tuple(sorted(actual - EXPECTED_OWNER_TABLES)),
+        pending_provider_obligations=pending,
+    )
