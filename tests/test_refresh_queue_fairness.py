@@ -115,8 +115,9 @@ def test_worker_refresh_reads_only_refresh_candidates_and_continues_after_errors
     deferred: list[tuple[str, str]] = []
 
     class FakeRepository:
-        def __init__(self, dsn: str):
+        def __init__(self, dsn: str, profile_id: str = ""):
             assert dsn == "postgresql://synthetic"
+            self.profile_id = profile_id
 
         def list(self, *, limit: int):
             raise AssertionError("Worker must not scan newest completed history")
@@ -125,11 +126,11 @@ def test_worker_refresh_reads_only_refresh_candidates_and_continues_after_errors
             assert limit == 50
             return [
                 SimpleNamespace(package_id="stale-removed", status="queued",
-                                obum_job_id="remote-old"),
+                                profile_id="profile-a", obum_job_id="remote-old"),
                 SimpleNamespace(package_id="bad-remote", status="running",
-                                obum_job_id="remote-failed"),
+                                profile_id="profile-b", obum_job_id="remote-failed"),
                 SimpleNamespace(package_id="valid-remote", status="blocked",
-                                obum_job_id="remote-live"),
+                                profile_id="profile-c", obum_job_id="remote-live"),
             ]
 
         def defer_failed_refresh(self, package_id: str, obum_job_id: str):
@@ -137,7 +138,17 @@ def test_worker_refresh_reads_only_refresh_candidates_and_continues_after_errors
             return True
 
     class FakeService:
+        def __init__(self, dsn: str, profile_id: str):
+            self.profile_id = profile_id
+            self.preparation_repository = FakeRepository(dsn, profile_id=profile_id)
+
         def refresh_preparation(self, package_id: str):
+            expected = {
+                "stale-removed": "profile-a",
+                "bad-remote": "profile-b",
+                "valid-remote": "profile-c",
+            }
+            assert self.profile_id == expected[package_id]
             seen.append(package_id)
             if package_id == "stale-removed":
                 raise KeyError(package_id)
@@ -146,7 +157,10 @@ def test_worker_refresh_reads_only_refresh_candidates_and_continues_after_errors
             return SimpleNamespace(status="running")
 
     monkeypatch.setattr(worker_runtime, "PostgresPreparationRepository", FakeRepository)
-    monkeypatch.setattr(worker_runtime, "_application_service", lambda dsn, settings: FakeService())
+    monkeypatch.setattr(
+        worker_runtime, "_scoped_application_service",
+        lambda dsn, client, profile_id: FakeService(dsn, profile_id),
+    )
     specs = worker_runtime.build_worker_task_specs("postgresql://synthetic")
     assert [spec.task_id for spec in specs] == ["application:refresh-preparations"]
     result = specs[0].runner()
