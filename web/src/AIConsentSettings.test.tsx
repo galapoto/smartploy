@@ -35,7 +35,8 @@ it("requires a checked, explicit job-specific permission before invoking any mut
   fireEvent.click(screen.getByRole("checkbox", { name: /i explicitly allow obumai/i }));
   expect((button as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(button);
-  await waitFor(() => expect(grant).toHaveBeenCalledExactlyOnceWith("synthetic-job-key"));
+  await waitFor(() => expect(grant).toHaveBeenCalledOnce());
+  expect(grant).toHaveBeenCalledWith("synthetic-job-key");
   expect((button as HTMLButtonElement).disabled).toBe(true);
 });
 
@@ -62,5 +63,6 @@ it("offers consent withdrawal independently of any employer or AI action", async
   render(<AIConsentSettings jobs={[allowedJob]} consents={[permission]} events={[]}
     status="ready" busy={false} onGrant={vi.fn()} onRevoke={revoke} />);
   fireEvent.click(screen.getByRole("button", { name: /withdraw permission/i }));
-  await waitFor(() => expect(revoke).toHaveBeenCalledExactlyOnceWith("consent-fixture"));
+  await waitFor(() => expect(revoke).toHaveBeenCalledOnce());
+  expect(revoke).toHaveBeenCalledWith("consent-fixture");
 });
