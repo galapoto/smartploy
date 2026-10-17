@@ -19,7 +19,9 @@ from smartploy.domain import SourceObservation, SourcePolicy, canonical_json, no
 from smartploy.identity import UserProfileBinding
 from smartploy.obumai import ObumAIError
 from smartploy.preparation_storage import MemoryPreparationRepository
-from smartploy.preparations import approved_evidence_snapshot, preparation_job_snapshot
+from smartploy.preparations import (
+    approved_evidence_snapshot, preparation_job_snapshot, with_runtime,
+)
 from smartploy.profile import CandidateProfile, ProfileFact
 from smartploy.scoring import ScoreResult
 from smartploy.service import SmartployService
@@ -71,6 +73,7 @@ def _setup(monkeypatch, *, failure="", after_reservation=None):
     )
     records = []
     attempts = {}
+    accepted_remote_ids = {}
     prep = MemoryPreparationRepository(profile_id=profile.profile_id)
     applications = MemoryApplicationRepository(profile_id=profile.profile_id)
 
@@ -123,6 +126,17 @@ def _setup(monkeypatch, *, failure="", after_reservation=None):
         def acknowledge(self, package_id, request_id, remote_id, *, profile_id):
             records.append(("acknowledge", profile_id))
             attempts[package_id] = "acknowledged"
+            accepted_remote_ids[package_id] = (request_id, remote_id)
+        def get(self, package_id, *, profile_id):
+            assert profile_id == consent.profile_id
+            if package_id not in attempts:
+                return None
+            request_id, remote_id = accepted_remote_ids.get(package_id, ("", ""))
+            return SimpleNamespace(
+                package_id=package_id, profile_id=profile_id,
+                state=attempts[package_id], obum_job_id=remote_id,
+                obum_request_id=request_id,
+            )
         def mark_uncertain(self, package_id, request_id, *, profile_id, code):
             records.append(("uncertain", code))
             attempts[package_id] = "uncertain"
@@ -131,6 +145,10 @@ def _setup(monkeypatch, *, failure="", after_reservation=None):
         def __init__(self):
             self.settings = SimpleNamespace(timeout_seconds=10)
             self.calls = []
+            self.get_calls = []
+        def get_job(self, remote_id):
+            self.get_calls.append(remote_id)
+            return {"id": remote_id, "state": "running"}
         def submit_reasoning(self, *, action, candidate, candidate_evidence,
                              instructions, client_request_id_override):
             records.append(("send", candidate.canonical_key))
@@ -229,3 +247,91 @@ def test_bounded_remote_timeout_fails_before_any_database_or_network_action(monk
     with pytest.raises(ValueError, match="timeout"):
         runner.dispatch_consented_draft_once("postgresql://synthetic", consent, client)
     assert records == [] and client.calls == []
+
+
+
+def _acknowledged_attempt(consent, client, prep, attempts):
+    package = prep.list()[0]
+    return SimpleNamespace(
+        package_id=package.package_id, user_id=consent.user_id,
+        profile_id=consent.profile_id, canonical_key=consent.canonical_key,
+        consent_id=consent.consent_id, consent_revision=consent.revision,
+        job_snapshot_sha256=consent.job_snapshot_sha256,
+        evidence_sha256=consent.evidence_sha256,
+        obum_job_id="remote-synthetic-job" if attempts[package.package_id] == "acknowledged" else "",
+        obum_request_id=client.calls[0],
+        state=attempts[package.package_id],
+    )
+
+
+def test_acknowledged_remote_get_repairs_crash_without_new_model_post(monkeypatch):
+    consent, client, records, attempts, prep, apps, _, _, binding = _setup(monkeypatch)
+    first = runner.dispatch_consented_draft_once("postgresql://synthetic", consent, client)
+    assert first["status"] == "acknowledged"
+    prior = prep.list()[0]
+    # Simulate crash after durable remote ID acceptance but before the
+    # private materialized preparation update reached the database.
+    prep.save(with_runtime(
+        prior, status="created", obum_job_id="",
+        obum_client_request_id="", updated_at=prior.updated_at,
+    ))
+    accepted = _acknowledged_attempt(consent, client, prep, attempts)
+    restored = runner.reconcile_acknowledged_draft_once(
+        "postgresql://synthetic", accepted, client,
+    )
+    assert restored["status"] == "remote_refreshed"
+    assert restored["model_dispatch_attempted"] is False
+    assert len(client.calls) == 1
+    assert client.get_calls == ["remote-synthetic-job"]
+    assert prep.list()[0].status == "running"
+    assert prep.list()[0].obum_job_id == "remote-synthetic-job"
+    assert prep.list()[0].profile_id == binding.profile_id
+    assert apps.list()[0].has_been_submitted is False
+    assert records[-1] == ("guard", binding.profile_id)
+
+
+def test_uncertain_or_stale_remote_is_not_replayed_or_recovered_by_guessing(monkeypatch):
+    consent, client, _, attempts, prep, _, _, _, _ = _setup(
+        monkeypatch, failure="remote",
+    )
+    assert runner.dispatch_consented_draft_once(
+        "postgresql://synthetic", consent, client,
+    )["status"] == "uncertain"
+    unresolved = _acknowledged_attempt(consent, client, prep, attempts)
+    assert runner.reconcile_acknowledged_draft_once(
+        "postgresql://synthetic", unresolved, client,
+    )["status"] == "requires_operator_reconciliation"
+    assert client.get_calls == []
+    assert len(client.calls) == 1
+
+
+def test_reconciliation_refuses_old_revision_and_bad_remote_projection(monkeypatch):
+    consent, client, _, attempts, prep, _, _, _, _ = _setup(monkeypatch)
+    assert runner.dispatch_consented_draft_once(
+        "postgresql://synthetic", consent, client,
+    )["status"] == "acknowledged"
+    accepted = _acknowledged_attempt(consent, client, prep, attempts)
+    assert runner.reconcile_acknowledged_draft_once(
+        "postgresql://synthetic", SimpleNamespace(**{**accepted.__dict__, "consent_revision": 999}), client,
+    )["status"] == "consent_changed"
+    assert client.get_calls == []
+    client.get_job = lambda remote_id: {"id": "wrong-remote-id", "state": "queued"}
+    assert runner.reconcile_acknowledged_draft_once(
+        "postgresql://synthetic", accepted, client,
+    )["status"] == "invalid_remote_projection"
+    assert len(client.calls) == 1
+
+
+def test_reconciliation_fails_closed_on_remote_lookup_error(monkeypatch):
+    consent, client, _, attempts, prep, _, _, _, _ = _setup(monkeypatch)
+    runner.dispatch_consented_draft_once("postgresql://synthetic", consent, client)
+    accepted = _acknowledged_attempt(consent, client, prep, attempts)
+
+    def disconnected(remote_id):
+        raise ObumAIError("synthetic provider not available")
+
+    client.get_job = disconnected
+    assert runner.reconcile_acknowledged_draft_once(
+        "postgresql://synthetic", accepted, client,
+    )["status"] == "remote_lookup_failed"
+    assert len(client.calls) == 1
