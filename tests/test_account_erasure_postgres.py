@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import pytest
 from psycopg import connect
+from psycopg.types.json import Jsonb
 
 from smartploy.account_erasure import (
     ErasureIdentityMismatch, PostgresAccountErasureRepository,
@@ -22,6 +23,7 @@ from smartploy.ai_processing_consent import (
     ConsentDispatchDenied, ConsentIdentityError, PostgresJobAIConsentRepository,
 )
 from smartploy.identity import AuthenticatedPrincipal, PostgresIdentityRepository
+from smartploy.domain import canonical_json
 from smartploy.obumai_dispatch_storage import PostgresDraftDispatchRepository
 from smartploy.preparations import ApplicationPreparation, PREPARATION_CONTRACT
 from smartploy.storage import PostgresJobRepository
@@ -32,7 +34,7 @@ pytestmark = pytest.mark.skipif(not DSN, reason="SMARTPLOY_TEST_DATABASE_URL not
 
 
 def _sha(v):
-    return sha256(json.dumps(v, sort_keys=True).encode()).hexdigest()
+    return sha256(canonical_json(v).encode()).hexdigest()
 
 
 @pytest.fixture
@@ -74,7 +76,7 @@ def scoped():
                 """,
                 (
                     session_hash, user.user_id, issuer, subject,
-                    user.email, '{"temporary_private": "note"}',
+                    user.email, Jsonb({"temporary_private": "note"}),
                 ),
             )
     yield a, b, ga, gb, consent, key_a, key_b, session_sha_a, session_sha_b
@@ -146,11 +148,10 @@ def test_quarantine_revokes_only_owner_sessions_and_consents_and_scrubs_email(sc
     ids = PostgresIdentityRepository(DSN)
     again = ids.resolve_or_create(AuthenticatedPrincipal(
         issuer="https://sso.example.invalid",
-        subject=a.user_id.replace("usr-", "nonexistent-subject-"),
+        subject="erasure-a-" + ka.removeprefix("job-").removesuffix("-a"),
         email="sensitive@example.invalid", auth_source="oidc",
     ))
-    # A *different* issuer/subject is not an alias and must not revive A.
-    assert again.user_id != a.user_id
+    assert again.user_id == a.user_id
     restored = ids.get(a.user_id)
     assert restored.status == "disabled" and restored.email == ""
     with pytest.raises(ConsentIdentityError):
