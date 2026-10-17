@@ -52,7 +52,13 @@ records go first; this avoids completed history crowding out unfinished work and
 rotates polling across active jobs. A failed lookup also advances its refresh
 position (without changing the remote job state), preventing persistent errors
 from hogging the batch. Migration 015 provides a partial index.
-It never starts a new ObumAI inference request.
+It never starts a new ObumAI inference request. Existing status checks may
+span multiple profiles, so the refresh runner builds fresh **profile-scoped
+preparation and application repositories** from each in-flight package's
+actual owner, never from the global SMARTPLOY_PROFILE_ID environment variable.
+The shared ObumAI HTTP client is closed after each worker cycle; failures
+rotate only the affected owner's package. No new profile evidence is forwarded
+by this refresh task.
 
 Tasks that were previously registered but are no longer configured are disabled.
 
