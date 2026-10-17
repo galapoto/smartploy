@@ -16,7 +16,7 @@ import re
 
 import httpx
 
-from .domain import JobCandidate, canonical_json
+from .domain import JobCandidate, canonical_json, source_ai_forwarding_permitted
 
 
 class ObumAIError(RuntimeError):
@@ -156,7 +156,7 @@ class ObumAIClient:
     ) -> dict[str, Any]:
         if not candidate.source_current:
             raise ObumAIError("cannot submit reasoning for a closed/stale job")
-        if candidate.job.raw.get("external_ai_forwarding_allowed") is False:
+        if not source_ai_forwarding_permitted(candidate):
             raise ObumAIError(
                 "source terms restrict forwarding this job posting to external AI processing"
             )

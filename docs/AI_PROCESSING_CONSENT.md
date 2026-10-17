@@ -160,3 +160,31 @@ an API route, onboarding, or Settings. Granting permission does NOT call it.
 Green CI is synthetic; no actual user data was delivered to ObumAI.
 Transactional locks across remote HTTP remain an architectural security
 review item and no automatic production rollout is authorized.
+
+## Source posting rights are an independent hard gate (draft #145)
+
+Discovery/search visibility does **not** mean publisher authorization
+to forward job content to a separate AI processor. A missing, null or
+malformed external_ai_forwarding_allowed observation is persisted False.
+Only literal JSON boolean true is affirmative; the strings 'true',
+number 1, unknown and default flags never authorize model calls.
+
+All paths enforce the source_ai_forwarding_permitted() predicate:
+ObumAIClient.submit_reasoning, SmartployService.submit_obumai,
+SmartployService.prepare_job, JobCandidate.to_obumai_handoff and the
+existing consented internal worker readiness check. A merged duplicate
+with one source denying permission remains denied, independent of which
+source supplied the longer description. Historic persisted jobs with raw literal True but no independent
+metadata decision are DENIED: prior ingestion could silently default
+the raw flag to True. They require fresh, source-reviewed permission
+and a new vetted observation, not automatic grandfathering.
+
+User consent and publisher content permission are independent checks.
+Neither a configured ObumAI endpoint nor a user action can grant missing
+publisher rights. Search and local-only workspaces still operate normally
+for restricted sources. Changing this flag does not erase prior outbound
+requests; remote deletion/reconciliation is tracked separately.
+
+Separate source owner terms, API permissions, attribution and regional
+review remain necessary. No source activation or third-party data transfer
+is authorized by this code change.
