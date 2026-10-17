@@ -1,0 +1,58 @@
+# ObumDelivery Woodpecker 3.19 pipeline; KVM isolated-build worker only.
+# Does NOT deploy to OVH or carry Cloudflare/DB/AI secrets.
+labels:
+  workload: isolated-build
+
+when:
+  - event: manual
+  - event: push
+    branch: [main]
+
+services:
+  - name: postgres
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: smartploy_test
+      POSTGRES_USER: smartploy
+      POSTGRES_PASSWORD: synthetic-local-ci-only
+
+steps:
+  - name: python-postgres
+    image: python:3.12-bookworm
+    environment:
+      CI: "true"
+      SMARTPLOY_TEST_DATABASE_URL: postgresql://smartploy:synthetic-local-ci-only@postgres:5432/smartploy_test
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    commands:
+      - python3 -B scripts/obumdelivery_ci_gate.py validate
+      - python3 -m pip install --no-cache-dir -e ".[dev]"
+      - python3 -m compileall smartploy scripts tests
+      - python3 -m pytest -q
+      - python3 -m scripts.evaluate_search_quality
+      - python3 -m scripts.evaluate_human_relevance
+      - ruff check smartploy scripts tests
+      - python3 -B scripts/obumdelivery_ci_gate.py mark-python
+
+  - name: web-browser
+    image: mcr.microsoft.com/playwright:v1.55.1-noble
+    depends_on: [python-postgres]
+    environment:
+      CI: "true"
+    commands:
+      - node --version
+      - npm install --global npm@10.9.2 --no-audit --no-fund
+      - test "$(npm --version)" = "10.9.2"
+      - cd web && npm ci --no-audit --no-fund && npm run test && npm run build && npm run test:e2e && cd ..
+      - node --check browser-companion/logic.mjs
+      - node --check browser-companion/popup.mjs
+      - node --test browser-companion/tests/logic.test.mjs
+      - python3 -B scripts/obumdelivery_ci_gate.py mark-browser
+
+  - name: exact-source-hold-receipt
+    image: python:3.12-bookworm
+    depends_on: [web-browser]
+    environment:
+      CI: "true"
+    commands:
+      - python3 -B scripts/obumdelivery_ci_gate.py final
+      - echo "OBUMDELIVERY_SMARTPLOY_PRODUCT_CI_PASS; PRODUCTION_RELEASE_GATE_HOLD"
