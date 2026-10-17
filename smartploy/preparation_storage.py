@@ -337,6 +337,12 @@ class PostgresPreparationRepository:
         query = self._select_sql() + """
             WHERE status IN ('queued', 'running', 'blocked')
               AND obum_job_id <> ''
+              AND NOT EXISTS (
+                  SELECT 1 FROM smartploy_user_profiles AS p
+                  JOIN smartploy_users AS u ON u.user_id = p.user_id
+                  WHERE p.profile_id = smartploy_application_preparations.profile_id
+                    AND u.status <> 'active'
+              )
         """
         params: list[Any] = []
         if self.profile_id:
