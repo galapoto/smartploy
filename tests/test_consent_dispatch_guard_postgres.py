@@ -127,6 +127,41 @@ def test_withdrawal_cannot_commit_during_authorized_dispatch(scope):
     assert [event.event_type for event in repo.events(a)] == ["revoked", "granted"]
 
 
+def test_two_independent_dispatchers_cannot_hold_the_same_consent_lock(scope):
+    repo, a, _, key = scope
+    job_hash, evidence_hash = "4" * 64, "5" * 64
+    repo.grant(a, key, job_hash, evidence_hash)
+    first_in = Event()
+    release_first = Event()
+    second_attempt = Event()
+    second_in = Event()
+
+    def first():
+        with repo.hold_authorized_dispatch(a, key, job_hash, evidence_hash):
+            first_in.set()
+            assert release_first.wait(8)
+
+    def second():
+        second_attempt.set()
+        with repo.hold_authorized_dispatch(a, key, job_hash, evidence_hash):
+            second_in.set()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        one = pool.submit(first)
+        assert first_in.wait(8)
+        two = pool.submit(second)
+        try:
+            assert second_attempt.wait(8)
+            assert not second_in.wait(0.15), (
+                "Concurrent model attempts must not share a consent dispatch lock"
+            )
+        finally:
+            release_first.set()
+        one.result(timeout=8)
+        two.result(timeout=8)
+        assert second_in.is_set()
+
+
 def test_regrant_waits_for_guard_and_replaced_revision_denies_old_hash(scope):
     repo, a, _, key = scope
     job_sha, evidence_sha = "1" * 64, "2" * 64

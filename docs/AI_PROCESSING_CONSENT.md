@@ -68,7 +68,8 @@ context manager for one bounded outbound dispatch attempt. This method:
 - verifies the active owner and exact profile in the database, holding row
   locks on the user and profile;
 - locks only the matching live, nonrevoked consent revision using
-  `SELECT ... FOR SHARE`, conflicting with concurrent withdrawal or regrant
+  `SELECT ... FOR UPDATE`, serializing concurrent dispatchers and conflicting
+  with withdrawal or regrant
   updates;
 - raises on missing, revoked, disabled, wrong-owner or stale-snapshot consent;
 - holds those locks until the protected block exits. If a revocation commits
