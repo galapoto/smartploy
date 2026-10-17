@@ -13,7 +13,7 @@ import {
   getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus
 } from "./api";
 import {
-  filterBySector, formatState, queueLabel, relativeFreshness, scoreBand,
+  filterBySector, formatState, queueLabel, relativeFreshness, safeExternalJobUrl, scoreBand,
   sectorLabel, type DisplayMode, type SectorFilter
 } from "./lib";
 import ApplicationStudio from "./ApplicationStudio";
@@ -241,9 +241,12 @@ export default function App() {
 
       // Optional requests still run alongside the essential job reads; they
       // must never block first-use navigation when Ollama or a CV is slow.
+      // A slow Ollama availability endpoint cannot hold profile documents
+      // and private saved jobs hostage. Attach a rejection handler now.
+      const localAIRequest = Promise.allSettled([getLocalAIStatus()]);
       const secondaryRequest = Promise.allSettled([
         getApplications(), getHealth(), getCV(), getProfileFacts(),
-        getJobs(), getLocalAIStatus(), getPrivateSavedJobs()
+        getJobs(), getPrivateSavedJobs()
       ]);
       const [board, prefs, results] = await Promise.all([
         getDashboard(), getSearchPreferences(), getSearchResults()
@@ -262,6 +265,19 @@ export default function App() {
       setSession(verifiedWho);
       setLoading(false); setRefreshing(false); setError("");
 
+      // Only global local-model readiness is returned by this endpoint:
+      // never personal CV or draft content. This response is optional and
+      // must not update a superseded account/load-generation view.
+      void localAIRequest.then(([model]) => {
+        if (generation !== loadGeneration.current ||
+            lastSessionIdentity.current !== identity) return;
+        setLocalAI(model.status === "fulfilled" ? model.value : null);
+        if (model.status === "rejected") {
+          setError((current) => current ||
+            "Local AI status is temporarily unavailable. Job search and your saved profile remain usable.");
+        }
+      });
+
       const secondary = await secondaryRequest;
       if (generation !== loadGeneration.current) return;
       const finalWho = await getSession();
@@ -270,17 +286,17 @@ export default function App() {
         throw new Error("Your signed-in account changed during profile loading. Reload this workspace.");
       }
 
-      const [apps, ready, savedCV, profile, savedJobs, model, bookmarks] = secondary;
+      const [apps, ready, savedCV, profile, savedJobs, bookmarks] = secondary;
       setApplications(apps.status === "fulfilled" ? apps.value.applications : []);
       setHealth(ready.status === "fulfilled" ? ready.value : null);
       setCV(savedCV.status === "fulfilled" ? savedCV.value : { present: false });
       setFacts(profile.status === "fulfilled" ? profile.value.facts : []);
       setJobs(savedJobs.status === "fulfilled" ? savedJobs.value.jobs : []);
       setPrivateSavedJobs(bookmarks.status === "fulfilled" ? bookmarks.value.jobs : []);
-      setLocalAI(model.status === "fulfilled" ? model.value : null);
-      setError(secondary.some((item) => item.status === "rejected")
-        ? "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria."
-        : "");
+      if (secondary.some((item) => item.status === "rejected")) {
+        setError((current) => current ||
+          "Some optional profile tools are temporarily unavailable. You can still browse and change job criteria.");
+      }
     } catch (exc) {
       if (generation === loadGeneration.current) {
         lastSessionIdentity.current = null;
@@ -652,10 +668,11 @@ export default function App() {
         <div><strong>{item.role_title}</strong>
           <small>{item.company} · {item.location || "Location unknown"} · Employer availability unverified</small>
         </div>
-        {item.application_url ? <a className="text-link" href={item.application_url}
-          target="_blank" rel="noopener noreferrer" title="Check the original employer posting">
-          Check posting <ArrowUpRight size={15} />
-        </a> : null}
+        {safeExternalJobUrl(item.application_url) ?
+          <a className="text-link" href={safeExternalJobUrl(item.application_url)}
+            target="_blank" rel="noopener noreferrer" title="Check the original employer posting">
+            Check posting <ArrowUpRight size={15} />
+          </a> : item.application_url ? <span className="muted">Posting link unavailable</span> : null
         <button className="icon-btn subtle" type="button"
           aria-label={"Remove saved job " + item.role_title}
           onClick={() => void onRemovePrivateJob(item)}

@@ -521,3 +521,26 @@ B's active pending flag or publish A content. No network call is silently
 canceled or backend mutation rolled back. Synthetic two-draft React tests
 exercise overlapping saves and AI suggestions in both completion orders.
 This fix is on the **draft review branch only**, not production.
+
+## Safe employer links and nonblocking local-AI availability (review-only)
+
+Employer posting URLs from public ATS listings and private bookmarks are
+untrusted data. Browser links only render for absolute HTTP(S) URLs without
+embedded credentials, control characters or malformed URL syntax. Invalid
+links are displayed as unavailable instead of creating executable,
+protocol-relative or unreviewed browser-navigation targets. Application Studio
+uses the same single validator. This is defense-in-depth and does **not**
+replace server-side source validation or independently verify a vacancy.
+
+The UI now starts the global, non-private local Ollama availability check
+concurrently with other reads but resolves it **independently** from the
+user's CV, facts, applications and saved jobs. Slow or unavailable local model
+status cannot prevent those basic features from becoming visible. The model
+result is published only when its original authenticated load generation is
+current; a rejected status shows a nonblocking warning. AI generation remains
+opt-in and does not send user data or submit employer applications.
+
+The review branch includes deterministic synthetic tests for safe/unsafe links,
+profile hydration under a stalled AI endpoint, and superseded account/AI
+status responses. Live signed-in two-user acceptance, human review and
+operator-approved deployment are still required.

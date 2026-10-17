@@ -490,6 +490,81 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect((screen.getByPlaceholderText(/Python, Finnish B2, data analytics/i) as HTMLInputElement).value).toBe("");
   });
 
+
+  it("shows a CV and private saved job even if the optional local AI endpoint never replies", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getLocalAIStatus).mockImplementation(
+      () => new Promise(() => { /* synthetic non-responding local model */ })
+    );
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "SYNTHETIC-READY-CV.pdf",
+      size_bytes: 1024, text_preview: "Synthetic CV contents",
+    } as never);
+    personalJobs = [{
+      saved_job_id: "fixture-saved-1", created_at: "2026-10-17T08:00:00Z",
+      company: "Fictional Employer Oy", role_title: "Private saved QA opportunity",
+      location: "Helsinki", description: "Testing only",
+      application_url: "https://jobs.example.fi/qa",
+      private: true, employer_availability_verified: false,
+      external_actions_authorized: false,
+    }];
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    expect(await screen.findByText("SYNTHETIC-READY-CV.pdf")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(await screen.findByText("Private saved QA opportunity")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Check posting/ }).getAttribute("href"))
+      .toBe("https://jobs.example.fi/qa");
+  });
+
+  it("does not show an executable posting link from untrusted private bookmark data", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    personalJobs = [{
+      saved_job_id: "fixture-unsafe-1", created_at: "2026-10-17T08:00:00Z",
+      company: "Fictional Employer Oy", role_title: "Untrusted saved job",
+      location: "Helsinki", description: "Testing only",
+      application_url: "javascript:alert('synthetic')",
+      private: true, employer_availability_verified: false,
+      external_actions_authorized: false,
+    }];
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(await screen.findByText("Untrusted saved job")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Check posting/ })).toBeNull();
+    expect(screen.getByText("Posting link unavailable")).toBeTruthy();
+  });
+
+  it("discards an old account's delayed optional AI status after a newer workspace refresh", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    const switchToB = switchableSession();
+    let finishOld: (value: Awaited<ReturnType<typeof api.getLocalAIStatus>>) => void = () => {
+      throw new Error("First optional status never started");
+    };
+    vi.mocked(api.getLocalAIStatus).mockImplementationOnce(() =>
+      new Promise(resolve => { finishOld = resolve; })
+    );
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    await waitFor(() => expect(api.getLocalAIStatus).toHaveBeenCalledTimes(1));
+    switchToB();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    await waitFor(() => expect(api.getLocalAIStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh workspace" }).hasAttribute("disabled")).toBe(false)
+    );
+    fireEvent.click(screen.getByRole("button", { name: "AI tools" }));
+    expect(await screen.findByText(/ObumAI service integration is not configured/i)).toBeTruthy();
+    await act(async () => {
+      finishOld({
+        configured: true, ready: true, provider: "local_obumai_ollama",
+        model: "SYNTHETIC-A-ONLY-MODEL", external_ai_forwarding: false,
+      });
+    });
+    expect(screen.getByText(/ObumAI service integration is not configured/i)).toBeTruthy();
+  });
+
   it("saves a job privately, shows it separately, and removes it without shared ingestion", async () => {
     currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
     vi.spyOn(window, "confirm").mockReturnValue(true);
