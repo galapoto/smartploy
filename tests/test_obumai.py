@@ -21,6 +21,7 @@ def candidate():
                 "description": "Python SQL analytics",
                 "location": "Helsinki",
                 "language": "Finnish, English",
+                "external_ai_forwarding_allowed": True,
             },
             observed_at="2026-10-10T00:00:00+00:00",
         ),
@@ -121,3 +122,37 @@ def test_idempotency_key_changes_when_job_prompt_content_changes():
     )
     assert item.canonical_key == changed.canonical_key
     assert first != second
+
+
+def test_explicit_one_shot_idempotency_key_is_forwarded_without_prompt_or_external_authority():
+    body = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/agent-jobs"
+        body.append(json.loads(request.content))
+        return httpx.Response(
+            201,
+            json={"job": {"id": "remote-fixture", "state": "queued"}},
+        )
+
+    settings = ObumAISettings(base_url="https://obum.example")
+    client = ObumAIClient(settings, http_client=httpx.Client(
+        base_url=settings.base_url, transport=httpx.MockTransport(handler),
+    ))
+    request_id = "smartploy:application_package_v1:prep-" + "a" * 28
+    result = client.submit_reasoning(
+        action="application_package_v1",
+        candidate=candidate(),
+        candidate_evidence={"profile_id": "profile-fixture"},
+        instructions="draft only",
+        client_request_id_override=request_id,
+    )
+    assert result["smartploy_client_request_id"] == request_id
+    assert body[0]["client_request_id"] == request_id
+    assert '"external_actions_authorized":false' in body[0]["prompt"]
+    with pytest.raises(ValueError, match="idempotency key"):
+        client.submit_reasoning(
+            action="application_package_v1", candidate=candidate(),
+            candidate_evidence={}, client_request_id_override="not-smartploy",
+        )
+    assert len(body) == 1

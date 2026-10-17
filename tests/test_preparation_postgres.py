@@ -1,5 +1,6 @@
 import os
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from psycopg import connect
@@ -94,3 +95,58 @@ def test_preparation_survives_repository_recreation(repositories):
     same, created_again = PostgresPreparationRepository(DSN).create_or_get(package)
     assert created_again is False
     assert same.package_id == package.package_id
+
+    # Completed history is newer than the unfinished request, but must not
+    # consume the refresh batch. SQL must filter before applying LIMIT.
+    newer = (
+        max(datetime.fromisoformat(queued.updated_at), datetime.fromisoformat(package.requested_at))
+        + timedelta(days=1)
+    ).isoformat()
+    for index in range(4):
+        completed_source = replace(
+            package, package_id=f"{package.package_id}-completed-{index}",
+            requested_at=newer, updated_at=newer,
+        )
+        finished, was_new = preparations.create_or_get(completed_source)
+        assert was_new
+        preparations.save(with_runtime(
+            finished, status="completed", obum_job_id=f"remote-completed-{index}",
+            updated_at=newer,
+        ))
+    assert all(item.status == "completed" for item in preparations.list(limit=4))
+    assert [item.package_id for item in preparations.list_refresh_candidates(limit=1)] == [
+        package.package_id
+    ]
+
+    # Fresh polling must rotate: the least recently checked active package is first.
+    second_source = replace(
+        package, package_id=f"{package.package_id}-other-tenant",
+        profile_id="other-synthetic-tenant", requested_at=newer, updated_at=newer,
+    )
+    second, was_new = preparations.create_or_get(second_source)
+    assert was_new
+    preparations.save(with_runtime(
+        second, status="queued", obum_job_id="remote-second", updated_at=newer,
+    ))
+    assert [item.package_id for item in preparations.list_refresh_candidates(limit=2)] == [
+        package.package_id, second_source.package_id
+    ]
+    after = (datetime.fromisoformat(newer) + timedelta(seconds=1)).isoformat()
+    preparations.save(with_runtime(queued, status="running", updated_at=after))
+    assert [item.package_id for item in preparations.list_refresh_candidates(limit=1)] == [
+        second_source.package_id
+    ]
+    scoped = PostgresPreparationRepository(DSN, profile_id="other-synthetic-tenant")
+    assert [item.package_id for item in scoped.list_refresh_candidates(limit=10)] == [
+        second_source.package_id
+    ]
+    before_attempt = scoped.get(second_source.package_id)
+    assert before_attempt is not None
+    assert scoped.defer_failed_refresh(second_source.package_id, "wrong-remote") is False
+    assert scoped.defer_failed_refresh(second_source.package_id, "remote-second") is True
+    after_attempt = scoped.get(second_source.package_id)
+    assert after_attempt is not None
+    assert after_attempt.status == before_attempt.status
+    assert datetime.fromisoformat(after_attempt.updated_at) > datetime.fromisoformat(
+        before_attempt.updated_at
+    )
