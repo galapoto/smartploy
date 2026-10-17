@@ -573,3 +573,30 @@ auto-preparation retains its existing service contract and must be separately
 reviewed before allowing unattended production processing. Synthetic
 contract regressions use a stubbed service with no real ObumAI calls.
 The candidate has not been merged or deployed to OVH.
+
+## Unattended ObumAI preparation disabled by default (review-only)
+
+An ObumAI URL is **not permission** to forward a user's approved evidence
+automatically. Previously, setting `OBUMAI_BASE_URL` registered
+`application:prepare-eligible` every 120 seconds, even without a job-by-job
+AI-processing confirmation. This was separate from the browser's explicitly
+confirmed local-AI suggestion flow.
+
+The worker now starts with `SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED=false`.
+It may still poll approved job sources and refresh already-existing
+preparation statuses when ObumAI is configured. Only the exact explicit
+operator value `true` registers the legacy unattended AI preparation task;
+invalid values fail startup, rather than accidentally turning it on.
+This flag is forwarded **only** into the worker container, never a browser.
+The persistent scheduler disables previously registered tasks absent from
+the new active registry when the restarted worker synchronizes its tasks.
+
+**Operator opt-in is not evidence of individual user consent.** Keep the
+flag disabled for a multi-user deployment until a server-enforced per-account
+AI consent record and scoped background-processing policy are built and
+reviewed. This does not change the five-source job-ingestion worker or
+application document editing. To apply the safer worker policy in a live
+environment, the release owner must separately approve a pinned rollout,
+back up the database, restart the worker, and verify its persisted
+`application:prepare-eligible` task is disabled. Existing in-flight
+AI calls are not retroactively revoked. This candidate is **not deployed**.

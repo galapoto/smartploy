@@ -45,6 +45,23 @@ def _positive_int(name: str, default: int, *, maximum: int | None = None) -> int
     return value
 
 
+def _auto_prepare_opt_in() -> bool:
+    """Never infer user permission from ObumAI service configuration.
+
+    A worker capable of polling existing preparation statuses is not
+    automatically authorized to forward profile data to ObumAI. Only the
+    literal operator opt-in "true" registers an unattended submitter.
+    This operator switch is NOT per-user consent; multi-user operators
+    must keep the flag off until a scoped consent record is implemented.
+    """
+    raw = os.getenv("SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED", "false").strip().casefold()
+    if raw not in {"true", "false"}:
+        raise ValueError(
+            "SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED must be literal true or false"
+        )
+    return raw == "true"
+
+
 def _job_service(dsn: str) -> SmartployService:
     return SmartployService(repository=PostgresJobRepository(dsn))
 
@@ -173,9 +190,13 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
             )
         )
 
+    auto_prepare_enabled = _auto_prepare_opt_in()
     obum_settings = ObumAISettings.from_env()
+    if auto_prepare_enabled and obum_settings is None:
+        raise ValueError(
+            "Unattended ObumAI preparation cannot be enabled without ObumAI configuration"
+        )
     if obum_settings is not None:
-        prepare_cadence = _positive_int("SMARTPLOY_WORKER_PREPARE_CADENCE_SECONDS", 120)
         refresh_cadence = _positive_int("SMARTPLOY_WORKER_REFRESH_CADENCE_SECONDS", 60)
 
         def run_prepare(settings=obum_settings) -> WorkerTaskResult:
@@ -229,23 +250,32 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
                 },
             )
 
-        specs.extend(
-            [
+        # Status refreshes can observe already-submitted preparation jobs;
+        # they do not originate new AI forwarding requests.
+        specs.append(
+            WorkerTaskSpec(
+                task_id="application:refresh-preparations",
+                task_kind="application_refresh",
+                cadence_seconds=refresh_cadence,
+                runner=run_refresh,
+                metadata={"external_actions_authorized": False},
+            )
+        )
+        # This is deliberately opt-in. The scheduler's disable_absent()
+        # disables any previously persisted prepare-eligible task on restart.
+        if auto_prepare_enabled:
+            prepare_cadence = _positive_int("SMARTPLOY_WORKER_PREPARE_CADENCE_SECONDS", 120)
+            specs.append(
                 WorkerTaskSpec(
                     task_id="application:prepare-eligible",
                     task_kind="application_prepare",
                     cadence_seconds=prepare_cadence,
                     runner=run_prepare,
-                    metadata={"external_actions_authorized": False},
-                ),
-                WorkerTaskSpec(
-                    task_id="application:refresh-preparations",
-                    task_kind="application_refresh",
-                    cadence_seconds=refresh_cadence,
-                    runner=run_refresh,
-                    metadata={"external_actions_authorized": False},
-                ),
-            ]
-        )
+                    metadata={
+                        "external_actions_authorized": False,
+                        "unattended_model_processing_opt_in": True,
+                    },
+                )
+            )
 
     return specs
