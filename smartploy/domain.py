@@ -349,7 +349,7 @@ class JobCandidate:
         return value
 
     def to_obumai_handoff(self) -> Dict[str, Any]:
-        forwarding_allowed = self.job.raw.get("external_ai_forwarding_allowed") is not False
+        forwarding_allowed = source_ai_forwarding_permitted(self)
         reasoning_allowed = self.source_current and forwarding_allowed
         return {
             "contract": "smartploy.obumai.handoff.v1",
@@ -384,6 +384,21 @@ class JobCandidate:
                 "external_action_authorized": False,
             },
         }
+
+
+def source_ai_forwarding_permitted(candidate: JobCandidate) -> bool:
+    """External AI data forwarding requires affirmative publisher permission.
+
+    Legacy candidates without an independent metadata decision may rely on
+    explicit raw=True. Any restricted duplicate source vetoes forwarding.
+    """
+    return (
+        candidate.job.raw.get("external_ai_forwarding_allowed") is True
+        and (
+            "external_ai_forwarding_allowed" not in candidate.metadata
+            or candidate.metadata["external_ai_forwarding_allowed"] is True
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -470,9 +485,9 @@ def normalize_observation(observation: SourceObservation, policy: SourcePolicy) 
     application_url = canonicalize_url(
         _payload_text(payload, "application_url", "apply_url", "url") or obs.source_url
     )
-    external_ai_forwarding_allowed = payload.get("external_ai_forwarding_allowed", True)
-    if not isinstance(external_ai_forwarding_allowed, bool):
-        external_ai_forwarding_allowed = True
+    # Missing/null/typed-string/pseudo-boolean are NOT affirmative rights.
+    # Listing the job remains permitted even if third-party AI is restricted.
+    external_ai_forwarding_allowed = payload.get("external_ai_forwarding_allowed") is True
     source_details = payload.get("source_details")
     if not isinstance(source_details, dict):
         source_details = {}
@@ -530,6 +545,7 @@ def normalize_observation(observation: SourceObservation, policy: SourcePolicy) 
             "source_mode": obs.source_mode,
             "terms_review_status": source_policy.terms_review_status,
             "untrusted_source": True,
+            "external_ai_forwarding_allowed": external_ai_forwarding_allowed,
         },
     )
     return DiscoveryResult(status="discovered", candidate=candidate)
@@ -657,7 +673,16 @@ def merge_candidates(existing: JobCandidate, incoming: JobCandidate) -> JobCandi
         closed_at=incoming.closed_at or existing.closed_at,
         source_current=existing.source_current or incoming.source_current,
         duplicate_count=max(existing.duplicate_count, 1) + 1,
-        metadata={**dict(existing.metadata), **dict(incoming.metadata)},
+        metadata={
+            **dict(existing.metadata),
+            **dict(incoming.metadata),
+            # A duplicate from a restricted/unknown source never inherits
+            # the other board's authority to forward the merged posting.
+            "external_ai_forwarding_allowed": (
+                source_ai_forwarding_permitted(existing)
+                and source_ai_forwarding_permitted(incoming)
+            ),
+        },
     )
 
 

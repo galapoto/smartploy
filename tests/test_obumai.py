@@ -21,6 +21,7 @@ def candidate():
                 "description": "Python SQL analytics",
                 "location": "Helsinki",
                 "language": "Finnish, English",
+                "external_ai_forwarding_allowed": True,
             },
             observed_at="2026-10-10T00:00:00+00:00",
         ),
