@@ -59,6 +59,45 @@ the transaction before granting permission. The read-only authorization method
 also checks that the account is active, the profile binding is unchanged,
 the record has not been revoked, and the exact job and evidence hashes match.
 
+## Staged transaction-safe dispatch guard (not connected to a worker)
+
+The PostgreSQL consent ledger now also offers an INTERNAL,
+non-API `hold_authorized_dispatch(binding, job_key, job_hash, evidence_hash)`
+context manager for one bounded outbound dispatch attempt. This method:
+
+- verifies the active owner and exact profile in the database, holding row
+  locks on the user and profile;
+- locks only the matching live, nonrevoked consent revision using
+  `SELECT ... FOR UPDATE`, serializing concurrent dispatchers and conflicting
+  with withdrawal or regrant
+  updates;
+- raises on missing, revoked, disabled, wrong-owner or stale-snapshot consent;
+- holds those locks until the protected block exits. If a revocation commits
+  before lock acquisition, the send is refused. If a send owns the lock first,
+  revocation waits and is only confirmed after the send completes.
+
+Database timeouts and outages fail closed. No AI call occurs in this module.
+Tests exercise actual PostgreSQL concurrent withdrawal versus held locks.
+This guard **does not yet re-fetch source rights or evidence, send a model
+request, provide a durable delivery receipt, or handle cancellation**.
+A future caller must do all of those and send only the exact previously
+authorized snapshot INSIDE the locked block. A long-lived transaction during
+remote HTTP is an architecture tradeoff still requiring independent review.
+
+For bounded internal *planning only*, `list_active_verified` returns
+active, account-verified and nonrevoked grants, without email or CV data.
+`smartploy.consented_worker_readiness.preview_consented_preparations(dsn)`
+now re-fetches the live user/profile, current job, approved evidence, source
+forwarding policy and scoring. It reports only aggregate counts for job missing,
+source restricted, unqualified, changed snapshots, existing drafts or ready
+cases. It does not create queues, register a worker task, call ObumAI or
+authorize a send. Limit is bounded to 500 records.
+
+Reading this list or obtaining a "ready" preview is NOT permission to send
+anything. Fair cursor paging, safe retry/reservation, source checks under
+the actual dispatch lock, and withdrawal at the send boundary remain release
+blockers.
+
 ## Explicitly missing: safe multi-user worker dispatch
 
 The existing unattended worker stays disabled and raises if the legacy global

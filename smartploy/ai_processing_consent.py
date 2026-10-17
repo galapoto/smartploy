@@ -9,10 +9,11 @@ and checks permission; it never initiates model or employer actions.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Protocol
+from typing import Iterator, Protocol
 from uuid import uuid4
 
 from psycopg import connect
@@ -23,6 +24,10 @@ from .identity import UserProfileBinding
 
 class ConsentIdentityError(ValueError):
     """The claimed account/profile pair is not an active verified identity."""
+
+
+class ConsentDispatchDenied(PermissionError):
+    """No current, job-specific and evidence-specific grant permits dispatch."""
 
 
 def _utc_now() -> str:
@@ -448,3 +453,78 @@ class PostgresJobAIConsentRepository:
                     ),
                 )
                 return cur.fetchone() is not None
+
+    def list_active_verified(self, *, limit: int = 100) -> list[JobAIConsent]:
+        """Internal read-only planning candidates, NOT dispatch authorization.
+
+        The active-account JOIN keeps stale/deleted/disabled accounts out of
+        candidate scans. Recheck identity, source, snapshots and consent under
+        lock at the actual transmission boundary, never trust this list alone.
+        """
+        bounded = max(1, min(int(limit), 500))
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT c.consent_id, c.user_id, c.profile_id, c.canonical_key,
+                           c.job_snapshot_sha256, c.evidence_sha256, c.revision,
+                           c.granted_at, c.revoked_at, c.updated_at
+                    FROM smartploy_obumai_consents AS c
+                    JOIN smartploy_users AS u ON u.user_id = c.user_id
+                    JOIN smartploy_user_profiles AS p
+                      ON p.user_id = u.user_id AND p.profile_id = c.profile_id
+                    WHERE c.revoked_at IS NULL AND u.status = 'active'
+                    ORDER BY c.updated_at ASC, c.consent_id ASC
+                    LIMIT %s
+                    """,
+                    (bounded,),
+                )
+                rows = cur.fetchall()
+        return [self._read(row) for row in rows]
+
+    @contextmanager
+    def hold_authorized_dispatch(
+        self, binding: UserProfileBinding, canonical_key: str,
+        job_sha: str, evidence_sha: str,
+    ) -> Iterator[JobAIConsent]:
+        """Hold DB row locks across ONE bounded outbound dispatch attempt.
+
+        A concurrent dispatch, revocation or regrant waits for this block. If it
+        commits before these locks are obtained, a new dispatch is rejected.
+        This serializes future sends with withdrawal, without falsely claiming
+        that withdrawal cancels already in-flight requests.
+
+        Caller MUST re-fetch live current job/profile data, check source rights
+        and eligibility, and send ONLY the exact hashes locked here. Keeping
+        network requests inside a DB transaction is a review-only strategy,
+        not a production release decision. Never retry outside this guard.
+        """
+        _check_binding(binding)
+        _check_scope(canonical_key, job_sha, evidence_sha)
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                # Do not wait indefinitely to *start* a protected send.
+                # Timeouts and DB errors fail closed; no transaction is
+                # silently downgraded to the non-locking authorized() view.
+                cur.execute("SELECT set_config('lock_timeout', '5000ms', true)")
+                self._check_live_identity(cur, binding)
+                cur.execute(
+                    self._select() + """
+                        WHERE consent_id = %s AND user_id = %s
+                          AND profile_id = %s AND canonical_key = %s
+                          AND job_snapshot_sha256 = %s AND evidence_sha256 = %s
+                          AND revoked_at IS NULL
+                        FOR UPDATE
+                    """,
+                    (
+                        _consent_id(binding.user_id, binding.profile_id, canonical_key),
+                        binding.user_id, binding.profile_id, canonical_key,
+                        job_sha, evidence_sha,
+                    ),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise ConsentDispatchDenied(
+                        "No current permission covers this job and approved evidence"
+                    )
+                yield self._read(row)

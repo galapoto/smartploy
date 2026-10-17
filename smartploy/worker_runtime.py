@@ -77,15 +77,26 @@ def _job_service(dsn: str) -> SmartployService:
     return SmartployService(repository=PostgresJobRepository(dsn))
 
 
-def _application_service(dsn: str, settings: ObumAISettings) -> SmartployService:
-    profile_id = os.getenv("SMARTPLOY_PROFILE_ID", "default").strip() or "default"
+def _scoped_application_service(
+    dsn: str, obumai: ObumAIClient, profile_id: str,
+) -> SmartployService:
+    """Always scope ALL private preparation/application repositories together."""
+    owner = str(profile_id or "").strip()
+    if not owner:
+        raise ValueError("An explicit preparation owner profile is required")
     return SmartployService(
         repository=PostgresJobRepository(dsn),
-        profile_repository=PostgresProfileRepository(dsn, profile_id=profile_id),
-        preparation_repository=PostgresPreparationRepository(dsn),
-        application_repository=PostgresApplicationRepository(dsn),
-        obumai=ObumAIClient(settings),
+        profile_repository=PostgresProfileRepository(dsn, profile_id=owner),
+        preparation_repository=PostgresPreparationRepository(dsn, profile_id=owner),
+        application_repository=PostgresApplicationRepository(dsn, profile_id=owner),
+        obumai=obumai,
     )
+
+
+def _application_service(dsn: str, settings: ObumAISettings) -> SmartployService:
+    """Legacy single-profile submitter, allowed only in synthetic test/dev."""
+    profile_id = os.getenv("SMARTPLOY_PROFILE_ID", "default").strip() or "default"
+    return _scoped_application_service(dsn, ObumAIClient(settings), profile_id)
 
 
 def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
@@ -212,60 +223,70 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
 
         def run_prepare(settings=obum_settings) -> WorkerTaskResult:
             service = _application_service(dsn, settings)
-            limit = _positive_int("SMARTPLOY_PREPARE_BATCH_LIMIT", 20, maximum=100)
-            packages = service.prepare_eligible(limit=limit)
-            counts = Counter(item.status for item in packages)
-            return WorkerTaskResult(
-                status="healthy",
-                details={
-                    "eligible_processed": len(packages),
-                    "package_status_counts": dict(counts),
-                    "external_actions_authorized": False,
-                },
-            )
+            try:
+                limit = _positive_int("SMARTPLOY_PREPARE_BATCH_LIMIT", 20, maximum=100)
+                packages = service.prepare_eligible(limit=limit)
+                counts = Counter(item.status for item in packages)
+                return WorkerTaskResult(
+                    status="healthy",
+                    details={
+                        "eligible_processed": len(packages),
+                        "package_status_counts": dict(counts),
+                        "external_actions_authorized": False,
+                    },
+                )
+            finally:
+                if service.obumai is not None:
+                    service.obumai.close()
 
         def run_refresh(settings=obum_settings) -> WorkerTaskResult:
             preparations = PostgresPreparationRepository(dsn)
-            service = _application_service(dsn, settings)
-            limit = _positive_int("SMARTPLOY_REFRESH_BATCH_LIMIT", 50, maximum=500)
-            updated = 0
-            failures = 0
-            states: Counter[str] = Counter()
+            client = ObumAIClient(settings)
+            try:
+                limit = _positive_int("SMARTPLOY_REFRESH_BATCH_LIMIT", 50, maximum=500)
+                updated = 0
+                failures = 0
+                states: Counter[str] = Counter()
 
-            # Query filters BEFORE LIMIT, ordered by the least recent update.
-            # Completed history must not crowd out an older in-flight package.
-            for item in preparations.list_refresh_candidates(limit=limit):
-                if item.status not in ACTIVE_PREPARATION_STATES or not item.obum_job_id:
-                    continue
-                try:
-                    current = service.refresh_preparation(item.package_id)
-                except (ObumAIError, KeyError):
-                    # Rotate a failed lookup to avoid repeatedly selecting the
-                    # same remote failure ahead of healthy pending packages.
-                    # The repository must not modify cancelled/replaced jobs.
-                    preparations.defer_failed_refresh(item.package_id, item.obum_job_id)
-                    failures += 1
-                    continue
-                updated += 1
-                states[current.status] += 1
+                # The shared query selects only remote status checks. Each
+                # selected item's owning profile gets a fresh tenant-scoped
+                # preparation AND application repository for read/write.
+                # Never use the legacy SMARTPLOY_PROFILE_ID in this path.
+                for item in preparations.list_refresh_candidates(limit=limit):
+                    if item.status not in ACTIVE_PREPARATION_STATES or not item.obum_job_id:
+                        continue
+                    service = _scoped_application_service(dsn, client, item.profile_id)
+                    try:
+                        current = service.refresh_preparation(item.package_id)
+                    except (ObumAIError, KeyError):
+                        # Rotate only within this preparation's owner scope.
+                        service.preparation_repository.defer_failed_refresh(
+                            item.package_id, item.obum_job_id
+                        )
+                        failures += 1
+                        continue
+                    updated += 1
+                    states[current.status] += 1
 
-            if failures and not updated:
-                status = "failed"
-            elif failures:
-                status = "degraded"
-            else:
-                status = "healthy"
-            error = f"{failures} preparation refreshes failed" if failures else ""
-            return WorkerTaskResult(
-                status=status,
-                error=error,
-                details={
-                    "updated_count": updated,
-                    "failure_count": failures,
-                    "status_counts": dict(states),
-                    "external_actions_authorized": False,
-                },
-            )
+                if failures and not updated:
+                    status = "failed"
+                elif failures:
+                    status = "degraded"
+                else:
+                    status = "healthy"
+                error = f"{failures} preparation refreshes failed" if failures else ""
+                return WorkerTaskResult(
+                    status=status,
+                    error=error,
+                    details={
+                        "updated_count": updated,
+                        "failure_count": failures,
+                        "status_counts": dict(states),
+                        "external_actions_authorized": False,
+                    },
+                )
+            finally:
+                client.close()
 
         # Status refreshes can observe already-submitted preparation jobs;
         # they do not originate new AI forwarding requests.
