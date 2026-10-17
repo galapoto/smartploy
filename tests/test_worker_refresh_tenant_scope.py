@@ -55,9 +55,12 @@ def _refresh(monkeypatch, *, failure=False):
             calls.append(("defer", self.profile_id, package_id, job_id))
             assert self.profile_id == "profile-account-a"
 
-    class Prep(Scoped): pass
-    class Application(Scoped): pass
-    class Profile(Scoped): pass
+    class Prep(Scoped):
+        pass
+    class Application(Scoped):
+        pass
+    class Profile(Scoped):
+        pass
 
     class FakeService:
         def __init__(self, *, repository, profile_repository,
