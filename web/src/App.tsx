@@ -274,7 +274,7 @@ export default function App() {
         setLocalAI(model.status === "fulfilled" ? model.value : null);
         if (model.status === "rejected") {
           setError((current) => current ||
-            "Local AI status is temporarily unavailable. Job search and your saved profile remain usable.");
+            "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria.");
         }
       });
 
@@ -295,7 +295,7 @@ export default function App() {
       setPrivateSavedJobs(bookmarks.status === "fulfilled" ? bookmarks.value.jobs : []);
       if (secondary.some((item) => item.status === "rejected")) {
         setError((current) => current ||
-          "Some optional profile tools are temporarily unavailable. You can still browse and change job criteria.");
+          "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria.");
       }
     } catch (exc) {
       if (generation === loadGeneration.current) {

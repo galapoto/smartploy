@@ -511,7 +511,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
-    expect(await screen.findByText("SYNTHETIC-READY-CV.pdf")).toBeTruthy();
+    expect((await screen.findAllByText("SYNTHETIC-READY-CV.pdf")).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
     expect(await screen.findByText("Private saved QA opportunity")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Check posting/ }).getAttribute("href"))
