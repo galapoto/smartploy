@@ -139,6 +139,7 @@ class PostgresAccountErasureRepository:
                     SET revoked_at = COALESCE(revoked_at, now()),
                         email = '', metadata = '{}'::jsonb
                     WHERE user_id = %s
+                      AND (revoked_at IS NULL OR email <> '' OR metadata <> '{}'::jsonb)
                     """,
                     (user_id,),
                 )
@@ -162,6 +163,7 @@ class PostgresAccountErasureRepository:
                            consent_id, user_id, profile_id, 'revoked',
                            revision, job_snapshot_sha256, evidence_sha256, now()
                     FROM changed
+                    WHERE true
                     ON CONFLICT (event_id) DO NOTHING
                     """,
                     (user_id, profile_id),
