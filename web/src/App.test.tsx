@@ -15,6 +15,8 @@ vi.mock("./api", () => ({
   startApplicationWorkspace: vi.fn(), uploadCV: vi.fn(),
   getSearchPreferences: vi.fn(), updateSearchPreferences: vi.fn(),
   getSearchResults: vi.fn(), getLocalAIStatus: vi.fn(),
+  getJobAIConsents: vi.fn(), getJobAIConsentEvents: vi.fn(),
+  grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
 vi.mock("./ApplicationStudio", () => ({
   default: ({ focusId }: { focusId: string }) =>
@@ -87,6 +89,13 @@ beforeEach(() => {
   vi.mocked(api.getPrivateSavedJobs).mockImplementation(async () => ({
     jobs: [...personalJobs], count: personalJobs.length, private: true,
   }));
+  vi.mocked(api.getJobAIConsents).mockResolvedValue({
+    consents: [], count: 0, private: true, unattended_processing_enabled: false,
+  });
+  vi.mocked(api.getJobAIConsentEvents).mockResolvedValue({
+    events: [], count: 0, private: true,
+    history_type: "consent_grant_and_withdrawal_only",
+  });
   vi.mocked(api.addManualJob).mockImplementation(async (payload) => {
     const item: PrivateSavedJob = {
       ...payload, saved_job_id: "saved-synthetic-" + (personalJobs.length + 1),
