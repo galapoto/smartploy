@@ -8,7 +8,7 @@ import os
 
 from .application_storage import PostgresApplicationRepository
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
-from .preparation_storage import PostgresPreparationRepository
+from .preparation_storage import PostgresPreparationRepository, REFRESHABLE_PREPARATION_STATES
 from .profile_storage import PostgresProfileRepository
 from .service import SmartployService
 from .sources.jobmarket_finland import (
@@ -29,7 +29,7 @@ from .storage import PostgresJobRepository
 from .worker_schedule import WorkerTaskResult, WorkerTaskSpec
 
 
-ACTIVE_PREPARATION_STATES = {"queued", "running", "blocked"}
+ACTIVE_PREPARATION_STATES = REFRESHABLE_PREPARATION_STATES
 
 
 def _positive_int(name: str, default: int, *, maximum: int | None = None) -> int:
@@ -232,12 +232,16 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
             failures = 0
             states: Counter[str] = Counter()
 
-            for item in preparations.list(limit=limit):
-                if item.status not in ACTIVE_PREPARATION_STATES:
+            # Query filters BEFORE LIMIT, ordered by the least recent update.
+            # Completed history must not crowd out an older in-flight package.
+            for item in preparations.list_refresh_candidates(limit=limit):
+                if item.status not in ACTIVE_PREPARATION_STATES or not item.obum_job_id:
                     continue
                 try:
                     current = service.refresh_preparation(item.package_id)
-                except ObumAIError:
+                except (ObumAIError, KeyError):
+                    # A concurrent deletion or failure of one remote job must
+                    # not stop the worker from refreshing the remaining jobs.
                     failures += 1
                     continue
                 updated += 1

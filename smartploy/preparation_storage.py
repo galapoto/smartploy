@@ -12,12 +12,18 @@ from .preparations import ApplicationPreparation
 from .storage import apply_migrations
 
 
+# Only submitted remote jobs with a job id can be polled for status. Keep this
+# consistent with the SQL partial index and the worker's defensive check.
+REFRESHABLE_PREPARATION_STATES = frozenset({"queued", "running", "blocked"})
+
+
 class PreparationRepository(Protocol):
     def create_or_get(self, item: ApplicationPreparation) -> tuple[ApplicationPreparation, bool]: ...
     def save(self, item: ApplicationPreparation) -> ApplicationPreparation: ...
     def get(self, package_id: str) -> ApplicationPreparation | None: ...
     def get_by_obum_job_id(self, job_id: str) -> ApplicationPreparation | None: ...
     def list(self, *, limit: int = 100) -> list[ApplicationPreparation]: ...
+    def list_refresh_candidates(self, *, limit: int = 100) -> list[ApplicationPreparation]: ...
 
 
 class MemoryPreparationRepository:
@@ -81,6 +87,23 @@ class MemoryPreparationRepository:
             key=lambda item: (item.requested_at, item.package_id),
             reverse=True,
         )[:limit]
+
+    def list_refresh_candidates(self, *, limit: int = 100) -> list[ApplicationPreparation]:
+        """Poll active remote jobs in least-recently-refreshed order.
+
+        Filtering happens before the LIMIT, so a full history of completed
+        preparations cannot starve a pending job.
+        """
+        bounded = max(1, min(int(limit), 500))
+        return sorted(
+            (
+                item for item in self._items.values()
+                if self._allowed(item)
+                and item.status in REFRESHABLE_PREPARATION_STATES
+                and item.obum_job_id
+            ),
+            key=lambda item: (item.updated_at, item.package_id),
+        )[:bounded]
 
 
 class PostgresPreparationRepository:
@@ -278,6 +301,25 @@ class PostgresPreparationRepository:
                         self._select_sql() + " ORDER BY requested_at DESC, package_id DESC LIMIT %s",
                         (bounded,),
                     )
+                rows = cur.fetchall()
+        return [self._from_row(row) for row in rows]
+
+    def list_refresh_candidates(self, *, limit: int = 100) -> list[ApplicationPreparation]:
+        """Select pollable jobs before limiting; rotate oldest updates first."""
+        bounded = max(1, min(int(limit), 500))
+        query = self._select_sql() + """
+            WHERE status IN ('queued', 'running', 'blocked')
+              AND obum_job_id <> ''
+        """
+        params: list[Any] = []
+        if self.profile_id:
+            query += " AND profile_id = %s"
+            params.append(self.profile_id)
+        query += " ORDER BY updated_at ASC, package_id ASC LIMIT %s"
+        params.append(bounded)
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, tuple(params))
                 rows = cur.fetchall()
         return [self._from_row(row) for row in rows]
 
