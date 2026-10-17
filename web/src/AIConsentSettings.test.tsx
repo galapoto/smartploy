@@ -45,8 +45,10 @@ it("does not offer a grant for source-restricted jobs and handles outages fail-c
   const { rerender } = render(<AIConsentSettings jobs={[blocked]} consents={[]}
     events={[]} status="ready" busy={false} onGrant={grant} onRevoke={vi.fn()} />);
   expect(screen.queryByRole("option", { name: /Junior Developer/i })).toBeNull();
-  expect((screen.getByRole("button", { name: /save job-specific permission/i })
-    as HTMLButtonElement).disabled).toBe(true);
+  const saveButton = screen.getByRole("button", {
+    name: /save job-specific permission/i
+  }) as HTMLButtonElement;
+  expect(saveButton.disabled).toBe(true);
   rerender(<AIConsentSettings jobs={[allowedJob]} consents={[permission]}
     events={[]} status="unavailable" busy={false}
     onGrant={grant} onRevoke={vi.fn()} />);
