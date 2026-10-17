@@ -85,9 +85,17 @@ remote HTTP is an architecture tradeoff still requiring independent review.
 
 For bounded internal *planning only*, `list_active_verified` returns
 active, account-verified and nonrevoked grants, without email or CV data.
-Reading this list alone is NOT permission to send anything. Fair cursor
-paging, safe retry/reservation, source checks, and user withdrawal at
-the actual boundary remain release blockers.
+`smartploy.consented_worker_readiness.preview_consented_preparations(dsn)`
+now re-fetches the live user/profile, current job, approved evidence, source
+forwarding policy and scoring. It reports only aggregate counts for job missing,
+source restricted, unqualified, changed snapshots, existing drafts or ready
+cases. It does not create queues, register a worker task, call ObumAI or
+authorize a send. Limit is bounded to 500 records.
+
+Reading this list or obtaining a "ready" preview is NOT permission to send
+anything. Fair cursor paging, safe retry/reservation, source checks under
+the actual dispatch lock, and withdrawal at the send boundary remain release
+blockers.
 
 ## Explicitly missing: safe multi-user worker dispatch
 
