@@ -124,13 +124,12 @@ export interface HealthResponse {
   ok: boolean;
   service: string;
   storage: { mode: string; ready: boolean; error?: string };
-  profile: ProfileStatus;
+  /** Public health intentionally contains no private profile metadata. */
   obumai_configured: boolean;
   worker: {
     configured: boolean;
     ready: boolean;
     count: number;
-    error: string;
   };
   external_actions_authorized: boolean;
 }
@@ -181,6 +180,46 @@ export interface SessionInfo {
   subject_fingerprint?: string;
 }
 
+export interface JobAIProcessingConsent {
+  consent_id: string;
+  canonical_key: string;
+  processor: "obumai";
+  purpose: "application_draft";
+  mode: "unattended";
+  job_snapshot_sha256: string;
+  evidence_sha256: string;
+  revision: number;
+  granted_at: string;
+  revoked_at: string;
+  active: boolean;
+  processing_started: false;
+  employer_actions_authorized: false;
+}
+
+export interface JobAIProcessingConsentEvent {
+  event_id: string;
+  consent_id: string;
+  event_type: "granted" | "revoked";
+  revision: number;
+  job_snapshot_sha256: string;
+  evidence_sha256: string;
+  occurred_at: string;
+}
+
+export interface JobAIConsentsResponse {
+  consents: JobAIProcessingConsent[];
+  count: number;
+  private: true;
+  unattended_processing_enabled: false;
+}
+
+export interface JobAIConsentEventsResponse {
+  events: JobAIProcessingConsentEvent[];
+  count: number;
+  private: true;
+  history_type: "consent_grant_and_withdrawal_only";
+}
+
 export interface SavedJob {
   canonical_key: string;
   source_current: boolean;
@@ -193,6 +232,26 @@ export interface SavedJob {
 export interface JobsResponse {
   jobs: SavedJob[];
   count: number;
+}
+
+/** User-owned bookmark, never an employer-verified ATS vacancy. */
+export interface PrivateSavedJob {
+  saved_job_id: string;
+  company: string;
+  role_title: string;
+  location: string;
+  description: string;
+  application_url: string;
+  created_at: string;
+  private: true;
+  employer_availability_verified: false;
+  external_actions_authorized: false;
+}
+
+export interface PrivateSavedJobsResponse {
+  jobs: PrivateSavedJob[];
+  count: number;
+  private: true;
 }
 
 export interface ManualJobPayload {
