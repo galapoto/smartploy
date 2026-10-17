@@ -98,7 +98,10 @@ def test_preparation_survives_repository_recreation(repositories):
 
     # Completed history is newer than the unfinished request, but must not
     # consume the refresh batch. SQL must filter before applying LIMIT.
-    newer = (datetime.fromisoformat(queued.updated_at) + timedelta(days=1)).isoformat()
+    newer = (
+        max(datetime.fromisoformat(queued.updated_at), datetime.fromisoformat(package.requested_at))
+        + timedelta(days=1)
+    ).isoformat()
     for index in range(4):
         completed_source = replace(
             package, package_id=f"{package.package_id}-completed-{index}",
