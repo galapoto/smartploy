@@ -7,13 +7,13 @@ import {
   WandSparkles, X, ChartNoAxesColumn, AlertCircle, type LucideIcon
 } from "lucide-react";
 import {
-  addManualJob, approveFact, createFact, deleteCV, deleteFact, getApplications,
-  getCV, getDashboard, getHealth, getJobs, getProfileFacts, getSession,
+  addManualJob, approveFact, createFact, deleteCV, deleteFact, deletePrivateSavedJob, getApplications,
+  getCV, getDashboard, getHealth, getJobs, getPrivateSavedJobs, getProfileFacts, getSession,
   startApplicationWorkspace, uploadCV,
   getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus
 } from "./api";
 import {
-  filterBySector, formatState, queueLabel, relativeFreshness, scoreBand,
+  filterBySector, formatState, queueLabel, relativeFreshness, safeExternalJobUrl, scoreBand,
   sectorLabel, type DisplayMode, type SectorFilter
 } from "./lib";
 import ApplicationStudio from "./ApplicationStudio";
@@ -22,7 +22,7 @@ import SearchResultsPanel from "./SearchResultsPanel";
 import BrandMark from "./BrandMark";
 import type {
   ApplicationRecord, CandidateFact, CVDocument, Dashboard, HealthResponse,
-  ManualJobPayload, RankingCard, SavedJob, SessionInfo,
+  ManualJobPayload, PrivateSavedJob, RankingCard, SavedJob, SessionInfo,
   SearchPreferences, SearchPreferencesUpdate, SearchResults, LocalAIStatus
 } from "./types";
 
@@ -99,6 +99,9 @@ function sessionIdentity(who: SessionInfo): string {
   return JSON.stringify([subject, who.auth_source || ""]);
 }
 
+/** User-facing API mutations must never publish another account's response. */
+class PrivateActionIdentityChanged extends Error {}
+
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -107,6 +110,7 @@ export default function App() {
   const [cv, setCV] = useState<CVDocument>({ present: false });
   const [facts, setFacts] = useState<CandidateFact[]>([]);
   const [jobs, setJobs] = useState<SavedJob[]>([]);
+  const [privateSavedJobs, setPrivateSavedJobs] = useState<PrivateSavedJob[]>([]);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [preferences, setPreferences] = useState<SearchPreferences | null>(null);
   const [discovery, setDiscovery] = useState<SearchResults | null>(null);
@@ -131,6 +135,7 @@ export default function App() {
   const [newFactValue, setNewFactValue] = useState("");
   const [confirmFact, setConfirmFact] = useState(false);
   const [manualBusy, setManualBusy] = useState(false);
+  const [removingPrivateJob, setRemovingPrivateJob] = useState("");
   const [jobForm, setJobForm] = useState<ManualJobPayload>({
     company: "", role_title: "", location: "", description: "", application_url: ""
   });
@@ -140,25 +145,85 @@ export default function App() {
   const loadGeneration = useRef(0);
   const lastSessionIdentity = useRef<string | null>(null);
   const savingSearchPreferences = useRef(false);
+  const clearPrivateWorkspace = useCallback(() => {
+    setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
+    setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
+    setPrivateSavedJobs([]);
+    setHealth(null); setLocalAI(null); setSelectedWorkspaceId("");
+    // A different account must not inherit an unsaved draft, editor, form,
+    // selected job or cached navigation state belonging to its predecessor.
+    setPage("dashboard"); setSearch(""); setExpandedJob("");
+    setCVPreview(false); setJobDialog(false); setNewFactValue("");
+    setConfirmFact(false); setNotice("");
+    setBusyCV(false); setBusyFact(""); setPreparing(""); setManualBusy(false);
+    setRemovingPrivateJob("");
+    if (uploadRef.current) uploadRef.current.value = "";
+    setJobForm({
+      company: "", role_title: "", location: "",
+      description: "", application_url: ""
+    });
+  }, []);
+
+  /** Check account identity on both sides of every private mutation.
+   *
+   * A mutation may have reached the server before an account change; this
+   * protects the rendered workspace, it does NOT undo server-side effects.
+   * Backend authorization remains mandatory for each operation.
+   */
+  const runPrivateMutation = useCallback(async <T,>(
+    action: (expectedUserId: string) => Promise<T>
+  ): Promise<T> => {
+    // Capture the initiating account synchronously, *before* the preflight
+    // await. The server must reject if a later browser cookie belongs to B.
+    const expectedIdentity = lastSessionIdentity.current;
+    const expectedUserId = session?.user_id?.trim() || "";
+    const denyStaleAction = (): never => {
+      ++loadGeneration.current; // invalidate private GET responses in flight
+      lastSessionIdentity.current = null;
+      clearPrivateWorkspace();
+      setLoading(false);
+      setRefreshing(false);
+      setError(
+        "The signed-in account changed or could not be verified during a private action. Reload this workspace."
+      );
+      throw new PrivateActionIdentityChanged();
+    };
+    const verifyIdentity = async () => {
+      let currentIdentity: string | null = null;
+      try {
+        currentIdentity = sessionIdentity(await getSession());
+      } catch {
+        // A missing/expired session fails closed, even when email is unchanged.
+      }
+      if (!expectedIdentity || currentIdentity !== expectedIdentity ||
+          lastSessionIdentity.current !== expectedIdentity) {
+        denyStaleAction();
+      }
+    };
+
+    // The identity loaded in this React view must be the verified account,
+    // not an older session object left behind during a concurrent refresh.
+    if (!session || !expectedUserId || sessionIdentity(session) !== expectedIdentity) {
+      denyStaleAction();
+    }
+    await verifyIdentity(); // never dispatch an action for an unverified account
+    try {
+      const result = await action(expectedUserId);
+      await verifyIdentity(); // discard stale successful mutation responses
+      return result;
+    } catch (exc) {
+      if (exc instanceof PrivateActionIdentityChanged) throw exc;
+      // A request failure can coincide with logout. Do not display errors
+      // from account A inside B's workspace.
+      await verifyIdentity();
+      throw exc;
+    }
+  }, [clearPrivateWorkspace, session]);
+
   const load = useCallback(async (quiet = false) => {
     if (savingSearchPreferences.current) return;
     const generation = ++loadGeneration.current;
     if (quiet) setRefreshing(true); else setLoading(true);
-
-    function clearPrivateWorkspace() {
-      setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
-      setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
-      setHealth(null); setLocalAI(null); setSelectedWorkspaceId("");
-      // A different account must not inherit an unsaved draft, editor, form,
-      // selected job or cached navigation state belonging to its predecessor.
-      setPage("dashboard"); setSearch(""); setExpandedJob("");
-      setCVPreview(false); setJobDialog(false); setNewFactValue("");
-      setConfirmFact(false); setNotice("");
-      setJobForm({
-        company: "", role_title: "", location: "",
-        description: "", application_url: ""
-      });
-    }
 
     try {
       // Establish a server-issued account identity BEFORE requesting private
@@ -176,9 +241,12 @@ export default function App() {
 
       // Optional requests still run alongside the essential job reads; they
       // must never block first-use navigation when Ollama or a CV is slow.
+      // A slow Ollama availability endpoint cannot hold profile documents
+      // and private saved jobs hostage. Attach a rejection handler now.
+      const localAIRequest = Promise.allSettled([getLocalAIStatus()]);
       const secondaryRequest = Promise.allSettled([
         getApplications(), getHealth(), getCV(), getProfileFacts(),
-        getJobs(), getLocalAIStatus()
+        getJobs(), getPrivateSavedJobs()
       ]);
       const [board, prefs, results] = await Promise.all([
         getDashboard(), getSearchPreferences(), getSearchResults()
@@ -197,6 +265,19 @@ export default function App() {
       setSession(verifiedWho);
       setLoading(false); setRefreshing(false); setError("");
 
+      // Only global local-model readiness is returned by this endpoint:
+      // never personal CV or draft content. This response is optional and
+      // must not update a superseded account/load-generation view.
+      void localAIRequest.then(([model]) => {
+        if (generation !== loadGeneration.current ||
+            lastSessionIdentity.current !== identity) return;
+        setLocalAI(model.status === "fulfilled" ? model.value : null);
+        if (model.status === "rejected") {
+          setError((current) => current ||
+            "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria.");
+        }
+      });
+
       const secondary = await secondaryRequest;
       if (generation !== loadGeneration.current) return;
       const finalWho = await getSession();
@@ -205,16 +286,17 @@ export default function App() {
         throw new Error("Your signed-in account changed during profile loading. Reload this workspace.");
       }
 
-      const [apps, ready, savedCV, profile, savedJobs, model] = secondary;
+      const [apps, ready, savedCV, profile, savedJobs, bookmarks] = secondary;
       setApplications(apps.status === "fulfilled" ? apps.value.applications : []);
       setHealth(ready.status === "fulfilled" ? ready.value : null);
       setCV(savedCV.status === "fulfilled" ? savedCV.value : { present: false });
       setFacts(profile.status === "fulfilled" ? profile.value.facts : []);
       setJobs(savedJobs.status === "fulfilled" ? savedJobs.value.jobs : []);
-      setLocalAI(model.status === "fulfilled" ? model.value : null);
-      setError(secondary.some((item) => item.status === "rejected")
-        ? "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria."
-        : "");
+      setPrivateSavedJobs(bookmarks.status === "fulfilled" ? bookmarks.value.jobs : []);
+      if (secondary.some((item) => item.status === "rejected")) {
+        setError((current) => current ||
+          "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria.");
+      }
     } catch (exc) {
       if (generation === loadGeneration.current) {
         lastSessionIdentity.current = null;
@@ -226,7 +308,7 @@ export default function App() {
         setLoading(false); setRefreshing(false);
       }
     }
-  }, []);
+  }, [clearPrivateWorkspace]);
 
   useEffect(() => {
     void load();
@@ -240,23 +322,64 @@ export default function App() {
       throw new Error("A search preference save is already in progress.");
     }
     savingSearchPreferences.current = true;
-    // Invalidate every pre-save refresh (including its pending private data).
-    // Skip any new refresh until the preference write and its matching
-    // discovery response have both settled.
+    // A concurrent refresh cannot publish an old preference snapshot while
+    // the PUT and its paired discovery GET are in progress.
     ++loadGeneration.current;
     setRefreshing(false);
+
+    const expectedIdentity = lastSessionIdentity.current;
+    const expectedUserId = session?.user_id?.trim() || "";
+    let accountUnverified = false;
+    const requireSameAccount = async () => {
+      let observedIdentity: string | null = null;
+      try {
+        observedIdentity = sessionIdentity(await getSession());
+      } catch {
+        // Treat failed/unauthenticated session verification as a privacy
+        // boundary failure, not permission to publish stale private results.
+      }
+      if (!expectedIdentity || !session || !expectedUserId ||
+          sessionIdentity(session) !== expectedIdentity ||
+          observedIdentity !== expectedIdentity ||
+          lastSessionIdentity.current !== expectedIdentity) {
+        accountUnverified = true;
+        throw new Error(
+          "The signed-in account changed or could not be verified while saving search preferences. Reload this workspace."
+        );
+      }
+    };
+
     try {
-      const result = await updateSearchPreferences(next);
-      setPreferences(result);
+      // Check before the mutation, after its response, and after fetching the
+      // matching search results. Never render account A's preference response
+      // under B merely because their visible email addresses are the same.
+      await requireSameAccount();
+      const result = await updateSearchPreferences(next, expectedUserId);
+      await requireSameAccount();
       const fresh = await getSearchResults();
+      await requireSameAccount();
+      setPreferences(result);
       setDiscovery(fresh);
       setPage("dashboard");
       setView("top");
       setNotice(result.mode === "general"
         ? "General search enabled: all current jobs, no personalization."
         : "Your search targets were saved. Recommendations now reflect your criteria.");
+    } catch (exc) {
+      // A rejected PUT can coincide with logout/account switching. Check
+      // again before keeping the previous account's editable workspace.
+      if (!accountUnverified) await requireSameAccount();
+      throw exc;
     } finally {
       savingSearchPreferences.current = false;
+      if (accountUnverified) {
+        ++loadGeneration.current;
+        lastSessionIdentity.current = null;
+        clearPrivateWorkspace();
+        setError(
+          "The signed-in account changed or could not be verified while saving search preferences. Reload this workspace."
+        );
+      }
     }
   }
 
@@ -286,93 +409,159 @@ export default function App() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    const actionIdentity = lastSessionIdentity.current;
     setBusyCV(true); setNotice("");
     try {
-      const uploaded = await uploadCV(file);
+      const uploaded = await runPrivateMutation((userId) => uploadCV(file, userId));
       setCV(uploaded); setCVPreview(true); navigate("profile");
       setNotice("Your CV was uploaded privately. Review its text and confirm facts before matching.");
       await load(true);
     } catch (exc) {
+      if (exc instanceof PrivateActionIdentityChanged) return;
       navigate("profile");
       setNotice(exc instanceof Error ? exc.message : "CV upload failed.");
-    } finally { setBusyCV(false); }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setBusyCV(false);
+    }
   }
 
   async function onDeleteCV() {
     if (!window.confirm("Remove your uploaded CV? Approved profile facts will remain until you remove them separately.")) return;
+    const actionIdentity = lastSessionIdentity.current;
     setBusyCV(true);
     try {
-      await deleteCV(); setCV({ present: false }); setCVPreview(false);
+      await runPrivateMutation((userId) => deleteCV(userId));
+      setCV({ present: false }); setCVPreview(false);
       setNotice("Your uploaded CV has been removed.");
-    } catch (exc) { setNotice(exc instanceof Error ? exc.message : "Unable to remove CV."); }
-    finally { setBusyCV(false); }
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to remove CV.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setBusyCV(false);
+    }
   }
 
   async function onAddFact(event: FormEvent) {
     event.preventDefault();
-    if (!newFactValue.trim()) return;
+    const factValue = newFactValue.trim();
+    if (!factValue) return;
+    const actionIdentity = lastSessionIdentity.current;
+    const factType = newFactType;
+    const approvedByUser = confirmFact;
     setBusyFact("new");
     try {
-      await createFact(newFactType, newFactValue.trim(), confirmFact);
+      await runPrivateMutation((userId) => createFact(factType, factValue, approvedByUser, userId));
       setNewFactValue(""); setConfirmFact(false);
-      setNotice(confirmFact ? "Approved profile evidence saved." : "Fact saved for review.");
+      setNotice(approvedByUser ? "Approved profile evidence saved." : "Fact saved for review.");
       await load(true);
-    } catch (exc) { setNotice(exc instanceof Error ? exc.message : "Unable to save fact."); }
-    finally { setBusyFact(""); }
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to save fact.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setBusyFact("");
+    }
   }
 
   async function onFactApproval(fact: CandidateFact) {
+    const actionIdentity = lastSessionIdentity.current;
     setBusyFact(fact.fact_id);
     try {
-      await approveFact(fact.fact_id, !fact.approved);
+      await runPrivateMutation((userId) => approveFact(fact.fact_id, !fact.approved, userId));
       await load(true);
-    } catch (exc) { setNotice(exc instanceof Error ? exc.message : "Unable to update fact."); }
-    finally { setBusyFact(""); }
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to update fact.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setBusyFact("");
+    }
   }
 
   async function onFactDelete(fact: CandidateFact) {
     if (!window.confirm("Permanently remove this profile fact?")) return;
+    const actionIdentity = lastSessionIdentity.current;
     setBusyFact(fact.fact_id);
-    try { await deleteFact(fact.fact_id); await load(true); }
-    catch (exc) { setNotice(exc instanceof Error ? exc.message : "Unable to delete fact."); }
-    finally { setBusyFact(""); }
+    try {
+      await runPrivateMutation((userId) => deleteFact(fact.fact_id, userId));
+      await load(true);
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to delete fact.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setBusyFact("");
+    }
   }
 
   async function onManualJob(event: FormEvent) {
     event.preventDefault();
-    if (!jobForm.company.trim() || !jobForm.role_title.trim() || !jobForm.description.trim()) return;
-    if (jobForm.application_url.trim()) {
+    const payload = { ...jobForm };
+    if (!payload.company.trim() || !payload.role_title.trim() || !payload.description.trim()) return;
+    if (payload.application_url.trim()) {
       try {
-        const url = new URL(jobForm.application_url);
+        const url = new URL(payload.application_url);
         if (!["http:", "https:"].includes(url.protocol)) throw new Error("invalid protocol");
       } catch { setNotice("The job posting link must be a valid HTTP or HTTPS URL."); return; }
     }
+    const actionIdentity = lastSessionIdentity.current;
     setManualBusy(true);
     try {
-      const result = await addManualJob(jobForm);
-      if (result.status !== "discovered") throw new Error("The job was not accepted: " + result.status);
-      setJobDialog(false); setJobForm({ company: "", role_title: "", location: "", description: "", application_url: "" });
-      setNotice("Job added. Add approved evidence to unlock personalised ranking.");
-      navigate("jobs"); await load(true);
-      setNotice("Job added. Add approved evidence to unlock personalised ranking.");
-    } catch (exc) { setNotice(exc instanceof Error ? exc.message : "Unable to add job."); }
-    finally { setManualBusy(false); }
+      const result = await runPrivateMutation((userId) => addManualJob(payload, userId));
+      if (result.status !== "saved_private") throw new Error("The saved job was not accepted: " + result.status);
+      setJobDialog(false);
+      setJobForm({ company: "", role_title: "", location: "", description: "", application_url: "" });
+      navigate("jobs");
+      // Publish the notice before refreshing. If the account changes during
+      // that refresh, clearPrivateWorkspace() can safely discard it.
+      setNotice("Job saved privately to your account. Employer availability is unverified; it is not a ranked ATS listing.");
+      await load(true);
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to add job.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setManualBusy(false);
+    }
+  }
+
+  async function onRemovePrivateJob(item: PrivateSavedJob) {
+    if (!window.confirm("Remove this job from your private saved list?")) return;
+    const actionIdentity = lastSessionIdentity.current;
+    setRemovingPrivateJob(item.saved_job_id);
+    try {
+      await runPrivateMutation((userId) => deletePrivateSavedJob(item.saved_job_id, userId));
+      setPrivateSavedJobs((items) => items.filter((saved) => saved.saved_job_id !== item.saved_job_id));
+      setNotice("The saved job was removed from your private account.");
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to remove the saved job.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setRemovingPrivateJob("");
+    }
   }
 
   async function onPrepare(canonicalKey: string) {
+    const actionIdentity = lastSessionIdentity.current;
     setPreparing(canonicalKey);
     try {
-      const response = await startApplicationWorkspace(canonicalKey);
+      const response = await runPrivateMutation((userId) => startApplicationWorkspace(canonicalKey, userId));
       setSelectedWorkspaceId(response.workspace.workspace_id);
       navigate("applications");
       setNotice(response.created
         ? "Application documents are ready to edit. Review the draft before downloading or applying."
         : "Opened your existing private application documents.");
     } catch (exc) {
-      const detail = exc instanceof Error ? exc.message : "Unable to create application documents.";
-      if (/Upload a CV|approve profile facts|uploaded CV/i.test(detail)) navigate("profile");
-      setNotice(detail);
-    } finally { setPreparing(""); }
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        const detail = exc instanceof Error ? exc.message : "Unable to create application documents.";
+        if (/Upload a CV|approve profile facts|uploaded CV/i.test(detail)) navigate("profile");
+        setNotice(detail);
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setPreparing("");
+    }
   }
 
   if (loading && !dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><span className="spinner" /><p>Preparing your workspace…</p></div>;
@@ -460,6 +649,39 @@ export default function App() {
       <Tool title="Career insights" description="Explore your evidence and gaps" icon={ChartNoAxesColumn} ready={true} onClick={() => onTool("Career insights")} />
     </div>
     {!obumReady ? <div className="info-strip"><AlertCircle size={17} /> ObumAI service integration is not configured. AI generation tools stay unavailable until secure machine authentication is enabled.</div> : null}
+  </section>;
+
+  const privateSavedJobsPanel = <section className="panel sources-panel" aria-label="Your private saved jobs">
+    <div className="panel-heading">
+      <div>
+        <p className="section-kicker">ONLY IN YOUR ACCOUNT</p>
+        <h2>Your saved opportunities</h2>
+        <p>Private bookmarks, not employer-verified vacancies or personalized match scores.</p>
+      </div>
+      <button className="outline-btn" type="button" onClick={() => setJobDialog(true)}>
+        <Plus size={16} /> Save job
+      </button>
+    </div>
+    {privateSavedJobs.length ? <div className="source-list">{privateSavedJobs.map((item) =>
+      <div className="source-row" key={item.saved_job_id}>
+        <span className="source-emblem"><LockKeyhole size={18} /></span>
+        <div><strong>{item.role_title}</strong>
+          <small>{item.company} · {item.location || "Location unknown"} · Employer availability unverified</small>
+        </div>
+        {safeExternalJobUrl(item.application_url) ?
+          <a className="text-link" href={safeExternalJobUrl(item.application_url)}
+            target="_blank" rel="noopener noreferrer" title="Check the original employer posting">
+            Check posting <ArrowUpRight size={15} />
+          </a> : item.application_url ? <span className="muted">Posting link unavailable</span> : null}
+        <button className="icon-btn subtle" type="button"
+          aria-label={"Remove saved job " + item.role_title}
+          onClick={() => void onRemovePrivateJob(item)}
+          disabled={removingPrivateJob === item.saved_job_id}>
+          <Trash2 size={16} />
+        </button>
+      </div>
+    )}</div> :
+      <p className="muted padding-note">No private saved jobs yet. Your bookmarks appear here, separate from public job listings.</p>}
   </section>;
 
   const sourcePanel = <section className="panel sources-panel">
@@ -552,15 +774,17 @@ export default function App() {
         </> : null}
         {page !== "dashboard" ? <>
           <div className="page-intro"><div><p className="section-kicker">SMARTPLOY / {selectedNav?.label.toUpperCase()}</p><h1>{selectedNav?.label}</h1><p>{preferences?.mode === "general" ? "General search across current Finnish vacancies." : "Your private workspace, ranked by the search criteria you chose."}</p></div>
-            {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Add job</button> : null}
+            {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Save job</button> : null}
             {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}
           </div>
-          {page === "jobs" ? <div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div> : null}
+          {page === "jobs" ? <div className="stacked"><div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>{privateSavedJobsPanel}</div> : null}
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">{cvBlock}{factPanel}</div><aside>{sidePanel}</aside></div> : null}
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}
           {page === "applications" ? <div className="stacked">
-            <ApplicationStudio key={accountViewKey} focusId={selectedWorkspaceId} onFindJobs={() => navigate("jobs")} />
+            <ApplicationStudio key={accountViewKey} focusId={selectedWorkspaceId}
+              expectedUserId={session?.user_id || ""} expectedAuthSource={session?.auth_source || ""}
+              onFindJobs={() => navigate("jobs")} />
             <section className="panel"><div className="panel-heading"><div><p className="section-kicker">APPLICATION TRACKER</p><h2>Your application pipeline</h2><p>A preparation draft is never counted as submitted.</p></div><span className="subtle-count">{applications.length} records</span></div>
             {applications.length ? <div className="applications-list">{applications.map((item) => <div className="application-list-row" key={item.application_id}><FileText size={20} /><div><strong>{formatState(item.state)}</strong><small>Job {item.canonical_key} · {item.updated_at ? relativeFreshness(item.updated_at) : "Updated time unknown"}</small></div><span className={cx("state-pill", item.has_been_submitted ? "good" : "waiting")}>{item.has_been_submitted ? "Submitted" : "Not submitted"}</span></div>)}</div> :
               <Empty title="No applications yet" description="When you've reviewed a job and prepared an application, the draft will appear here. No submissions are claimed without external evidence." icon={FileCheck2} action="Find jobs" onAction={() => navigate("jobs")} />}
@@ -577,6 +801,9 @@ export default function App() {
               <button className="outline-btn" type="button" onClick={() => navigate("profile")}>
                 Manage personal data <ArrowRight size={16} />
               </button>
+              {session?.auth_source === "oidc" ? <a className="outline-btn" href="/auth/logout">
+                Sign out securely <ArrowRight size={16} />
+              </a> : null}
             </section>
           </div> : null}
         </> : null}
@@ -585,7 +812,7 @@ export default function App() {
     </div>
     {jobDialog ? <div className="modal-backdrop" role="presentation" onClick={() => setJobDialog(false)}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="add-job-title" onClick={(event) => event.stopPropagation()}>
-        <div className="dialog-heading"><div><p className="section-kicker">MANUAL IMPORT</p><h2 id="add-job-title">Add a job opportunity</h2><p>Save a job you've already found. It won't be submitted anywhere.</p></div><button className="icon-btn" type="button" onClick={() => setJobDialog(false)} aria-label="Close"><X size={21} /></button></div>
+        <div className="dialog-heading"><div><p className="section-kicker">PRIVATE BOOKMARK</p><h2 id="add-job-title">Save an opportunity</h2><p>Only you can see this saved job. It is not added to the public feed, ranked, verified or submitted anywhere.</p></div><button className="icon-btn" type="button" onClick={() => setJobDialog(false)} aria-label="Close"><X size={21} /></button></div>
         <form className="dialog-form" onSubmit={(event) => void onManualJob(event)}>
           <label>Job title<input required maxLength={160} value={jobForm.role_title} onChange={(event) => setJobForm({ ...jobForm, role_title: event.target.value })} placeholder="e.g. Junior Data Analyst" /></label>
           <label>Company<input required maxLength={160} value={jobForm.company} onChange={(event) => setJobForm({ ...jobForm, company: event.target.value })} placeholder="Employer name" /></label>

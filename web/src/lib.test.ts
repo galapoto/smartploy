@@ -6,6 +6,7 @@ import {
   relativeFreshness,
   listingObservationLabels,
   relativeSchedule,
+  safeExternalJobUrl,
   scoreBand
 } from "./lib";
 import type { RankingCard } from "./types";
@@ -149,5 +150,28 @@ describe("job source observation truth", () => {
     expect(future.origin).toBe("First discovered 1h ago");
     expect(future.observation).toBe("Last source observation unknown");
     expect(future.caution).not.toBeNull();
+  });
+});
+
+describe("safe external employer posting links", () => {
+  it("keeps legitimate absolute HTTP(S) employer links navigable", () => {
+    expect(safeExternalJobUrl("https://jobs.example.fi/jobs/analyst?ref=smartploy"))
+      .toBe("https://jobs.example.fi/jobs/analyst?ref=smartploy");
+    expect(safeExternalJobUrl("http://legacy.example.fi/role"))
+      .toBe("http://legacy.example.fi/role");
+  });
+
+  it("refuses scripts, data URLs, relative redirects, embedded credentials and malformed links", () => {
+    for (const candidate of [
+      "", "javascript:alert(1)", "JaVaScRiPt:alert(1)", "data:text/html,hello",
+      "file:///etc/hosts", "/redirect?url=https://evil.invalid",
+      "//evil.invalid/page", "https://user:pass@jobs.example.fi/",
+      "https://jobs.example.fi/\nother", "https://example.fi\\@evil.invalid",
+      "https://", "https://\u0000evil.invalid",
+    ]) {
+      expect(safeExternalJobUrl(candidate), candidate).toBe("");
+    }
+    expect(safeExternalJobUrl(null)).toBe("");
+    expect(safeExternalJobUrl(undefined)).toBe("");
   });
 });
