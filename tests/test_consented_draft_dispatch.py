@@ -19,8 +19,9 @@ from smartploy.domain import SourceObservation, SourcePolicy, canonical_json, no
 from smartploy.identity import UserProfileBinding
 from smartploy.obumai import ObumAIError
 from smartploy.preparation_storage import MemoryPreparationRepository
+from smartploy.preparation_storage import with_runtime
 from smartploy.preparations import (
-    approved_evidence_snapshot, preparation_job_snapshot, with_runtime,
+    approved_evidence_snapshot, preparation_job_snapshot,
 )
 from smartploy.profile import CandidateProfile, ProfileFact
 from smartploy.scoring import ScoreResult
