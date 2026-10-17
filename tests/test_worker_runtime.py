@@ -169,7 +169,7 @@ def test_production_false_flag_keeps_source_poll_and_refresh_tasks(monkeypatch):
     }]))
     specs = build_worker_task_specs("postgresql://fixture")
     assert {item.task_id for item in specs} == {
-        "application:refresh-preparations", "source:lever-fictional"
+        "application:refresh-preparations", "source:lever-global-fictional"
     }
 
 
