@@ -18,9 +18,17 @@ execute a pipeline, deploy a product, or authorize Cloudflare/DNS/AI changes.
 3. GitHub OAuth app grants repository access; the authorized Woodpecker
    admin activates exactly galapoto/smartploy in ci.obumai.com. The
    platform source inventory must remain disabled until verified.
-4. Run the SmartPloy workflow manually against the reviewed immutable
-   Git SHA on the isolated worker. Verify repository, clone SHA,
-   tree SHA, native Python/Postgres + bilingual synthetic quality gate,
+4. Run the existing SmartPloy workflow manually on the exact approved
+   review branch, supplying nonsecret Woodpecker pipeline variable
+   `OBUMDELIVERY_EXPECTED_SHA` equal to the **full 40-character reviewed
+   candidate commit**. Woodpecker 3.19 manual-run API selects a branch,
+   not a commit SHA: it cannot itself guarantee an immutable checkout.
+   `scripts/obumdelivery_ci_gate.py` refuses a missing, malformed or stale
+   expected SHA before executing native product tests. Independently
+   compare the returned pipeline's `commit`, checked-out Git HEAD and
+   recorded tree with the reviewed candidate, and refuse promotion if
+   any value differs. Do not create a no-op branch push to force tests.
+   Verify native Python/Postgres + bilingual synthetic quality gate,
    React build/Vitest, synthetic Chromium/Playwright and companion checks.
 5. Check the no-overwrite stage receipts and final JSON HOLD policy.
    The deliberate negative test with CI_NEGATIVE_PROBE=1 must turn red.
@@ -38,9 +46,12 @@ launch a local fake API and localhost browser. No real applicant CV,
 model prompt, employer submission or production database is accessed.
 
 scripts/obumdelivery_ci_gate.py validates CI_REPO and exact CI_COMMIT_SHA
-against git checkout, plus its Git tree. Two sequential stages must leave
-matching redacted receipts; final aggregate denies release even when
-product tests pass. All receipts are in ignored .ci-out/obumdelivery.
+against git checkout, plus its Git tree. On manual events it additionally
+requires `OBUMDELIVERY_EXPECTED_SHA` and records `expected_review_sha`
+in each stage receipt. Push-to-main source tests continue unchanged; unknown
+CI events fail closed. Two sequential stages must leave matching redacted
+receipts; final aggregate denies release even when product tests pass.
+All receipts are in ignored .ci-out/obumdelivery.
 Do not upload unreviewed workspace files, credentials or data dumps.
 
 ## Important separation of test and release duties

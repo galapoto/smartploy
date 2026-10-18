@@ -72,3 +72,66 @@ def test_unknown_stage_and_symlink_rejected(tmp_path: Path):
     (tmp_path / ".ci-out").symlink_to(other, target_is_directory=True)
     with pytest.raises(AdmissionDenied, match="SYMLINK"):
         mark(tmp_path, STAGES[0], source())
+
+
+def _simulate_woodpecker_checkout(monkeypatch, event, expected=None, claimed=SHA):
+    """Synthetic Git checkout; never calls a controller or production host."""
+    import scripts.obumdelivery_ci_gate as gate
+
+    monkeypatch.setenv("CI_REPO", REPOSITORY)
+    monkeypatch.setenv("CI_COMMIT_SHA", claimed)
+    monkeypatch.setenv("CI_PIPELINE_EVENT", event)
+    monkeypatch.delenv("CI_NEGATIVE_PROBE", raising=False)
+    monkeypatch.delenv("OBUMDELIVERY_EXPECTED_SHA", raising=False)
+    if expected is not None:
+        monkeypatch.setenv("OBUMDELIVERY_EXPECTED_SHA", expected)
+    monkeypatch.setattr(
+        gate.subprocess, "check_output",
+        lambda args, **kwargs: TREE if args[-1] == "HEAD^{tree}" else SHA,
+    )
+    return gate.current()
+
+
+def test_manual_review_exact_sha_success_still_holds_release(monkeypatch):
+    result = _simulate_woodpecker_checkout(monkeypatch, "manual", SHA)
+    assert result["source_sha"] == SHA
+    assert result["expected_review_sha"] == SHA
+    assert result["release_gate"] == "HOLD"
+    assert not result["production_changed"]
+    assert not result["employer_actions_authorized"]
+
+
+@pytest.mark.parametrize("expected,reason", [
+    (None, "MANUAL_EXPECTED_SHA_REQUIRED"),
+    ("main", "MANUAL_EXPECTED_SHA_REQUIRED"),
+    ("c" * 40, "MANUAL_SOURCE_SHA_MISMATCH"),
+])
+def test_manual_review_rejects_missing_invalid_or_moved_sha(monkeypatch, expected, reason):
+    with pytest.raises(AdmissionDenied, match=reason):
+        _simulate_woodpecker_checkout(monkeypatch, "manual", expected)
+
+
+def test_main_push_preserves_existing_ci_without_manual_pin(monkeypatch):
+    result = _simulate_woodpecker_checkout(monkeypatch, "push")
+    assert result["source_sha"] == SHA
+    assert "expected_review_sha" not in result
+    assert result["release_gate"] == "HOLD"
+
+
+def test_manual_does_not_trust_forged_woodpecker_checkout_claim(monkeypatch):
+    with pytest.raises(AdmissionDenied, match="CI_CHECKOUT_SHA_MISMATCH"):
+        _simulate_woodpecker_checkout(monkeypatch, "manual", SHA, claimed="c" * 40)
+
+
+def test_unsupported_woodpecker_event_is_not_qualified(monkeypatch):
+    with pytest.raises(AdmissionDenied, match="UNSUPPORTED_CI_EVENT"):
+        _simulate_woodpecker_checkout(monkeypatch, "pull_request", SHA)
+
+
+def test_deliberate_negative_probe_still_fails_before_manual_pin(monkeypatch):
+    import scripts.obumdelivery_ci_gate as gate
+
+    _simulate_woodpecker_checkout(monkeypatch, "manual", SHA)
+    monkeypatch.setenv("CI_NEGATIVE_PROBE", "1")
+    with pytest.raises(AdmissionDenied, match="EXPECTED_RED_NEGATIVE_PROBE"):
+        gate.current()
