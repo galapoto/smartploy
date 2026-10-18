@@ -7,6 +7,16 @@
 **Detailed evidence, repository inventory, video/TikTok references and license matrix:** [REUSE_FIRST_AUDIT_2026-10-18.md](REUSE_FIRST_AUDIT_2026-10-18.md).  
 **Source snapshot when this plan was written:** `main@d0ebe59a576f7814c7c3ecb5bc64b104afbf16b1`; substantial product work remains in [draft integrated PR #149](https://github.com/galapoto/smartploy/pull/149) at `ca56d17a06741f5d8f61b7370391abed1373cba9`. The last historical owner-attested OVH release was `fc94e78e779650e781277ee1056ec92cd26a6e98` on 2026-10-12; **this audit did not reverify the running server**.
 
+## Progress checkpoint — SP13 (18 October 2026)
+
+- **Owner instruction:** Implementation has begun on the approved reuse-first plan, but branch and CI evidence remain separate from deployment.
+- **First delivery candidate:** [SP13 PDF-attachment PR #151](https://github.com/galapoto/smartploy/pull/151) builds *on* SmartPloy's existing Lever companion and ObumAI application/preflight contracts; it does not create a second browser/login/CV generator.
+- **Reused code:** SmartPloy existing 15-minute packet, application document renderer, reviewed CV text, one-attempt reservation, CRM receipt state and isolated test suite; existing ObumAI design and pinned MIT third-party source used for gap/behavior research, not wholesale vendoring.
+- **Implemented in review code:** user-confirmed PDF selection, SHA-256-bound deterministic SmartPloy PDF output and new v2 packet, exact-form browser attachment, negative-case Node/Python/browser tests and source-pinned CI steps.
+- **Safety status:** no external third-party source imported; no real employer site visited or submission made; no unattended application authority; browser assignment alone is not independently verified employer acceptance.
+- **Release status:** PR #151 is DRAFT and stacked on draft [#149](https://github.com/galapoto/smartploy/pull/149). CI must pass for the *final exact SHA* and independent review is still needed. Main/OVH remain unchanged.
+- **Next reuse investigation:** supported conditional Lever questions and answer provenance, then Greenhouse/Ashby provider-specific fixtures, durable queue and standing approval only where rights and user authority permit. Reinspect existing ObumAI forms/questionnaire, permitted MIT Yaima/neonwatty/career-ops modules **before writing new logic**.
+
 ## 1. Product outcome — actual applications, not just CI
 
 SmartPloy must let a user create a truthful reusable applicant profile, search suitable jobs or choose general search, rank and deduplicate opportunities, prepare tailored CV/letter/answers, complete supported employer forms and permitted document transfers, and track each outcome with source-backed evidence.
