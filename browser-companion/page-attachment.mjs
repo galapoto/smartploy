@@ -1,6 +1,6 @@
 /* This standalone function is serialized into the user's explicitly selected
    HTTPS Lever tab by chrome.scripting.executeScript after user approval.
-   It MUST NOT close over any popup variables, call fetch(), or submit a form.
+   It MUST NOT close over any popup variables, make external network requests or submit a form.
    The target employer page may itself upload immediately on input/change:
    the browser owner must consent to transferring the named PDF beforehand. */
 export async function attachReviewedPdf(payload) {
