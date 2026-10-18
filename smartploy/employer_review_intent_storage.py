@@ -227,3 +227,77 @@ class PostgresEmployerReviewIntentRepository:
                 )
                 row = cur.fetchone()
         return self._item(row) if row else None
+
+
+    def verify_for_companion(
+        self, binding: UserProfileBinding, *,
+        workspace_id: str, expected_revision: int,
+        expected_application_url: str, expected_job_fingerprint: str,
+        expected_document_sha256: str, expected_cv_pdf_sha256: str,
+    ) -> EmployerReviewIntent:
+        """Recheck signed-in review against current employer/job/documents.
+
+        Read-only authority: a positive result permits presentation of an
+        existing reviewed contact/CV autofill packet, NEVER a final submit.
+        Reuses the *identical* SP15a transactional preflight/lock ordering.
+        """
+        if (
+            type(expected_revision) is not int or expected_revision < 1
+            or not isinstance(expected_document_sha256, str)
+            or not _SHA.fullmatch(expected_document_sha256)
+            or not isinstance(expected_cv_pdf_sha256, str)
+            or not _SHA.fullmatch(expected_cv_pdf_sha256)
+        ):
+            raise EmployerReviewIntentDenied("Invalid exact reviewed packet identity")
+        employer_key = self._employer_key(expected_application_url)
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT set_config('lock_timeout','5000ms',true)")
+                try:
+                    canonical_key, cv_text, letter_text = verified_employer_submit_preflight(
+                        cur, binding, workspace_id=workspace_id,
+                        expected_revision=expected_revision,
+                        expected_application_url=expected_application_url,
+                        expected_job_fingerprint=expected_job_fingerprint,
+                    )
+                except EmployerSubmitClaimDenied as exc:
+                    raise EmployerReviewIntentDenied(str(exc)) from exc
+                latest_doc = sha256((cv_text + "\0" + letter_text).encode("utf-8")).hexdigest()
+                if latest_doc != expected_document_sha256:
+                    raise EmployerReviewIntentDenied("Reviewed documents changed")
+                cur.execute(
+                    self._select() + """
+                      WHERE user_id=%s AND profile_id=%s
+                        AND employer_job_key_sha256=%s FOR UPDATE
+                    """,
+                    (binding.user_id, binding.profile_id, employer_key),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise EmployerReviewIntentDenied(
+                        "Record a signed-in review on SmartPloy first"
+                    )
+                item = self._item(row)
+                cur.execute("SELECT now()")
+                current_db_time = cur.fetchone()[0]
+                if (
+                    item.state != "pending" or item.expires_at <= current_db_time
+                    or item.workspace_id != workspace_id
+                    or item.revision != expected_revision
+                    or item.document_sha256 != latest_doc
+                    or item.cv_pdf_sha256 != expected_cv_pdf_sha256
+                ):
+                    raise EmployerReviewIntentDenied(
+                        "Review cancelled, expired or inconsistent with this application"
+                    )
+                cur.execute(
+                    """SELECT 1 FROM smartploy_employer_submit_claims
+                       WHERE user_id=%s AND profile_id=%s
+                         AND (canonical_key=%s OR employer_job_key_sha256=%s)""",
+                    (binding.user_id, binding.profile_id, canonical_key, employer_key),
+                )
+                if cur.fetchone():
+                    raise EmployerReviewIntentDenied(
+                        "A previous employer submission attempt requires reconciliation"
+                    )
+        return item

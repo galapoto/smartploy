@@ -131,3 +131,30 @@ def test_review_intent_api_raises_503_when_postgres_is_not_configured(monkeypatc
              "X-Smartploy-Expected-User-Id":identity["user_id"]}
     assert api.post(url,json=payload,headers=headers).status_code==503
     assert api.delete(url,headers=headers).status_code==503
+
+
+def test_browser_verification_endpoint_is_not_extension_accessible(monkeypatch):
+    api=client_for_owner(monkeypatch)
+    url=PATH.replace("/employer-attempt","/verify-reviewed-packet")
+    body={
+        "expected_revision":1,"expected_document_sha256":"a"*64,
+        "expected_cv_pdf_sha256":"b"*64,
+        "expected_fields_sha256":"c"*64,
+        "expected_application_url_sha256":"d"*64,
+        "expected_cv_pdf_size":87522,
+    }
+    account=api.get("/api/v1/session").json()["user_id"]
+    good={"Origin":ORIGIN,"Sec-Fetch-Site":"same-origin",
+          "X-Smartploy-Expected-User-Id":account}
+    assert api.post(url,json=body).status_code==403
+    assert api.post(url,json=body,headers={
+        **good,"Origin":"chrome-extension://synthetic"
+    }).status_code==403
+    assert api.post(url,json=body,headers={
+        **good,"Sec-Fetch-Site":"cross-site"
+    }).status_code==403
+    assert api.post(url,json={**body,"expected_cv_pdf_sha256":"notsha"},
+                    headers=good).status_code==422
+    assert api.post(url,json=body,headers=good).status_code==503
+    api.cookies.clear()
+    assert api.post(url,json=body,headers=good).status_code==401

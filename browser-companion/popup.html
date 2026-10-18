@@ -14,10 +14,17 @@
     </header>
 
     <section>
-      <label for="packet">1. Paste your approved SmartPloy packet</label>
+      <label for="packet">1. Verify your reviewed SmartPloy packet</label>
       <textarea id="packet" rows="5" placeholder="Paste the short-lived packet copied from My applications." spellcheck="false"></textarea>
-      <p class="muted">Data stays in this popup until it closes. Nothing is stored or sent to SmartPloy from this extension.</p>
-      <button id="inspect">Inspect employer form</button>
+      <p class="muted">First record a final review in My applications. While on the signed-in
+        smartploy.obumai.com tab, paste your approved packet and click Verify review.
+        The extension stores only a hash and expiry in temporary Chrome memory, never
+        your session cookie, CV, approved contact details or application text.</p>
+      <button id="verifyReview" type="button" class="secondary">Verify review on signed-in SmartPloy</button>
+      <p id="reviewInfo" role="status"></p>
+      <p class="muted">Then open the employer's Lever page, reopen this companion,
+        paste the SAME packet and inspect the form. Verification lasts at most five minutes.</p>
+      <button id="inspect">Inspect verified employer form (no submit)</button>
       <button id="resume" class="secondary">Check confirmation after a previous attempt</button>
     </section>
 
@@ -53,7 +60,7 @@
       <label class="confirm"><input type="checkbox" id="approve" />
         I have reviewed the employer's form and will decide whether to submit on the employer website.</label>
       <button id="submit" class="danger" disabled aria-disabled="true">Automatic final submit unavailable</button>
-      <p class="warning">The SmartPloy automated final click is disabled pending an authenticated,
+      <p class="warning">The SmartPloy automated final click remains disabled pending an authenticated,
         one-time server claim consumed across devices. If you wish to apply, review the form and
         click the employer's own Submit button yourself. Do not retry any uncertain attempt.</p>
       <button id="receipt" class="secondary">Check visible confirmation &amp; export receipt</button>
