@@ -95,6 +95,39 @@ The ObumDelivery agent already implemented safe operator-selected source binding
 - **Next P0, not yet built:** Independently verify employer automation rights and implement real signed-in same-origin final user approval, a short-lived origin-restricted one-use server grant tied to exact account, workspace revision, employer and reviewed CV, plus audited MV3 handoff/atomic redemption before final click. Never put account cookies/tokens in clipboard, employer DOM, or logs; no silent retry. Two-device signed-in negative race tests and crash reconciliation are mandatory before restoring click support.
 - **Delivery states:** DONE isolated source guard, account-scoped status and regressions; IN PROGRESS grant architecture and provider rights verification; NOT STARTED active one-use browser redemption, independently verified employer receipt, approved production submission; BLOCKED live ObumDelivery product Woodpecker with RED probe, owner-approved rights-tested E2E, OVH backup/rollback and release sign-off. Main/OVH unchanged; calendar ETA unknown pending external permission and infrastructure evidence.
 
+## SP15c verified core-delivery and reuse audit — 18 October 2026
+
+**CORE USER FLOW DELIVERED IN REVIEW SOURCE:** exact reviewed CV PDF + cover letter + still-current Lever posting -> explicit applicant acknowledgment -> **durable 10-minute review record**, user-visible expiry and cancellation. This is a real owner-bound application-workflow component, distinct from the still-disabled employer Submit click. [Draft PR #162](https://github.com/galapoto/smartploy/pull/162) implements it on top of #161. **Not merged to main, not deployed.**
+
+### Measured source changes and where they came from
+
+| Code provenance | Exact original reference and decision | Result |
+| --- | --- | --- |
+| **Reused/refactored first-party SmartPloy** | Existing owner/job/document/erasure preflight in SP15a employer_submit_claim_storage.py (old blob b659a5e768f043d783cabd52688adf44987741cd) | 70 old lines removed from the original call site and their ~73-line block moved into **one shared transactional helper**, used both by original permanent employer attempt claim and the new final-review record, so no duplicate owner/job verification |
+| **Reused unchanged first-party SmartPloy** | Existing OIDC + per-request tenant binding, exact-origin CSRF checks, server deterministic PDF packet, account-switch revalidation from SP12–SP15b | Existing identity/browser/document services integrated, not rebuilt or vendored |
+| **Adapted previously built ObumAI agent model** | Agent B final_submit_preflight.py blob b5c5e99e, Agent D control_plane.py blob e6259a75, OAuth state blob ab9a6c96, enterprise approval blob 4434122a | Their preflight-vs-authority, expiration, no-autodispatch models informed a bounded PostgreSQL review state. In-memory Agent D/OAuth stores were **not blindly copied**, since not suitable for durable multi-device employer authority |
+| **Created from scratch because this domain was missing** | New employer_review_intent_storage.py (229 added lines) and migration 020 (24 added lines) | Atomic unique account + actual Lever job, 10-minute TTL, exact CV/letter/PDF SHA, cancel, non-authorizing status; no CV, email, account secret, token or URL payload stored |
+| **Adapted existing API/UI and account erasure** | smartploy/api.py, account_erasure.py, web/src/api.ts, ApplicationStudio.tsx | Signed-in same-origin GET/POST/DELETE and reviewed packet confirmation; private actor and exact revision preserved; no additional login/browser framework |
+| **New synthetic regressions** | Existing PostgreSQL/identity/browser and React test suites extended | +7 Python/Postgres tests and +2 React tests versus previous SP15b head; Chromium maintained |
+
+**Exact source audit:** [SP15c reuse ledger](https://github.com/galapoto/smartploy/blob/feature/sp15c-owner-reviewed-intent-20261018-v1/docs/REUSE_CHECK_SP15C_CORE_INTENT.md). Inspected ObumBrowse, ObumForge, ObumConnect and ObumAICore but found no shipping browser grant on those top-level default branches; **not counted as reused code**. No external licensed third-party code imported or new dependencies installed.
+
+### Independent exact-head CI verification
+
+- **Core commit:** 71f2585a51b125a063b4649387202a113d53ba02
+- [GitHub Actions source CI #39137078030](https://github.com/galapoto/smartploy/actions/runs/39137078030): **5/5 COMPLETED SUCCESS**, 653 Python/PostgreSQL, 90 React, 28 synthetic Chromium, Compose migration/backup/restore and exact-source nonrelease review. Previous head had one test with a missing signed-account header, yielding the correct 403 instead of test's intended 422. The corrected test and entire suite were rerun; no production auth bypass was introduced.
+- **Prior verified baseline:** SP15b c7f9578e at [#39135339001](https://github.com/galapoto/smartploy/actions/runs/39135339001), 646 Python, 88 React, 28 Chromium. Difference is measured **+7 Python and +2 React**, not arbitrary project completion percentage.
+- **ObumDelivery native Woodpecker status:** NOT VERIFIED for this exact SmartPloy source; GitHub Actions checks do not substitute for source-admitted, manually pinned, negative-tested product pipeline.
+- **Employer actions/receipts:** ZERO performed or verified in this development run. New 10-minute review status is NOT permission, attempt, or employer acknowledgment. No main merge, no user CV exposed, no OVH production update.
+
+### Required evidence for EVERY further SmartPloy development run
+
+Report (1) core user function advanced with actual path/commit, (2) EXISTING/reused source with original repo, file blob, rights/safety decision and exact adaptation, (3) truly NEW missing code and why reuse was insufficient, (4) test results with SHA and CI job, (5) completed / in progress / not started / blocked states, (6) production/employer acceptance evidence or candid absence, (7) measured rather than imagined engineering speed or time savings. A plan-only edit and GitHub green build NEVER count as completed employer applications.
+
+**Next P0, not yet done:** secure applicant-to-extension pairing on existing MV3 companion, verified employer automation terms, short-lived one-use grant with exact owner/job/CV and transactional redemption against the immutable SP15a claim **before** browser click, two signed-in Chrome/device race and failure tests, truthful uncertain state and independently corroborated employer receipt. Do not restore automatic final click before those are satisfied.
+
+**Release state: HOLD.** Nonproduction source quality improved, production target and native CI remain independently gated. There is no defensible calendar completion ETA without provider permissions and production runner evidence.
+
 ## 1. Product outcome — actual applications, not just CI
 
 SmartPloy must let a user create a truthful reusable applicant profile, search suitable jobs or choose general search, rank and deduplicate opportunities, prepare tailored CV/letter/answers, complete supported employer forms and permitted document transfers, and track each outcome with source-backed evidence.
