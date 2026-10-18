@@ -15,7 +15,7 @@ The **missing specific capability** was putting an applicant-selected CV file in
 | Source and pinned snapshot | Actual functionality examined | Decision |
 |---|---|---|
 | SmartPloy first-party browser-companion/logic.mjs and popup.mjs at ca56d17a | Packet expiry, exact job, owner-reviewed fields, final-submit one-time reservation, receipt inspection | **Reuse unchanged foundations**, extend their popup |
-| SmartPloy smartploy/browser_handoff.py and smartploy/application_workspace.py at ca56d17a | Approved CV/letter text fingerprint, exported PDF and DOCX | Keep existing renderer. No new CV builder. Selected PDF **not yet cryptographically bound** to the packet's text digest |
+| SmartPloy smartploy/browser_handoff.py and smartploy/application_workspace.py at ca56d17a | Approved CV/letter text fingerprint, exported PDF and DOCX | Keep existing renderer. No new CV builder. The v2 handoff now binds the exact deterministic PDF bytes via SHA-256 and size |
 | ObumAI obumellm application and browser modules, inspected main 2026-10-18 | Evidence vault, form mapping, browser session, final preflight, local **staged-only** file upload | Keep these behind ObumAI typed API; **not a functioning live file upload to copy** |
 | [ApplyAI Lever detector, d4a97b](https://github.com/muhammad-saadd/applyai/blob/d4a97b5643aa219592883a43b068fc18dff94678/content_scripts/lever.js) | MIT. Form labels/fields and page selectors | Compared; no third-party browser package introduced. Its default use of OpenAI would require consent and egress review |
 | [Yaima Lever/Ashby/Greenhouse workflow, e5061bc](https://github.com/Yaima/agent-apply/blob/e5061bc0455ea61b75b59edbe73296ab5bbe03ca/agent/forms/apply.py) | MIT. Blocking login/CAPTCHA, human final approval, fallback | Keep SmartPloy’s already-implemented one-click review boundary; do not duplicate the Python runner |
@@ -29,7 +29,7 @@ The **missing specific capability** was putting an applicant-selected CV file in
 1. Scope remains **user-clicked activeTab only**, with no Chrome host permissions, background process or content script auto-injection.
 2. Revalidate the same 15-minute packet, exact Lever employer and job ID, actual /apply form, current active browser tab, existing one-time attempt reservation and selected PDF before any data leaves the extension.
 3. Reject unknown, hidden, multiple, prefilled, changed or unsupported upload inputs. Never attach to an unrelated cover-letter, photo or passport field.
-4. Owner chooses one reviewed PDF <= 2 MiB; check filename, MIME, leading PDF signature, terminal EOF marker and full SHA-256 over bytes before transfer and again in the tab. **Not a malware scanner** or CV truth attestation.
+4. Owner chooses one reviewed PDF <= 2 MiB; check filename, MIME, leading PDF signature, terminal EOF marker, exact v2 handoff SHA-256 and size before transfer, then SHA-256 over transferred bytes again in the tab. **Not a malware scanner** or CV truth attestation.
 5. Show a second confirmation with company, position, filename, byte count and digest; explain that employer-side JavaScript may begin uploading immediately after input/change events.
 6. Do not store bytes, filename or hash persistently. Do not call fetch, submit, CAPTCHA solver, credentials, third-party AI or other site.
 7. Submission remains separately authorized once; preflight must see a file in a **labeled résumé field** rather than an arbitrary file upload. A browser page success remains **browser-observed**, never independently employer-verified.
@@ -44,4 +44,4 @@ The **missing specific capability** was putting an applicant-selected CV file in
 - **ObumDelivery:** independent worker run not claimed.
 - **Production:** existing OVH checkout and website remain unchanged.
 - **Real applicant:** no applicant data uploaded or sent; no employer application submitted.
-- **Future expansion:** document-binary fingerprint integration, user-approved conditional questions, additional allowed ATS providers and durable per-user queue; reuse evaluated first, not wholesale imports.
+- **Future expansion:** user-approved conditional questions, source-backed answer memory, additional allowed ATS providers and durable per-user queue; reuse evaluated first, not wholesale imports.
