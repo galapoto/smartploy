@@ -128,6 +128,13 @@ Report (1) core user function advanced with actual path/commit, (2) EXISTING/reu
 
 **Release state: HOLD.** Nonproduction source quality improved, production target and native CI remain independently gated. There is no defensible calendar completion ETA without provider permissions and production runner evidence.
 
+### SP15c final signed-in HTTP-to-PostgreSQL acceptance (authoritative update)
+
+- **Extra core acceptance delivered** on [SP15c draft PR #162](https://github.com/galapoto/smartploy/pull/162): a real synthetic OIDC-cookie user exercises POST/GET/DELETE review intent over FastAPI into PostgreSQL using the *existing* normalized live Lever candidate, approved profile facts and deterministic CV PDF. Second authenticated user with identical email cannot read the first account's workspace/record; wrong-account delayed mutation returns 409; repeat approval is idempotent; cancellation is read back. **This is a full API+DB integration test, not merely a mocked React call or new auth framework.**
+- **LATEST exact SP15c SHA:** 831ec36ca2ded00fb22138eb2e300213b9718e2f. [GitHub CI #39137543436](https://github.com/galapoto/smartploy/actions/runs/39137543436) **5/5 COMPLETED SUCCESS**. Counts: **654 Python/PostgreSQL**, **90 React**, **28 Chromium**; synthetic Compose/migration/backup/restore and exact-checkout nonrelease receipt succeeded. The prior SP15c SHA 71f2585 and [CI #39137078030](https://github.com/galapoto/smartploy/actions/runs/39137078030) are valid earlier evidence (653 Python, 90 React, 28 Chromium) but **superseded as latest** by this full signed-in path check.
+- **Measured increment vs SP15b:** +8 passing Python/PostgreSQL tests and +2 React tests; Chromium coverage retained. No external employer site was contacted and no user-facing production deployment was performed.
+- **Status:** DONE source-level reviewed-intent lifecycle and signed-in synthetic HTTP/DB acceptance; IN PROGRESS secure MV3 one-time redemption design with trusted provider automation rights; NOT STARTED actual employer final click/verified receipt; BLOCKED live ObumDelivery product Woodpecker, RED probe, owner-authorized CV/ATS staging and OVH release. **Automatic final submit intentionally OFF; release HOLD.**
+
 ## 1. Product outcome — actual applications, not just CI
 
 SmartPloy must let a user create a truthful reusable applicant profile, search suitable jobs or choose general search, rank and deduplicate opportunities, prepare tailored CV/letter/answers, complete supported employer forms and permitted document transfers, and track each outcome with source-backed evidence.
