@@ -108,6 +108,8 @@ jobs:
           node --check browser-companion/popup.mjs
           node --check browser-companion/upload.mjs
           node --check browser-companion/page-attachment.mjs
+          node --check browser-companion/questions.mjs
+          node --check browser-companion/page-questions.mjs
           node --test browser-companion/tests/*.test.mjs
       - name: Web build
         working-directory: web
