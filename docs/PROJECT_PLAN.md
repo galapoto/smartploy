@@ -1,11 +1,20 @@
 # SmartPloy — Master Product Plan (reuse-first AutoApply)
 
-**Status:** PROPOSED PLAN FOR OWNER REVIEW — **NOT** an implementation order, release approval, employer application authorization, or claim of live deployment.  
+**Status:** OWNER-AUTHORIZED IMPLEMENTATION IN PROGRESS (18 October 2026). The user explicitly approved reuse-first coding. This is **NOT** authorization to deploy, submit employer applications, waive security/source rights, or claim production acceptance.  
 **Audit date:** 2026-10-18 (Europe/Helsinki).  
 **Project:** `galapoto/smartploy`; ObumAI-powered independent Finland-first job intelligence and application product.  
 **Existing operational ledger:** [SmartPloy issue #88](https://github.com/galapoto/smartploy/issues/88). The ledger remains the record of what actually shipped; this file is the forward project plan.  
 **Detailed evidence, repository inventory, video/TikTok references and license matrix:** [REUSE_FIRST_AUDIT_2026-10-18.md](REUSE_FIRST_AUDIT_2026-10-18.md).  
 **Source snapshot when this plan was written:** `main@d0ebe59a576f7814c7c3ecb5bc64b104afbf16b1`; substantial product work remains in [draft integrated PR #149](https://github.com/galapoto/smartploy/pull/149) at `ca56d17a06741f5d8f61b7370391abed1373cba9`. The last historical owner-attested OVH release was `fc94e78e779650e781277ee1056ec92cd26a6e98` on 2026-10-12; **this audit did not reverify the running server**.
+
+## Progress checkpoint — SP14 (18 October 2026)
+
+- **Next build candidate:** [Reviewed employer-question PR #153](https://github.com/galapoto/smartploy/pull/153) stacks on SP13 [PR #151](https://github.com/galapoto/smartploy/pull/151); it **does not** rebuild ObumAI's already existing questionnaire generator.
+- **Reuse check:** [SP14 source/policy review](https://github.com/galapoto/smartploy/blob/feature/sp14-reviewed-employer-questions-20261018-v1/docs/REUSE_CHECK_SP14_EMPLOYER_QUESTIONS.md) confirms existing SmartPloy packet, DOM reviewer and one-submit controls plus ObumAI questionnaire/form mapper, Yaima, career-ops and neonwatty alternatives were examined. **No external source code imported.**
+- **New review-only capability:** required ordinary Lever text questions can receive individually reviewed and approved values; Finnish/Swedish/English protected/visa/pay/consent questions are excluded, reactive DOM drift aborts, and neither the extension nor a new service silently persists or submits the answers.
+- **Exact-commit verification:** [CI #39127941695](https://github.com/galapoto/smartploy/actions/runs/39127941695) at `f3bc819010f713e0bd5a0c1b411cf658fbe5fd95` **5/5 SUCCESS**: **624 Python/PostgreSQL, 86 React, 18 synthetic Chromium**; Compose and exact-source review checks also passed. **Not** an actual ObumDelivery Woodpecker or live employer run.
+- **Product limit:** This is per-application human-reviewed text assistance. It is NOT a tenant-scoped approved-answer memory, autonomous browser service, queue, verified employer submission, or live website deployment. Existing consent/legal/source gates stay active.
+- **Next planned reuse:** integrate existing ObumAI questionnaire suggestions through a strict versioned SmartPloy API and tenant-owned approved-answer vault, rather than building a second LLM prompt engine; add bounded queue, provider-specific rights and independently verifiable application results.
 
 ## Progress checkpoint — SP13 (18 October 2026)
 
@@ -181,7 +190,7 @@ An external module fails qualification until all applicable negative and positiv
 
 ## 10. Delivery governance, dependencies and "before build" checkpoint
 
-**This plan is the deliverable for the current audit, NOT a permission to begin incorporation.** Reviewer should approve/change the initial 8 candidate choices and the permission-first scope. Then:
+**The user approved proceeding with implementation on 18 October 2026.** This approval does not waive code-level REUSE-CHECK, third-party licenses, employer terms, personal-data consent, independent security review or deployment authorization. The eight candidates are research priorities, not eight automatically approved imports. The execution sequence is:
 
 1. Create per-feature `REUSE-CHECK` with pinned eligible source and complete audit; ensure no copyrighted unlicensed code was ported.
 2. Build from the *existing* SmartPloy application and ObumAI runtime foundations. Maintain native SmartPloy tenant boundary and migrate only intentional functionality.
