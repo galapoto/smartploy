@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS smartploy_employer_submit_claims (
     document_revision INTEGER NOT NULL CHECK (document_revision > 0),
     document_sha256 TEXT NOT NULL CHECK (length(document_sha256) = 64),
     application_url_sha256 TEXT NOT NULL CHECK (length(application_url_sha256) = 64),
+    employer_job_key_sha256 TEXT NOT NULL CHECK (length(employer_job_key_sha256) = 64),
     state TEXT NOT NULL CHECK (state IN ('reserved_unverified','uncertain')),
     failure_code TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -20,7 +21,8 @@ CREATE TABLE IF NOT EXISTS smartploy_employer_submit_claims (
     CHECK (length(canonical_key) BETWEEN 1 AND 256),
     CHECK (length(workspace_id) BETWEEN 1 AND 160),
     CHECK (length(failure_code) <= 64),
-    UNIQUE (user_id, profile_id, canonical_key)
+    UNIQUE (user_id, profile_id, canonical_key),
+    UNIQUE (user_id, profile_id, employer_job_key_sha256)
 );
 CREATE INDEX IF NOT EXISTS smartploy_employer_submit_claims_owner_idx
     ON smartploy_employer_submit_claims (user_id, profile_id, created_at DESC);

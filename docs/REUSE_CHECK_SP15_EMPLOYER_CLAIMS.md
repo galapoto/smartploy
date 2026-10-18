@@ -11,7 +11,7 @@ Status: draft-review-only, 18 October 2026. No production deployment, no automat
 
 ## New minimal gap
 
-smartploy/employer_submit_claim_storage.py plus migrations/019_employer_submit_claims.sql: separate durable unique account/profile/canonical-job claim. Claims survive changed CV revision and deleted/recreated workspace; no automatic expiry or retries. New account-erasure inventory entry. PostgreSQL source-of-truth checks account activity, quarantine, saved document, revision, application URL, current posting, receipts and legacy submitted CRM before atomic claim. No full CV, email, token or raw employer URL in the ledger.
+smartploy/employer_submit_claim_storage.py plus migrations/019_employer_submit_claims.sql: separate durable unique account/profile/canonical-job claim AND a second uniqueness guard on normalized Lever organisation/job identity, even across source keys, /apply variants, host regions and tracking query strings. Claims survive changed CV revision and deleted/recreated workspace; no automatic expiry or retries. New account-erasure inventory entry. PostgreSQL source-of-truth checks account activity, quarantine, saved document, revision, application URL, current posting, receipts and legacy submitted CRM before atomic claim. No full CV, email, token or raw employer URL in the ledger.
 
 The required explicit-user-approval and employer-rights flags are internal caller preconditions, NOT independently verified proof. No route is registered or permission surfaced to a browser. A row means only an unverified attempt was reserved, not that an employer received an application.
 

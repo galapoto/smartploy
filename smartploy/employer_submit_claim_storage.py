@@ -8,11 +8,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 from uuid import uuid4
+from urllib.parse import urlsplit
 
 from psycopg import connect
 
 from .browser_handoff import HandoffError, PLACEHOLDERS, _posting_url
 from .identity import UserProfileBinding
+
+
+def _employer_job_key_sha256(verified_url: str) -> str:
+    """Same Lever organisation/job across source keys, regions and /apply URLs.
+
+    Only use after browser_handoff._posting_url strictly validates the URL.
+    """
+    parts = urlsplit(verified_url).path.strip("/").split("/")
+    # Lever host is already allowlisted; query/tracking and /apply are ignored.
+    if len(parts) not in (2, 3) or (len(parts) == 3 and parts[2] != "apply"):
+        raise EmployerSubmitClaimDenied("Unrecognized canonical employer job")
+    material = "lever-job-v1\0" + parts[0].casefold() + "\0" + parts[1].casefold()
+    return sha256(material.encode("utf-8")).hexdigest()
 
 
 class EmployerSubmitClaimDenied(ValueError):
@@ -29,6 +43,7 @@ class EmployerSubmitClaim:
     document_revision: int
     document_sha256: str
     application_url_sha256: str
+    employer_job_key_sha256: str
     state: str
     failure_code: str
     created_at: str
@@ -62,7 +77,7 @@ class PostgresEmployerSubmitClaimRepository:
     def _select() -> str:
         return """SELECT claim_id, user_id, profile_id, canonical_key, workspace_id,
                          document_revision, document_sha256, application_url_sha256,
-                         state, failure_code, created_at, updated_at
+                         employer_job_key_sha256, state, failure_code, created_at, updated_at
                   FROM smartploy_employer_submit_claims"""
 
     @staticmethod
@@ -71,9 +86,9 @@ class PostgresEmployerSubmitClaimRepository:
             claim_id=str(row[0]), user_id=str(row[1]), profile_id=str(row[2]),
             canonical_key=str(row[3]), workspace_id=str(row[4]),
             document_revision=int(row[5]), document_sha256=str(row[6]),
-            application_url_sha256=str(row[7]), state=str(row[8]),
-            failure_code=str(row[9] or ""),
-            created_at=row[10].isoformat(), updated_at=row[11].isoformat(),
+            application_url_sha256=str(row[7]), employer_job_key_sha256=str(row[8]),
+            state=str(row[9]), failure_code=str(row[10] or ""),
+            created_at=row[11].isoformat(), updated_at=row[12].isoformat(),
         )
 
     def get(self, binding: UserProfileBinding, canonical_key: str) -> EmployerSubmitClaim | None:
@@ -84,6 +99,28 @@ class PostgresEmployerSubmitClaimRepository:
                 cur.execute(
                     self._select() + " WHERE user_id=%s AND profile_id=%s AND canonical_key=%s",
                     (binding.user_id, binding.profile_id, canonical_key),
+                )
+                row = cur.fetchone()
+        return self._read(row) if row else None
+
+    def get_for_employer_url(
+        self, binding: UserProfileBinding, application_url: str,
+    ) -> EmployerSubmitClaim | None:
+        """Locate a claim even when another imported source has a different key."""
+        if not binding.user_id or not binding.profile_id:
+            raise EmployerSubmitClaimDenied("Verified account required")
+        try:
+            _posting_url(application_url)
+        except (HandoffError, TypeError) as exc:
+            raise EmployerSubmitClaimDenied("Verified Lever employer URL required") from exc
+        employer_key = _employer_job_key_sha256(application_url)
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    self._select() + """
+                        WHERE user_id=%s AND profile_id=%s AND employer_job_key_sha256=%s
+                    """,
+                    (binding.user_id, binding.profile_id, employer_key),
                 )
                 row = cur.fetchone()
         return self._read(row) if row else None
@@ -109,6 +146,7 @@ class PostgresEmployerSubmitClaimRepository:
             _posting_url(expected_application_url)
         except (HandoffError, TypeError) as exc:
             raise EmployerSubmitClaimDenied("Verified HTTPS Lever employer URL required") from exc
+        employer_key = _employer_job_key_sha256(expected_application_url)
 
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
@@ -191,17 +229,20 @@ class PostgresEmployerSubmitClaimRepository:
                 cur.execute(
                     """INSERT INTO smartploy_employer_submit_claims
                        (claim_id,user_id,profile_id,canonical_key,workspace_id,
-                        document_revision,document_sha256,application_url_sha256,state)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'reserved_unverified')
-                       ON CONFLICT (user_id,profile_id,canonical_key) DO NOTHING
+                        document_revision,document_sha256,application_url_sha256,
+                        employer_job_key_sha256,state)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'reserved_unverified')
+                       ON CONFLICT DO NOTHING
                        RETURNING claim_id""",
                     (claim_id, binding.user_id, binding.profile_id, key, workspace_id,
-                     expected_revision, document_hash, url_hash),
+                     expected_revision, document_hash, url_hash, employer_key),
                 )
                 inserted = cur.fetchone() is not None
                 cur.execute(
-                    self._select() + " WHERE user_id=%s AND profile_id=%s AND canonical_key=%s",
-                    (binding.user_id, binding.profile_id, key),
+                    self._select() + """ WHERE user_id=%s AND profile_id=%s
+                       AND (canonical_key=%s OR employer_job_key_sha256=%s)
+                       ORDER BY created_at ASC, claim_id ASC LIMIT 1""",
+                    (binding.user_id, binding.profile_id, key, employer_key),
                 )
                 row = cur.fetchone()
                 if row is None:

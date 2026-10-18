@@ -109,7 +109,8 @@ def scoped():
             "DELETE FROM smartploy_application_workspaces WHERE profile_id IN (%s,%s)",
             (a.profile_id, b.profile_id),
         )
-        conn.execute("DELETE FROM smartploy_jobs WHERE canonical_key=%s", (job_key,))
+        conn.execute("DELETE FROM smartploy_jobs WHERE canonical_key IN (%s,%s)",
+                     (job_key, job_key + "-mirror"))
         for table in ("smartploy_user_identities", "smartploy_user_profiles", "smartploy_users"):
             conn.execute(f"DELETE FROM {table} WHERE user_id IN (%s,%s)", (a.user_id, b.user_id))
 
@@ -228,6 +229,44 @@ def test_uncertain_is_sticky_owner_scoped_and_never_an_automatic_retry(scoped):
     again, new = reserve()
     assert not new and again.state == "uncertain"
     assert ledger.get(a, key).claim_id == item.claim_id
+
+
+def test_two_source_keys_for_same_lever_job_share_one_claim(scoped):
+    a, b, wa, wb, key, url, fp, letter, ledger, reserve = scoped
+    mirror_key = key + "-mirror"
+    mirror_url = url + "/apply?source=other-job-board"
+    mirror_ws = "workspace-mirror-" + uuid4().hex
+    with connect(DSN) as conn:
+        conn.execute(
+            """INSERT INTO smartploy_jobs (
+                 canonical_key,job_id,company,role_title,candidate,
+                 first_seen_at,last_seen_at,source_current
+               ) VALUES (%s,%s,'Test Ltd','Engineer',%s,now(),now(),true)""",
+            (mirror_key, mirror_key, Jsonb({
+                "description_fingerprint": fp,
+                "job": {"application_url": mirror_url},
+            })),
+        )
+        conn.execute(
+            """INSERT INTO smartploy_application_workspaces (
+                 workspace_id,profile_id,canonical_key,role_title,company,
+                 application_url,cv_text,cover_letter_text,job_fingerprint
+               ) VALUES (%s,%s,%s,'Engineer','Test Ltd',%s,%s,%s,%s)""",
+            (mirror_ws, a.profile_id, mirror_key, mirror_url,
+             "Reviewed synthetic resume", letter, fp),
+        )
+    first, created = reserve()
+    assert created
+    second, created = ledger.reserve(
+        a, workspace_id=mirror_ws, expected_revision=1,
+        expected_application_url=mirror_url, expected_job_fingerprint=fp,
+        explicit_final_user_approval=True, employer_submission_permitted=True,
+    )
+    assert not created and first.claim_id == second.claim_id
+    assert first.employer_job_key_sha256 == second.employer_job_key_sha256
+    assert ledger.get(a, mirror_key) is None  # original stored source key differs
+    assert ledger.get_for_employer_url(a, mirror_url).claim_id == first.claim_id
+    assert ledger.get_for_employer_url(b, mirror_url) is None
 
 
 def test_quarantine_blocks_new_claim_and_inventories_existing_marker(scoped):
