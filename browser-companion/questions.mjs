@@ -15,13 +15,22 @@ export const SENSITIVE_QUESTION =
   /\b(?:visa|citizenship|citizen|nationality|sponsor|sponsorship|work permit|right to work|work authori[sz]ation|salary|compensation|wage|expected pay|pay range|eeo|race|ethnic|gender|sex|sexual|religion|politic|union membership|disability|health condition|medical|veteran|military|criminal|felony|convict|background check|privacy|consent|gdpr|agree|agreement|attest|certif(?:y|ication)|signature|passport|social security|government id|tax id|birth date|date of birth|age|bank account|start date|notice period|työlupa|oleskelulupa|kansalaisuus|palkka|henkilötunnus|sukupuoli|uskonto|rikosrekisteri|suostumus|allekirjoitus|arbetstillstånd|medborgarskap|personnummer|samtycke|underskrift|lön|födelsetid|kön)\b/iu;
 
 function tidy(value) {
-  return String(value || "").normalize("NFKC").toLowerCase()
+  return String(value || "").normalize("NFKC")
+    // Browser form attributes may be camelCase: visaStatus, salaryExpectation,
+    // workAuthorization or GDPRConsent must NOT bypass a word-boundary check.
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+    .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
 }
 
+const RESTRICTED_IDENTIFIERS =
+  /(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|citizen|nationality|gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|immigrat|taxid|nationalid|henkilötunnus|sukupuol|kansalaisuu|oleskelulup|työlup|palkka|arbetstillstånd|medborgarskap|personnummer|samtycke)/i;
+
 export function isSensitiveQuestion(row) {
   const material = tidy([row?.label, row?.name, row?.id, row?.placeholder].join(" "));
-  return SENSITIVE_QUESTION.test(material);
+  const identifiers = [row?.id, row?.name, row?.placeholder].map(v=>String(v||"")).join("");
+  return SENSITIVE_QUESTION.test(material) || RESTRICTED_IDENTIFIERS.test(identifiers);
 }
 
 export function planReviewedQuestions(elements) {
