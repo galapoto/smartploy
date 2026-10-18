@@ -39,6 +39,8 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
         /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(a.value) ||
         typeof a.label !== "string" || a.label.length > 150) return false;
     const el = all[a.index];
+    const live = Array.from(document.querySelectorAll("input,textarea,select"));
+    if (!el || !el.isConnected || live.length > 250 || live[a.index] !== el) return false;
     const type = el?.tagName === "TEXTAREA" ? "textarea" :
       el?.tagName === "INPUT" ? (el.type || "text").toLowerCase() : "";
     if (type !== a.type || !el.closest("form") || el.disabled || el.readOnly ||
