@@ -50,6 +50,7 @@ steps:
       - node --check browser-companion/page-attachment.mjs
       - node --check browser-companion/questions.mjs
       - node --check browser-companion/page-questions.mjs
+      - node --check browser-companion/attempt-lock.mjs
       - node --test browser-companion/tests/*.test.mjs
 
   - name: exact-source-hold-receipt
