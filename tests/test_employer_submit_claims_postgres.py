@@ -34,7 +34,7 @@ from smartploy.employer_review_intent_storage import (
     EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
 )
 from smartploy.employer_automation_rights import (
-    EmployerRightsDenied, PostgresEmployerAutomationRightsRepository, employer_job_key,
+    PostgresEmployerAutomationRightsRepository, employer_job_key,
 )
 from smartploy.employer_final_action_gate import (
     EmployerFinalActionDenied, PostgresEmployerFinalActionGate,
@@ -996,3 +996,59 @@ def test_final_approval_inventory_is_account_scoped_after_quarantine(scoped):
             a,approval_id=gate.get(a,args["expected_application_url"]).approval_id,
             **args,
         )
+
+
+
+def test_final_approval_claim_insertion_crash_rolls_back_both_records(scoped,monkeypatch):
+    """No ghost employer action claim if persistence fails BEFORE commit."""
+    import smartploy.employer_final_action_gate as action_gate_module
+
+    a,args=final_fixture(scoped)
+    gate=PostgresEmployerFinalActionGate(DSN)
+    approval,_=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    original=action_gate_module.reserve_employer_claim_locked
+
+    def synthetic_crash_after_insert(*call_args,**kw):
+        result=original(*call_args,**kw)
+        assert result[1]
+        raise RuntimeError("synthetic_crash_before_transaction_commit")
+
+    with monkeypatch.context() as local:
+        local.setattr(
+            action_gate_module,"reserve_employer_claim_locked",synthetic_crash_after_insert
+        )
+        with pytest.raises(RuntimeError,match="synthetic_crash"):
+            gate.consume_once_for_trusted_adapter(
+                a,approval_id=approval.approval_id,**args
+            )
+    # On an exception the original PostgreSQL transaction is rolled back
+    # atomically, so the approval remains usable. No external click occurred.
+    assert gate.get(a,args["expected_application_url"]).state=="approved"
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(a,scoped[4]) is None
+    completed=gate.consume_once_for_trusted_adapter(
+        a,approval_id=approval.approval_id,**args
+    )
+    assert completed.claim.state=="reserved_unverified"
+    assert gate.get(a,args["expected_application_url"]).state=="consumed_unverified"
+
+
+def test_employer_rights_expire_after_final_user_approval_before_consume(scoped):
+    """Source acquisition permission cannot substitute for expired automation rights."""
+    a,args=final_fixture(scoped)
+    gate=PostgresEmployerFinalActionGate(DSN)
+    approval,_=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    with connect(DSN) as conn:
+        conn.execute(
+            """UPDATE smartploy_employer_automation_rights
+               SET expires_at=now()-interval '1 minute'
+               WHERE employer_job_key_sha256=%s""",
+            (employer_job_key(args["expected_application_url"]),),
+        )
+    assert not PostgresEmployerAutomationRightsRepository(DSN).inspect(
+        args["expected_application_url"]
+    )["operator_permission_reviewed"]
+    with pytest.raises(EmployerFinalActionDenied,match="permission"):
+        gate.consume_once_for_trusted_adapter(a,approval_id=approval.approval_id,**args)
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(a,scoped[4]) is None

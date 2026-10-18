@@ -722,8 +722,8 @@ export default function ApplicationStudio(props: {
               <p role="status">
                 Independent employer automation rights: {finalAction.operator_permission_reviewed
                   ? "record reviewed" : "not attested"}.
-                Current applicant review: {finalAction.current_applicant_review_recorded
-                  ? "recorded" : "pending"}.
+                Current applicant review: {(finalReview?.review_recorded ??
+                  finalAction.current_applicant_review_recorded) ? "recorded" : "pending"}.
               </p>
               <p className="muted">
                 {finalAction.previous_employer_attempt_reserved

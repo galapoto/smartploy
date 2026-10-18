@@ -200,11 +200,15 @@ describe("Application Studio private-read account boundary", () => {
       "workspace-A", 1, "a".repeat(64), "b".repeat(64), "usr-a"
     ));
     expect(await screen.findByText(/Review recorded temporarily/)).toBeTruthy();
+    expect(screen.getByLabelText("Employer final-action permission").textContent)
+      .toContain("Current applicant review: recorded");
     expect(api.getEmployerAttemptStatus).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button",{name:"Cancel recorded review"}));
     await waitFor(()=>expect(api.cancelEmployerReviewIntent).toHaveBeenCalledWith(
       "workspace-A", "usr-a"
     ));
+    await waitFor(()=>expect(screen.getByLabelText("Employer final-action permission").textContent)
+      .toContain("Current applicant review: pending"));
     expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
   });
 
