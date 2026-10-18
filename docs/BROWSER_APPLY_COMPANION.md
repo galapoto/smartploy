@@ -106,6 +106,23 @@ A code review and real browser QA are required before general deployment.
     reserved for independently verified employer evidence. An observed
     browser page does not increase that count.
 
+## Review employer-specific questions (SP14)
+
+After filling the approved contact fields, choose **Review unanswered questions**.
+The companion lists only required, empty, ordinary text/textarea questions
+eligible for your own answer. Type or paste a *truthful, personally reviewed*
+answer (including a checked draft from ObumAI), then choose **Approve and
+fill reviewed answers (no submit)** and confirm the transfer. The employer
+website may transmit answers when the input/change events fire, even though
+the companion does not submit an application.
+
+Salary, immigration, work authorization, EEO, gender, legally protected
+personal information, privacy/consent, signature, criminal/background and
+other sensitive questions stay manual. So do select, radio, checkbox,
+file, password, hidden and ambiguous controls. A reactive form that moves
+fields mid-fill stops the assistant; re-inspect before trying to finish.
+No answer is saved in browser extension storage. Review the actual employer
+form before preflight. One-time submission still requires a separate approval.
 ## Security and implementation boundaries
 
 - No backend can push a submit order to the companion.
