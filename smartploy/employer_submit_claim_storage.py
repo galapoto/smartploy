@@ -60,6 +60,105 @@ class EmployerSubmitClaim:
         }
 
 
+
+def verified_employer_submit_preflight(
+    cur, binding: UserProfileBinding, *,
+    workspace_id: str, expected_revision: int,
+    expected_application_url: str, expected_job_fingerprint: str,
+) -> tuple[str, str, str]:
+    """Reuse the SAME transactional owner/job/document checks for claim and review.
+
+    Called with a live PostgreSQL cursor inside the caller's transaction.
+    Caller must NOT treat successful preflight as external submit permission.
+    """
+    if (
+        binding.status != "active" or not binding.user_id.startswith("usr-")
+        or not binding.profile_id or not isinstance(workspace_id, str)
+        or not 1 <= len(workspace_id) <= 160
+        or type(expected_revision) is not int or expected_revision <= 0
+        or not isinstance(expected_job_fingerprint, str)
+        or not 1 <= len(expected_job_fingerprint) <= 128
+    ):
+        raise EmployerSubmitClaimDenied("Verified owner and saved review revision required")
+    try:
+        _posting_url(expected_application_url)
+    except (HandoffError, TypeError) as exc:
+        raise EmployerSubmitClaimDenied("Verified HTTPS Lever employer URL required") from exc
+
+    # Same lock order as account erasure: quarantine and claim serialize.
+    cur.execute(
+        """SELECT u.status FROM smartploy_users AS u
+           JOIN smartploy_user_profiles AS p ON p.user_id=u.user_id
+           WHERE u.user_id=%s AND p.profile_id=%s
+           FOR UPDATE OF u, p""",
+        (binding.user_id, binding.profile_id),
+    )
+    owner = cur.fetchone()
+    if owner is None or owner[0] != "active":
+        raise EmployerSubmitClaimDenied("Account disabled or binding mismatch")
+    cur.execute(
+        """SELECT 1 FROM smartploy_account_erasure_requests
+           WHERE user_id=%s AND profile_id=%s AND state='quarantined'""",
+        (binding.user_id, binding.profile_id),
+    )
+    if cur.fetchone():
+        raise EmployerSubmitClaimDenied("Account quarantined")
+    cur.execute(
+        """SELECT canonical_key, application_url, job_fingerprint,
+                  revision, status, cv_text, cover_letter_text
+           FROM smartploy_application_workspaces
+           WHERE workspace_id=%s AND profile_id=%s FOR UPDATE""",
+        (workspace_id, binding.profile_id),
+    )
+    w = cur.fetchone()
+    if (
+        w is None or w[1] != expected_application_url
+        or w[2] != expected_job_fingerprint or w[3] != expected_revision
+        or w[4] != "draft"
+    ):
+        raise EmployerSubmitClaimDenied("Saved workspace changed or already applied")
+    key = str(w[0])
+    cv, letter = str(w[5]), str(w[6])
+    if not cv.strip() or len(letter.strip()) < 60 or PLACEHOLDERS.search(letter):
+        raise EmployerSubmitClaimDenied("Application documents incomplete")
+    cur.execute(
+        """SELECT source_current, closed_at, candidate FROM smartploy_jobs
+           WHERE canonical_key=%s FOR UPDATE""",
+        (key,),
+    )
+    job = cur.fetchone()
+    if job is None or job[0] is not True or job[1] is not None:
+        raise EmployerSubmitClaimDenied("Job is no longer current")
+    candidate = job[2]
+    if (
+        not isinstance(candidate, dict)
+        or candidate.get("description_fingerprint") != expected_job_fingerprint
+        or not isinstance(candidate.get("job"), dict)
+        or candidate["job"].get("application_url") != expected_application_url
+    ):
+        raise EmployerSubmitClaimDenied("Live employer posting differs from saved review")
+    cur.execute(
+        """SELECT 1 FROM smartploy_browser_receipts
+           WHERE profile_id=%s AND workspace_id=%s""",
+        (binding.profile_id, workspace_id),
+    )
+    if cur.fetchone():
+        raise EmployerSubmitClaimDenied("An observed receipt already exists")
+    cur.execute(
+        """SELECT 1 FROM smartploy_applications AS a
+           JOIN smartploy_application_preparations AS p
+             ON p.package_id=a.package_id
+           WHERE p.profile_id=%s AND p.canonical_key=%s
+             AND a.state NOT IN ('preparing','ready_for_review',
+                                 'needs_review','preparation_blocked')
+           LIMIT 1""",
+        (binding.profile_id, key),
+    )
+    if cur.fetchone():
+        raise EmployerSubmitClaimDenied("Previous CRM application requires reconciliation")
+
+    return key, cv, letter
+
 class PostgresEmployerSubmitClaimRepository:
     """Dormant server primitive until authenticated browser handoff is built.
 
@@ -151,77 +250,12 @@ class PostgresEmployerSubmitClaimRepository:
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT set_config('lock_timeout', '5000ms', true)")
-                # Same lock order as account erasure: quarantine and claim serialize.
-                cur.execute(
-                    """SELECT u.status FROM smartploy_users AS u
-                       JOIN smartploy_user_profiles AS p ON p.user_id=u.user_id
-                       WHERE u.user_id=%s AND p.profile_id=%s
-                       FOR UPDATE OF u, p""",
-                    (binding.user_id, binding.profile_id),
+                key, cv, letter = verified_employer_submit_preflight(
+                    cur, binding, workspace_id=workspace_id,
+                    expected_revision=expected_revision,
+                    expected_application_url=expected_application_url,
+                    expected_job_fingerprint=expected_job_fingerprint,
                 )
-                owner = cur.fetchone()
-                if owner is None or owner[0] != "active":
-                    raise EmployerSubmitClaimDenied("Account disabled or binding mismatch")
-                cur.execute(
-                    """SELECT 1 FROM smartploy_account_erasure_requests
-                       WHERE user_id=%s AND profile_id=%s AND state='quarantined'""",
-                    (binding.user_id, binding.profile_id),
-                )
-                if cur.fetchone():
-                    raise EmployerSubmitClaimDenied("Account quarantined")
-                cur.execute(
-                    """SELECT canonical_key, application_url, job_fingerprint,
-                              revision, status, cv_text, cover_letter_text
-                       FROM smartploy_application_workspaces
-                       WHERE workspace_id=%s AND profile_id=%s FOR UPDATE""",
-                    (workspace_id, binding.profile_id),
-                )
-                w = cur.fetchone()
-                if (
-                    w is None or w[1] != expected_application_url
-                    or w[2] != expected_job_fingerprint or w[3] != expected_revision
-                    or w[4] != "draft"
-                ):
-                    raise EmployerSubmitClaimDenied("Saved workspace changed or already applied")
-                key = str(w[0])
-                cv, letter = str(w[5]), str(w[6])
-                if not cv.strip() or len(letter.strip()) < 60 or PLACEHOLDERS.search(letter):
-                    raise EmployerSubmitClaimDenied("Application documents incomplete")
-                cur.execute(
-                    """SELECT source_current, closed_at, candidate FROM smartploy_jobs
-                       WHERE canonical_key=%s FOR UPDATE""",
-                    (key,),
-                )
-                job = cur.fetchone()
-                if job is None or job[0] is not True or job[1] is not None:
-                    raise EmployerSubmitClaimDenied("Job is no longer current")
-                candidate = job[2]
-                if (
-                    not isinstance(candidate, dict)
-                    or candidate.get("description_fingerprint") != expected_job_fingerprint
-                    or not isinstance(candidate.get("job"), dict)
-                    or candidate["job"].get("application_url") != expected_application_url
-                ):
-                    raise EmployerSubmitClaimDenied("Live employer posting differs from saved review")
-                cur.execute(
-                    """SELECT 1 FROM smartploy_browser_receipts
-                       WHERE profile_id=%s AND workspace_id=%s""",
-                    (binding.profile_id, workspace_id),
-                )
-                if cur.fetchone():
-                    raise EmployerSubmitClaimDenied("An observed receipt already exists")
-                cur.execute(
-                    """SELECT 1 FROM smartploy_applications AS a
-                       JOIN smartploy_application_preparations AS p
-                         ON p.package_id=a.package_id
-                       WHERE p.profile_id=%s AND p.canonical_key=%s
-                         AND a.state NOT IN ('preparing','ready_for_review',
-                                             'needs_review','preparation_blocked')
-                       LIMIT 1""",
-                    (binding.profile_id, key),
-                )
-                if cur.fetchone():
-                    raise EmployerSubmitClaimDenied("Previous CRM application requires reconciliation")
 
                 claim_id = "employer-claim-" + uuid4().hex
                 document_hash = sha256((cv + "\0" + letter).encode("utf-8")).hexdigest()

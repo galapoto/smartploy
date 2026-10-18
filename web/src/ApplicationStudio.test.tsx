@@ -12,6 +12,9 @@ vi.mock("./api", () => ({
   getLocalAIStatus: vi.fn(),
   getBrowserHandoffReadiness: vi.fn(),
   getEmployerAttemptStatus: vi.fn(),
+  getEmployerReviewIntent: vi.fn(),
+  recordEmployerReviewIntent: vi.fn(),
+  cancelEmployerReviewIntent: vi.fn(),
   getBrowserReceipt: vi.fn(),
   editApplicationWorkspace: vi.fn(),
   deleteApplicationWorkspace: vi.fn(),
@@ -80,6 +83,22 @@ beforeEach(() => {
     will_require_manual_review: true, files_attached: false,
   });
   vi.mocked(api.getBrowserReceipt).mockResolvedValue({ present: false, receipt: null });
+  vi.mocked(api.getEmployerReviewIntent).mockResolvedValue({
+    review_recorded: false, review_state: "not_recorded", expires_at: "",
+    automatic_employer_submit_authorized: false, external_actions_performed: false,
+    browser_grant_issued: false,
+  });
+  vi.mocked(api.recordEmployerReviewIntent).mockResolvedValue({
+    review_recorded: true, review_state: "pending",
+    expires_at: "2099-01-01T00:10:00+00:00",
+    automatic_employer_submit_authorized: false, external_actions_performed: false,
+    browser_grant_issued: false,
+  });
+  vi.mocked(api.cancelEmployerReviewIntent).mockResolvedValue({
+    review_recorded: false, review_state: "cancelled", expires_at: "",
+    automatic_employer_submit_authorized: false, external_actions_performed: false,
+    browser_grant_issued: false,
+  });
   vi.mocked(api.getEmployerAttemptStatus).mockResolvedValue({
     previous_attempt_reserved: false, state: "not_reserved",
     requires_human_reconciliation: false, automatic_employer_submit_authorized: false,
@@ -110,6 +129,70 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Application Studio private-read account boundary", () => {
+  it("records the approved packet hashes for one job and can cancel, without a submit API", async () => {
+    const packet = {
+      schema: "smartploy.browser_handoff.v2" as const,
+      issued_at: new Date().toISOString(),
+      expires_at: "2099-01-01T00:15:00Z",
+      application_url: "https://jobs.lever.co/synthetic/role",
+      company: "Synthetic", role_title: "Review Test",
+      workspace_id: "workspace-A", revision: 1,
+      document_sha256: "a".repeat(64), cv_pdf_sha256: "b".repeat(64),
+      cv_pdf_size: 1024,
+      fields: {full_name:"Test Applicant", first_name:"Test", last_name:"Applicant",
+        email:"test@example.invalid", phone:"", location:"", linkedin:"",github:"",
+        cover_letter:"Approved synthetic cover letter"},
+      privacy: {approved_contact_only:true as const, original_cv_included:false as const,
+        browser_form_fill_allowed_after_user_click:true as const,
+        employer_submit_allowed_without_new_approval:false as const},
+    };
+    vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({
+      packet, external_actions_performed: false,
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", {name:"A private role"})).toBeTruthy();
+    const button=screen.getByRole("button",{name:/Copy approved autofill packet/});
+    await waitFor(()=>expect((button as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(button);
+    const record=await screen.findByRole("button",{name:/Record exact CV and job review/});
+    await waitFor(()=>expect((record as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(record);
+    await waitFor(()=>expect(api.recordEmployerReviewIntent).toHaveBeenCalledWith(
+      "workspace-A", 1, "a".repeat(64), "b".repeat(64), "usr-a"
+    ));
+    expect(await screen.findByText(/Review recorded temporarily/)).toBeTruthy();
+    expect(api.getEmployerAttemptStatus).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button",{name:"Cancel recorded review"}));
+    await waitFor(()=>expect(api.cancelEmployerReviewIntent).toHaveBeenCalledWith(
+      "workspace-A", "usr-a"
+    ));
+    expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+  });
+
+  it("never records the old account's reviewed packet after sign-in changes", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({
+      packet: {
+        workspace_id:"workspace-A", revision:1,
+        document_sha256:"a".repeat(64), cv_pdf_sha256:"b".repeat(64),
+        expires_at:"2099-01-01T00:00:00Z",
+      } as Awaited<ReturnType<typeof api.createBrowserHandoffPacket>>["packet"],
+      external_actions_performed:false,
+    });
+    studio();
+    expect(await screen.findByRole("heading",{name:"A private role"})).toBeTruthy();
+    const copy=screen.getByRole("button",{name:/Copy approved autofill packet/});
+    await waitFor(()=>expect((copy as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(copy);
+    const record=await screen.findByRole("button",{name:/Record exact CV and job review/});
+    activeUser="usr-b";
+    fireEvent.click(record);
+    expect(await screen.findByRole("heading",{name:"Account verification required"})).toBeTruthy();
+    expect(api.recordEmployerReviewIntent).not.toHaveBeenCalled();
+  });
+
+
   it("blocks a fresh private packet after the server reports an uncertain employer attempt", async () => {
     vi.mocked(api.getEmployerAttemptStatus).mockResolvedValue({
       previous_attempt_reserved: true, state: "uncertain",

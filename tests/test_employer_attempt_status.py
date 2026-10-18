@@ -90,3 +90,42 @@ def test_status_has_no_writable_employer_attempt_endpoint(monkeypatch):
         "final_user_approval": True, "employer_submission_permitted": True,
     }, headers={"Origin": ORIGIN, "Sec-Fetch-Site": "same-origin"})
     assert attempt.status_code == 405
+
+
+def test_review_intent_api_never_allows_unauthenticated_or_nonorigin_creation(monkeypatch):
+    api=client_for_owner(monkeypatch)
+    url=PATH.replace("/employer-attempt","/submit-review-intent")
+    body={
+        "expected_revision":1,
+        "expected_document_sha256":"a"*64,"expected_cv_pdf_sha256":"b"*64,
+        "confirm_reviewed_application":True,"acknowledge_manual_only":True,
+    }
+    api.cookies.clear()
+    assert api.post(url,json=body,headers={"Origin":ORIGIN}).status_code==401
+    api=client_for_owner(monkeypatch)
+    assert api.post(url,json=body).status_code==403
+    assert api.post(url,json=body,headers={
+        "Origin":"https://other.obumai.com","Sec-Fetch-Site":"same-site",
+    }).status_code==403
+    assert api.post(url,json=body,headers={
+        "Origin":ORIGIN,"Sec-Fetch-Site":"same-origin",
+    }).status_code==403  # no verified account precondition header
+    assert api.post(url,json={**body,"confirm_reviewed_application":False},headers={
+        "Origin":ORIGIN,"Sec-Fetch-Site":"same-origin",
+    }).status_code==422
+
+
+def test_review_intent_api_raises_503_when_postgres_is_not_configured(monkeypatch):
+    api=client_for_owner(monkeypatch)
+    url=PATH.replace("/employer-attempt","/submit-review-intent")
+    assert api.get(url).status_code==503
+    payload={
+        "expected_revision":1,"expected_document_sha256":"a"*64,
+        "expected_cv_pdf_sha256":"b"*64,
+        "confirm_reviewed_application":True,"acknowledge_manual_only":True,
+    }
+    identity=api.get("/api/v1/session").json()
+    headers={"Origin":ORIGIN,"Sec-Fetch-Site":"same-origin",
+             "X-Smartploy-Expected-User-Id":identity["user_id"]}
+    assert api.post(url,json=payload,headers=headers).status_code==503
+    assert api.delete(url,headers=headers).status_code==503

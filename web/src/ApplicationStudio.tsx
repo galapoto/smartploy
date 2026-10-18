@@ -9,11 +9,13 @@ import {
   getApplicationWorkspaces, markApplicationManuallySent,
   getLocalAIStatus, requestLocalAISuggestions,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
-  getEmployerAttemptStatus, getBrowserReceipt, importBrowserReceipt, getSession
+  getEmployerAttemptStatus, getEmployerReviewIntent,
+  recordEmployerReviewIntent, cancelEmployerReviewIntent,
+  getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
 import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
-import type { EmployerAttemptState } from "./api";
+import type { EmployerAttemptState, EmployerReviewIntentState } from "./api";
 
 const ACCOUNT_CHANGED_NOTICE =
   "Your signed-in SmartPloy account changed or could not be verified. Reload SmartPloy to continue safely.";
@@ -41,6 +43,8 @@ export default function ApplicationStudio(props: {
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
   const [handoff, setHandoff] = useState<BrowserHandoffReadiness | null>(null);
   const [employerAttempt, setEmployerAttempt] = useState<EmployerAttemptState | null>(null);
+  const [finalReview, setFinalReview] = useState<EmployerReviewIntentState | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [handoffPacketText, setHandoffPacketText] = useState("");
   const [browserReceipt, setBrowserReceipt] = useState<BrowserObservedReceipt | null>(null);
@@ -75,10 +79,10 @@ export default function ApplicationStudio(props: {
     ++selectedDraftRef.current.epoch;
     setWorkspaces([]); setSelectedId("");
     setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
-    setHandoff(null); setEmployerAttempt(null); setHandoffPacketText("");
+    setHandoff(null); setEmployerAttempt(null); setFinalReview(null); setHandoffPacketText("");
     setBrowserReceipt(null); setReceiptOpen(false); setReceiptInput("");
     setMessage(""); setError(ACCOUNT_CHANGED_NOTICE);
-    setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false);
+    setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false);
     setAccountBlocked(true); setLoading(false);
   }, []);
 
@@ -190,13 +194,13 @@ export default function ApplicationStudio(props: {
     const key = selected ? JSON.stringify([selected.workspace_id, selected.revision]) : "";
     if (selectedDraftRef.current.key !== key) {
       selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
-      setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false);
+      setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false);
       setAISuggestion(null);
       setCvText(selected?.cv_text || "");
       setLetterText(selected?.cover_letter_text || "");
-      setHandoffPacketText("");
+      setHandoffPacketText(""); setFinalReview(null);
       setReceiptOpen(false); setReceiptInput("");
-      setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null);
+      setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null);
     }
   }, [selected?.workspace_id, selected?.revision]);
 
@@ -210,10 +214,11 @@ export default function ApplicationStudio(props: {
         if (!alive || accountBlockedRef.current) return;
         // Three tenant-scoped reads, with exact identity recheck both before
         // and after. Never publish a stale cross-account server attempt.
-        const [handoffResult, receiptResult, attemptResult] = await Promise.allSettled([
+        const [handoffResult, receiptResult, attemptResult, reviewResult] = await Promise.allSettled([
           getBrowserHandoffReadiness(workspaceId),
           getBrowserReceipt(workspaceId),
           getEmployerAttemptStatus(workspaceId),
+          getEmployerReviewIntent(workspaceId),
         ]);
         if (!alive || accountBlockedRef.current) return;
         await verifyAccount();
@@ -221,11 +226,12 @@ export default function ApplicationStudio(props: {
         setHandoff(handoffResult.status === "fulfilled" ? handoffResult.value : null);
         setBrowserReceipt(receiptResult.status === "fulfilled" ? receiptResult.value.receipt : null);
         setEmployerAttempt(attemptResult.status === "fulfilled" ? attemptResult.value : null);
+        setFinalReview(reviewResult.status === "fulfilled" ? reviewResult.value : null);
       } catch {
         // verifyAccount clears private state and blocks the editor on any
         // missing or different session. Ordinary API failures show no data.
         if (alive && !accountBlockedRef.current) {
-          setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null);
+          setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null);
         }
       }
     })();
@@ -354,6 +360,66 @@ export default function ApplicationStudio(props: {
     } catch (exc) {
       reportActionError(exc, "Unable to copy the application packet.");
     } finally { if (isCurrentDraft(ticket)) setHandoffBusy(false); }
+  }
+
+  /** Records exact reviewed CV/letter, but never authorizes an employer submission. */
+  async function recordFinalReview() {
+    if (!selected || !handoffPacketText || dirty || !handoff?.ready ||
+        !finalReview || employerAttempt?.previous_attempt_reserved ||
+        reviewBusy || browserReceipt) return;
+    let packet;
+    try {
+      packet = JSON.parse(handoffPacketText) as {
+        workspace_id: string; revision: number; expires_at: string;
+        document_sha256: string; cv_pdf_sha256: string;
+      };
+      if (packet.workspace_id !== selected.workspace_id ||
+          packet.revision !== selected.revision ||
+          Date.parse(packet.expires_at) <= Date.now() ||
+          !/^[a-f0-9]{64}$/.test(packet.document_sha256) ||
+          !/^[a-f0-9]{64}$/.test(packet.cv_pdf_sha256)) {
+        throw new Error("Your reviewed application packet changed or expired. Generate a new packet.");
+      }
+    } catch (exc) {
+      reportActionError(exc, "Review packet is invalid.");
+      return;
+    }
+    if (!window.confirm(
+      "RECORD A 10-MINUTE REVIEW FOR " + selected.role_title + " AT " + selected.company + "?\n\n" +
+      "I have reviewed the exact CV PDF, letter and job. This only records my review; " +
+      "it DOES NOT submit the application or authorize SmartPloy to click the employer's Submit button."
+    )) return;
+    const ticket = captureDraft(selected);
+    setReviewBusy(true); setError(""); setMessage("");
+    try {
+      const item = await runPrivateAction(
+        () => recordEmployerReviewIntent(
+          selected.workspace_id, selected.revision,
+          packet.document_sha256, packet.cv_pdf_sha256, props.expectedUserId
+        ), ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
+      setFinalReview(item);
+      setMessage("Review recorded temporarily. No application was sent and no browser authorization was issued.");
+    } catch (exc) {
+      reportActionError(exc, "Review was not recorded.");
+    } finally { if (isCurrentDraft(ticket)) setReviewBusy(false); }
+  }
+
+  async function cancelFinalReview() {
+    if (!selected || !finalReview?.review_recorded || reviewBusy) return;
+    const ticket = captureDraft(selected);
+    setReviewBusy(true); setError(""); setMessage("");
+    try {
+      const result = await runPrivateAction(
+        () => cancelEmployerReviewIntent(selected.workspace_id, props.expectedUserId), ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
+      setFinalReview(result);
+      setMessage("Review cancelled. No employer application was submitted.");
+    } catch (exc) {
+      reportActionError(exc, "Unable to cancel the review.");
+    } finally { if (isCurrentDraft(ticket)) setReviewBusy(false); }
   }
 
   async function onImportObservedReceipt() {
@@ -627,6 +693,25 @@ export default function ApplicationStudio(props: {
               onFocus={(event) => event.currentTarget.select()}
               aria-label="Select and copy the private short-lived browser packet" />
             <p>Copied packets contain approved contact information. Never share them in chat or public issues.</p>
+          </div> : null}
+          {handoffPacketText ? <div className="studio-packet-fallback" aria-label="Exact application final review">
+            <strong>Final review record · no application submitted</strong>
+            <p className="muted">This records only your review of the exact CV PDF and letter for 10 minutes.
+              It is not a browser permission, job application or employer receipt.</p>
+            {finalReview?.review_recorded ? <>
+              <p role="status">Review recorded until {new Date(finalReview.expires_at).toLocaleTimeString()}.
+                Automatic employer submission remains unavailable.</p>
+              <button type="button" className="outline-btn compact"
+                disabled={reviewBusy} onClick={() => void cancelFinalReview()}>
+                Cancel recorded review
+              </button>
+            </> : <button type="button" className="secondary-btn"
+              disabled={reviewBusy || !finalReview || !handoff?.ready || dirty ||
+                employerAttempt?.previous_attempt_reserved === true}
+              onClick={() => void recordFinalReview()}>
+              {reviewBusy ? "Recording…" : "Record exact CV and job review (no submit)"}
+            </button>}
+            {!finalReview ? <p role="status">Durable review service unavailable. No authorization can be recorded.</p> : null}
           </div> : null}
           <p className="studio-handoff-disclaimer">
             Browser-only, 15-minute packet. Upload your CV on the employer's page and answer

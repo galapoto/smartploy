@@ -27,6 +27,9 @@ from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, ne
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from .browser_handoff import HandoffError, make_browser_packet, review_handoff
 from .employer_submit_claim_storage import EmployerSubmitClaimDenied, PostgresEmployerSubmitClaimRepository
+from .employer_review_intent_storage import (
+    EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
+)
 from .browser_receipt import ReceiptError, validate_browser_receipt
 from .browser_receipt_storage import (
     ReceiptConflict, MemoryBrowserReceiptRepository, PostgresBrowserReceiptRepository,
@@ -206,6 +209,15 @@ class BrowserHandoffPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     confirm_private_data_transfer: bool
+
+
+class EmployerReviewIntentPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    expected_document_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    confirm_reviewed_application: StrictBool
+    acknowledge_manual_only: StrictBool
 
 
 class BrowserReceiptImportPayload(BaseModel):
@@ -444,6 +456,7 @@ def create_app(
     app.state.browser_receipts = PostgresBrowserReceiptRepository(dsn) if dsn else MemoryBrowserReceiptRepository()
     # SP15b: read-only employer claim posture. No memory fallback, issuer or final-click API.
     app.state.employer_claims = PostgresEmployerSubmitClaimRepository(dsn) if dsn else None
+    app.state.employer_review_intents = PostgresEmployerReviewIntentRepository(dsn) if dsn else None
     app.state.local_ai = LocalDraftClient(LocalDraftSettings.from_env())
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
@@ -1233,6 +1246,142 @@ def create_app(
                 "X-Content-Type-Options": "nosniff",
                 "Referrer-Policy": "no-referrer",
             },
+        )
+
+    def signed_in_employer_review(request: Request) -> UserProfileBinding:
+        """Reuse verified OIDC identity and same-origin middleware, no CF fallback.
+
+        A content-script or a different-origin page never receives a new
+        browser authorization by presenting an arbitrary account header.
+        """
+        _, binding = tenant_context(request)
+        if (
+            binding is None or not authentication.oidc_enabled
+            or not request.cookies.get(SESSION_COOKIE_NAME)
+        ):
+            raise HTTPException(status_code=403, detail="Signed-in SmartPloy session required")
+        fetch_site = request.headers.get("Sec-Fetch-Site", "").casefold()
+        if fetch_site not in {"", "same-origin", "none"}:
+            raise HTTPException(status_code=403, detail="Use SmartPloy on the same origin")
+        supplied_origin = request.headers.get("Origin", "")
+        if supplied_origin and supplied_origin != public_origin:
+            raise HTTPException(status_code=403, detail="Use SmartPloy on the same origin")
+        return binding
+
+    def _review_intent_repository() -> PostgresEmployerReviewIntentRepository:
+        repo = app.state.employer_review_intents
+        if repo is None:
+            raise HTTPException(status_code=503, detail="Durable review state unavailable")
+        return repo
+
+    def _review_workspace(
+        workspace_id: str, binding: UserProfileBinding,
+    ) -> Any:
+        workspace = app.state.workspace_repository.get(binding.profile_id, workspace_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        return workspace
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/submit-review-intent")
+    def read_employer_review_intent(workspace_id: str, request: Request) -> JSONResponse:
+        binding = signed_in_employer_review(request)
+        repo = _review_intent_repository()
+        workspace = _review_workspace(workspace_id, binding)
+        try:
+            item = repo.get(binding, workspace.application_url)
+        except EmployerReviewIntentDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Review state unavailable") from exc
+        status = item.public_status(
+            workspace_id=workspace_id, revision=workspace.revision
+        ) if item else {
+            "review_recorded": False, "review_state": "not_recorded",
+            "expires_at": "", "automatic_employer_submit_authorized": False,
+            "external_actions_performed": False, "browser_grant_issued": False,
+        }
+        return JSONResponse(
+            status, headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"},
+        )
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/submit-review-intent")
+    def record_employer_review_intent(
+        workspace_id: str, payload: EmployerReviewIntentPayload, request: Request,
+    ) -> JSONResponse:
+        binding = signed_in_employer_review(request)
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin account review required")
+        if (
+            payload.confirm_reviewed_application is not True
+            or payload.acknowledge_manual_only is not True
+        ):
+            raise HTTPException(status_code=422, detail="Explicit final-review acknowledgement required")
+        repo = _review_intent_repository()
+        workspace = _review_workspace(workspace_id, binding)
+        tenant, _ = tenant_context(request)
+        if app.state.employer_claims is None:
+            raise HTTPException(status_code=503, detail="Employer attempt ledger unavailable")
+        if existing_employer_claim(binding, workspace) is not None:
+            raise HTTPException(status_code=409, detail="A prior employer attempt requires reconciliation")
+        if workspace.revision != payload.expected_revision:
+            raise HTTPException(status_code=409, detail="Application revision changed")
+        try:
+            packet = make_browser_packet(workspace, tenant.get_job(workspace.canonical_key), tenant.profile())
+        except HandoffError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if (
+            packet["document_sha256"] != payload.expected_document_sha256
+            or packet["cv_pdf_sha256"] != payload.expected_cv_pdf_sha256
+        ):
+            raise HTTPException(status_code=409, detail="Reviewed CV/document hashes changed")
+        try:
+            item, fresh = repo.prepare(
+                binding, workspace_id=workspace_id,
+                expected_revision=workspace.revision,
+                expected_application_url=workspace.application_url,
+                expected_job_fingerprint=workspace.job_fingerprint,
+                expected_document_sha256=packet["document_sha256"],
+                expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                explicit_user_review=True, acknowledge_no_automatic_submit=True,
+            )
+        except EmployerReviewIntentDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Review persistence unavailable") from exc
+        return JSONResponse(
+            {
+                **item.public_status(workspace_id=workspace_id, revision=workspace.revision),
+                "new_review_recorded": fresh,
+            },
+            headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"},
+        )
+
+    @app.delete("/api/v1/application-workspaces/{workspace_id}/submit-review-intent")
+    def cancel_employer_review_intent(workspace_id: str, request: Request) -> JSONResponse:
+        binding = signed_in_employer_review(request)
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin cancellation required")
+        repo = _review_intent_repository()
+        workspace = _review_workspace(workspace_id, binding)
+        try:
+            item = repo.cancel(binding, application_url=workspace.application_url)
+        except EmployerReviewIntentDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Review cancellation unavailable") from exc
+        return JSONResponse(
+            {
+                "review_recorded": False, "review_state": "cancelled" if item else "not_recorded",
+                "expires_at": "", "automatic_employer_submit_authorized": False,
+                "external_actions_performed": False, "browser_grant_issued": False,
+            },
+            headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"},
         )
 
     @app.get("/api/v1/application-workspaces/{workspace_id}/handoff-readiness")

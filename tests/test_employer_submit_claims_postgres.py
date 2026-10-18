@@ -24,6 +24,9 @@ from smartploy.account_erasure import (
 from smartploy.employer_submit_claim_storage import (
     EmployerSubmitClaimDenied, PostgresEmployerSubmitClaimRepository,
 )
+from smartploy.employer_review_intent_storage import (
+    EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
+)
 from smartploy.identity import AuthenticatedPrincipal, PostgresIdentityRepository
 from smartploy.storage import PostgresJobRepository
 
@@ -90,6 +93,10 @@ def scoped():
     yield a, b, wa, wb, job_key, url, fingerprint, letter, ledger, reserve
 
     with connect(DSN) as conn:
+        conn.execute(
+            "DELETE FROM smartploy_employer_review_intents WHERE user_id IN (%s,%s)",
+            (a.user_id, b.user_id),
+        )
         conn.execute(
             "DELETE FROM smartploy_employer_submit_claims WHERE user_id IN (%s,%s)",
             (a.user_id, b.user_id),
@@ -351,3 +358,150 @@ def test_signed_in_api_status_is_account_scoped_and_never_submission_authority(s
     other = api.get(b_path)
     assert other.status_code == 200
     assert other.json()["previous_attempt_reserved"] is False
+
+
+def test_review_intent_shared_existing_preflight_and_owner_scope(scoped):
+    a, b, wa, wb, key, url, fingerprint, letter, _, _ = scoped
+    intent_repo = PostgresEmployerReviewIntentRepository(DSN)
+    digest = sha256((
+        "Reviewed synthetic resume with sufficient content" + "\0" + letter
+    ).encode()).hexdigest()
+
+    def prepare(binding=a, workspace_id=wa, revision=1, doc=digest, pdf="e" * 64,
+                approved=True, manual=True):
+        return PostgresEmployerReviewIntentRepository(DSN).prepare(
+            binding, workspace_id=workspace_id, expected_revision=revision,
+            expected_application_url=url, expected_job_fingerprint=fingerprint,
+            expected_document_sha256=doc, expected_cv_pdf_sha256=pdf,
+            explicit_user_review=approved, acknowledge_no_automatic_submit=manual,
+        )
+
+    with pytest.raises(EmployerReviewIntentDenied, match="acknowledgements"):
+        prepare(approved=False)
+    with pytest.raises(EmployerReviewIntentDenied, match="acknowledgements"):
+        prepare(manual=False)
+    with pytest.raises(EmployerReviewIntentDenied, match="digest"):
+        prepare(doc="f" * 64)
+    with pytest.raises(EmployerReviewIntentDenied, match="workspace"):
+        prepare(binding=b, workspace_id=wa)
+    assert intent_repo.get(a, url) is None
+    assert intent_repo.get(b, url) is None
+
+    first, inserted = prepare()
+    assert inserted
+    assert first.state == "pending"
+    assert first.document_sha256 == digest
+    assert first.cv_pdf_sha256 == "e" * 64
+    status = first.public_status(workspace_id=wa, revision=1)
+    assert status["review_recorded"] is True
+    assert status["automatic_employer_submit_authorized"] is False
+    assert status["browser_grant_issued"] is False
+    assert status["external_actions_performed"] is False
+    assert "usr-" not in str(status) and url not in str(status)
+    assert intent_repo.get(b, url) is None
+    second, created = prepare()
+    assert not created and second.intent_id == first.intent_id
+    assert second.created_at == first.created_at
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        raced = list(pool.map(lambda _: prepare(), range(8)))
+    assert sum(int(created) for _, created in raced) == 0
+    assert len({intent.intent_id for intent, _ in raced}) == 1
+
+    another, created = prepare(binding=b, workspace_id=wb)
+    assert created
+    assert another.user_id == b.user_id
+    assert intent_repo.get(a, url).intent_id == first.intent_id
+    assert intent_repo.get(b, url).intent_id == another.intent_id
+
+
+def test_review_cancellation_reapproval_and_revision_drift(scoped):
+    a, _, wa, _, _, url, fp, letter, _, _ = scoped
+    repo = PostgresEmployerReviewIntentRepository(DSN)
+    original = sha256(("Reviewed synthetic resume with sufficient content" + "\0" + letter).encode()).hexdigest()
+
+    def prep(rev=1, doc=original):
+        return repo.prepare(
+            a, workspace_id=wa, expected_revision=rev,
+            expected_application_url=url, expected_job_fingerprint=fp,
+            expected_document_sha256=doc, expected_cv_pdf_sha256="a"*64,
+            explicit_user_review=True, acknowledge_no_automatic_submit=True,
+        )
+
+    old, created = prep()
+    assert created
+    with connect(DSN) as conn:
+        conn.execute(
+            """UPDATE smartploy_application_workspaces
+               SET revision=2, cv_text='Updated reviewed CV'
+               WHERE workspace_id=%s""", (wa,),
+        )
+    with pytest.raises(EmployerReviewIntentDenied, match="changed"):
+        prep()
+    new_digest = sha256(("Updated reviewed CV" + "\0" + letter).encode()).hexdigest()
+    with pytest.raises(EmployerReviewIntentDenied, match="different review"):
+        prep(rev=2, doc=new_digest)
+    assert repo.get(a, url).public_status(workspace_id=wa, revision=2)["review_recorded"] is False
+    cancelled = repo.cancel(a, application_url=url)
+    assert cancelled.state == "cancelled"
+    renewed, inserted = prep(rev=2, doc=new_digest)
+    assert inserted and renewed.intent_id != old.intent_id
+    assert repo.get(a, url).public_status(workspace_id=wa, revision=2)["review_recorded"] is True
+
+
+def test_review_intent_rejects_existing_employer_submit_claim_and_disabled_account(scoped):
+    a, _, wa, _, key, url, fp, letter, _, reserve = scoped
+    repo = PostgresEmployerReviewIntentRepository(DSN)
+    digest = sha256(("Reviewed synthetic resume with sufficient content"+"\0"+letter).encode()).hexdigest()
+    claim, created = reserve()
+    assert created
+    with pytest.raises(EmployerReviewIntentDenied, match="reconciliation"):
+        repo.prepare(
+            a, workspace_id=wa, expected_revision=1,
+            expected_application_url=url, expected_job_fingerprint=fp,
+            expected_document_sha256=digest, expected_cv_pdf_sha256="a"*64,
+            explicit_user_review=True, acknowledge_no_automatic_submit=True,
+        )
+    assert repo.get(a, url) is None
+    PostgresAccountErasureRepository(DSN).quarantine(a.user_id, a.profile_id)
+    with pytest.raises(EmployerReviewIntentDenied, match="disabled|binding"):
+        repo.prepare(
+            a, workspace_id=wa, expected_revision=1,
+            expected_application_url=url, expected_job_fingerprint=fp,
+            expected_document_sha256=digest, expected_cv_pdf_sha256="a"*64,
+            explicit_user_review=True, acknowledge_no_automatic_submit=True,
+        )
+
+
+def test_review_intent_included_in_erasure_inventory(scoped):
+    a, _, wa, _, _, url, fp, letter, _, _ = scoped
+    repo = PostgresEmployerReviewIntentRepository(DSN)
+    digest = sha256(("Reviewed synthetic resume with sufficient content"+"\0"+letter).encode()).hexdigest()
+    repo.prepare(
+        a, workspace_id=wa, expected_revision=1,
+        expected_application_url=url, expected_job_fingerprint=fp,
+        expected_document_sha256=digest, expected_cv_pdf_sha256="a"*64,
+        explicit_user_review=True, acknowledge_no_automatic_submit=True,
+    )
+    PostgresAccountErasureRepository(DSN).quarantine(a.user_id, a.profile_id)
+    inventory = inspect_quarantined_account(DSN, a.user_id, a.profile_id)
+    assert inventory.counts["employer_review_intents"] == 1
+    assert inventory.unknown_owner_tables == ()
+
+
+def test_intent_state_does_not_depend_on_cv_text_or_version_in_public_projection(scoped):
+    a, _, wa, _, _, url, fp, letter, _, _ = scoped
+    repo = PostgresEmployerReviewIntentRepository(DSN)
+    digest = sha256(("Reviewed synthetic resume with sufficient content"+"\0"+letter).encode()).hexdigest()
+    record, _ = repo.prepare(
+        a, workspace_id=wa, expected_revision=1,
+        expected_application_url=url, expected_job_fingerprint=fp,
+        expected_document_sha256=digest, expected_cv_pdf_sha256="a"*64,
+        explicit_user_review=True, acknowledge_no_automatic_submit=True,
+    )
+    for rev in (1,2,20):
+        status=record.public_status(workspace_id=wa,revision=rev)
+        assert status["browser_grant_issued"] is False
+        assert status["automatic_employer_submit_authorized"] is False
+        assert "intent_id" not in status and "document_sha256" not in status
+    assert record.public_status(workspace_id=wa,revision=2)["review_recorded"] is False
