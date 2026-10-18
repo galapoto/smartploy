@@ -6,6 +6,7 @@ import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, MAX_PD
 import { attachReviewedPdf } from "./page-attachment.mjs";
 import { QuestionError, planReviewedQuestions, validateReviewedAnswers } from "./questions.mjs";
 import { fillReviewedAnswers } from "./page-questions.mjs";
+import { AttemptError, oneAttemptKey, withSubmissionLock } from "./attempt-lock.mjs";
 
 const $ = (id) => document.getElementById(id);
 let targetTabId = null;
@@ -22,7 +23,7 @@ function status(message, success = false) {
 }
 
 function normalizeError(error) {
-  if (error instanceof PacketError || error instanceof UploadError || error instanceof QuestionError) return error.message;
+  if (error instanceof PacketError || error instanceof UploadError || error instanceof QuestionError || error instanceof AttemptError) return error.message;
   const value = error instanceof Error ? error.message : "";
   if (/^No tab with id|Cannot access contents|Missing host permission|The extensions gallery/.test(value)) {
     return "Open the employer job page in the active browser tab and try again.";
@@ -596,17 +597,8 @@ async function onPreflight() {
   } catch (error) { status(normalizeError(error)); }
 }
 
-async function oneAttemptKey(packet) {
-  const material = [
-    packet.application_url, packet.workspace_id, packet.revision, packet.document_sha256
-  ].join("\0");
-  const data = new TextEncoder().encode(material);
-  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
-  return "smartploy.submit." + [...bytes].map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
 async function onSubmit() {
-  if (!currentPacket || !preflightPassed || !($("approve").checked) || attemptReserved) return;
+  if (!currentPacket || !preflightPassed || !$("approve").checked || attemptReserved) return;
   try {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
@@ -617,36 +609,48 @@ async function onSubmit() {
       "This may send personal information and your uploaded CV to the employer. " +
       "You will not be able to undo that submission. SmartPloy will not retry automatically."
     )) return;
-    const fresh = await chrome.scripting.executeScript({
-      target: {tabId: tab.id}, func: inspectFinalSubmit,
-      args: [currentPacket.application_url]
-    });
-    if (!fresh?.[0]?.result?.ready) {
-      throw new PacketError("Employer form readiness changed. Check required fields again.");
-    }
     const key = await oneAttemptKey(currentPacket);
-    const existing = await chrome.storage.local.get(key);
-    if (existing[key]) {
-      throw new PacketError("This job/application was already attempted by the companion. Check the employer for a receipt; no retry.");
-    }
-    // Reserve BEFORE the consequential click. A browser crash will leave the
-    // attempt ambiguous, never silently click a second time.
-    await chrome.storage.local.set({[key]: {
-      attempted_at: new Date().toISOString(),
-      state: "reserved_unverified"
-    }});
-    attemptReserved = true;
-    preflightPassed = false;
-    $("submit").disabled = true;
-    const [result] = await chrome.scripting.executeScript({
-      target: {tabId: tab.id}, func: submitOnce,
-      args: [currentPacket.application_url]
+    const verdict = await withSubmissionLock(key, navigator.locks, async () => {
+      // The Web Locks exclusive lease serializes all extension popups in this
+      // browser profile. A changed document revision CANNOT bypass the
+      // existing job-scoped one-attempt marker.
+      const live = await activeTab();
+      validatePacket(currentPacketToJSON(), live.url);
+      if (live.id !== targetTabId || live.url !== tab.url) {
+        throw new PacketError("Employer tab changed during approval; reinspect.");
+      }
+      const existing = await chrome.storage.local.get(key);
+      if (existing[key]) {
+        throw new PacketError(
+          "This job/application already had a companion attempt, even with another CV revision. Do not retry."
+        );
+      }
+      const fresh = await chrome.scripting.executeScript({
+        target: {tabId: live.id}, func: inspectFinalSubmit,
+        args: [currentPacket.application_url]
+      });
+      if (!fresh?.[0]?.result?.ready) {
+        throw new PacketError("Employer form is no longer ready; complete the required fields.");
+      }
+      // Reserve before ANY final click. If the popup/browser crashes, a
+      // future attempt is blocked until an independent human reconciles it.
+      await chrome.storage.local.set({[key]: {
+        attempted_at: new Date().toISOString(),
+        state: "reserved_unverified"
+      }});
+      attemptReserved = true;
+      preflightPassed = false;
+      $("submit").disabled = true;
+      const [result] = await chrome.scripting.executeScript({
+        target: {tabId: live.id}, func: submitOnce,
+        args: [currentPacket.application_url]
+      });
+      return result?.result;
     });
-    const verdict = result?.result;
     status(verdict?.reason || "Submission outcome is uncertain; do not repeat the click.",
       verdict?.status === "attempted_unverified");
     $("preflight").textContent =
-      "Submission attempt reserved. Check the employer website for an application receipt or reference.";
+      "Submission attempt reserved for this job across all document revisions. Check the employer for a receipt.";
   } catch (error) {
     status(normalizeError(error));
   }
