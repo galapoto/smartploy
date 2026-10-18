@@ -20,7 +20,7 @@ async function setup(page: Page) {
     }
     await route.fulfill({
       status: 200, contentType: "text/html",
-      body: \`<!doctype html><html><body>
+      body: `<!doctype html><html><body>
         <form id="application">
           <label for="resume_file">Résumé</label>
           <input id="resume_file" type="file" name="resume" accept="application/pdf">
@@ -32,7 +32,7 @@ async function setup(page: Page) {
           window.uploadEvents = 0; window.submissions = 0;
           document.getElementById('resume_file').addEventListener('change', () => window.uploadEvents++);
           document.getElementById('application').addEventListener('submit', (e) => {e.preventDefault(); window.submissions++;});
-        </script></body></html>\`
+        </script></body></html>`
     });
   });
   await page.goto(JOB_URL);
