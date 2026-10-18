@@ -1,4 +1,4 @@
--- Internal-only one-attempt employer ledger; distinct from ObumAI draft dispatch.
+-- Internal-only one-attempt employer ledger distinct from ObumAI draft dispatch.
 -- Sticky across workspace deletion, CV revision, app restart and browser devices.
 -- No private CV, contact, bearer token, application URL or external payload.
 CREATE TABLE IF NOT EXISTS smartploy_employer_submit_claims (
