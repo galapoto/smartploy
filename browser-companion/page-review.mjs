@@ -1,6 +1,6 @@
 /* Serialized by chrome.scripting.executeScript ONLY into a tab whose URL was
    independently verified to be the signed-in SmartPloy origin. This function
-   is self-contained for the MV3 MAIN world. It does NOT read document.cookie,
+   is self-contained for the MV3 MAIN world. It does NOT inspect cookies,
    access employer pages or transfer a login token to the extension. */
 export async function verifyReviewOnSmartPloy(requested) {
   const origin = "https://smartploy.obumai.com";

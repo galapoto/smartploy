@@ -692,7 +692,7 @@ def test_review_companion_verification_reuses_owner_job_document_and_intent_lock
     assert verified.public_status(workspace_id=wa,revision=1)["browser_grant_issued"] is False
     with pytest.raises(EmployerReviewIntentDenied,match="workspace"):
         repo.verify_for_companion(b,**args)
-    with pytest.raises(EmployerReviewIntentDenied,match="review"):
+    with pytest.raises(EmployerReviewIntentDenied,match="inconsistent"):
         repo.verify_for_companion(a,**{**args,"expected_cv_pdf_sha256":"a"*64})
     repo.cancel(a,application_url=url)
     with pytest.raises(EmployerReviewIntentDenied,match="cancelled"):
