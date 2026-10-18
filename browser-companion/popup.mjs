@@ -86,10 +86,29 @@ function inspectForm() {
    Use page-native value setters so React-controlled forms observe edits. */
 function fillPlanned(actions, exactUrl) {
   function visible(el) {
-    if (el.closest("[hidden],[aria-hidden='true'],[inert]")) return false;
+    if (!el || !el.isConnected ||
+        el.closest("[hidden],[aria-hidden='true'],[inert]")) return false;
     const style = getComputedStyle(el);
     return style.display !== "none" && style.visibility !== "hidden" &&
       el.getClientRects().length > 0;
+  }
+  function labelFor(el) {
+    return String(el.labels?.[0]?.innerText ||
+      el.getAttribute("aria-label") ||
+      (el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.innerText : "") ||
+      el.getAttribute("placeholder") || el.getAttribute("name") || el.id || "")
+      .trim().slice(0,150);
+  }
+  function unsafeMetadata(el) {
+    const fields = [labelFor(el), el.getAttribute("name"),
+      el.id, el.getAttribute("placeholder"), el.getAttribute("autocomplete")];
+    const material = fields.map(x => String(x || "")).join(" ")
+      .normalize("NFKC").replace(/([a-z0-9])([A-Z])/g,"$1 $2")
+      .replace(/([A-Z])([A-Z][a-z])/g,"$1 $2")
+      .toLowerCase().replace(/[^\p{L}\p{N}]+/gu," ");
+    if (/\b(?:visa|sponsorship|sponsor|immigration|work authorization|work permit|salary|compensation|wage|expected pay|eeo|race|ethnic|gender|sex|sexual|religion|disability|veteran|military|medical|health|criminal|background check|citizenship|nationality|passport|birth|date of birth|age|social security|ssn|gdpr|privacy|consent|agreement|attest|signature|certification|legal|bank account|tax id|company|employer|organization|organisation|referee|recommender|palkka|työlupa|oleskelulupa|kansalaisuus|sukupuoli|uskonto|syntymä|henkilötunnus|suostumus|tietosuoja|arbetstillstånd|medborgarskap|personnummer|samtycke|lön)\b/iu.test(material)) return true;
+    const identifiers = [el.name,el.id,el.getAttribute("placeholder")].join("");
+    return /(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|citizen|nationality|gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|immigrat|taxid|nationalid|gdpr|henkilötunnus|sukupuol|kansalaisuu|oleskelulup|työlup|palkka|arbetstillstånd|medborgarskap|personnummer|samtycke)/i.test(identifiers);
   }
   function sameJob(a, b) {
     try {
@@ -109,18 +128,34 @@ function fillPlanned(actions, exactUrl) {
   }
   const all = Array.from(document.querySelectorAll("input,textarea,select"));
   let filled = 0, skipped = 0;
+  if (all.length > 250) {
+    return {filled:0,skipped:actions.length,blocker:"Employer form is too large; inspect manually."};
+  }
+  const seen = new Set();
   for (const action of actions) {
-    if (!Number.isInteger(action.index) || action.index < 0 || action.index >= all.length) {
-      skipped++; continue;
+    if (!action || !Number.isInteger(action.index) || action.index < 0 ||
+        action.index >= all.length || seen.has(action.index)) {
+      return {filled,skipped,blocker:"Employer form or approved field indices changed. Reinspect manually."};
     }
+    seen.add(action.index);
+    const current = Array.from(document.querySelectorAll("input,textarea,select"));
     const el = all[action.index];
+    if (current.length !== all.length || current[action.index] !== el) {
+      return {filled,skipped,blocker:"Employer form shifted after inspection. Reinspect manually."};
+    }
     const type = el.tagName === "TEXTAREA" ? "textarea" :
       el.tagName === "SELECT" ? "select" : (el.type || "text").toLowerCase();
+    if ((el.id || "") !== action.expected_id ||
+        (el.name || "") !== action.expected_name ||
+        type !== action.expected_type || labelFor(el) !== action.label ||
+        unsafeMetadata(el) || !visible(el)) {
+      return {filled,skipped,blocker:"Approved contact field identity, label or safety metadata changed. Reinspect manually."};
+    }
+    if (current.filter(other => visible(other) && labelFor(other) === action.label).length !== 1) {
+      return {filled,skipped,blocker:"Duplicate visible contact labels require manual review."};
+    }
     if (
-      (el.id || "") !== action.expected_id ||
-      (el.name || "") !== action.expected_name ||
-      type !== action.expected_type ||
-      !visible(el) || el.disabled || el.readOnly ||
+      el.disabled || el.readOnly ||
       !["text", "email", "tel", "url", "search", "textarea"].includes(type) ||
       String(el.value || "").trim() ||
       typeof action.value !== "string" || action.value.length > 10000 ||
@@ -135,8 +170,15 @@ function fillPlanned(actions, exactUrl) {
       el.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
       if (el.value !== action.value) { skipped++; continue; }
       filled++;
+      const after = Array.from(document.querySelectorAll("input,textarea,select"));
+      if (!el.isConnected || after.length !== all.length ||
+          after[action.index] !== el || labelFor(el) !== action.label ||
+          unsafeMetadata(el) || (el.id || "") !== action.expected_id ||
+          (el.name || "") !== action.expected_name) {
+        return {filled,skipped,blocker:"Employer form changed after contact field input. Review manually without retry."};
+      }
     } catch {
-      skipped++;
+      return {filled,skipped,blocker:"Contact field fill outcome is uncertain. Review manually without retry."};
     }
   }
   return { filled, skipped, blocker: "" };
