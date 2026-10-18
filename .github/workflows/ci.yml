@@ -106,7 +106,9 @@ jobs:
         run: |
           node --check browser-companion/logic.mjs
           node --check browser-companion/popup.mjs
-          node --test browser-companion/tests/logic.test.mjs
+          node --check browser-companion/upload.mjs
+          node --check browser-companion/page-attachment.mjs
+          node --test browser-companion/tests/*.test.mjs
       - name: Web build
         working-directory: web
         run: npm run build
