@@ -73,7 +73,7 @@ async function attach(page: Page, payload: Record<string, unknown>) {
 test("a reviewed PDF is locally attached to the unique résumé input, not submitted", async ({page}) => {
   const external = await setup(page);
   const reply = await attach(page, request());
-  expect(reply.status).toBe("attached_locally");
+  expect(reply.status, `Synthetic bridge rejected: ${reply.reason}`).toBe("attached_locally");
   const state = await page.evaluate(() => {
     const cv = document.querySelector<HTMLInputElement>("#resume_file");
     const other = document.querySelector<HTMLInputElement>("#letter_file");
