@@ -28,6 +28,42 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
   const sensitive = /\b(?:visa|citizenship|citizen|nationality|sponsor|sponsorship|work permit|right to work|work authori[sz]ation|salary|compensation|wage|expected pay|pay range|eeo|race|ethnic|gender|sex|sexual|religion|politic|union membership|disability|health condition|medical|veteran|military|criminal|felony|convict|background check|privacy|consent|gdpr|agree|agreement|attest|certif(?:y|ication)|signature|passport|social security|government id|tax id|birth date|date of birth|age|bank account|start date|notice period|työlupa|oleskelulupa|kansalaisuus|palkka|henkilötunnus|sukupuoli|uskonto|rikosrekisteri|suostumus|allekirjoitus|arbetstillstånd|medborgarskap|personnummer|samtycke|underskrift|lön|födelsetid|kön)\b/iu;
   const restrictedIdentifiers =
     /(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|citizen|nationality|gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|immigrat|taxid|nationalid|henkilötunnus|sukupuol|kansalaisuu|oleskelulup|työlup|palkka|arbetstillstånd|medborgarskap|personnummer|samtycke)/i;
+  // Associated <label> nodes and ARIA naming can add hidden-but-meaningful
+  // sensitivity even when the first visible label and field id stay constant.
+  // Treat unresolved ARIA references and unusually large label sets as drift.
+  function liveQuestionMetadata(el) {
+    const labels = Array.from(el.labels || []);
+    const references = (el.getAttribute("aria-labelledby") || "")
+      .trim().split(/\s+/).filter(Boolean);
+    if (labels.length > 8 || references.length > 8) return null;
+    const referenced = references.map(id => document.getElementById(id));
+    if (referenced.some(node => !node)) return null;
+    return [
+      ...labels.map(label => String(label.textContent || "").slice(0, 500)),
+      el.getAttribute("aria-label") || "",
+      ...referenced.map(node => String(node.textContent || "").slice(0, 500)),
+      el.getAttribute("title") || "",
+      el.getAttribute("placeholder") || "",
+      el.id || "", el.name || ""
+    ];
+  }
+  function safeQuestionMetadata(action, el) {
+    const live = liveQuestionMetadata(el);
+    if (!live) return false;
+    const metadata = [
+      action.label, action.expected_id, action.expected_name,
+      action.expected_placeholder, ...live
+    ].join(" ").normalize("NFKC")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
+    const identifiers = [
+      action.expected_id, action.expected_name, action.expected_placeholder,
+      el.id, el.name, el.getAttribute("placeholder"), el.getAttribute("title")
+    ].join("");
+    return !sensitive.test(metadata) && !restrictedIdentifiers.test(identifiers);
+  }
   function labelFor(el) {
     const raw = el.labels?.[0]?.innerText || el.getAttribute("aria-label") ||
       (el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.innerText : "") ||
@@ -57,14 +93,7 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
         getComputedStyle(el).visibility === "hidden" ||
         el.getClientRects().length === 0 ||
         (el.maxLength > 0 && a.value.length > el.maxLength)) return false;
-    const metadata = [a.label, a.expected_id, a.expected_name, a.expected_placeholder]
-      .join(" ").normalize("NFKC")
-      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-      .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
-    const identifiers = [a.expected_id, a.expected_name, a.expected_placeholder].join("");
-    if (sensitive.test(metadata) || restrictedIdentifiers.test(identifiers)) return false;
+    if (!safeQuestionMetadata(a, el)) return false;
     // A second live field with the same visible question could silently steal
     // a reviewed answer even when the original index/id/name remain stable.
     const duplicates = live.filter(other =>
@@ -102,7 +131,8 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       const current = Array.from(document.querySelectorAll("input,textarea,select"));
       if (!el.isConnected || current.length !== all.length ||
           current[action.index] !== el || el.id !== action.expected_id ||
-          el.name !== action.expected_name || labelFor(el) !== action.label) {
+          el.name !== action.expected_name || labelFor(el) !== action.label ||
+          !safeQuestionMetadata(action, el)) {
         return stop("Employer form rerendered after input; re-inspect manually.", filled);
       }
     } catch {
