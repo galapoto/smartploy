@@ -23,7 +23,7 @@ No license evasion, network scraping, CAPTCHA bypass or new runtime dependencies
 ## Step 2. Genuinely NEW minimum missing application code
 
 - NEW browser-companion/page-review.mjs: self-contained, tightly scoped
-  SmartPloy-origin-only active-tab site script. It uses the user's preexisting
+  ISOLATED-world SmartPloy-origin-only active-tab site script. It uses the user's preexisting
   HttpOnly OIDC session only on the same first-party origin and sends a
   bounded, approved-application *hash projection* to the same-origin backend.
   Returns only non-bearer review result with explicit no-submit flags.

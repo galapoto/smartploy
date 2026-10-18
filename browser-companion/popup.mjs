@@ -312,7 +312,7 @@ async function onVerifySmartPloyReview() {
       throw new PacketError("Ephemeral extension storage unavailable. No review can be verified.");
     }
     const [reply] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, world: "MAIN",
+      target: { tabId: tab.id }, world: "ISOLATED",
       func: verifyReviewOnSmartPloy,
       args: [{
         workspace_id: packet.workspace_id,

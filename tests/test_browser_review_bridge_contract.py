@@ -21,7 +21,7 @@ def test_exact_existing_mv3_capabilities_and_no_final_employer_click():
     assert "live[0].click()" not in popup
     assert 'disabled aria-disabled="true"' in markup
     assert "func: verifyReviewOnSmartPloy" in popup
-    assert 'world: "MAIN"' in popup
+    assert 'world: "ISOLATED"' in popup
     assert "chrome.storage.session" in popup
     assert 'verifyReview").addEventListener' in popup
     assert 'id="verifyReview"' in markup

@@ -163,9 +163,11 @@ two-device synthetic browser acceptance. No live employer actions in this patch.
 
 ## SP15d first-party review verification: reused secure transport
 
-The same existing user-clicked Chrome MV3 popup briefly runs a
-first-party-only script on exactly the HTTPS SmartPloy tab, after verifying the
-tab URL. It fetches the user's OIDC-bound first-party session and sends
+The same existing user-clicked Chrome MV3 popup briefly runs an
+ISOLATED-world, first-party-only script on exactly the HTTPS SmartPloy tab,
+after verifying the tab URL. Chrome subjects content-world fetches to the
+webpage origin's same-origin rules without allowing ordinary page scripts
+to redefine the extension's fetch function. It fetches the user's OIDC-bound first-party session and sends
 only document, CV PDF, employer URL and approved-contact-field **hashes**,
 PDF size and revision to the same-origin verify-reviewed-packet API.
 The server recomputes each value from its canonical saved workspace, approved
