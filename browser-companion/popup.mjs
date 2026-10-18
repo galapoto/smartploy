@@ -4,11 +4,14 @@
 import { PacketError, planFields, validatePacket } from "./logic.mjs";
 import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
 import { attachReviewedPdf } from "./page-attachment.mjs";
+import { QuestionError, planSupplementalQuestions, buildOwnerQuestionActions } from "./questions.mjs";
+import { fillReviewedQuestions } from "./page-questions.mjs";
 
 const $ = (id) => document.getElementById(id);
 let targetTabId = null;
 let currentPacket = null;
 let currentPlan = null;
+let currentQuestions = [];
 let inspectedUrl = "";
 let preflightPassed = false;
 let attemptReserved = false;
@@ -19,7 +22,7 @@ function status(message, success = false) {
 }
 
 function normalizeError(error) {
-  if (error instanceof PacketError || error instanceof UploadError) return error.message;
+  if (error instanceof PacketError || error instanceof UploadError || error instanceof QuestionError) return error.message;
   const value = error instanceof Error ? error.message : "";
   if (/^No tab with id|Cannot access contents|Missing host permission|The extensions gallery/.test(value)) {
     return "Open the employer job page in the active browser tab and try again.";
@@ -296,17 +299,39 @@ async function onInspect() {
       throw new PacketError("The employer form is dynamic or too large. Please fill it manually.");
     }
     const candidate = planFields(result.result.elements, pkt);
-    if (!candidate.actions.length && !candidate.skippedUploads.length) {
+    const questions = planSupplementalQuestions(result.result.elements);
+    if (!candidate.actions.length && !candidate.skippedUploads.length && !questions.length) {
       throw new PacketError("No supported empty fields or file inputs were found. Fill this application manually.");
     }
     targetTabId = tab.id;
     currentPacket = pkt;
     inspectedUrl = tab.url;
     currentPlan = candidate;
+    currentQuestions = questions;
     preflightPassed = false;
     attemptReserved = false;
     $("plan").hidden = false;
-    $("submission").hidden = candidate.actions.length > 0;
+    $("submission").hidden = candidate.actions.length > 0 || questions.length > 0;
+    $("fill").disabled = false;
+    $("questionPanel").hidden = questions.length === 0;
+    $("questionAnswers").replaceChildren();
+    for (let i = 0; i < questions.length; i++) {
+      const question = questions[i];
+      const box = document.createElement("div");
+      box.className = "question-answer";
+      const label = document.createElement("label");
+      label.htmlFor = "ownerAnswer" + i;
+      label.textContent = question.label + (question.required ? " (required)" : " (optional)");
+      const answer = document.createElement("textarea");
+      answer.id = "ownerAnswer" + i;
+      answer.className = "question-typed";
+      answer.rows = 3;
+      answer.maxLength = question.maxLength;
+      answer.placeholder = "Type and review your own answer; no AI guesses";
+      answer.autocomplete = "off";
+      box.append(label, answer);
+      $("questionAnswers").append(box);
+    }
     $("uploadInfo").textContent = "";
     $("cvFile").value = "";
     $("attach").disabled = false;
@@ -315,7 +340,9 @@ async function onInspect() {
     $("job").textContent = pkt.role_title + " — " + pkt.company;
     $("summary").textContent =
       candidate.actions.length + " approved contact/cover-letter fields can be filled. " +
-      candidate.skippedUploads.length + " file inputs need review. Only a unique visible CV PDF field can use the approved attachment step.";
+      questions.length + " ordinary employer questions can receive your own typed answers. " +
+      candidate.skippedUploads.length + " file inputs need review. " +
+      "Salary, visas, EEO, legal and other unknown questions remain manual.";
     $("required").textContent =
       candidate.unresolvedRequired.length ?
         "Review these required fields yourself: " + candidate.unresolvedRequired.slice(0, 12).join("; ") : "";
@@ -331,29 +358,63 @@ async function onInspect() {
 }
 
 async function onFill() {
-  if (!currentPacket || !currentPlan) return;
-  if (!window.confirm(
-    "Fill only the displayed approved fields on the selected employer page? " +
-    "No documents will be uploaded and no application will be submitted."
-  )) return;
+  if (!currentPacket || !currentPlan || attemptReserved) return;
   try {
+    // Answers are explicit applicant-keystrokes in ephemeral popup memory.
+    // Never reuse ObumAI drafts or infer answers for unapproved questions.
+    const answers = currentQuestions.map((_, i) => $("ownerAnswer" + i)?.value ?? "");
+    const questionActions = buildOwnerQuestionActions(currentQuestions, answers);
+    if (!window.confirm(
+      "Fill the reviewed contact fields and " + questionActions.length +
+      " personally typed ordinary-question answers at the selected Lever employer? " +
+      "The employer may transmit text immediately when fields change. " +
+      "No files will be attached and no application will be submitted. Continue?"
+    )) return;
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl) {
       throw new PacketError("Reinspect after changing employer tab or URL.");
     }
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: fillPlanned,
-      args: [currentPlan.actions, currentPacket.application_url]
-    });
-    if (!result?.result) throw new PacketError("Employer form did not return fill verification");
-    if (result.result.blocker) throw new PacketError(result.result.blocker);
+    let count = 0, skipped = 0;
+    if (currentPlan.actions.length) {
+      const [result] = await chrome.scripting.executeScript({
+        target: {tabId: tab.id},
+        func: fillPlanned,
+        args: [currentPlan.actions, currentPacket.application_url]
+      });
+      if (!result?.result) throw new PacketError("Employer form did not return fill verification.");
+      if (result.result.blocker) throw new PacketError(result.result.blocker);
+      count += result.result.filled;
+      skipped += result.result.skipped;
+    }
+    if (questionActions.length) {
+      const sameTab = await activeTab();
+      validatePacket(currentPacketToJSON(), sameTab.url);
+      if (sameTab.id !== tab.id || sameTab.url !== inspectedUrl) {
+        throw new PacketError("The employer page changed. Check previously filled fields and reinspect.");
+      }
+      const [reply] = await chrome.scripting.executeScript({
+        target: {tabId: tab.id},
+        func: fillReviewedQuestions,
+        args: [{
+          actions: questionActions,
+          application_url: currentPacket.application_url,
+          inspected_url: inspectedUrl
+        }]
+      });
+      if (!reply?.result || reply.result.status !== "filled_locally") {
+        throw new QuestionError(reply?.result?.reason ||
+          "Employer question filling was not verified. Inspect before any further action.");
+      }
+      count += reply.result.filled;
+    }
     $("submission").hidden = false;
+    $("fill").disabled = true; // A second fill requires a fresh form inspection.
     preflightPassed = false;
     status(
-      "Filled " + result.result.filled + " fields (" + result.result.skipped +
-      " skipped). Review every value. Select a reviewed PDF for explicit attachment or attach manually.", true
+      "Placed " + count + " reviewed values (" + skipped + " skipped). " +
+      "Inspect all answers and complete other questions yourself. " +
+      "No application was submitted or employer receipt verified.", true
     );
   } catch (error) { status(normalizeError(error)); }
 }
@@ -552,6 +613,7 @@ async function onResumeReceipt() {
     targetTabId = tab.id;
     inspectedUrl = tab.url;
     currentPlan = null;
+    currentQuestions = [];
     attemptReserved = true;
     preflightPassed = false;
     $("submission").hidden = false;
