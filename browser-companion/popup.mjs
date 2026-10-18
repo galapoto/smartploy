@@ -4,11 +4,14 @@
 import { PacketError, planFields, validatePacket } from "./logic.mjs";
 import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
 import { attachReviewedPdf } from "./page-attachment.mjs";
+import { QuestionError, planReviewedQuestions, validateReviewedAnswers } from "./questions.mjs";
+import { fillReviewedAnswers } from "./page-questions.mjs";
 
 const $ = (id) => document.getElementById(id);
 let targetTabId = null;
 let currentPacket = null;
 let currentPlan = null;
+let currentQuestionPlan = null;
 let inspectedUrl = "";
 let preflightPassed = false;
 let attemptReserved = false;
@@ -19,7 +22,7 @@ function status(message, success = false) {
 }
 
 function normalizeError(error) {
-  if (error instanceof PacketError || error instanceof UploadError) return error.message;
+  if (error instanceof PacketError || error instanceof UploadError || error instanceof QuestionError) return error.message;
   const value = error instanceof Error ? error.message : "";
   if (/^No tab with id|Cannot access contents|Missing host permission|The extensions gallery/.test(value)) {
     return "Open the employer job page in the active browser tab and try again.";
@@ -303,6 +306,11 @@ async function onInspect() {
     currentPacket = pkt;
     inspectedUrl = tab.url;
     currentPlan = candidate;
+    currentQuestionPlan = null;
+    $("questionList").replaceChildren();
+    $("questionPanel").hidden = true;
+    $("questionInfo").textContent = "";
+    $("fillQuestions").disabled = false;
     preflightPassed = false;
     attemptReserved = false;
     $("plan").hidden = false;
@@ -350,6 +358,9 @@ async function onFill() {
     if (!result?.result) throw new PacketError("Employer form did not return fill verification");
     if (result.result.blocker) throw new PacketError(result.result.blocker);
     $("submission").hidden = false;
+    currentQuestionPlan = null;
+    $("questionPanel").hidden = true;
+    $("questionList").replaceChildren();
     preflightPassed = false;
     status(
       "Filled " + result.result.filled + " fields (" + result.result.skipped +
@@ -446,6 +457,118 @@ async function onAttach() {
 function currentPacketToJSON() {
   // Use the canonical original content for full schema/time verification.
   return $("packet").value;
+}
+
+
+/* Review and fill required employer-specific TEXT questions only.
+   This does not produce or infer answers: the applicant types or pastes a
+   checked answer (including any reviewed ObumAI draft) and approves transfer.
+   Legal, visa, salary, EEO, consent and unsupported controls stay human-only. */
+async function onReviewQuestions() {
+  if (!currentPacket || targetTabId === null || attemptReserved) return;
+  currentQuestionPlan = null;
+  $("questionPanel").hidden = true;
+  $("questionList").replaceChildren();
+  $("questionInfo").textContent = "";
+  preflightPassed = false;
+  $("submit").disabled = true;
+  $("approve").checked = false;
+  try {
+    const tab = await activeTab();
+    validatePacket(currentPacketToJSON(), tab.url);
+    if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
+        !exactLeverForm(tab.url, currentPacket.application_url)) {
+      throw new QuestionError("Open and reinspect the matching Lever application before reviewing questions.");
+    }
+    const key = await oneAttemptKey(currentPacket);
+    if ((await chrome.storage.local.get(key))[key]) {
+      throw new QuestionError("A submission was already attempted; do not change or repeat this form.");
+    }
+    const [reply] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id }, func: inspectForm
+    });
+    if (!reply?.result || reply.result.url !== tab.url ||
+        reply.result.allElementsCount > 250) {
+      throw new QuestionError("The employer form changed or is too large.");
+    }
+    const plan = planReviewedQuestions(reply.result.elements);
+    currentQuestionPlan = { ...plan, url: tab.url };
+    $("questionInfo").textContent =
+      plan.questions.length + " eligible required text questions; " +
+      plan.humanOnly.length + " require manual handling. " +
+      (plan.humanOnly.length ? "Manual: " + plan.humanOnly.slice(0, 6).join("; ") : "");
+    const list = $("questionList");
+    for (const [index, item] of plan.questions.entries()) {
+      const fieldId = "approvedAnswer" + index;
+      const wrapper = document.createElement("div");
+      wrapper.className = "question-item";
+      const label = document.createElement("label");
+      label.textContent = item.label + " (review required)";
+      label.setAttribute("for", fieldId);
+      const input = document.createElement("textarea");
+      input.id = fieldId;
+      input.rows = 3;
+      input.maxLength = item.max_answer_length;
+      input.placeholder = "Type or paste a truthful answer you have reviewed.";
+      input.autocomplete = "off";
+      input.spellcheck = false;
+      wrapper.append(label, input);
+      list.append(wrapper);
+    }
+    $("questionPanel").hidden = plan.questions.length === 0;
+    $("fillQuestions").disabled = plan.questions.length === 0;
+    status(plan.questions.length ?
+      "Review every proposed answer for accuracy, then approve a one-time fill. Sensitive questions remain manual." :
+      "No safely eligible unanswered text questions. Answer employer-specific requirements manually.", true);
+  } catch (error) { status(normalizeError(error)); }
+}
+
+async function onFillQuestions() {
+  if (!currentPacket || !currentQuestionPlan || attemptReserved ||
+      $("questionPanel").hidden) return;
+  preflightPassed = false;
+  $("submit").disabled = true;
+  $("approve").checked = false;
+  try {
+    const values = currentQuestionPlan.questions.map((_, i) =>
+      $("approvedAnswer" + i)?.value || "");
+    const actions = validateReviewedAnswers(currentQuestionPlan, values);
+    const tab = await activeTab();
+    validatePacket(currentPacketToJSON(), tab.url);
+    if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
+        currentQuestionPlan.url !== tab.url ||
+        !exactLeverForm(tab.url, currentPacket.application_url)) {
+      throw new QuestionError("The employer page changed. Reinspect the questions.");
+    }
+    if (!window.confirm(
+      "FILL " + actions.length + " REVIEWED EMPLOYER ANSWERS?\n\n" +
+      "You confirm the facts, claims, examples and employment details are truthful. " +
+      "The employer site may transmit answer values when input/change events fire. " +
+      "This will not click Submit, agree to terms, answer protected questions, " +
+      "or retry after an uncertain outcome."
+    )) return;
+    const again = await activeTab();
+    validatePacket(currentPacketToJSON(), again.url);
+    const key = await oneAttemptKey(currentPacket);
+    if (again.id !== targetTabId || again.url !== tab.url ||
+        (await chrome.storage.local.get(key))[key]) {
+      throw new QuestionError("Application state changed; do not retry until reinspection.");
+    }
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id }, func: fillReviewedAnswers,
+      args: [actions, currentPacket.application_url, tab.url]
+    });
+    const finding = result?.result;
+    // Remove plaintext immediately; no answers enter extension storage.
+    currentQuestionPlan = null;
+    $("questionList").replaceChildren();
+    $("questionPanel").hidden = true;
+    $("fillQuestions").disabled = true;
+    $("questionInfo").textContent =
+      "Review all answered questions in the employer form. Unknown or legally significant fields still need manual completion.";
+    status(finding?.reason || "Answer result is uncertain. Inspect the employer form.",
+      finding?.status === "filled_for_review");
+  } catch (error) { status(normalizeError(error)); }
 }
 
 async function onPreflight() {
@@ -610,6 +733,8 @@ $("inspect").addEventListener("click", () => void onInspect());
 $("resume").addEventListener("click", () => void onResumeReceipt());
 $("fill").addEventListener("click", () => void onFill());
 $("attach").addEventListener("click", () => void onAttach());
+$("reviewQuestions").addEventListener("click", () => void onReviewQuestions());
+$("fillQuestions").addEventListener("click", () => void onFillQuestions());
 $("check").addEventListener("click", () => void onPreflight());
 $("submit").addEventListener("click", () => void onSubmit());
 $("receipt").addEventListener("click", () => void onReceipt());
@@ -628,10 +753,12 @@ $("approve").addEventListener("change", () => {
   $("submit").disabled = !$("approve").checked || !preflightPassed || attemptReserved;
 });
 $("packet").addEventListener("input", () => {
-  currentPacket = null; currentPlan = null; targetTabId = null;
+  currentPacket = null; currentPlan = null; currentQuestionPlan = null; targetTabId = null;
   preflightPassed = false; attemptReserved = false;
   $("plan").hidden = true; $("submission").hidden = true; $("receiptPanel").hidden = true;
   $("cvFile").value = ""; $("uploadInfo").textContent = ""; $("attach").disabled = false;
+  $("questionList").replaceChildren(); $("questionPanel").hidden = true;
+  $("questionInfo").textContent = ""; $("fillQuestions").disabled = true;
   $("receiptExport").value = "";
   $("approve").checked = false; $("submit").disabled = true;
   $("feedback").textContent = "";

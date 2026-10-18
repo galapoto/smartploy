@@ -40,6 +40,14 @@
       <input type="file" id="cvFile" accept=".pdf,application/pdf" />
       <button id="attach" type="button" class="secondary">Approve and attach PDF (no submit)</button>
       <p id="uploadInfo" role="status"></p>
+      <button id="reviewQuestions" class="secondary" type="button">Review unanswered questions</button>
+      <p id="questionInfo" role="status"></p>
+      <div id="questionPanel" hidden>
+        <p class="muted">Type or paste only accurate, personally reviewed answers. SmartPloy will
+          not guess or complete salary, immigration, EEO, privacy or other legal questions.</p>
+        <div id="questionList"></div>
+        <button id="fillQuestions" type="button" disabled>Approve and fill reviewed answers (no submit)</button>
+      </div>
       <button id="check">Check required fields</button>
       <p id="preflight" role="status"></p>
       <label class="confirm"><input type="checkbox" id="approve" />
