@@ -156,6 +156,40 @@ Report (1) core user function advanced with actual path/commit, (2) EXISTING/reu
 
 Reuse this exact bridge, signed-in user approval, original MV3 companion, current SP15a atomic PostgreSQL claim and ObumAI Agent D authority patterns. Before reactivating any final employer click: rights-reviewed site allowlist, a uniquely approved employer job, fresh source/CV/current form preflight, a real server-held one-shot grant redeemed atomically by the same companion at the click boundary (not the current local hash), two authenticated-browser races and crash/timeout ambiguity tests, independently verified employer acceptance, trusted ObumDelivery native CI and production release evidence. No estimation of production completion date or build-time multiplier without measured data.
 
+## SP15e - verified core workflow: independent employer rights plus atomic final approval (18 Oct 2026)
+
+**Customer workflow advance in tested SOURCE:** existing tailored/reviewed CV/letter + signed-in browser packet (SP12-SP15d) -> a separately reviewed employer-specific final-action rights record -> 90-second explicit applicant final intent -> one PostgreSQL transaction atomically consumes the approved intent and reserves an irreversible employer attempt. This is still INTERNAL ONLY: there is no HTTP final-approval or consume route and no Chrome final Submit click. The real browser adapter and owner gesture must be separately implemented and tested before any actuation.
+
+### Required provenance before writing (actual prebuilt code REUSED and ADAPTED)
+
+- **Refactored/reused EXISTING SmartPloy code:** original employer_submit_claim_storage.py blob feeb3cee32927abd77883c8129bec1bf9a4fdf31. Its original ~25-line atomic INSERT ON CONFLICT/owner retrieval is moved to reserve_employer_claim_locked and reused by BOTH the preexisting SP15a reserve and new SP15e internal final-action consume. Existing verified_employer_submit_preflight owner/workspace/current job/document/receipt/CRM locks are reused unchanged in both operations.
+- **Direct reuse, not duplication:** SP15c owner-specific PostgreSQL review select/item in employer_review_intent_storage.py blob 0e3cc79d0473961fc69662b6b149ab4a1b7b5052; approved contact, exact UTF-8 field digest and vetted Lever employer URL identity from browser_handoff.py blob 5543583af9359c37c91af14bd066de8788a7a5e0; OIDC/CSRF account binding oidc.py blob 015ca5df354979b090384b5aa6efc2a3f34e2cb6 and existing Application Studio private-read/account-switch boundary.
+- **Rejected misleading reuse:** source acquisition SourcePolicy.terms_review_status=approved authorizes JOB DISCOVERY, never automated employer submission. Need separate legally/operationally checked employer permissions. ObumAI Agent B final_submit_preflight.py blob b5c5e99e and Agent D control_plane.py blob e6259a75 were inspected and their permission/approval/idempotency design adapted; in-memory grant logic was NOT blindly copied. No third-party code, new OAuth stack, second browser engine, parallel claim ledger or paid GitHub workflows.
+
+### NEW because genuinely absent
+
+- smartploy/employer_automation_rights.py and migration 021 separate job-specific rights: exact normalized employer+posting hash, explicit employer authorization or documented partner integration basis, SHA evidence, two distinct operator reviewers, up to 90 days, default DENY. These are operator-review metadata, NOT independently machine-verified legal rights. No public rights writing and **no production employer permission evidence has been entered**.
+- smartploy/employer_final_action_gate.py and migration 021 90-second final applicant approval: owner/job/revision/CV/letter/PDF/approved contact fingerprint and current permission evidence; non-bearer. Internal consume uses the ORIGINAL sticky employer claim insert inside the SAME transaction and marks approval consumed_unverified. Repeated devices and crashes cannot quietly retry.
+- Adapted original account-erasure inventory, private signed-in GET-only final-action-readiness API and Application Studio policy panel; NO grant, browser actuation or new user-facing submit button. New synthetic tests reuse the existing real PostgreSQL scoped two-user fixture, explicitly test 8 racing browser-like consumers, rights absence/revocation/expiry, two distinct reviewers, previously consumed approvals, approved contact drift, quarantine, expired applicant approval and crash just after the claim INSERT before commit.
+
+### Grounded exact-head delivery evidence and comparison
+
+- **SP15e DRAFT PR #164:** https://github.com/galapoto/smartploy/pull/164
+- **Authoritative implementation SHA:** 47ce02cd4a250bd4f4f0a4a0cecf6b7794be364c.
+- **GitHub source CI:** https://github.com/galapoto/smartploy/actions/runs/39145473101. **5/5 COMPLETED SUCCESS:** 672 Python/PostgreSQL tests, 92 React, 32 synthetic Chromium, 36 Node extension, synthetic Compose/migrations/backup/restore and immutable exact-checkout receipt. It took three CI candidate heads to correct first HTTP negative-status expectations, then an unused test import; final full rerun was green. No product behavior was bypassed to fix tests.
+- **Measured change over SP15d at 031ebb221e:** Python/PostgreSQL +11 passed (661 to 672), React +2 (90 to 92), Chromium stable at 32, Node stable at 36. Diff includes 12 files with new rights and final gate modules and reused SQL extraction. No measured wall-clock delivery speedup or employer outcome claimed.
+- **Detailed source-by-source reuse/new ledger:** https://github.com/galapoto/smartploy/blob/feature/sp15e-durable-final-action-gate-20261018-v1/docs/REUSE_CHECK_SP15E_FINAL_ACTION_GATE.md
+
+### Actual state and next core P0
+
+**DONE in draft source:** independent employer-rights audit schema and fail-closed policy, owner-confirmed final-approval state, internal atomic one-shot claim/consume with concurrency and crash rollback, read-only app readiness and regression evidence.
+
+**IN PROGRESS/REQUIRES SEPARATE AUTHORIZATION:** obtain independently checked real employer terms and explicit automation permission, trustworthy licensed Chrome extension-to-signed-in site pairing, fresh browser tab/required field/consent evidence and a cryptographic one-use server redemption immediately before the click. SP15d local five-minute hash MUST NEVER be substituted for final submission authority.
+
+**NOT STARTED:** real employer final click/acknowledgment/independent receipt; no actually_submitted increment. **BLOCKED:** native ObumDelivery self-hosted Woodpecker product pipeline and deliberate negative RED run for this exact SHA, signed-in two-device live extension E2E, owner-reviewed OVH backup/rollback and release authorization. GitHub Actions/Compose fixture do not replace those. Main/production remain unchanged. **RELEASE HOLD.**
+
+The mandatory per-run rule remains: show original verified source paths/blobs, reused versus newly created logic, exact core workflow effect, tests/commit CI evidence, blockers, deployment state and measured not fabricated progress.
+
 ## 1. Product outcome — actual applications, not just CI
 
 SmartPloy must let a user create a truthful reusable applicant profile, search suitable jobs or choose general search, rank and deduplicate opportunities, prepare tailored CV/letter/answers, complete supported employer forms and permitted document transfers, and track each outcome with source-backed evidence.
