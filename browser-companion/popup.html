@@ -27,7 +27,12 @@
       <div id="summary" role="status"></div>
       <ul id="actions"></ul>
       <div id="required"></div>
-      <button id="fill">Fill approved fields (no submit)</button>
+      <div id="questionPanel" hidden>
+        <h3>Optional, applicant-reviewed employer questions</h3>
+        <p class="muted">Only clearly recognized ordinary text questions appear here. Write your own accurate answer. No AI inference, saved answer history, legal declarations or automatic submission. Other questions stay on the employer form.</p>
+        <div id="questionAnswers"></div>
+      </div>
+      <button id="fill">Fill approved fields and my answers (no submit)</button>
     </section>
 
     <section id="submission" hidden>
