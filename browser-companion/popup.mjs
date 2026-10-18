@@ -393,6 +393,11 @@ async function onAttach() {
     validatePdf(file.name, file.type, bytes);
     const digestBytes = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
     const digest = Array.from(digestBytes, b => b.toString(16).padStart(2, "0")).join("");
+    if (digest !== currentPacket.cv_pdf_sha256 || bytes.length !== currentPacket.cv_pdf_size) {
+      throw new UploadError(
+        "This PDF differs from the approved SmartPloy CV export. Download the exact saved CV again."
+      );
+    }
     if ($("cvFile").files?.[0] !== file) {
       throw new PacketError("The selected PDF changed during local validation.");
     }

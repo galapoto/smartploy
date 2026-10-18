@@ -4,12 +4,13 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import json
+from hashlib import sha256
 
 import pytest
 from fastapi.testclient import TestClient
 
 from smartploy.api import create_app
-from smartploy.application_workspace import new_workspace
+from smartploy.application_workspace import new_workspace, render_document
 from smartploy.browser_handoff import HandoffError, make_browser_packet, review_handoff
 from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
 from smartploy.profile import CandidateProfile, ProfileFact
@@ -87,6 +88,13 @@ def test_review_ready_packet_is_bounded_and_never_contains_original_cv():
     assert review["files_attached"] is False
     packet = make_browser_packet(item, candidate(), p, now=now)
     assert packet["application_url"] == APPLICATION_URL
+    assert packet["schema"] == "smartploy.browser_handoff.v2"
+    first_pdf, mime, filename = render_document(item, kind="cv", file_format="pdf")
+    second_pdf, _, _ = render_document(item, kind="cv", file_format="pdf")
+    assert mime == "application/pdf" and filename.endswith(".pdf")
+    assert first_pdf == second_pdf  # export is byte-for-byte deterministic
+    assert packet["cv_pdf_sha256"] == sha256(first_pdf).hexdigest()
+    assert packet["cv_pdf_size"] == len(first_pdf) and packet["cv_pdf_size"] > 100
     assert packet["revision"] == item.revision
     assert packet["expires_at"] == (now + timedelta(minutes=15)).isoformat()
     assert packet["fields"]["email"] == "test.candidate@example.com"

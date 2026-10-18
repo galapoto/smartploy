@@ -7,12 +7,14 @@ const job = "https://jobs.lever.co/uprightproject/d886a2eb-5ba0-4a3c-9e5e-414a4a
 function packet(overrides = {}) {
   const start = Date.parse("2026-10-11T09:20:00Z");
   return {
-    schema: "smartploy.browser_handoff.v1",
+    schema: "smartploy.browser_handoff.v2",
     issued_at: new Date(start).toISOString(),
     expires_at: new Date(start + 900000).toISOString(),
     workspace_id: "kit-" + "a".repeat(30),
     revision: 3,
     document_sha256: "b".repeat(64),
+    cv_pdf_sha256: "c".repeat(64),
+    cv_pdf_size: 20000,
     application_url: job,
     company: "The Upright Project",
     role_title: "Data Analyst",
@@ -62,6 +64,10 @@ test("reject expired, future, overlong, malformed and unsupported packets", () =
     packet({revision: -1}),
     packet({workspace_id: "../private"}),
     packet({document_sha256: "x"}),
+    packet({cv_pdf_sha256: "bad"}),
+    packet({cv_pdf_size: 0}),
+    packet({cv_pdf_size: 2097153}),
+    packet({cv_pdf_size: true}),
     packet({privacy: {...packet().privacy, employer_submit_allowed_without_new_approval: true}}),
     packet({fields: {...packet().fields, email: "invalid"}}),
     packet({fields: {...packet().fields, cover_letter: "x".repeat(12000)}}),
