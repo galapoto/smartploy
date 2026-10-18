@@ -46,6 +46,7 @@ export function fillReviewedQuestions(payload) {
       return null;
     }
     const restricted = /(?:\b(?:visa|sponsor(?:ship)?|immigration|work\s+authori[sz]ation|work\s+permit|salary|compensation|wage|criminal|background\s+check|gender|sex|sexual|race|ethnic|religion|disability|veteran|birth|age|date\s+of\s+birth|passport|nationality|citizen(?:ship)?|bank|social\s+security|ssn|privacy|terms|consent|agree|accept|attest|signature|certify|captcha|recaptcha|mfa|password)\b|palkka|oleskelulup|työlup|kansalaisuu|sukupuol|uskont|syntym|ikäsi|henkilötunnus|suostum|tietosuoj|löneanspråk|arbetstillstånd|medborgarskap|samtycke|personnummer)/i;
+    const identifierRisk = /(?:visa|sponsor|salary|compensation|gender|race|ethnic|birth|citizen|passport|consent|privacy|agreement|legal|attest|signature|security|workauth|workpermit|authorization|disab|veteran|sukupuol|palkka)/i;
     const control = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 
     const prepared = [];
@@ -66,7 +67,7 @@ export function fillReviewedQuestions(payload) {
       if (!["text", "textarea"].includes(type) || type !== action.expected_type ||
           (el.id || "") !== action.expected_id || (el.name || "") !== action.expected_name ||
           label !== action.expected_label || liveKind(label) !== action.question_kind ||
-          restricted.test(descriptor) || !visible(el) || el.disabled || el.readOnly ||
+          (restricted.test(descriptor) || identifierRisk.test(descriptor)) || !visible(el) || el.disabled || el.readOnly ||
           !el.closest("form") || String(el.value || "").trim() ||
           typeof action.value !== "string" || !action.value.trim() ||
           control.test(action.value) ||
