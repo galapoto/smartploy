@@ -49,5 +49,8 @@ def test_answers_are_ephemeral_and_submit_remains_separately_approved():
     assert '"submit").disabled = true' in function_body
     assert 'currentQuestionPlan = null' in function_body
     assert '"questionList").replaceChildren()' in function_body
-    assert 'chrome.storage.local.set({[key]:' in source
-    assert source.index('chrome.storage.local.set({[key]:') < source.index('func: submitOnce')
+    # SP15b: no local-only final click exists. Question fill remains separate
+    # from any future user-authorized cross-device server-granted submit.
+    assert 'func: submitOnce' not in source
+    assert 'live[0].click()' not in source
+    assert 'Automatic final submission is unavailable until cross-device server authorization' in source

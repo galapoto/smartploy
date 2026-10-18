@@ -77,6 +77,7 @@ def test_anonymous_or_auth_disabled_client_cannot_inspect_claims(monkeypatch):
     answer = api.get(PATH)
     assert answer.status_code == 401
 
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "test")
     monkeypatch.setenv("SMARTPLOY_AUTH_MODE", "disabled")
     fixture = TestClient(create_app(SmartployService()), base_url=ORIGIN)
     denied = fixture.get(PATH)
