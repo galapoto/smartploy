@@ -273,6 +273,28 @@ export function createBrowserHandoffPacket(
 }
 
 
+/** Read-only independent employer-rights posture. There is NO submit capability. */
+export type EmployerFinalActionReadiness = {
+  operator_permission_reviewed: boolean;
+  current_applicant_review_recorded: boolean;
+  separate_final_user_approval_recorded: boolean;
+  previous_employer_attempt_reserved: boolean;
+  trusted_one_use_browser_redemption_available: false;
+  final_browser_click_authorized: false;
+  employer_submission_performed: false;
+  employer_receipt_verified: false;
+  blockers: string[];
+};
+
+export function getEmployerFinalActionReadiness(
+  workspaceId: string
+): Promise<EmployerFinalActionReadiness> {
+  return request<EmployerFinalActionReadiness>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
+      + "/final-action-readiness"
+  );
+}
+
 /** Non-submitting 10-minute final-review record. No extension bearer/grant. */
 export type EmployerReviewIntentState = {
   review_recorded: boolean;

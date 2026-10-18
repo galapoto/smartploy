@@ -9,13 +9,13 @@ import {
   getApplicationWorkspaces, markApplicationManuallySent,
   getLocalAIStatus, requestLocalAISuggestions,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
-  getEmployerAttemptStatus, getEmployerReviewIntent,
+  getEmployerAttemptStatus, getEmployerReviewIntent, getEmployerFinalActionReadiness,
   recordEmployerReviewIntent, cancelEmployerReviewIntent,
   getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
 import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
-import type { EmployerAttemptState, EmployerReviewIntentState } from "./api";
+import type { EmployerAttemptState, EmployerReviewIntentState, EmployerFinalActionReadiness } from "./api";
 
 const ACCOUNT_CHANGED_NOTICE =
   "Your signed-in SmartPloy account changed or could not be verified. Reload SmartPloy to continue safely.";
@@ -44,6 +44,7 @@ export default function ApplicationStudio(props: {
   const [handoff, setHandoff] = useState<BrowserHandoffReadiness | null>(null);
   const [employerAttempt, setEmployerAttempt] = useState<EmployerAttemptState | null>(null);
   const [finalReview, setFinalReview] = useState<EmployerReviewIntentState | null>(null);
+  const [finalAction, setFinalAction] = useState<EmployerFinalActionReadiness | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [handoffPacketText, setHandoffPacketText] = useState("");
@@ -79,7 +80,7 @@ export default function ApplicationStudio(props: {
     ++selectedDraftRef.current.epoch;
     setWorkspaces([]); setSelectedId("");
     setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
-    setHandoff(null); setEmployerAttempt(null); setFinalReview(null); setHandoffPacketText("");
+    setHandoff(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null); setHandoffPacketText("");
     setBrowserReceipt(null); setReceiptOpen(false); setReceiptInput("");
     setMessage(""); setError(ACCOUNT_CHANGED_NOTICE);
     setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false);
@@ -198,9 +199,9 @@ export default function ApplicationStudio(props: {
       setAISuggestion(null);
       setCvText(selected?.cv_text || "");
       setLetterText(selected?.cover_letter_text || "");
-      setHandoffPacketText(""); setFinalReview(null);
+      setHandoffPacketText(""); setFinalReview(null); setFinalAction(null);
       setReceiptOpen(false); setReceiptInput("");
-      setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null);
+      setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
     }
   }, [selected?.workspace_id, selected?.revision]);
 
@@ -212,13 +213,14 @@ export default function ApplicationStudio(props: {
       try {
         await verifyAccount();
         if (!alive || accountBlockedRef.current) return;
-        // Three tenant-scoped reads, with exact identity recheck both before
-        // and after. Never publish a stale cross-account server attempt.
-        const [handoffResult, receiptResult, attemptResult, reviewResult] = await Promise.allSettled([
+        // Private owner reads revalidate identity both before and after.
+        // Policy posture is NOT a browser grant or a submission instruction.
+        const [handoffResult, receiptResult, attemptResult, reviewResult, finalActionResult] = await Promise.allSettled([
           getBrowserHandoffReadiness(workspaceId),
           getBrowserReceipt(workspaceId),
           getEmployerAttemptStatus(workspaceId),
           getEmployerReviewIntent(workspaceId),
+          getEmployerFinalActionReadiness(workspaceId),
         ]);
         if (!alive || accountBlockedRef.current) return;
         await verifyAccount();
@@ -227,11 +229,12 @@ export default function ApplicationStudio(props: {
         setBrowserReceipt(receiptResult.status === "fulfilled" ? receiptResult.value.receipt : null);
         setEmployerAttempt(attemptResult.status === "fulfilled" ? attemptResult.value : null);
         setFinalReview(reviewResult.status === "fulfilled" ? reviewResult.value : null);
+        setFinalAction(finalActionResult.status === "fulfilled" ? finalActionResult.value : null);
       } catch {
         // verifyAccount clears private state and blocks the editor on any
         // missing or different session. Ordinary API failures show no data.
         if (alive && !accountBlockedRef.current) {
-          setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null);
+          setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
         }
       }
     })();
@@ -713,6 +716,23 @@ export default function ApplicationStudio(props: {
             </button>}
             {!finalReview ? <p role="status">Durable review service unavailable. No authorization can be recorded.</p> : null}
           </div> : null}
+          <div className="studio-packet-fallback" aria-label="Employer final-action permission">
+            <strong>Employer submission authorization · currently unavailable</strong>
+            {finalAction ? <>
+              <p role="status">
+                Independent employer automation rights: {finalAction.operator_permission_reviewed
+                  ? "record reviewed" : "not attested"}.
+                Current applicant review: {finalAction.current_applicant_review_recorded
+                  ? "recorded" : "pending"}.
+              </p>
+              <p className="muted">
+                {finalAction.previous_employer_attempt_reserved
+                  ? "A previous employer attempt exists and must be reconciled."
+                  : "Final employer click requires a separate user authorization and a trusted one-use server redemption."}
+              </p>
+            </> : <p role="status">Policy verification unavailable. Automated final submission remains blocked.</p>}
+            <p className="muted">This indicator is informational and never permits an automatic employer submission.</p>
+          </div>
           <p className="studio-handoff-disclaimer">
             Browser-only, 15-minute packet. Upload your CV on the employer's page and answer
             any employer-specific questions. Final submission needs a separate approval and

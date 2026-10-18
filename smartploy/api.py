@@ -30,6 +30,8 @@ from .employer_submit_claim_storage import EmployerSubmitClaimDenied, PostgresEm
 from .employer_review_intent_storage import (
     EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
 )
+from .employer_automation_rights import PostgresEmployerAutomationRightsRepository
+from .employer_final_action_gate import PostgresEmployerFinalActionGate
 from .browser_receipt import ReceiptError, validate_browser_receipt
 from .browser_receipt_storage import (
     ReceiptConflict, MemoryBrowserReceiptRepository, PostgresBrowserReceiptRepository,
@@ -468,6 +470,10 @@ def create_app(
     # SP15b: read-only employer claim posture. No memory fallback, issuer or final-click API.
     app.state.employer_claims = PostgresEmployerSubmitClaimRepository(dsn) if dsn else None
     app.state.employer_review_intents = PostgresEmployerReviewIntentRepository(dsn) if dsn else None
+    # Independent reviewed employer terms are NOT job-discovery SourcePolicy.
+    # SP15e: read-only posture. No web issuer/redeemer or browser final click.
+    app.state.employer_rights = PostgresEmployerAutomationRightsRepository(dsn) if dsn else None
+    app.state.employer_final_actions = PostgresEmployerFinalActionGate(dsn) if dsn else None
     app.state.local_ai = LocalDraftClient(LocalDraftSettings.from_env())
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
@@ -1393,6 +1399,73 @@ def create_app(
                 "external_actions_performed": False, "browser_grant_issued": False,
             },
             headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"},
+        )
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/final-action-readiness")
+    def final_action_readiness(workspace_id: str, request: Request) -> JSONResponse:
+        """Private READ-ONLY source/rights posture. NEVER a browser click grant."""
+        binding = signed_in_employer_review(request)
+        workspace = _review_workspace(workspace_id, binding)
+        rights_repo = app.state.employer_rights
+        final_repo = app.state.employer_final_actions
+        review_repo = app.state.employer_review_intents
+        if (
+            rights_repo is None or final_repo is None or review_repo is None
+            or app.state.employer_claims is None
+        ):
+            raise HTTPException(
+                status_code=503, detail="Durable employer-action policy unavailable"
+            )
+        try:
+            policy = rights_repo.inspect(workspace.application_url)
+            review = review_repo.get(binding, workspace.application_url)
+            approval = final_repo.get(binding, workspace.application_url)
+            claim = existing_employer_claim(binding, workspace)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503, detail="Employer action readiness unavailable"
+            ) from exc
+        reviewed = bool(
+            review and review.public_status(
+                workspace_id=workspace_id, revision=workspace.revision
+            )["review_recorded"]
+        )
+        final_approved = bool(
+            approval and approval.public_status(
+                workspace_id=workspace_id, revision=workspace.revision
+            )["approval_recorded"]
+        )
+        reasons: list[str] = []
+        if not policy["operator_permission_reviewed"]:
+            reasons.append("independent_employer_permission_missing")
+        if not reviewed:
+            reasons.append("current_applicant_review_missing")
+        if not final_approved:
+            reasons.append("separate_final_user_approval_missing")
+        if claim is not None:
+            reasons.append("previous_employer_attempt_requires_reconciliation")
+        # The trusted origin-to-extension FINAL action transport and actuation
+        # adapter DO NOT EXIST here, regardless of all policy flags.
+        reasons.append("trusted_one_use_browser_redemption_unavailable")
+        return JSONResponse(
+            {
+                "operator_permission_reviewed": policy["operator_permission_reviewed"],
+                "current_applicant_review_recorded": reviewed,
+                "separate_final_user_approval_recorded": final_approved,
+                "previous_employer_attempt_reserved": claim is not None,
+                "trusted_one_use_browser_redemption_available": False,
+                "final_browser_click_authorized": False,
+                "employer_submission_performed": False,
+                "employer_receipt_verified": False,
+                "blockers": reasons,
+            },
+            headers={
+                "Cache-Control": "private, no-store",
+                "Pragma": "no-cache",
+                "Referrer-Policy": "no-referrer",
+            },
         )
 
     @app.post("/api/v1/application-workspaces/{workspace_id}/verify-reviewed-packet")

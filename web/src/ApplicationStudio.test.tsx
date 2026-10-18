@@ -13,6 +13,7 @@ vi.mock("./api", () => ({
   getBrowserHandoffReadiness: vi.fn(),
   getEmployerAttemptStatus: vi.fn(),
   getEmployerReviewIntent: vi.fn(),
+  getEmployerFinalActionReadiness: vi.fn(),
   recordEmployerReviewIntent: vi.fn(),
   cancelEmployerReviewIntent: vi.fn(),
   getBrowserReceipt: vi.fn(),
@@ -88,6 +89,20 @@ beforeEach(() => {
     automatic_employer_submit_authorized: false, external_actions_performed: false,
     browser_grant_issued: false,
   });
+  vi.mocked(api.getEmployerFinalActionReadiness).mockResolvedValue({
+    operator_permission_reviewed: false,
+    current_applicant_review_recorded: false,
+    separate_final_user_approval_recorded: false,
+    previous_employer_attempt_reserved: false,
+    trusted_one_use_browser_redemption_available: false,
+    final_browser_click_authorized: false,
+    employer_submission_performed: false,
+    employer_receipt_verified: false,
+    blockers: [
+      "independent_employer_permission_missing",
+      "trusted_one_use_browser_redemption_unavailable",
+    ],
+  });
   vi.mocked(api.recordEmployerReviewIntent).mockResolvedValue({
     review_recorded: true, review_state: "pending",
     expires_at: "2099-01-01T00:10:00+00:00",
@@ -129,6 +144,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Application Studio private-read account boundary", () => {
+
+  it("shows rights withheld without an employer-submit button or fake success",async()=>{
+    studio();
+    expect(await screen.findByRole("heading",{name:"A private role"})).toBeTruthy();
+    const panel=await screen.findByLabelText("Employer final-action permission");
+    expect(panel.textContent).toContain("not attested");
+    expect(panel.textContent).toContain("never permits");
+    expect(api.getEmployerFinalActionReadiness).toHaveBeenCalledWith("workspace-A");
+    expect(screen.queryByRole("button",{name:/Automatically submit to employer/i})).toBeNull();
+  });
+
+  it("a rejected policy read stays blocked; it does not make an automatic submit possible",async()=>{
+    vi.mocked(api.getEmployerFinalActionReadiness).mockRejectedValue(
+      new Error("Policy database unavailable")
+    );
+    studio();
+    expect(await screen.findByRole("heading",{name:"A private role"})).toBeTruthy();
+    const panel=await screen.findByLabelText("Employer final-action permission");
+    expect(panel.textContent).toContain("Policy verification unavailable");
+    expect(panel.textContent).toContain("blocked");
+  });
+
+
   it("records the approved packet hashes for one job and can cancel, without a submit API", async () => {
     const packet = {
       schema: "smartploy.browser_handoff.v2" as const,
