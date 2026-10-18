@@ -16,6 +16,12 @@ from psycopg import connect
 from psycopg.types.json import Jsonb
 
 from smartploy.api import create_app
+from smartploy.application_workspace import new_workspace
+from smartploy.application_workspace_storage import PostgresWorkspaceRepository
+from smartploy.browser_handoff import make_browser_packet
+from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
+from smartploy.profile import ProfileFact
+from smartploy.profile_storage import PostgresProfileRepository
 from smartploy.oidc import MemorySessionRepository, SESSION_COOKIE_NAME
 from smartploy.service import SmartployService
 from smartploy.account_erasure import (
@@ -505,3 +511,126 @@ def test_intent_state_does_not_depend_on_cv_text_or_version_in_public_projection
         assert status["automatic_employer_submit_authorized"] is False
         assert "intent_id" not in status and "document_sha256" not in status
     assert record.public_status(workspace_id=wa,revision=2)["review_recorded"] is False
+
+
+def test_signed_in_review_http_to_postgres_end_to_end(scoped, monkeypatch):
+    """Actual FastAPI + two OIDC users + deterministic reviewed PDF + PostgreSQL."""
+    a, b, _, _, scoped_key, _, _, _, _, _ = scoped
+    original_nonce = scoped_key.removeprefix("employer-job-")
+    job_nonce = uuid4().hex
+    origin = "https://smartploy.obumai.com"
+    url = f"https://jobs.lever.co/otherorg/{job_nonce}/apply"
+    outcome = normalize_observation(
+        SourceObservation(
+            source_id="manual-import", source_mode="manual",
+            source_url=url, raw_text="Synthetic SQL analytics applicant role",
+            payload={
+                "role_title":"Junior Analytics Engineer",
+                "company":"Synthetic Employer", "description":"SQL analytics",
+                "application_url":url, "location":"Helsinki",
+            },
+            observed_at="2026-10-18T10:00:00+00:00",
+        ), SourcePolicy("manual-import", "Manual", "manual", ("manual",)),
+    )
+    assert outcome.candidate is not None
+    job = outcome.candidate
+    jobs = PostgresJobRepository(DSN)
+    profiles = PostgresProfileRepository(DSN, profile_id=a.profile_id)
+    workspaces = PostgresWorkspaceRepository(DSN)
+    for kind, value in (
+        ("identity", "Applicant Synthetic"),
+        ("email", "review@example.invalid"),
+        ("skill", "Synthetic SQL"),
+    ):
+        profiles.upsert_fact(ProfileFact(kind, value, "user-entered", approved=True))
+    work = None
+    try:
+        jobs.upsert(job)
+        work = new_workspace(
+            job, profiles.profile(),
+            source_cv_text="Applicant Synthetic\n\nSynthetic SQL experience",
+        )
+        work = replace(work, cover_letter_text=(
+            "Dear hiring team, I am applying for this synthetic analytics job. "
+            "My reviewed SQL skills relate to the advertised requirements. "
+            "Regards, Applicant Synthetic."
+        ))
+        assert workspaces.create_or_get(work)[1]
+        packet = make_browser_packet(work, job, profiles.profile())
+
+        monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")
+        monkeypatch.setenv("SMARTPLOY_AUTH_MODE", "oidc")
+        monkeypatch.setenv("SMARTPLOY_ACCESS_ENABLED", "false")
+        monkeypatch.setenv("SMARTPLOY_PUBLIC_ORIGIN", origin)
+        monkeypatch.setenv("SMARTPLOY_ALLOWED_HOSTS", "smartploy.obumai.com")
+        monkeypatch.setenv("SMARTPLOY_OIDC_ISSUER", "https://sso.example.invalid")
+        monkeypatch.setenv("SMARTPLOY_OIDC_CLIENT_ID", "fixture")
+        monkeypatch.setenv("SMARTPLOY_OIDC_REDIRECT_URI", origin + "/auth/callback")
+        monkeypatch.setenv("SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI", origin + "/auth/logged-out")
+        monkeypatch.setenv("SMARTPLOY_DATABASE_URL", DSN)
+        sessions = MemorySessionRepository()
+        tokens = {}
+        for binding, label in ((a, "a"), (b, "b")):
+            principal = AuthenticatedPrincipal(
+                issuer="https://sso.example.invalid",
+                subject=f"claim-{label}-{original_nonce}",
+                email="same@example.invalid", auth_source="oidc",
+            )
+            tokens[label] = sessions.create(
+                user_id=binding.user_id, principal=principal,
+                provider_session_id="synthetic-" + label, ttl_seconds=3600,
+            ).token
+        app = create_app(
+            identity_repository=PostgresIdentityRepository(DSN),
+            session_repository=sessions, oidc_client=object(),
+        )
+        api = TestClient(app, base_url=origin)
+        api.cookies.set(SESSION_COOKIE_NAME, tokens["a"])
+        route = f"/api/v1/application-workspaces/{work.workspace_id}/submit-review-intent"
+        body = {
+            "expected_revision":work.revision,
+            "expected_document_sha256":packet["document_sha256"],
+            "expected_cv_pdf_sha256":packet["cv_pdf_sha256"],
+            "confirm_reviewed_application":True,
+            "acknowledge_manual_only":True,
+        }
+        headers = {
+            "Origin":origin, "Sec-Fetch-Site":"same-origin",
+            "X-Smartploy-Expected-User-Id":a.user_id,
+        }
+        first_read = api.get(route)
+        assert first_read.status_code == 200, first_read.text
+        assert first_read.json()["review_state"] == "not_recorded"
+        accepted = api.post(route, json=body, headers=headers)
+        assert accepted.status_code == 200, accepted.text
+        assert accepted.json()["review_recorded"] is True
+        assert accepted.json()["new_review_recorded"] is True
+        assert accepted.json()["automatic_employer_submit_authorized"] is False
+        assert accepted.json()["browser_grant_issued"] is False
+        repeated = api.post(route, json=body, headers=headers)
+        assert repeated.status_code == 200, repeated.text
+        assert repeated.json()["new_review_recorded"] is False
+        assert "no-store" in api.get(route).headers["cache-control"]
+        api.cookies.set(SESSION_COOKIE_NAME, tokens["b"])
+        assert api.get(route).status_code == 404
+        other_write = api.post(route, json=body, headers=headers)
+        assert other_write.status_code == 409
+        api.cookies.set(SESSION_COOKIE_NAME, tokens["a"])
+        cancellation = api.delete(route, headers=headers)
+        assert cancellation.status_code == 200, cancellation.text
+        assert cancellation.json()["review_recorded"] is False
+        assert api.get(route).json()["review_state"] == "cancelled"
+    finally:
+        with connect(DSN) as conn:
+            conn.execute(
+                "DELETE FROM smartploy_employer_review_intents WHERE user_id=%s",
+                (a.user_id,),
+            )
+        if work is not None:
+            workspaces.delete(a.profile_id, work.workspace_id)
+        with connect(DSN) as conn:
+            conn.execute(
+                "DELETE FROM smartploy_profile_facts WHERE profile_id=%s",
+                (a.profile_id,),
+            )
+            conn.execute("DELETE FROM smartploy_jobs WHERE canonical_key=%s", (job.canonical_key,))
