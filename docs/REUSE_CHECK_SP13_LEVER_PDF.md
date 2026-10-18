@@ -35,7 +35,7 @@ The **missing specific capability** was putting an applicant-selected CV file in
 7. Submission remains separately authorized once; preflight must see a file in a **labeled résumé field** rather than an arbitrary file upload. A browser page success remains **browser-observed**, never independently employer-verified.
 8. Synthetic Chromium and Node tests must cover valid/invalid file, changed domain/job, form drift, hidden/occupied inputs, no submit click, no outside network, and failure states. Plus Python source contract checks.
 9. Do not merge or deploy until security/license review and exact-commit CI acceptance. Testing mock HTML proves browser behavior only, not an employer API accepting bytes.
-10. **Known gap:** The selected PDF may differ from SmartPloy's reviewed/exported document because the current packet digest represents **CV+letter text** rather than rendered PDF bytes. User verifies visually. Deterministic export SHA-256 should be added in a separate subsequent reuse-check before unattended matching is claimed.
+10. **Implemented improvement:** Stable PDF output uses ReportLab's invariant mode, and the user-selected PDF must match the exact rendered CV SHA-256 and byte count from the v2 short-lived handoff. This still does not prove that the employer accepted the upload or permit unattended submission.
 
 ## Verifiable delivery states
 
