@@ -109,8 +109,25 @@ function tidy(raw) {
     .replace(/\s+/g, " ").trim();
 }
 
+// Ordinary contact autofill must not disguise a salary, visa, legal or
+// protected question behind a matching label/autocomplete attribute.
+// Sensitive field metadata is checked before ANY autocomplete early return.
+export function unsafeContactMetadata(row) {
+  const fields = [row?.label, row?.name, row?.id, row?.placeholder, row?.autocomplete];
+  const material = fields.map(value => String(value || "")).join(" ")
+    .normalize("NFKC")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+    .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ");
+  const sensitive = /\b(?:visa|sponsorship|sponsor|immigration|work authorization|work permit|salary|compensation|wage|expected pay|eeo|race|ethnic|gender|sex|sexual|religion|disability|veteran|military|medical|health|criminal|background check|citizenship|nationality|passport|birth|date of birth|age|social security|ssn|gdpr|privacy|consent|agreement|attest|signature|certification|legal|bank account|tax id|company|employer|organization|organisation|referee|recommender|palkka|työlupa|oleskelulupa|kansalaisuus|sukupuoli|uskonto|syntymä|henkilötunnus|suostumus|tietosuoja|arbetstillstånd|medborgarskap|personnummer|samtycke|lön)\b/iu;
+  if (sensitive.test(material)) return true;
+  const identifiers = [row?.name, row?.id, row?.placeholder].map(v => String(v || "")).join("");
+  return /(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|citizen|nationality|gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|immigrat|taxid|nationalid|gdpr|henkilötunnus|sukupuol|kansalaisuu|oleskelulup|työlup|palkka|arbetstillstånd|medborgarskap|personnummer|samtycke)/i.test(identifiers);
+}
+
 export function identifyField(row) {
   const kind = tidy(row.type);
+  if (unsafeContactMetadata(row)) return null;
   if (row.disabled || row.readonly || !row.visible ||
       ["file", "hidden", "password", "checkbox", "radio", "submit", "button", "reset"].includes(kind)) {
     return null;
