@@ -52,12 +52,26 @@ def current() -> dict:
         return subprocess.check_output(
             ["git", *args], text=True, stderr=subprocess.DEVNULL,
         ).strip()
-    return qualify(
+    source = qualify(
         os.environ.get("CI_REPO", ""),
         os.environ.get("CI_COMMIT_SHA", ""),
         git("rev-parse", "HEAD"),
         git("rev-parse", "HEAD^{tree}"),
     )
+    # Woodpecker 3.19's manual API selects a mutable branch, not a Git SHA.
+    # A manual review must independently bind the checkout to the approved
+    # full commit SHA supplied as a nonsecret pipeline variable.
+    event = os.environ.get("CI_PIPELINE_EVENT", "")
+    if event == "manual":
+        expected = os.environ.get("OBUMDELIVERY_EXPECTED_SHA", "")
+        if SHA.fullmatch(expected) is None:
+            raise AdmissionDenied("MANUAL_EXPECTED_SHA_REQUIRED")
+        if source["source_sha"] != expected:
+            raise AdmissionDenied("MANUAL_SOURCE_SHA_MISMATCH")
+        source["expected_review_sha"] = expected
+    elif event != "push":
+        raise AdmissionDenied("UNSUPPORTED_CI_EVENT")
+    return source
 
 
 def directory(root: Path) -> Path:

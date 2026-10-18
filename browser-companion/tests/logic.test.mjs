@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { identifyField, PacketError, planFields, validatePacket } from "../logic.mjs";
+import { identifyField, unsafeContactMetadata, PacketError, planFields, validatePacket } from "../logic.mjs";
 
 const job = "https://jobs.lever.co/uprightproject/d886a2eb-5ba0-4a3c-9e5e-414a4af47f9e/apply";
 
@@ -177,4 +177,50 @@ test("conservative input limits and missing values stay unfilled", () => {
   const result = planFields(rows, pkt);
   assert.equal(result.actions.length, 0);
   assert.equal(result.unresolvedRequired.length, 1); // first row was not 'required'
+});
+
+
+test("contact mapper never mistakes disguised legal, visa, salary or protected field for basic contact",()=>{
+  const payloads = [
+    {label:"Full name",name:"visaStatus",autocomplete:"name"},
+    {label:"Email",id:"salaryExpectation",autocomplete:"email"},
+    {label:"Phone",name:"GDPRConsent",autocomplete:"tel"},
+    {label:"Etunimi",name:"workAuthorization",autocomplete:"given-name"},
+    {label:"Sähköpostiosoite",id:"citizenshipStatus"},
+    {label:"Cover letter",name:"genderIdentity"},
+    {label:"Full name",placeholder:"Company"},
+    {label:"Email",name:"criminalBackgroundCheck"},
+    {label:"Full name",name:"visastatus"},
+    {label:"Full name",id:"sponsorRequired"},
+    {label:"Full name",autocomplete:"name",placeholder:"Visa status"}
+  ];
+  for(const override of payloads){
+    const item=element(override);
+    assert.equal(unsafeContactMetadata(item),true,JSON.stringify(override));
+    assert.equal(identifyField(item),null,JSON.stringify(override));
+  }
+});
+
+test("normal approved English, Finnish and Swedish contacts remain safe after metadata filter",()=>{
+  for(const [data,expected] of [
+    [{label:"Full name",autocomplete:"name",id:"candidate_name"},"full_name"],
+    [{label:"Email",type:"email",name:"contactEmail"},"email"],
+    [{label:"Phone",name:"phoneNumber"},"phone"],
+    [{label:"Sähköpostiosoite",type:"email",id:"contact_mail"},"email"],
+    [{label:"Förnamn",name:"first_name"},"first_name"],
+    [{label:"Cover letter",type:"textarea",id:"coverLetter"},"cover_letter"]
+  ]){
+    const item=element(data);
+    assert.equal(unsafeContactMetadata(item),false,JSON.stringify(data));
+    assert.equal(identifyField(item),expected,JSON.stringify(data));
+  }
+});
+
+test("an invalid disguised required contact remains an unresolved manual employer field",()=>{
+  const pkt=validatePacket(packet(),job,validNow);
+  const row=element({index:0,label:"Email",name:"visaStatus",autocomplete:"email",required:true});
+  const outcome=planFields([row],pkt);
+  assert.equal(outcome.actions.length,0);
+  assert.deepEqual(outcome.unresolvedRequired,["Email"]);
+  assert.equal(outcome.autoSubmitAllowed,false);
 });
