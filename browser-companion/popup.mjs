@@ -2,6 +2,8 @@
    No background automation, no external API calls, no raw profile persistence.
    The final action is only possible after an exact one-job approval. */
 import { PacketError, planFields, validatePacket } from "./logic.mjs";
+import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
+import { attachReviewedPdf } from "./page-attachment.mjs";
 
 const $ = (id) => document.getElementById(id);
 let targetTabId = null;
@@ -64,7 +66,9 @@ function inspectForm() {
       placeholder: String(el.getAttribute("placeholder") || "").slice(0, 140),
       required: Boolean(el.required || el.getAttribute("aria-required") === "true"),
       visible: visible(el), disabled: el.disabled === true, readonly: el.readOnly === true,
-      hasValue, maxLength: Number(el.maxLength) || -1
+      hasValue, maxLength: Number(el.maxLength) || -1,
+      accept: type === "file" ? String(el.accept || "").slice(0, 200) : "",
+      multiple: type === "file" && el.multiple === true
     };
   });
   return {
@@ -186,8 +190,9 @@ function inspectFinalSubmit(exactUrl) {
       emptyRequired.push(label);
     }
   }
-  if (!fileInputs.some((row) => row.hasFile)) {
-    blockers.push("Attach the CV or résumé document on the employer's site before submission.");
+  if (!fileInputs.some((row) => row.hasFile &&
+      /(^|[^a-z])(cv|resume|r[ée]sum[ée]|ansioluettelo|meritförteckning)([^a-z]|$)/i.test(row.label))) {
+    blockers.push("A CV/résumé must be attached in its own labeled upload field.");
   }
   if (emptyRequired.length) blockers.push("Required fields still need review: " + emptyRequired.slice(0, 15).join(", "));
   if (document.querySelector(
@@ -227,8 +232,12 @@ function submitOnce(exactUrl) {
       return { status: "blocked", reason: "An employer-required field remains incomplete." };
     }
   }
-  if (!Array.from(document.querySelectorAll('input[type="file"]')).some((el) => Boolean(el.files?.length))) {
-    return { status: "blocked", reason: "Attach your CV manually before submitting." };
+  if (!Array.from(document.querySelectorAll('input[type="file"]')).some((el) => {
+    const name = String(el.labels?.[0]?.innerText || el.getAttribute("aria-label") || el.name || el.id || "");
+    return Boolean(el.files?.length) &&
+      /(^|[^a-z])(cv|resume|r[ée]sum[ée]|ansioluettelo|meritförteckning)([^a-z]|$)/i.test(name);
+  })) {
+    return { status: "blocked", reason: "Attach your CV in the labeled résumé field before submitting." };
   }
   try {
     live[0].click();
@@ -287,8 +296,8 @@ async function onInspect() {
       throw new PacketError("The employer form is dynamic or too large. Please fill it manually.");
     }
     const candidate = planFields(result.result.elements, pkt);
-    if (!candidate.actions.length) {
-      throw new PacketError("No supported empty fields were found. Fill this application manually.");
+    if (!candidate.actions.length && !candidate.skippedUploads.length) {
+      throw new PacketError("No supported empty fields or file inputs were found. Fill this application manually.");
     }
     targetTabId = tab.id;
     currentPacket = pkt;
@@ -297,13 +306,16 @@ async function onInspect() {
     preflightPassed = false;
     attemptReserved = false;
     $("plan").hidden = false;
-    $("submission").hidden = true;
+    $("submission").hidden = candidate.actions.length > 0;
+    $("uploadInfo").textContent = "";
+    $("cvFile").value = "";
+    $("attach").disabled = false;
     $("approve").checked = false;
     $("submit").disabled = true;
     $("job").textContent = pkt.role_title + " — " + pkt.company;
     $("summary").textContent =
       candidate.actions.length + " approved contact/cover-letter fields can be filled. " +
-      candidate.skippedUploads.length + " file inputs must be handled manually.";
+      candidate.skippedUploads.length + " file inputs need review. Only a unique visible CV PDF field can use the approved attachment step.";
     $("required").textContent =
       candidate.unresolvedRequired.length ?
         "Review these required fields yourself: " + candidate.unresolvedRequired.slice(0, 12).join("; ") : "";
@@ -314,7 +326,7 @@ async function onInspect() {
       li.textContent = action.label + " — " + action.key.replaceAll("_", " ");
       list.append(li);
     }
-    status("Review the proposed fields, then click Fill. No employer data was changed.", true);
+    status("Review the proposed fields and continue. No employer data was changed.", true);
   } catch (error) { status(normalizeError(error)); }
 }
 
@@ -341,9 +353,89 @@ async function onFill() {
     preflightPassed = false;
     status(
       "Filled " + result.result.filled + " fields (" + result.result.skipped +
-      " skipped). Review every value and manually attach CV before submission.", true
+      " skipped). Review every value. Select a reviewed PDF for explicit attachment or attach manually.", true
     );
   } catch (error) { status(normalizeError(error)); }
+}
+
+async function onAttach() {
+  if (!currentPacket || targetTabId === null || attemptReserved) return;
+  preflightPassed = false;
+  $("submit").disabled = true;
+  $("approve").checked = false;
+  const file = $("cvFile").files?.[0];
+  if (!file) { status("Select a reviewed SmartPloy CV PDF first."); return; }
+  try {
+    if (file.size > MAX_PDF_BYTES || file.size < 12) {
+      throw new UploadError("The selected PDF must be 2 MiB or smaller.");
+    }
+    const tab = await activeTab();
+    validatePacket(currentPacketToJSON(), tab.url);
+    if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
+        !exactLeverForm(tab.url, currentPacket.application_url)) {
+      throw new PacketError("Open and reinspect the exact Lever /apply form before attaching.");
+    }
+    const attemptKey = await oneAttemptKey(currentPacket);
+    if ((await chrome.storage.local.get(attemptKey))[attemptKey]) {
+      throw new PacketError("An application attempt was already reserved. Do not alter or resend this form.");
+    }
+    const [inspection] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id }, func: inspectForm
+    });
+    if (!inspection?.result || inspection.result.url !== tab.url ||
+        inspection.result.allElementsCount > 250) {
+      throw new PacketError("The employer form changed; attach the file manually.");
+    }
+    // Reuse SmartPloy's owner-scoped browser packet and active-tab browser
+    // instead of starting another browser runner or storing private CV data.
+    const target = chooseResumeField(inspection.result.elements);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    validatePdf(file.name, file.type, bytes);
+    const digestBytes = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    const digest = Array.from(digestBytes, b => b.toString(16).padStart(2, "0")).join("");
+    if ($("cvFile").files?.[0] !== file) {
+      throw new PacketError("The selected PDF changed during local validation.");
+    }
+    // Transfer can trigger employer-site JS/XHR immediately. Consent to the
+    // exact file, employer and target is required BEFORE any bytes are sent.
+    if (!window.confirm(
+      "SEND REVIEWED PDF TO EMPLOYER?\n\n" +
+      currentPacket.company + " — " + currentPacket.role_title + "\n" +
+      "File: " + file.name + " (" + file.size + " bytes)\n" +
+      "SHA-256: " + digest + "\n\n" +
+      "The employer website may transmit this file as soon as it is attached. " +
+      "Check it contains only the intended CV. " +
+      "This does NOT submit the application. Proceed?"
+    )) return;
+    const rechecked = await activeTab();
+    validatePacket(currentPacketToJSON(), rechecked.url);
+    if (rechecked.id !== targetTabId || rechecked.url !== tab.url ||
+        $("cvFile").files?.[0] !== file) {
+      throw new PacketError("The employer tab or selected PDF changed. Reinspect.");
+    }
+    const [reply] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id }, func: attachReviewedPdf,
+      args: [{
+        application_url: currentPacket.application_url,
+        inspected_url: tab.url,
+        ...target,
+        file_name: file.name, size: bytes.length,
+        sha256: digest, base64: encodePdfBase64(bytes)
+      }]
+    });
+    const finding = reply?.result;
+    // Never persist PDF data, hashes or filenames in chrome.storage.
+    $("cvFile").value = "";
+    $("uploadInfo").textContent = finding?.status === "attached_locally" ?
+      "The PDF is present in the résumé field. Check the employer upload indicator. " +
+      "This is NOT a verified server-side attachment or submitted application." :
+      "Attachment not confirmed. Inspect the employer page before proceeding.";
+    status(finding?.reason || "Attachment outcome is uncertain. Check the employer form.",
+      finding?.status === "attached_locally");
+    if (finding?.status !== "attached_locally") $("attach").disabled = true;
+  } catch (error) {
+    status(normalizeError(error));
+  }
 }
 
 function currentPacketToJSON() {
@@ -512,6 +604,7 @@ async function onReceipt() {
 $("inspect").addEventListener("click", () => void onInspect());
 $("resume").addEventListener("click", () => void onResumeReceipt());
 $("fill").addEventListener("click", () => void onFill());
+$("attach").addEventListener("click", () => void onAttach());
 $("check").addEventListener("click", () => void onPreflight());
 $("submit").addEventListener("click", () => void onSubmit());
 $("receipt").addEventListener("click", () => void onReceipt());
@@ -533,6 +626,7 @@ $("packet").addEventListener("input", () => {
   currentPacket = null; currentPlan = null; targetTabId = null;
   preflightPassed = false; attemptReserved = false;
   $("plan").hidden = true; $("submission").hidden = true; $("receiptPanel").hidden = true;
+  $("cvFile").value = ""; $("uploadInfo").textContent = ""; $("attach").disabled = false;
   $("receiptExport").value = "";
   $("approve").checked = false; $("submit").disabled = true;
   $("feedback").textContent = "";

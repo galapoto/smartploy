@@ -1,9 +1,13 @@
 {
   "manifest_version": 3,
   "name": "SmartPloy Apply Companion",
-  "version": "0.1.0",
-  "description": "Locally fill approved SmartPloy application fields after an explicit user action. No hidden network calls.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "version": "0.2.0",
+  "description": "User-approved SmartPloy Lever field filling and reviewed PDF attachment; no background actions or silent submit.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
   "action": {
     "default_title": "SmartPloy Apply Companion",
     "default_popup": "popup.html"

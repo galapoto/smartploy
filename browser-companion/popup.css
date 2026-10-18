@@ -26,3 +26,6 @@ button.danger{background:#b12c45}
 #feedback.error{color:#ad3553}
 #feedback.success{color:#087a58}
 footer{font-size:10px;color:#8da0b2;text-align:center;padding:5px 0}
+
+#cvFile{width:100%;font-size:11px;color:#285077;border:1px solid #cad9e9;border-radius:8px;padding:8px}
+#uploadInfo{font-size:11px;line-height:1.6;color:#42698e;overflow-wrap:anywhere}
