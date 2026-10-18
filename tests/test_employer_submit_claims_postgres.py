@@ -18,7 +18,7 @@ from psycopg.types.json import Jsonb
 from smartploy.api import create_app
 from smartploy.application_workspace import new_workspace
 from smartploy.application_workspace_storage import PostgresWorkspaceRepository
-from smartploy.browser_handoff import make_browser_packet
+from smartploy.browser_handoff import approved_fields_sha256, make_browser_packet
 from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
 from smartploy.profile import ProfileFact
 from smartploy.profile_storage import PostgresProfileRepository
@@ -598,6 +598,18 @@ def test_signed_in_review_http_to_postgres_end_to_end(scoped, monkeypatch):
             "Origin":origin, "Sec-Fetch-Site":"same-origin",
             "X-Smartploy-Expected-User-Id":a.user_id,
         }
+        verify_route = route.replace("/submit-review-intent", "/verify-reviewed-packet")
+        verification_body = {
+            "expected_revision":work.revision,
+            "expected_document_sha256":packet["document_sha256"],
+            "expected_cv_pdf_sha256":packet["cv_pdf_sha256"],
+            "expected_fields_sha256":approved_fields_sha256(packet["fields"]),
+            "expected_application_url_sha256":
+                sha256(packet["application_url"].encode("utf-8")).hexdigest(),
+            "expected_cv_pdf_size":packet["cv_pdf_size"],
+        }
+        before_approval=api.post(verify_route,json=verification_body,headers=headers)
+        assert before_approval.status_code==409
         first_read = api.get(route)
         assert first_read.status_code == 200, first_read.text
         assert first_read.json()["review_state"] == "not_recorded"
@@ -607,6 +619,26 @@ def test_signed_in_review_http_to_postgres_end_to_end(scoped, monkeypatch):
         assert accepted.json()["new_review_recorded"] is True
         assert accepted.json()["automatic_employer_submit_authorized"] is False
         assert accepted.json()["browser_grant_issued"] is False
+        verified = api.post(verify_route,json=verification_body,headers=headers)
+        assert verified.status_code==200,verified.text
+        assert verified.json()["review_verified"] is True
+        assert verified.json()["automatic_employer_submit_authorized"] is False
+        assert verified.json()["browser_grant_issued"] is False
+        assert verified.json()["external_actions_performed"] is False
+        assert "user_id" not in verified.text
+        assert "cv_pdf_sha256" not in verified.text
+        assert url not in verified.text
+        assert "no-store" in verified.headers["cache-control"]
+        for forged_patch in (
+            {"expected_cv_pdf_sha256":"f"*64},
+            {"expected_fields_sha256":"f"*64},
+            {"expected_application_url_sha256":"e"*64},
+            {"expected_cv_pdf_size":packet["cv_pdf_size"]+1},
+        ):
+            forged=api.post(
+                verify_route,json={**verification_body,**forged_patch},headers=headers
+            )
+            assert forged.status_code==409, (forged_patch,forged.text)
         repeated = api.post(route, json=body, headers=headers)
         assert repeated.status_code == 200, repeated.text
         assert repeated.json()["new_review_recorded"] is False
@@ -615,11 +647,15 @@ def test_signed_in_review_http_to_postgres_end_to_end(scoped, monkeypatch):
         assert api.get(route).status_code == 404
         other_write = api.post(route, json=body, headers=headers)
         assert other_write.status_code == 409
+        assert api.post(verify_route,json=verification_body,headers=headers).status_code==409
+        own_headers={**headers,"X-Smartploy-Expected-User-Id":b.user_id}
+        assert api.post(verify_route,json=verification_body,headers=own_headers).status_code==404
         api.cookies.set(SESSION_COOKIE_NAME, tokens["a"])
         cancellation = api.delete(route, headers=headers)
         assert cancellation.status_code == 200, cancellation.text
         assert cancellation.json()["review_recorded"] is False
         assert api.get(route).json()["review_state"] == "cancelled"
+        assert api.post(verify_route,json=verification_body,headers=headers).status_code==409
     finally:
         with connect(DSN) as conn:
             conn.execute(
@@ -634,3 +670,59 @@ def test_signed_in_review_http_to_postgres_end_to_end(scoped, monkeypatch):
                 (a.profile_id,),
             )
             conn.execute("DELETE FROM smartploy_jobs WHERE canonical_key=%s", (job.canonical_key,))
+
+
+def test_review_companion_verification_reuses_owner_job_document_and_intent_locks(scoped):
+    a, b, wa, wb, key, url, fp, letter, ledger, reserve = scoped
+    repo = PostgresEmployerReviewIntentRepository(DSN)
+    digest=sha256(("Reviewed synthetic resume with sufficient content"+"\0"+letter).encode()).hexdigest()
+    args=dict(
+        workspace_id=wa,expected_revision=1,expected_application_url=url,
+        expected_job_fingerprint=fp,expected_document_sha256=digest,
+        expected_cv_pdf_sha256="f"*64,
+    )
+    with pytest.raises(EmployerReviewIntentDenied,match="signed-in review"):
+        repo.verify_for_companion(a,**args)
+    prepared,new=repo.prepare(a,**args,explicit_user_review=True,
+        acknowledge_no_automatic_submit=True)
+    assert new
+    verified=repo.verify_for_companion(a,**args)
+    assert verified.intent_id==prepared.intent_id
+    assert verified.state=="pending"
+    assert verified.public_status(workspace_id=wa,revision=1)["browser_grant_issued"] is False
+    with pytest.raises(EmployerReviewIntentDenied,match="workspace"):
+        repo.verify_for_companion(b,**args)
+    with pytest.raises(EmployerReviewIntentDenied,match="inconsistent"):
+        repo.verify_for_companion(a,**{**args,"expected_cv_pdf_sha256":"a"*64})
+    repo.cancel(a,application_url=url)
+    with pytest.raises(EmployerReviewIntentDenied,match="cancelled"):
+        repo.verify_for_companion(a,**args)
+
+
+def test_review_verification_expiry_and_prior_claim_block_fail_closed(scoped):
+    a, _, wa, _, key, url, fp, letter, ledger, reserve = scoped
+    repo=PostgresEmployerReviewIntentRepository(DSN)
+    digest=sha256(("Reviewed synthetic resume with sufficient content"+"\0"+letter).encode()).hexdigest()
+    args=dict(
+        workspace_id=wa,expected_revision=1,expected_application_url=url,
+        expected_job_fingerprint=fp,expected_document_sha256=digest,
+        expected_cv_pdf_sha256="e"*64,
+    )
+    prepared,_=repo.prepare(a,**args,explicit_user_review=True,
+        acknowledge_no_automatic_submit=True)
+    with connect(DSN) as conn:
+        conn.execute(
+            """UPDATE smartploy_employer_review_intents
+               SET created_at=now()-interval '2 hours',
+                   expires_at=now()-interval '1 hour'
+               WHERE intent_id=%s""",(prepared.intent_id,),
+        )
+    with pytest.raises(EmployerReviewIntentDenied,match="expired"):
+        repo.verify_for_companion(a,**args)
+    newer,created=repo.prepare(a,**args,explicit_user_review=True,
+        acknowledge_no_automatic_submit=True)
+    assert created and newer.intent_id!=prepared.intent_id
+    claim,inserted=reserve()
+    assert inserted
+    with pytest.raises(EmployerReviewIntentDenied,match="reconciliation"):
+        repo.verify_for_companion(a,**args)

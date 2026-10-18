@@ -11,6 +11,7 @@ from hashlib import sha256
 import ipaddress
 import re
 from urllib.parse import urlsplit
+from typing import Mapping
 
 from .application_workspace import ApplicationWorkspace, render_document
 from .domain import JobCandidate
@@ -129,6 +130,30 @@ def review_handoff(
         "will_require_manual_review": True,
         "files_attached": False,
     }
+
+
+APPROVED_FIELD_NAMES = (
+    "full_name", "first_name", "last_name", "email", "phone",
+    "location", "linkedin", "github", "cover_letter",
+)
+
+
+def approved_fields_sha256(fields: Mapping[str, str]) -> str:
+    """Fingerprint the exact approved private fields without exposing them.
+
+    Reused by the browser handoff and first-party extension verification.
+    Length-prefix UTF-8 to avoid ambiguous concatenation and Python/JS JSON
+    serializer differences. The digest is a fingerprint, NOT an authorization.
+    """
+    if set(fields) != set(APPROVED_FIELD_NAMES):
+        raise HandoffError("The packet must contain the expected approved fields only")
+    parts: list[str] = []
+    for name in APPROVED_FIELD_NAMES:
+        value = fields[name]
+        if not isinstance(value, str):
+            raise HandoffError("Reviewed field values must be text")
+        parts.append(str(len(value.encode("utf-8"))) + ":" + value)
+    return sha256(("smartploy.fields.v1\0" + "\0".join(parts)).encode("utf-8")).hexdigest()
 
 
 def make_browser_packet(

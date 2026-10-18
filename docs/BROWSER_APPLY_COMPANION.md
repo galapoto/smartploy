@@ -1,6 +1,6 @@
 # SmartPloy Apply Companion — reviewed Lever form assistance
 
-> **SP15b REVIEW-ONLY SAFETY HOLD (18 Oct 2026):** The automated final
+> **SP15d REVIEW-VERIFICATION BRIDGE, DRAFT ONLY (18 Oct 2026):** The automated final
 > application click is intentionally disabled until a signed-in, owner-scoped
 > server claim can be consumed atomically across separate browsers and devices.
 > No local checkbox, popup preflight or old packet is a substitute. The companion
@@ -80,10 +80,19 @@ A code review and real browser QA are required before general deployment.
    **Copy approved autofill packet**, confirm the transfer. The packet is
    copied to your clipboard and expires after 15 minutes. The original CV
    file is **not** copied into it.
-6. Open the **same exact Lever posting** in a new browser tab and use its
-   Apply link to open the matching `/apply` form.
-7. Open the pinned extension, paste the packet, click
-   **Inspect employer form** and review exactly which fields will be filled.
+6. Back on the signed-in SmartPloy tab, use **Record exact CV and job review
+   (no submit)** and confirm. The owner-scoped review lasts at most ten minutes.
+   While staying on that SmartPloy tab, open the pinned Chrome extension, paste
+   the same packet, and click **Verify review on signed-in SmartPloy**.
+   This runs a same-origin, credentialed first-party check against the saved
+   current job, CV PDF, letter and approved contact field fingerprints.
+   It does not create a final-click token.
+7. Open the **same exact Lever posting** in a new browser tab and use its
+   Apply link to open the matching `/apply` form. Reopen the pinned extension,
+   paste the SAME packet, click **Inspect verified employer form (no submit)**,
+   and review which fields will be filled. The temporary review fingerprint
+   expires after at most five minutes; repeat signed-in verification if it
+   has expired. This is a separate user gesture, not unattended automation.
 8. Click **Fill approved fields (no submit)**. Inspect every inserted value.
    Select your reviewed SmartPloy CV PDF in the companion and click
    **Approve and attach PDF (no submit)**, after confirming the file and target
@@ -141,14 +150,51 @@ and no source/email/claim ID in its response. Unavailable persistence returns
 If a prior claim exists for this applicant's actual Lever organisation/job,
 the handoff readiness and future packet generation are blocked until operator/
 human reconciliation. The web UI disables another packet and shows uncertainty.
-An existing, copied packet may still assist with reviewing fields, but the
-companion has no automated final-click path in this branch.
+Assisted field filling and PDF attachment on the employer site now require
+verification of the current packet on the signed-in SmartPloy tab first.
+Historical receipt inspection is still available; no automated final-click
+path exists in this branch.
 
 **Next necessary work:** security-reviewed, per-job employer permission source,
 signed-in same-origin final user intent, an opaque one-use authorization
 delivered without exposing any account bearer token to employer DOM or
 clipboard, atomic server consumption by the existing MV3 companion, and
 two-device synthetic browser acceptance. No live employer actions in this patch.
+
+## SP15d first-party review verification: reused secure transport
+
+The same existing user-clicked Chrome MV3 popup briefly runs an
+ISOLATED-world, first-party-only script on exactly the HTTPS SmartPloy tab,
+after verifying the tab URL. Chrome subjects content-world fetches to the
+webpage origin's same-origin rules without allowing ordinary page scripts
+to redefine the extension's fetch function. It fetches the user's OIDC-bound first-party session and sends
+only document, CV PDF, employer URL and approved-contact-field **hashes**,
+PDF size and revision to the same-origin verify-reviewed-packet API.
+The server recomputes each value from its canonical saved workspace, approved
+profile, live job and 10-minute review record under the existing PostgreSQL
+owner/workspace/job locks. The site login cookie and account ID **never leave
+the first-party webpage**; the injected function returns only boolean status,
+expiry and explicit non-authority flags.
+
+The extension retains a **non-bearer SHA-256 fingerprint and maximum five-minute
+expiry** in chrome.storage.session, which is ephemeral and not available to
+the employer page. Every assisted field fill, PDF attachment and ordinary
+answer fill rechecks the fingerprint. No secret or raw CV is persisted.
+This is a security gate for *assisted form preparation*, **not** an employer
+submission lease. Its state is a point-in-time observation: cancelling a
+review or switching accounts after verification cannot revoke an already
+recorded local fingerprint immediately. It MUST NEVER be relied upon as
+current consent for a final-click operation. The future final-action flow
+must redeem a server-held one-shot claim atomically immediately before a
+click, with proven employer automation rights and a separate last-minute
+owner action.
+
+The Chrome extension uses only its original activeTab/scripting/storage
+permissions, with no permanent host permissions, content scripts, service
+worker or long-lived browser authority. Local synthetic Chromium tests and
+Node contract tests validate request isolation and denying forged packets,
+but **signed-in physical Chrome extension installation and production
+ObumDelivery native CI are still unverified**.
 
 ## Security and implementation boundaries
 
@@ -173,9 +219,9 @@ two-device synthetic browser acceptance. No live employer actions in this patch.
   a selected file that differs from those bytes. The user still must inspect
   its contents, since hashes do not prove qualifications or employer acceptance.
 - Applicant must read consent statements and answer employer-specific questions.
-- Final click performs a last independent page-state check. An opaque
-  attempt marker is stored **before** the click, so a crash does not cause
-  a duplicate retry.
+- **Automatic final click remains disabled.** An older Chrome-profile
+  attempt marker may still be inspected, but is never an executable server
+  authorization or employer receipt. No automatic retries are available.
 - Page DOM parsing uses no `eval`, `innerHTML`, or hidden requests.
   Visible text output uses `textContent`; data lives only in the popup
   until it closes. The clipboard is a sensitive ephemeral channel: never

@@ -25,7 +25,7 @@ from .ai_processing_consent import (
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
-from .browser_handoff import HandoffError, make_browser_packet, review_handoff
+from .browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
 from .employer_submit_claim_storage import EmployerSubmitClaimDenied, PostgresEmployerSubmitClaimRepository
 from .employer_review_intent_storage import (
     EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
@@ -218,6 +218,17 @@ class EmployerReviewIntentPayload(BaseModel):
     expected_cv_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     confirm_reviewed_application: StrictBool
     acknowledge_manual_only: StrictBool
+
+
+class BrowserReviewVerificationPayload(BaseModel):
+    """Secret-free, exact packet fingerprints; NO browser execution grant."""
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    expected_document_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_fields_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_application_url_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_size: int = Field(ge=12, le=2 * 1024 * 1024)
 
 
 class BrowserReceiptImportPayload(BaseModel):
@@ -1382,6 +1393,76 @@ def create_app(
                 "external_actions_performed": False, "browser_grant_issued": False,
             },
             headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"},
+        )
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/verify-reviewed-packet")
+    def verify_reviewed_packet_for_companion(
+        workspace_id: str, payload: BrowserReviewVerificationPayload, request: Request,
+    ) -> JSONResponse:
+        """Signed-in SmartPloy origin checks approved document before assisted fill.
+
+        This response is NON-BEARER, non-transferrable and never a grant to
+        submit to an employer. Site cookie and account ID stay within SmartPloy.
+        There is no CORS/extension endpoint or final browser action.
+        """
+        binding = signed_in_employer_review(request)
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Signed-in same-origin review required")
+        repo = _review_intent_repository()
+        workspace = _review_workspace(workspace_id, binding)
+        if app.state.employer_claims is None:
+            raise HTTPException(status_code=503, detail="Employer attempt ledger unavailable")
+        if workspace.revision != payload.expected_revision:
+            raise HTTPException(status_code=409, detail="Application revision changed")
+        if existing_employer_claim(binding, workspace) is not None:
+            raise HTTPException(status_code=409, detail="Prior attempt requires reconciliation")
+        tenant, _ = tenant_context(request)
+        try:
+            packet = make_browser_packet(
+                workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+            )
+        except HandoffError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if (
+            packet["document_sha256"] != payload.expected_document_sha256
+            or packet["cv_pdf_sha256"] != payload.expected_cv_pdf_sha256
+            or packet["cv_pdf_size"] != payload.expected_cv_pdf_size
+            or approved_fields_sha256(packet["fields"]) != payload.expected_fields_sha256
+            or sha256(packet["application_url"].encode("utf-8")).hexdigest()
+               != payload.expected_application_url_sha256
+        ):
+            raise HTTPException(status_code=409, detail="Reviewed packet fields, job or PDF changed")
+        try:
+            item = repo.verify_for_companion(
+                binding, workspace_id=workspace_id,
+                expected_revision=payload.expected_revision,
+                expected_application_url=workspace.application_url,
+                expected_job_fingerprint=workspace.job_fingerprint,
+                expected_document_sha256=packet["document_sha256"],
+                expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+            )
+        except EmployerReviewIntentDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Review verification unavailable") from exc
+        return JSONResponse(
+            {
+                "review_verified": True,
+                "review_state": "pending",
+                "expires_at": item.expires_at.isoformat(),
+                "automatic_employer_submit_authorized": False,
+                "external_actions_performed": False,
+                "browser_grant_issued": False,
+            },
+            headers={
+                "Cache-Control": "private, no-store",
+                "Pragma": "no-cache",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     @app.get("/api/v1/application-workspaces/{workspace_id}/handoff-readiness")

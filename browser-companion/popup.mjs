@@ -7,6 +7,11 @@ import { attachReviewedPdf } from "./page-attachment.mjs";
 import { QuestionError, planReviewedQuestions, validateReviewedAnswers } from "./questions.mjs";
 import { fillReviewedAnswers } from "./page-questions.mjs";
 import { AttemptError, oneAttemptKey } from "./attempt-lock.mjs";
+import {
+  approvedFieldsSha256, isSmartPloyTab, recordVerifiedReview,
+  requireVerifiedReview, sha256Text, validateReviewPacket
+} from "./review-bridge.mjs";
+import { verifyReviewOnSmartPloy } from "./page-review.mjs";
 
 const $ = (id) => document.getElementById(id);
 let targetTabId = null;
@@ -292,10 +297,55 @@ async function activeTab() {
   return tab;
 }
 
+async function onVerifySmartPloyReview() {
+  $("reviewInfo").textContent = "";
+  try {
+    const packet = validateReviewPacket($("packet").value);
+    const tab = await activeTab();
+    if (!isSmartPloyTab(tab.url)) {
+      throw new PacketError(
+        "Open smartploy.obumai.com while signed in, then click Verify review. " +
+        "After verification, return to the employer form and paste this same packet."
+      );
+    }
+    if (!chrome.storage?.session) {
+      throw new PacketError("Ephemeral extension storage unavailable. No review can be verified.");
+    }
+    const [reply] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id }, world: "ISOLATED",
+      func: verifyReviewOnSmartPloy,
+      args: [{
+        workspace_id: packet.workspace_id,
+        expected_revision: packet.revision,
+        expected_document_sha256: packet.document_sha256,
+        expected_cv_pdf_sha256: packet.cv_pdf_sha256,
+        expected_fields_sha256: await approvedFieldsSha256(packet.fields),
+        expected_application_url_sha256: await sha256Text(packet.application_url),
+        expected_cv_pdf_size: packet.cv_pdf_size
+      }]
+    });
+    if (reply?.frameId !== 0 || !reply?.result?.review_verified) {
+      throw new PacketError(
+        "SmartPloy could not verify the signed-in exact CV/job review. " +
+        "Record it in My applications and try again."
+      );
+    }
+    const saved = await recordVerifiedReview(chrome.storage.session, packet, reply.result);
+    $("reviewInfo").textContent =
+      "Signed-in review verified until " + new Date(saved.expires_at).toLocaleTimeString() +
+      ". Now open the employer form. Final submission remains manual.";
+    status("Only a short-lived review fingerprint is in extension memory. No login token or CV was saved.", true);
+  } catch (error) {
+    $("reviewInfo").textContent = "Review not verified. Assisted form filling remains disabled.";
+    status(normalizeError(error));
+  }
+}
+
 async function onInspect() {
   try {
     const tab = await activeTab();
     const pkt = validatePacket($("packet").value, tab.url);
+    await requireVerifiedReview(chrome.storage?.session, pkt);
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: inspectForm
@@ -352,6 +402,7 @@ async function onFill() {
   try {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
+    await requireVerifiedReview(chrome.storage?.session, currentPacket);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl) {
       throw new PacketError("Reinspect after changing employer tab or URL.");
     }
@@ -387,6 +438,7 @@ async function onAttach() {
     }
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
+    await requireVerifiedReview(chrome.storage?.session, currentPacket);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
         !exactLeverForm(tab.url, currentPacket.application_url)) {
       throw new PacketError("Open and reinspect the exact Lever /apply form before attaching.");
@@ -481,6 +533,7 @@ async function onReviewQuestions() {
   try {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
+    await requireVerifiedReview(chrome.storage?.session, currentPacket);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
         !exactLeverForm(tab.url, currentPacket.application_url)) {
       throw new QuestionError("Open and reinspect the matching Lever application before reviewing questions.");
@@ -554,6 +607,7 @@ async function onFillQuestions() {
     )) return;
     const again = await activeTab();
     validatePacket(currentPacketToJSON(), again.url);
+    await requireVerifiedReview(chrome.storage?.session, currentPacket);
     const key = await oneAttemptKey(currentPacket);
     if (again.id !== targetTabId || again.url !== tab.url ||
         (await chrome.storage.local.get(key))[key]) {
@@ -688,6 +742,7 @@ async function onReceipt() {
   } catch (error) { status(normalizeError(error)); }
 }
 
+$("verifyReview").addEventListener("click", () => void onVerifySmartPloyReview());
 $("inspect").addEventListener("click", () => void onInspect());
 $("resume").addEventListener("click", () => void onResumeReceipt());
 $("fill").addEventListener("click", () => void onFill());
@@ -719,6 +774,7 @@ $("packet").addEventListener("input", () => {
   $("questionList").replaceChildren(); $("questionPanel").hidden = true;
   $("questionInfo").textContent = ""; $("fillQuestions").disabled = true;
   $("receiptExport").value = "";
+  $("reviewInfo").textContent = "";
   $("approve").checked = false; $("submit").disabled = true;
   $("feedback").textContent = "";
 });
