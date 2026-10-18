@@ -19,7 +19,7 @@ function status(message, success = false) {
 }
 
 function normalizeError(error) {
-  if (error instanceof PacketError) return error.message;
+  if (error instanceof PacketError || error instanceof UploadError) return error.message;
   const value = error instanceof Error ? error.message : "";
   if (/^No tab with id|Cannot access contents|Missing host permission|The extensions gallery/.test(value)) {
     return "Open the employer job page in the active browser tab and try again.";
@@ -208,8 +208,8 @@ function inspectFinalSubmit(exactUrl) {
 function submitOnce(exactUrl) {
   const here = new URL(location.href);
   const expected = new URL(exactUrl);
-  const path = expected.pathname.replace(/\/+$/, "");
-  if (here.origin !== expected.origin || !here.pathname.startsWith(path) ||
+  const path = expected.pathname.replace(/\/apply\/?$/, "").replace(/\/+$/, "");
+  if (here.origin !== expected.origin || ![path + "/apply", path + "/apply/"].includes(here.pathname) ||
       !["jobs.lever.co", "jobs.eu.lever.co"].includes(here.hostname) ||
       !/\/apply\/?$/.test(here.pathname)) {
     return { status: "blocked", reason: "Employer form changed. Submission was not attempted." };
