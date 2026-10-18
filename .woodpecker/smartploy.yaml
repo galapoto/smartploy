@@ -26,6 +26,7 @@ steps:
     commands:
       - python3 -B scripts/obumdelivery_ci_gate.py validate
       - python3 -m pip install --no-cache-dir -e ".[dev]"
+      - python3 -B -m scripts.ci_wait_postgres
       - python3 -m compileall smartploy scripts tests
       - python3 -m pytest -q
       - python3 -m scripts.evaluate_search_quality
@@ -46,7 +47,6 @@ steps:
       - node --check browser-companion/logic.mjs
       - node --check browser-companion/popup.mjs
       - node --test browser-companion/tests/logic.test.mjs
-      - python3 -B scripts/obumdelivery_ci_gate.py mark-browser
 
   - name: exact-source-hold-receipt
     image: python:3.12-bookworm
@@ -54,5 +54,6 @@ steps:
     environment:
       CI: "true"
     commands:
+      - python3 -B scripts/obumdelivery_ci_gate.py mark-browser
       - python3 -B scripts/obumdelivery_ci_gate.py final
       - echo "OBUMDELIVERY_SMARTPLOY_PRODUCT_CI_PASS; PRODUCTION_RELEASE_GATE_HOLD"
