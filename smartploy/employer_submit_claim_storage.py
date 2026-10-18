@@ -159,6 +159,53 @@ def verified_employer_submit_preflight(
 
     return key, cv, letter
 
+
+def reserve_employer_claim_locked(
+    cur, binding: UserProfileBinding, *,
+    canonical_key: str, workspace_id: str, expected_revision: int,
+    expected_application_url: str, employer_job_key_sha256: str,
+    cv_text: str, cover_letter_text: str,
+) -> tuple[EmployerSubmitClaim, bool]:
+    """Reuse the original SP15a atomic uniqueness insert in a SHARED transaction.
+
+    The caller MUST first lock and validate owner/workspace/current job via
+    verified_employer_submit_preflight. This is a sticky attempted action marker,
+    never proof of employer acceptance or a browser-click capability.
+    """
+    claim_id = "employer-claim-" + uuid4().hex
+    document_hash = sha256(
+        (cv_text + "\0" + cover_letter_text).encode("utf-8")
+    ).hexdigest()
+    url_hash = sha256(expected_application_url.encode("utf-8")).hexdigest()
+    cur.execute(
+        """INSERT INTO smartploy_employer_submit_claims
+           (claim_id,user_id,profile_id,canonical_key,workspace_id,
+            document_revision,document_sha256,application_url_sha256,
+            employer_job_key_sha256,state)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'reserved_unverified')
+           ON CONFLICT DO NOTHING
+           RETURNING claim_id""",
+        (
+            claim_id, binding.user_id, binding.profile_id, canonical_key,
+            workspace_id, expected_revision, document_hash, url_hash,
+            employer_job_key_sha256,
+        ),
+    )
+    inserted = cur.fetchone() is not None
+    cur.execute(
+        PostgresEmployerSubmitClaimRepository._select() + """
+          WHERE user_id=%s AND profile_id=%s
+            AND (canonical_key=%s OR employer_job_key_sha256=%s)
+          ORDER BY created_at ASC, claim_id ASC LIMIT 1
+        """,
+        (binding.user_id, binding.profile_id, canonical_key, employer_job_key_sha256),
+    )
+    row = cur.fetchone()
+    if row is None:
+        raise RuntimeError("Claim insert/read inconsistent")
+    return PostgresEmployerSubmitClaimRepository._read(row), inserted
+
+
 class PostgresEmployerSubmitClaimRepository:
     """Dormant server primitive until authenticated browser handoff is built.
 
@@ -257,31 +304,15 @@ class PostgresEmployerSubmitClaimRepository:
                     expected_job_fingerprint=expected_job_fingerprint,
                 )
 
-                claim_id = "employer-claim-" + uuid4().hex
-                document_hash = sha256((cv + "\0" + letter).encode("utf-8")).hexdigest()
-                url_hash = sha256(expected_application_url.encode("utf-8")).hexdigest()
-                cur.execute(
-                    """INSERT INTO smartploy_employer_submit_claims
-                       (claim_id,user_id,profile_id,canonical_key,workspace_id,
-                        document_revision,document_sha256,application_url_sha256,
-                        employer_job_key_sha256,state)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'reserved_unverified')
-                       ON CONFLICT DO NOTHING
-                       RETURNING claim_id""",
-                    (claim_id, binding.user_id, binding.profile_id, key, workspace_id,
-                     expected_revision, document_hash, url_hash, employer_key),
+                claim, inserted = reserve_employer_claim_locked(
+                    cur, binding,
+                    canonical_key=key, workspace_id=workspace_id,
+                    expected_revision=expected_revision,
+                    expected_application_url=expected_application_url,
+                    employer_job_key_sha256=employer_key,
+                    cv_text=cv, cover_letter_text=letter,
                 )
-                inserted = cur.fetchone() is not None
-                cur.execute(
-                    self._select() + """ WHERE user_id=%s AND profile_id=%s
-                       AND (canonical_key=%s OR employer_job_key_sha256=%s)
-                       ORDER BY created_at ASC, claim_id ASC LIMIT 1""",
-                    (binding.user_id, binding.profile_id, key, employer_key),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    raise RuntimeError("Claim insert/read inconsistent")
-        return self._read(row), inserted
+        return claim, inserted
 
     def mark_uncertain(
         self, binding: UserProfileBinding, claim_id: str, *, code: str,

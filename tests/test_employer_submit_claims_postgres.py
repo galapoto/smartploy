@@ -33,6 +33,12 @@ from smartploy.employer_submit_claim_storage import (
 from smartploy.employer_review_intent_storage import (
     EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
 )
+from smartploy.employer_automation_rights import (
+    PostgresEmployerAutomationRightsRepository, employer_job_key,
+)
+from smartploy.employer_final_action_gate import (
+    EmployerFinalActionDenied, PostgresEmployerFinalActionGate,
+)
 from smartploy.identity import AuthenticatedPrincipal, PostgresIdentityRepository
 from smartploy.storage import PostgresJobRepository
 
@@ -99,6 +105,18 @@ def scoped():
     yield a, b, wa, wb, job_key, url, fingerprint, letter, ledger, reserve
 
     with connect(DSN) as conn:
+        conn.execute(
+            "DELETE FROM smartploy_employer_final_approvals WHERE user_id IN (%s,%s)",
+            (a.user_id, b.user_id),
+        )
+        conn.execute(
+            "DELETE FROM smartploy_employer_automation_rights WHERE employer_job_key_sha256=%s",
+            (employer_job_key(url),),
+        )
+        conn.execute(
+            "DELETE FROM smartploy_profile_facts WHERE profile_id IN (%s,%s)",
+            (a.profile_id, b.profile_id),
+        )
         conn.execute(
             "DELETE FROM smartploy_employer_review_intents WHERE user_id IN (%s,%s)",
             (a.user_id, b.user_id),
@@ -599,6 +617,15 @@ def test_signed_in_review_http_to_postgres_end_to_end(scoped, monkeypatch):
             "X-Smartploy-Expected-User-Id":a.user_id,
         }
         verify_route = route.replace("/submit-review-intent", "/verify-reviewed-packet")
+        posture_route = route.replace("/submit-review-intent", "/final-action-readiness")
+        baseline_posture = api.get(posture_route)
+        assert baseline_posture.status_code == 200, baseline_posture.text
+        assert baseline_posture.json()["operator_permission_reviewed"] is False
+        assert baseline_posture.json()["trusted_one_use_browser_redemption_available"] is False
+        assert baseline_posture.json()["final_browser_click_authorized"] is False
+        assert "independent_employer_permission_missing" in baseline_posture.json()["blockers"]
+        assert api.post(posture_route, json={}).status_code == 403
+        assert api.post(posture_route, json={}, headers=headers).status_code == 405
         verification_body = {
             "expected_revision":work.revision,
             "expected_document_sha256":packet["document_sha256"],
@@ -615,6 +642,10 @@ def test_signed_in_review_http_to_postgres_end_to_end(scoped, monkeypatch):
         assert first_read.json()["review_state"] == "not_recorded"
         accepted = api.post(route, json=body, headers=headers)
         assert accepted.status_code == 200, accepted.text
+        reviewed_posture=api.get(posture_route)
+        assert reviewed_posture.status_code==200
+        assert reviewed_posture.json()["current_applicant_review_recorded"] is True
+        assert reviewed_posture.json()["final_browser_click_authorized"] is False
         assert accepted.json()["review_recorded"] is True
         assert accepted.json()["new_review_recorded"] is True
         assert accepted.json()["automatic_employer_submit_authorized"] is False
@@ -645,6 +676,7 @@ def test_signed_in_review_http_to_postgres_end_to_end(scoped, monkeypatch):
         assert "no-store" in api.get(route).headers["cache-control"]
         api.cookies.set(SESSION_COOKIE_NAME, tokens["b"])
         assert api.get(route).status_code == 404
+        assert api.get(posture_route).status_code == 404
         other_write = api.post(route, json=body, headers=headers)
         assert other_write.status_code == 409
         assert api.post(verify_route,json=verification_body,headers=headers).status_code==409
@@ -726,3 +758,297 @@ def test_review_verification_expiry_and_prior_claim_block_fail_closed(scoped):
     assert inserted
     with pytest.raises(EmployerReviewIntentDenied,match="reconciliation"):
         repo.verify_for_companion(a,**args)
+
+
+
+def final_fixture(scoped, *, who="a", rights=True):
+    """Synthetic real PostgreSQL first-party reuse, never provider traffic."""
+    a,b,wa,wb,key,url,fp,letter,_,_=scoped
+    binding,workspace=(a,wa) if who=="a" else (b,wb)
+    store=PostgresProfileRepository(DSN,profile_id=binding.profile_id)
+    for kind,value in (
+        ("identity","Synthetic Applicant"),
+        ("email","same@example.invalid"),
+    ):
+        store.upsert_fact(ProfileFact(kind,value,"user-entered",approved=True))
+    cv="Reviewed synthetic resume with sufficient content"
+    digest=sha256((cv+"\0"+letter).encode()).hexdigest()
+    pdf="d"*64
+    contact={
+        "full_name":"Synthetic Applicant","first_name":"Synthetic",
+        "last_name":"Applicant","email":"same@example.invalid",
+        "phone":"","location":"","linkedin":"","github":"",
+        "cover_letter":letter[:10000],
+    }
+    field_digest=approved_fields_sha256(contact)
+    intent_repo=PostgresEmployerReviewIntentRepository(DSN)
+    intent,_=intent_repo.prepare(
+        binding,workspace_id=workspace,expected_revision=1,
+        expected_application_url=url,expected_job_fingerprint=fp,
+        expected_document_sha256=digest,expected_cv_pdf_sha256=pdf,
+        explicit_user_review=True,acknowledge_no_automatic_submit=True,
+    )
+    employer_hash=employer_job_key(url)
+    if rights:
+        with connect(DSN) as conn:
+            conn.execute(
+                """INSERT INTO smartploy_employer_automation_rights (
+                     employer_job_key_sha256, permission_basis,
+                     permission_evidence_sha256,terms_evidence_sha256,
+                     reviewed_by,independently_approved_by,
+                     reviewed_at,expires_at,state
+                   ) VALUES (
+                     %s,'explicit_employer_authorization',%s,%s,
+                     'auditor-A-123','auditor-B-456',
+                     now()-interval '1 day',now()+interval '1 day','approved'
+                   ) ON CONFLICT (employer_job_key_sha256) DO NOTHING""",
+                (employer_hash,"e"*64,"f"*64),
+            )
+    return binding,dict(
+        workspace_id=workspace,expected_revision=1,
+        expected_application_url=url,expected_job_fingerprint=fp,
+        expected_document_sha256=digest,expected_cv_pdf_sha256=pdf,
+        expected_fields_sha256=field_digest,
+    )
+
+
+def test_employer_final_gate_denies_missing_rights_even_for_approved_source(scoped):
+    a,args=final_fixture(scoped,rights=False)
+    gate=PostgresEmployerFinalActionGate(DSN)
+    read=PostgresEmployerAutomationRightsRepository(DSN).inspect(
+        args["expected_application_url"]
+    )
+    assert read["operator_permission_reviewed"] is False
+    assert read["final_browser_click_authorized"] is False
+    with pytest.raises(EmployerFinalActionDenied,match="permission"):
+        gate.approve(
+            a,**args,explicit_final_user_approval=True,
+            acknowledge_external_employer_transfer=True,
+        )
+    assert gate.get(a,args["expected_application_url"]) is None
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(
+        a,scoped[4]
+    ) is None
+
+
+def test_only_two_independent_current_permission_reviewers_can_gate_approval(scoped):
+    a,args=final_fixture(scoped)
+    url=args["expected_application_url"]
+    gate=PostgresEmployerFinalActionGate(DSN)
+    posture=PostgresEmployerAutomationRightsRepository(DSN).inspect(url)
+    assert posture["operator_permission_reviewed"] is True
+    assert posture["permission_basis"]=="explicit_employer_authorization"
+    assert posture["final_browser_click_authorized"] is False
+    with connect(DSN) as conn:
+        with pytest.raises(Exception):
+            conn.execute(
+                """UPDATE smartploy_employer_automation_rights
+                   SET independently_approved_by=reviewed_by
+                   WHERE employer_job_key_sha256=%s""",
+                (employer_job_key(url),),
+            )
+    with pytest.raises(EmployerFinalActionDenied,match="Fresh"):
+        gate.approve(a,**args,explicit_final_user_approval=False,
+            acknowledge_external_employer_transfer=True)
+    with connect(DSN) as conn:
+        conn.execute(
+            """UPDATE smartploy_employer_automation_rights
+               SET state='revoked'
+               WHERE employer_job_key_sha256=%s""",
+            (employer_job_key(url),),
+        )
+    with pytest.raises(EmployerFinalActionDenied,match="permission"):
+        gate.approve(a,**args,explicit_final_user_approval=True,
+            acknowledge_external_employer_transfer=True)
+    assert gate.get(a,url) is None
+
+
+def test_final_approval_requires_reviewed_exact_fields_and_is_nonbearer(scoped):
+    a,args=final_fixture(scoped)
+    gate=PostgresEmployerFinalActionGate(DSN)
+    with pytest.raises(EmployerFinalActionDenied,match="contact"):
+        gate.approve(a,**{**args,"expected_fields_sha256":"a"*64},
+            explicit_final_user_approval=True,
+            acknowledge_external_employer_transfer=True)
+    first,created=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    assert created and first.state=="approved"
+    assert first.expires_at>first.created_at
+    status=first.public_status(workspace_id=args["workspace_id"],revision=1)
+    assert status["approval_recorded"] is True
+    assert status["final_browser_click_authorized"] is False
+    assert status["employer_submission_performed"] is False
+    assert status["employer_receipt_verified"] is False
+    for secret in (a.user_id,a.profile_id,first.approval_id,
+                   first.document_sha256,args["expected_application_url"]):
+        assert secret not in str(status)
+    again,created=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    assert not created and again.approval_id==first.approval_id
+    assert gate.get(scoped[1],args["expected_application_url"]) is None
+
+
+def test_final_approval_cancel_revoke_and_expiration_prevent_consumption(scoped):
+    a,args=final_fixture(scoped)
+    gate=PostgresEmployerFinalActionGate(DSN)
+    approved,_=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    gate.cancel(a,args["expected_application_url"])
+    with pytest.raises(EmployerFinalActionDenied,match="expired|revoked|consumed"):
+        gate.consume_once_for_trusted_adapter(
+            a,approval_id=approved.approval_id,**args)
+    revived,created=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    assert created and revived.approval_id!=approved.approval_id
+    with connect(DSN) as conn:
+        conn.execute(
+            """UPDATE smartploy_employer_final_approvals
+               SET created_at=now()-interval '2 hours',
+                   expires_at=now()-interval '1 hour'
+               WHERE approval_id=%s""",
+            (revived.approval_id,),
+        )
+    with pytest.raises(EmployerFinalActionDenied,match="expired|revoked|consumed"):
+        gate.consume_once_for_trusted_adapter(
+            a,approval_id=revived.approval_id,**args)
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(a,scoped[4]) is None
+
+
+def test_two_device_concurrent_one_shot_claim_uses_original_sp15a_insert(scoped):
+    a,args=final_fixture(scoped)
+    gate=PostgresEmployerFinalActionGate(DSN)
+    approval,_=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    def submit():
+        try:
+            result=PostgresEmployerFinalActionGate(DSN).consume_once_for_trusted_adapter(
+                a,approval_id=approval.approval_id,**args)
+            return result
+        except EmployerFinalActionDenied:
+            return None
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        outcomes=list(pool.map(lambda _:submit(),range(8)))
+    successes=[x for x in outcomes if x is not None]
+    assert len(successes)==1
+    winner=successes[0]
+    assert winner.claim.state=="reserved_unverified"
+    assert winner.claim.employer_job_key_sha256==employer_job_key(
+        args["expected_application_url"]
+    )
+    assert winner.public_status()["automatic_retry_authorized"] is False
+    assert winner.public_status()["final_browser_click_authorized"] is False
+    assert winner.public_status()["employer_submission_verified"] is False
+    with pytest.raises(EmployerFinalActionDenied,match="consumed|expired|revoked"):
+        gate.consume_once_for_trusted_adapter(
+            a,approval_id=approval.approval_id,**args)
+    current=gate.get(a,args["expected_application_url"])
+    assert current.state=="consumed_unverified"
+    assert current.approval_id==approval.approval_id
+    persisted=PostgresEmployerSubmitClaimRepository(DSN).get(a,scoped[4])
+    assert persisted.claim_id==winner.claim.claim_id
+    assert persisted.document_sha256==args["expected_document_sha256"]
+
+
+def test_rights_revoked_after_final_approval_blocks_claim_before_consume(scoped):
+    a,args=final_fixture(scoped)
+    gate=PostgresEmployerFinalActionGate(DSN)
+    approval,_=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    with connect(DSN) as conn:
+        conn.execute(
+            """UPDATE smartploy_employer_automation_rights SET state='revoked'
+               WHERE employer_job_key_sha256=%s""",
+            (employer_job_key(args["expected_application_url"]),),
+        )
+    with pytest.raises(EmployerFinalActionDenied,match="permission"):
+        gate.consume_once_for_trusted_adapter(a,approval_id=approval.approval_id,**args)
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(a,scoped[4]) is None
+    assert gate.get(a,args["expected_application_url"]).state=="approved"
+
+
+def test_approved_contact_change_after_final_approval_fails_before_claim(scoped):
+    a,args=final_fixture(scoped)
+    gate=PostgresEmployerFinalActionGate(DSN)
+    approval,_=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    with connect(DSN) as conn:
+        conn.execute(
+            """UPDATE smartploy_profile_facts SET approved=false
+               WHERE profile_id=%s AND fact_type='email'""",(a.profile_id,),
+        )
+    with pytest.raises(EmployerFinalActionDenied,match="name and email"):
+        gate.consume_once_for_trusted_adapter(a,approval_id=approval.approval_id,**args)
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(a,scoped[4]) is None
+
+
+def test_final_approval_inventory_is_account_scoped_after_quarantine(scoped):
+    a,args=final_fixture(scoped)
+    gate=PostgresEmployerFinalActionGate(DSN)
+    _,created=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    assert created
+    PostgresAccountErasureRepository(DSN).quarantine(a.user_id,a.profile_id)
+    inspection=inspect_quarantined_account(DSN,a.user_id,a.profile_id)
+    assert inspection.counts["employer_final_approvals"]==1
+    assert inspection.unknown_owner_tables==()
+    with pytest.raises(EmployerFinalActionDenied,match="disabled|binding"):
+        gate.consume_once_for_trusted_adapter(
+            a,approval_id=gate.get(a,args["expected_application_url"]).approval_id,
+            **args,
+        )
+
+
+
+def test_final_approval_claim_insertion_crash_rolls_back_both_records(scoped,monkeypatch):
+    """No ghost employer action claim if persistence fails BEFORE commit."""
+    import smartploy.employer_final_action_gate as action_gate_module
+
+    a,args=final_fixture(scoped)
+    gate=PostgresEmployerFinalActionGate(DSN)
+    approval,_=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    original=action_gate_module.reserve_employer_claim_locked
+
+    def synthetic_crash_after_insert(*call_args,**kw):
+        result=original(*call_args,**kw)
+        assert result[1]
+        raise RuntimeError("synthetic_crash_before_transaction_commit")
+
+    with monkeypatch.context() as local:
+        local.setattr(
+            action_gate_module,"reserve_employer_claim_locked",synthetic_crash_after_insert
+        )
+        with pytest.raises(RuntimeError,match="synthetic_crash"):
+            gate.consume_once_for_trusted_adapter(
+                a,approval_id=approval.approval_id,**args
+            )
+    # On an exception the original PostgreSQL transaction is rolled back
+    # atomically, so the approval remains usable. No external click occurred.
+    assert gate.get(a,args["expected_application_url"]).state=="approved"
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(a,scoped[4]) is None
+    completed=gate.consume_once_for_trusted_adapter(
+        a,approval_id=approval.approval_id,**args
+    )
+    assert completed.claim.state=="reserved_unverified"
+    assert gate.get(a,args["expected_application_url"]).state=="consumed_unverified"
+
+
+def test_employer_rights_expire_after_final_user_approval_before_consume(scoped):
+    """Source acquisition permission cannot substitute for expired automation rights."""
+    a,args=final_fixture(scoped)
+    gate=PostgresEmployerFinalActionGate(DSN)
+    approval,_=gate.approve(a,**args,explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True)
+    with connect(DSN) as conn:
+        conn.execute(
+            """UPDATE smartploy_employer_automation_rights
+               SET expires_at=now()-interval '1 minute'
+               WHERE employer_job_key_sha256=%s""",
+            (employer_job_key(args["expected_application_url"]),),
+        )
+    assert not PostgresEmployerAutomationRightsRepository(DSN).inspect(
+        args["expected_application_url"]
+    )["operator_permission_reviewed"]
+    with pytest.raises(EmployerFinalActionDenied,match="permission"):
+        gate.consume_once_for_trusted_adapter(a,approval_id=approval.approval_id,**args)
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(a,scoped[4]) is None

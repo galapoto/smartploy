@@ -158,3 +158,21 @@ def test_browser_verification_endpoint_is_not_extension_accessible(monkeypatch):
     assert api.post(url,json=body,headers=good).status_code==503
     api.cookies.clear()
     assert api.post(url,json=body,headers=good).status_code==401
+
+
+
+def test_private_final_action_readiness_never_issues_employer_submit_authority(monkeypatch):
+    api=client_for_owner(monkeypatch)
+    path=PATH.replace("/employer-attempt","/final-action-readiness")
+    # Unknown private draft is hidden before the database posture check.
+    assert api.get(path).status_code==404
+    assert api.post(path,json={
+        "confirm_final_submit":True,"employer_permission":True,
+    }).status_code in (403,405)
+    assert api.put(path,json={}).status_code in (403,405)
+    api.cookies.clear()
+    assert api.get(path).status_code==401
+    api=client_for_owner(monkeypatch)
+    assert api.get(path,headers={"Sec-Fetch-Site":"cross-site"}).status_code==403
+    assert api.get(path,headers={"Origin":"chrome-extension://synthetic"}).status_code==403
+    assert api.get(path,headers={"Origin":"https://evil.invalid"}).status_code==403
