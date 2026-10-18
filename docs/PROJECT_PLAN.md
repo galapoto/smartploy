@@ -1,11 +1,11 @@
 # SmartPloy — Master Product Plan (reuse-first AutoApply)
- 
+
 **Status:** PROPOSED PLAN FOR OWNER REVIEW — **NOT** an implementation order, release approval, employer application authorization, or claim of live deployment.  
 **Audit date:** 2026-10-18 (Europe/Helsinki).  
-**Project:** \`galapoto/smartploy\`; ObumAI-powered independent Finland-first job intelligence and application product.  
+**Project:** `galapoto/smartploy`; ObumAI-powered independent Finland-first job intelligence and application product.  
 **Existing operational ledger:** [SmartPloy issue #88](https://github.com/galapoto/smartploy/issues/88). The ledger remains the record of what actually shipped; this file is the forward project plan.  
 **Detailed evidence, repository inventory, video/TikTok references and license matrix:** [REUSE_FIRST_AUDIT_2026-10-18.md](REUSE_FIRST_AUDIT_2026-10-18.md).  
-**Source snapshot when this plan was written:** \`main@d0ebe59a576f7814c7c3ecb5bc64b104afbf16b1\`; substantial product work remains in [draft integrated PR #149](https://github.com/galapoto/smartploy/pull/149) at \`ca56d17a06741f5d8f61b7370391abed1373cba9\`. The last historical owner-attested OVH release was \`fc94e78e779650e781277ee1056ec92cd26a6e98\` on 2026-10-12; **this audit did not reverify the running server**.
+**Source snapshot when this plan was written:** `main@d0ebe59a576f7814c7c3ecb5bc64b104afbf16b1`; substantial product work remains in [draft integrated PR #149](https://github.com/galapoto/smartploy/pull/149) at `ca56d17a06741f5d8f61b7370391abed1373cba9`. The last historical owner-attested OVH release was `fc94e78e779650e781277ee1056ec92cd26a6e98` on 2026-10-12; **this audit did not reverify the running server**.
 
 ## 1. Product outcome — actual applications, not just CI
 
@@ -28,7 +28,7 @@ Finland-first; Finnish and English at minimum with appropriately reviewed Swedis
 
 1. Search **SmartPloy main, the exact integrated review branch and relevant unmerged drafts**, plus **ObumAI runtime's existing 24 application modules and 17 browser modules** and the relevant ObumAI agent's draft source—not README alone.
 2. Search the relevant related owner's repositories (source registry below), plus the vetted public candidates, their current code **and the exact version/commit**. Look at interfaces, real implementation, tests, security policy and supported platform versions.
-3. Record a \`REUSE-CHECK\` entry with: capability, source repository and pinned commit/blob, existing filename/function/API, difference from SmartPloy requirements, exact SPDX/license text and third-party attributions, platform rights, network/data egress, tests, known defects, decision and reviewer.
+3. Record a `REUSE-CHECK` entry with: capability, source repository and pinned commit/blob, existing filename/function/API, difference from SmartPloy requirements, exact SPDX/license text and third-party attributions, platform rights, network/data egress, tests, known defects, decision and reviewer.
 4. Prefer, in this order: **existing SmartPloy service/function → versioned ObumAI API/capability (no DB or auth boundary collapse) → vetted permissively licensed library or narrowly copied module with notices → small adapter/augmentation → independently implemented new code only when the preceding alternatives are unsuitable.**
 5. Reject all direct copies where copyright/license is missing, ambiguous, contradicts commercial use, or requires unapproved source-disclosure obligations. **Changing or rewriting restrictive licensed code does not erase its license.** Study published requirements and independently implement using independently documented interface behavior or seek permission.
 6. Decide whether reuse saves **net** time after maintenance, integration and security costs. Do not import three competing browser stacks or duplicate the existing profile/ATS/workflow database.
@@ -38,26 +38,26 @@ Finland-first; Finnish and English at minimum with appropriately reviewed Swedis
 
 ## 3. Audited source scope and reusable inventory
 
-Repository discovery on 2026-10-18: **44 owned/connected GitHub repositories** (\`obumai\` 11, \`galapoto\` 21, \`Nordvantage\` 5, \`komplyint\` 7) and **22 distinct external candidate repository families** (including one AIHawk fork family). These are **catalog-level counts**, NOT 66 complete code/security audits or 66 deployable modules.
+Repository discovery on 2026-10-18: **44 owned/connected GitHub repositories** (`obumai` 11, `galapoto` 21, `Nordvantage` 5, `komplyint` 7) and **22 distinct external candidate repository families** (including one AIHawk fork family). These are **catalog-level counts**, NOT 66 complete code/security audits or 66 deployable modules.
 
 **15 pre-existing subsystem families** were found, mostly as partial or review-only code. Avoid counting the same subsystem in multiple repositories as independent deliverables.
 
 | Subsystem | Existing source to reuse or assess | Deficit to close |
 |---|---|---|
-| RF-S01 Source adapters and board discovery | SmartPloy \`smartploy/sources/\`; MIT career-ops \`providers/\`; conditional JobSpy | Finland authorization, KIPA credentials, employer-specific source policy |
+| RF-S01 Source adapters and board discovery | SmartPloy `smartploy/sources/`; MIT career-ops `providers/`; conditional JobSpy | Finland authorization, KIPA credentials, employer-specific source policy |
 | RF-S02 Canonical job identity, freshness, dedup | SmartPloy source/domain/polling; career-ops | Multi-ATS provenance; live feed freshness and no lost jobs |
-| RF-S03 Owner-scoped verified profile/facts | SmartPloy workspace; ObumAI \`application/evidence_vault.py\`; Knowledge drafts | Strict stable user/profile binding, erasure and approved-vs-inferred facts |
+| RF-S03 Owner-scoped verified profile/facts | SmartPloy workspace; ObumAI `application/evidence_vault.py`; Knowledge drafts | Strict stable user/profile binding, erasure and approved-vs-inferred facts |
 | RF-S04 Matching, hard filters and suitability | SmartPloy scoring; career-ops; optional Hiring Agent | Human-labeled Finnish accuracy/false-negative validation |
-| RF-S05 Tailored CV, cover letter and motivation | SmartPloy drafts; ObumAI \`cv_tailor.py\`, \`cover_letter.py\`, \`questionnaire.py\` | Fact grounding, bilingual acceptance, real document quality |
-| RF-S06 Answer memory and custom questions | ObumAI \`form_mapper.py\`, \`questionnaire.py\`; MIT neonwatty answer-memory | Per-field confidence, provenance, protected answers, withdrawal |
+| RF-S05 Tailored CV, cover letter and motivation | SmartPloy drafts; ObumAI `cv_tailor.py`, `cover_letter.py`, `questionnaire.py` | Fact grounding, bilingual acceptance, real document quality |
+| RF-S06 Answer memory and custom questions | ObumAI `form_mapper.py`, `questionnaire.py`; MIT neonwatty answer-memory | Per-field confidence, provenance, protected answers, withdrawal |
 | RF-S07 PDF/DOCX rendering and versioned files | SmartPloy private documents; ObumStudio PDF/DOCX draft; MIT Reactive Resume | Stable file identity, printable ATS-friendly document, upload ready |
 | RF-S08 ATS PDF parseability/checks | Apache-2.0 Resume Matcher | Synthetic and actual parser validation, reject misleading score as eligibility |
-| RF-S09 Persistent browser sessions and navigation | ObumAI \`browser/live_session.py\` + Playwright; MIT Browser Use **or** Stagehand | Reliable account isolation and tenant-scoped browser lifecycle |
+| RF-S09 Persistent browser sessions and navigation | ObumAI `browser/live_session.py` + Playwright; MIT Browser Use **or** Stagehand | Reliable account isolation and tenant-scoped browser lifecycle |
 | RF-S10 ATS DOM field extraction and filling | SmartPloy Lever companion; career-ops; MIT ApplyAI, Yaima | Greenhouse, Ashby, Workable/custom variants; dynamic questions |
-| RF-S11 File selection, upload and evidence | ObumAI \`browser/upload_plan.py\` (staging **only**); candidate ATS appliers | **Actual safe browser attachment** + digest and document-kind verification |
-| RF-S12 Durable queue, leases, retries, limits | SmartPloy worker/CRM; \`galapoto/vakevahti\` outbox/leases; Yaima tracker | Queue once-only reservation across crashes and multi-user action limits |
-| RF-S13 Final-action authority and duplicate denial | ObumAI \`application/final_submit_preflight.py\`; SmartPloy browser companion | Scope-limited standing approval and supported provider-specific submit |
-| RF-S14 Receipt, exception, follow-up tracking | SmartPloy CRM/receipts; Yaima \`agent/tracker.py\`; career-ops | Employer-origin verification, ambiguous/captcha/closed queue |
+| RF-S11 File selection, upload and evidence | ObumAI `browser/upload_plan.py` (staging **only**); candidate ATS appliers | **Actual safe browser attachment** + digest and document-kind verification |
+| RF-S12 Durable queue, leases, retries, limits | SmartPloy worker/CRM; `galapoto/vakevahti` outbox/leases; Yaima tracker | Queue once-only reservation across crashes and multi-user action limits |
+| RF-S13 Final-action authority and duplicate denial | ObumAI `application/final_submit_preflight.py`; SmartPloy browser companion | Scope-limited standing approval and supported provider-specific submit |
+| RF-S14 Receipt, exception, follow-up tracking | SmartPloy CRM/receipts; Yaima `agent/tracker.py`; career-ops | Employer-origin verification, ambiguous/captcha/closed queue |
 | RF-S15 Safe observation, testing, delivery | ObumBrowse candidate; ObumBench eval drafts; ObumDelivery | Real integrated CI, source-pinned acceptance and trusted OVH promotion |
 
 **Internal reuse decision:** SmartPloy retains *ownership of jobs, accounts, source rights and submission records*. ObumAI remains a versioned bounded reasoning/execution service; **do not copy private application databases or import ObumAI runtime code directly into production SmartPloy** just to remove an API call. Incorporate self-owned library code only with repository/owner rights and independent security review.
@@ -102,7 +102,7 @@ Use [GitHub's licensing guidance](https://docs.github.com/en/repositories/managi
 
 ## 6. Minimal product architecture; integrate not replicate
 
-\`\`\`text
+```text
 SmartPloy signed-in user + source-rights registry
   -> Finnish/ATS discovery (existing SmartPloy; selected approved career-ops adapters)
   -> canonical ranked job queue + per-account application policy
@@ -114,7 +114,7 @@ SmartPloy signed-in user + source-rights registry
   -> consequential-action consent/standing-approval authority, provider-rights gate
   -> one-shot submit or manual handoff, with ambiguous outcome never auto-retried
   -> employer evidence/exception queue, SmartPloy status and notifications
-\`\`\`
+```
 
 **Exactly one canonical source of truth** for each application attempt, profile, job and permission. Runtime integrations use typed, versioned contracts, not direct cross-product DB access or unmanaged plugins. Existing SmartPloy/ObumAI solutions are the baseline; foreign libraries fill *demonstrated gaps*. Local Ollama default; no CV, answers, cookie, token or employer posting forwarded to an outside AI processor without recorded, revocable, per-purpose permission and publisher rights.
 
@@ -172,7 +172,7 @@ An external module fails qualification until all applicable negative and positiv
 
 **This plan is the deliverable for the current audit, NOT a permission to begin incorporation.** Reviewer should approve/change the initial 8 candidate choices and the permission-first scope. Then:
 
-1. Create per-feature \`REUSE-CHECK\` with pinned eligible source and complete audit; ensure no copyrighted unlicensed code was ported.
+1. Create per-feature `REUSE-CHECK` with pinned eligible source and complete audit; ensure no copyrighted unlicensed code was ported.
 2. Build from the *existing* SmartPloy application and ObumAI runtime foundations. Maintain native SmartPloy tenant boundary and migrate only intentional functionality.
 3. Keep real production, GitHub main and employer systems unchanged until reviewed CI, owner consent, backup/rollback and signed-in acceptance.
 4. Update this plan and [master tracker #88](https://github.com/galapoto/smartploy/issues/88) after every measured actual integration; distinguish source-built, CI-tested, ObumDelivery-tested, deployed, browser-verified and employer-confirmed.
