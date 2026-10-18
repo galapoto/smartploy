@@ -110,8 +110,10 @@ def test_review_intent_api_never_allows_unauthenticated_or_nonorigin_creation(mo
     assert api.post(url,json=body,headers={
         "Origin":ORIGIN,"Sec-Fetch-Site":"same-origin",
     }).status_code==403  # no verified account precondition header
+    verified_user = api.get("/api/v1/session").json()["user_id"]
     assert api.post(url,json={**body,"confirm_reviewed_application":False},headers={
         "Origin":ORIGIN,"Sec-Fetch-Site":"same-origin",
+        "X-Smartploy-Expected-User-Id":verified_user,
     }).status_code==422
 
 
