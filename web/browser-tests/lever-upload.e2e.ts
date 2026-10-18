@@ -6,14 +6,14 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 
-const URL = "https://jobs.lever.co/synthetic-org/12345678-1234-1234-1234-123456789abc/apply";
+const JOB_URL = "https://jobs.lever.co/synthetic-org/12345678-1234-1234-1234-123456789abc/apply";
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n");
 const MIME = "application/pdf";
 
 async function setup(page: Page) {
   let externalRequests = 0;
   await page.route("**/*", async (route) => {
-    if (route.request().url() !== URL) {
+    if (route.request().url() !== JOB_URL) {
       externalRequests++;
       await route.abort();
       return;
@@ -35,7 +35,7 @@ async function setup(page: Page) {
         </script></body></html>\`
     });
   });
-  await page.goto(URL);
+  await page.goto(JOB_URL);
   // Same function body as the extension's chrome.scripting.executeScript
   // callback; only replace the module export for a synthetic page harness.
   const source = await readFile(new URL("../../browser-companion/page-attachment.mjs", import.meta.url), "utf8");
@@ -50,8 +50,8 @@ async function setup(page: Page) {
 
 function request(overrides: Record<string, unknown> = {}) {
   return {
-    application_url: URL,
-    inspected_url: URL,
+    application_url: JOB_URL,
+    inspected_url: JOB_URL,
     index: 0,
     expected_id: "resume_file",
     expected_name: "resume",
@@ -90,8 +90,8 @@ test("a reviewed PDF is locally attached to the unique résumé input, not submi
 test("wrong employer/job, stale identity and corrupt digest never attach", async ({page}) => {
   const external = await setup(page);
   const variants = [
-    {application_url: URL.replace("/synthetic-org/", "/other-employer/")},
-    {inspected_url: URL + "?unexpected=1"},
+    {application_url: JOB_URL.replace("/synthetic-org/", "/other-employer/")},
+    {inspected_url: JOB_URL + "?unexpected=1"},
     {expected_id: "other_file"},
     {expected_name: "coverLetter"},
     {index: 1},
