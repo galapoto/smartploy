@@ -9,10 +9,11 @@ import {
   getApplicationWorkspaces, markApplicationManuallySent,
   getLocalAIStatus, requestLocalAISuggestions,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
-  getBrowserReceipt, importBrowserReceipt, getSession
+  getEmployerAttemptStatus, getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
 import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
+import type { EmployerAttemptState } from "./api";
 
 const ACCOUNT_CHANGED_NOTICE =
   "Your signed-in SmartPloy account changed or could not be verified. Reload SmartPloy to continue safely.";
@@ -39,6 +40,7 @@ export default function ApplicationStudio(props: {
   const [aiStatus, setAIStatus] = useState<LocalAIStatus | null>(null);
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
   const [handoff, setHandoff] = useState<BrowserHandoffReadiness | null>(null);
+  const [employerAttempt, setEmployerAttempt] = useState<EmployerAttemptState | null>(null);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [handoffPacketText, setHandoffPacketText] = useState("");
   const [browserReceipt, setBrowserReceipt] = useState<BrowserObservedReceipt | null>(null);
@@ -73,7 +75,7 @@ export default function ApplicationStudio(props: {
     ++selectedDraftRef.current.epoch;
     setWorkspaces([]); setSelectedId("");
     setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
-    setHandoff(null); setHandoffPacketText("");
+    setHandoff(null); setEmployerAttempt(null); setHandoffPacketText("");
     setBrowserReceipt(null); setReceiptOpen(false); setReceiptInput("");
     setMessage(""); setError(ACCOUNT_CHANGED_NOTICE);
     setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false);
@@ -194,7 +196,7 @@ export default function ApplicationStudio(props: {
       setLetterText(selected?.cover_letter_text || "");
       setHandoffPacketText("");
       setReceiptOpen(false); setReceiptInput("");
-      setHandoff(null); setBrowserReceipt(null);
+      setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null);
     }
   }, [selected?.workspace_id, selected?.revision]);
 
@@ -206,22 +208,24 @@ export default function ApplicationStudio(props: {
       try {
         await verifyAccount();
         if (!alive || accountBlockedRef.current) return;
-        // Both reads are tenant-scoped. Check identity once around the
-        // parallel pair; never publish a late cross-account response.
-        const [handoffResult, receiptResult] = await Promise.allSettled([
+        // Three tenant-scoped reads, with exact identity recheck both before
+        // and after. Never publish a stale cross-account server attempt.
+        const [handoffResult, receiptResult, attemptResult] = await Promise.allSettled([
           getBrowserHandoffReadiness(workspaceId),
           getBrowserReceipt(workspaceId),
+          getEmployerAttemptStatus(workspaceId),
         ]);
         if (!alive || accountBlockedRef.current) return;
         await verifyAccount();
         if (!alive || accountBlockedRef.current) return;
         setHandoff(handoffResult.status === "fulfilled" ? handoffResult.value : null);
         setBrowserReceipt(receiptResult.status === "fulfilled" ? receiptResult.value.receipt : null);
+        setEmployerAttempt(attemptResult.status === "fulfilled" ? attemptResult.value : null);
       } catch {
         // verifyAccount clears private state and blocks the editor on any
         // missing or different session. Ordinary API failures show no data.
         if (alive && !accountBlockedRef.current) {
-          setHandoff(null); setBrowserReceipt(null);
+          setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null);
         }
       }
     })();
@@ -306,7 +310,8 @@ export default function ApplicationStudio(props: {
   }
 
   async function copyBrowserPacket() {
-    if (!selected || dirty || !handoff?.ready || selected.status !== "draft" || browserReceipt) return;
+    if (!selected || dirty || !handoff?.ready || selected.status !== "draft" || browserReceipt ||
+        employerAttempt?.previous_attempt_reserved) return;
     let origin = "the employer website";
     try { origin = new URL(selected.application_url).origin; } catch { /* disabled by API validation */ }
     if (!window.confirm(
@@ -338,7 +343,7 @@ export default function ApplicationStudio(props: {
         if (!isCurrentDraft(ticket)) return;
         setHandoffPacketText(json);
         setMessage(copied
-          ? "Private packet copied. Open the employer posting and use the browser companion within 15 minutes. Review and attach CV before submitting."
+          ? "Private packet copied. Open the employer posting and use the browser companion within 15 minutes. Review and attach CV before submitting manually on the employer website."
           : "Your private packet is ready below. Select and copy it manually, then open the employer posting and browser companion.");
       } else {
         await verifyAccount();
@@ -586,13 +591,28 @@ export default function ApplicationStudio(props: {
               <p>Use the optional SmartPloy browser companion to fill approved contact fields on this specific job's website.</p></div>
             <ExternalLink size={18} />
           </div>
+          {employerAttempt?.previous_attempt_reserved ? (
+            <p role="alert" className="studio-handoff-blockers">
+              An attempt for this employer job is already reserved across devices. Its outcome is
+              {employerAttempt.state === "uncertain" ? " uncertain" : " unverified"}.
+              Do not start another application; reconcile the employer result first.
+            </p>
+          ) : (
+            <p className="muted">
+              Automatic final submission is disabled until the companion can consume an
+              authenticated one-time cross-device server claim. You can still prepare a reviewed
+              form and submit manually on the employer website.
+              {!employerAttempt ? " The server attempt status is currently unavailable." : ""}
+            </p>
+          )}
           {handoff?.blockers.length ? <div className="studio-handoff-blockers">
             <strong>Before applying, complete:</strong>
             <ul>{handoff.blockers.map((item) => <li key={item}>{item}</li>)}</ul>
           </div> : null}
           <div className="studio-handoff-actions">
             <button type="button" className="navy-btn"
-              disabled={!handoff?.ready || dirty || busy || handoffBusy || !!browserReceipt}
+              disabled={!handoff?.ready || dirty || busy || handoffBusy || !!browserReceipt ||
+                employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void copyBrowserPacket()}>
               <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" : "Copy approved autofill packet"}
             </button>

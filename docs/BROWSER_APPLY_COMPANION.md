@@ -1,4 +1,12 @@
-# SmartPloy Apply Companion — manual, approval-gated Lever applications
+# SmartPloy Apply Companion — reviewed Lever form assistance
+
+> **SP15b REVIEW-ONLY SAFETY HOLD (18 Oct 2026):** The automated final
+> application click is intentionally disabled until a signed-in, owner-scoped
+> server claim can be consumed atomically across separate browsers and devices.
+> No local checkbox, popup preflight or old packet is a substitute. The companion
+> can still assist with reviewed fields, permitted local PDF attachment and
+> human-only employer submission. This document supersedes older descriptions
+> below that referred to a one-popup final click.
 
 This is a minimal Chrome/Chromium Manifest V3 browser extension, **not a
 background bot**. Its release implements the first browser-side part of
@@ -20,17 +28,16 @@ read the user's stored passwords, browsing history, or other tabs.
   are checked; the selected file must also match the **SHA-256 and size of the
   exact deterministic SmartPloy CV PDF export** in the v2 packet. This does not
   upload silently or submit the application.
-- One optional final-submit button click **after** the user has completed
-  file upload, mandatory questions and privacy/CAPTCHA requirements, rechecked
-  the same employer tab and explicitly approved the single attempt.
-- A local opaque SHA-256 attempt reservation prevents silent re-submission
-  after ambiguous errors. The key now binds one *applicant workspace and employer job*
-  **across CV revisions and query-string variations**. A browser-wide Web Locks
-  exclusive claim serializes concurrent companion popups before writing the marker
-  and clicking. It records no CV, contact values or employer tokens. If Web Locks
-  are unavailable the companion refuses an automatic click; use the employer form
-  manually instead. **This is not cross-device duplicate prevention**; that needs
-  the future tenant-scoped server ledger.
+- **No automatic final-submit click in SP15b.** The employer must be submitted
+  manually by the applicant on the real employer page until the authenticated
+  cross-device server claim and browser redemption protocol is security reviewed.
+- The previous browser-profile attempt key and Web Locks helper are retained
+  solely for old-attempt observation and future audited reuse. **They are no
+  longer used to click Submit.** The separate PostgreSQL employer ledger tracks
+  owner + actual Lever employer/job across devices and source URL variants, but
+  a read-only server status is **not a final-click grant**. New packets are
+  refused after a server reservation and applicants must reconcile uncertain
+  outcomes. No raw CV/contact data is stored in the claim ledger.
 - A read-only check for a *visible* confirmation phrase **plus**
   confirmation/reference ID after the action.
 
@@ -83,34 +90,27 @@ A code review and real browser QA are required before general deployment.
    employer. The employer site may transmit immediately upon file attachment.
    Alternatively attach manually on the employer site. Answer required questions,
    accept terms only after reading them, and complete MFA/CAPTCHA yourself.
-9. Click **Check required fields**. The companion will enable **Submit this
-   application once** only if a unique Lever final-submit button is detected,
-   required fields are complete, a labeled résumé input has a file, and the owner checks
-   the per-job consent box.
-10. Only if you intend to send this specific application to the employer,
-    click the final button and confirm the OS/browser confirmation prompt.
-    **An attempted click is not proof of successful submission.**
-11. Check the employer response. If the extension popup closes when
-    Lever navigates after submission, **reopen it, paste the SAME packet** and
-    select **Check confirmation after a previous attempt**. The companion
-    checks its existing non-sensitive one-use attempt marker and the exact
-    Lever employer account before inspecting the confirmation page.
-    Never click Submit again merely because the popup closed.
-    A strong confirmation requires a visible reference ID and a confirmation
-    phrase. Otherwise the result remains **unverified**.
-12. When the companion observes a reference-bearing confirmation, it
-    offers **Copy observed receipt**. This contains the receipt reference,
-    sanitized same-employer URL, page-text SHA-256, original reviewed
-    document revision and observation timestamp, never the raw page text or
-    CV. Copy it into SmartPloy **My applications → Import observed receipt**.
-13. SmartPloy verifies the owner draft, exact saved revision, document hash,
-    employer host, account, reference format and recent observation timestamp.
-    It saves an immutable per-user record marked **browser-observed but
-    NOT independently employer-verified**.
-14. If desired, separately record a self-reported application after seeing
-    your confirmation. The existing `actually_submitted` metric remains
-    reserved for independently verified employer evidence. An observed
-    browser page does not increase that count.
+9. Click **Check required fields**. Resolve all outstanding field and PDF
+   requirements. The companion's automatic Submit button remains disabled;
+   checking a box never supplies cross-device authorization.
+10. If you decide to apply, click the actual **Submit application** button on
+    the employer website yourself. This is outside SmartPloy's automated
+    submission flow. Inspect the result before deciding on any next step.
+11. Save any genuine employer confirmation email/reference. Do **not** retry
+    an uncertain application. If a prior release of the companion had already
+    reserved a local attempt, **Check confirmation after a previous attempt**
+    may still inspect that earlier employer page. A current manual submission
+    does not generate a new SmartPloy companion attempt marker.
+12. For a prior eligible browser-observed confirmation only, the companion
+    may offer **Copy observed receipt** with a reference and page fingerprint.
+    Import this in **My applications → Import observed receipt**. For a new
+    manual application, use SmartPloy's **I applied on employer site** flow.
+13. SmartPloy keeps browser-observed evidence and applicant self-reports
+    distinct from independently employer-verified acceptance. Neither is
+    cryptographic or authoritative proof the employer received an application.
+14. The existing `actually_submitted` metric remains reserved for
+    independently verified employer evidence; no local click or page text
+    increments it.
 
 ## Review employer-specific questions (SP14)
 
@@ -128,7 +128,28 @@ other sensitive questions stay manual. So do select, radio, checkbox,
 file, password, hidden and ambiguous controls. A reactive form that moves
 fields mid-fill stops the assistant; re-inspect before trying to finish.
 No answer is saved in browser extension storage. Review the actual employer
-form before preflight. One-time submission still requires a separate approval.
+form before preflight. Actual employer submission is manual until secure cross-device authorization is integrated.
+## SP15b authenticated attempt status
+
+The **Application Studio** now reads a server-authenticated, tenant-owned
+POSTGRESQL employer claim status at
+`GET /api/v1/application-workspaces/{workspace_id}/employer-attempt`.
+This endpoint is **OIDC-cookie-only**, no CORS credential forwarding, no write,
+and no source/email/claim ID in its response. Unavailable persistence returns
+503 rather than pretending the account has never tried this employer job.
+
+If a prior claim exists for this applicant's actual Lever organisation/job,
+the handoff readiness and future packet generation are blocked until operator/
+human reconciliation. The web UI disables another packet and shows uncertainty.
+An existing, copied packet may still assist with reviewing fields, but the
+companion has no automated final-click path in this branch.
+
+**Next necessary work:** security-reviewed, per-job employer permission source,
+signed-in same-origin final user intent, an opaque one-use authorization
+delivered without exposing any account bearer token to employer DOM or
+clipboard, atomic server consumption by the existing MV3 companion, and
+two-device synthetic browser acceptance. No live employer actions in this patch.
+
 ## Security and implementation boundaries
 
 - No backend can push a submit order to the companion.

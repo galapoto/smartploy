@@ -11,9 +11,13 @@ import os
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 from psycopg import connect
 from psycopg.types.json import Jsonb
 
+from smartploy.api import create_app
+from smartploy.oidc import MemorySessionRepository, SESSION_COOKIE_NAME
+from smartploy.service import SmartployService
 from smartploy.account_erasure import (
     PostgresAccountErasureRepository, inspect_quarantined_account,
 )
@@ -283,3 +287,67 @@ def test_quarantine_blocks_new_claim_and_inventories_existing_marker(scoped):
         reserve()
     assert ledger.get(a, key).claim_id == claim.claim_id
     assert ledger.get(b, key) is None
+
+
+def test_signed_in_api_status_is_account_scoped_and_never_submission_authority(scoped, monkeypatch):
+    """Real PostgreSQL claim lookup under two different OIDC sessions."""
+    a, b, wa, wb, key, _, _, _, ledger, reserve = scoped
+    nonce = key.removeprefix("employer-job-")
+    origin = "https://smartploy.obumai.com"
+    issuer = "https://sso.example.invalid"
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")
+    monkeypatch.setenv("SMARTPLOY_AUTH_MODE", "oidc")
+    monkeypatch.setenv("SMARTPLOY_ACCESS_ENABLED", "false")
+    monkeypatch.setenv("SMARTPLOY_PUBLIC_ORIGIN", origin)
+    monkeypatch.setenv("SMARTPLOY_ALLOWED_HOSTS", "smartploy.obumai.com")
+    monkeypatch.setenv("SMARTPLOY_OIDC_ISSUER", issuer)
+    monkeypatch.setenv("SMARTPLOY_OIDC_CLIENT_ID", "synthetic-client")
+    monkeypatch.setenv("SMARTPLOY_OIDC_REDIRECT_URI", origin + "/auth/callback")
+    monkeypatch.setenv(
+        "SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI", origin + "/auth/logged-out"
+    )
+    monkeypatch.setenv("SMARTPLOY_DATABASE_URL", DSN)
+    sessions = MemorySessionRepository()
+    tokens = {}
+    for binding, label in ((a, "a"), (b, "b")):
+        principal = AuthenticatedPrincipal(
+            issuer=issuer, subject="claim-" + label + "-" + nonce,
+            email="same@example.invalid", auth_source="oidc",
+        )
+        tokens[label] = sessions.create(
+            user_id=binding.user_id, principal=principal,
+            provider_session_id="fixture-" + label, ttl_seconds=3600,
+        ).token
+    api = TestClient(create_app(
+        SmartployService(), identity_repository=PostgresIdentityRepository(DSN),
+        session_repository=sessions, oidc_client=object(),
+    ), base_url=origin)
+    a_path = f"/api/v1/application-workspaces/{wa}/employer-attempt"
+    b_path = f"/api/v1/application-workspaces/{wb}/employer-attempt"
+
+    api.cookies.set(SESSION_COOKIE_NAME, tokens["a"])
+    before = api.get(a_path)
+    assert before.status_code == 200, before.text
+    assert before.json()["state"] == "not_reserved"
+    assert before.json()["previous_attempt_reserved"] is False
+    claim, created = reserve()
+    assert created
+    after = api.get(a_path)
+    assert after.status_code == 200, after.text
+    result = after.json()
+    assert result["state"] == "reserved_unverified"
+    assert result["previous_attempt_reserved"] is True
+    assert result["requires_human_reconciliation"] is True
+    assert result["automatic_employer_submit_authorized"] is False
+    assert result["external_confirmation_verified"] is False
+    assert result["cross_device_server_claim_required"] is True
+    assert "no-store" in after.headers["cache-control"]
+    assert claim.claim_id not in after.text
+    assert a.user_id not in after.text
+    assert "https://jobs.lever.co" not in after.text
+
+    api.cookies.set(SESSION_COOKIE_NAME, tokens["b"])
+    assert api.get(a_path).status_code == 404
+    other = api.get(b_path)
+    assert other.status_code == 200
+    assert other.json()["previous_attempt_reserved"] is False
