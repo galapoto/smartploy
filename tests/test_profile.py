@@ -62,7 +62,10 @@ def test_service_obumai_path_uses_approved_repository_evidence_only():
             source_mode="manual",
             source_url="",
             raw_text="Example Data Analyst",
-            payload={"company": "Example", "role_title": "Data Analyst", "description": "Python"},
+            payload={
+                "company": "Example", "role_title": "Data Analyst",
+                "description": "Python", "external_ai_forwarding_allowed": True,
+            },
             observed_at="2026-10-10T00:00:00+00:00",
         )
     )

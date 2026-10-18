@@ -3,6 +3,23 @@ import type { EmployerSector, RankingCard } from "./types";
 export type DisplayMode = "heatmap" | "percentage";
 export type SectorFilter = "all" | EmployerSector;
 
+/** Only absolute HTTP(S) URLs without credentials or control characters
+ * can become navigable browser links. Job-feed URLs are untrusted data.
+ */
+export function safeExternalJobUrl(raw: string | null | undefined): string {
+  if (typeof raw !== "string" || !raw || raw !== raw.trim() ||
+      /[\u0000-\u001f\u007f\\]/.test(raw) ||
+      !/^https?:\/\//i.test(raw)) return "";
+  try {
+    const parsed = new URL(raw);
+    if (!["http:", "https:"].includes(parsed.protocol) ||
+        !parsed.hostname || parsed.username || parsed.password) return "";
+    return parsed.href;
+  } catch {
+    return "";
+  }
+}
+
 export function scoreBand(score: number): string {
   if (score >= 90) return "exceptional";
   if (score >= 80) return "strong";

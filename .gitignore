@@ -16,3 +16,10 @@ deploy/personal/env
 web/browser-evidence/
 web/playwright-report/
 web/test-results/
+
+# npm cache/install output stays outside reviewed source
+web/node_modules/
+web/dist/
+
+# Redacted per-stage CI receipts are local execution evidence, not source.
+.ci-out/

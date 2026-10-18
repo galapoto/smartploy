@@ -16,6 +16,7 @@ from .domain import (
     SourcePolicy,
     apply_filters,
     normalize_observation,
+    source_ai_forwarding_permitted,
     utc_now_iso,
 )
 from .obumai import ObumAIClient, ObumAIError
@@ -157,7 +158,7 @@ class SmartployService:
             raise KeyError(canonical_key)
         if self.obumai is None:
             raise ObumAIError("ObumAI integration is not configured")
-        if candidate.job.raw.get("external_ai_forwarding_allowed") is False:
+        if not source_ai_forwarding_permitted(candidate):
             raise ObumAIError(
                 "source terms restrict forwarding this job posting to external AI processing"
             )
@@ -315,7 +316,7 @@ class SmartployService:
         if candidate is None:
             raise KeyError(canonical_key)
 
-        if candidate.job.raw.get("external_ai_forwarding_allowed") is False:
+        if not source_ai_forwarding_permitted(candidate):
             raise PreparationNotEligible(
                 "source terms restrict forwarding this job posting to external AI processing"
             )
