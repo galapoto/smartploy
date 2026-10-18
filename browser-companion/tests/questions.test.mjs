@@ -93,3 +93,34 @@ test("reviewed answers may only contain ordinary printable text in matching fiel
   plan.questions[0].label="Expected salary?";
   assert.throws(() => validateReviewedAnswers(plan, ["75000"]), QuestionError);
 });
+
+
+test("camelCase or concatenated sensitive form identifiers never become reviewed answers", () => {
+  const ordinary = "Why are you interested in this role?";
+  const identifiers = [
+    {name:"visaStatus"},
+    {id:"salaryExpectation"},
+    {name:"citizenshipStatus"},
+    {name:"genderIdentity"},
+    {name:"GDPRConsent"},
+    {placeholder:"workAuthorization"},
+    {id:"visastatus"},
+    {name:"sponsorshipRequired"},
+    {name:"criminalBackgroundCheck"},
+    {name:"dateOfBirth"},
+    {id:"privacyAgreement"}
+  ];
+  for (const fields of identifiers) {
+    const candidate=row({label:ordinary,...fields});
+    assert.equal(isSensitiveQuestion(candidate),true,JSON.stringify(fields));
+    const plan=planReviewedQuestions([candidate]);
+    assert.equal(plan.questions.length,0,JSON.stringify(fields));
+    assert.deepEqual(plan.humanOnly,[ordinary],JSON.stringify(fields));
+  }
+});
+
+test("known ordinary question metadata remains eligible after identifier hardening", () => {
+  const ordinary = row({id:"roleMotivation",name:"questions[role_motivation]"});
+  assert.equal(isSensitiveQuestion(ordinary),false);
+  assert.equal(planReviewedQuestions([ordinary]).questions.length,1);
+});
