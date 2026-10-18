@@ -261,7 +261,7 @@ def render_document(
         pdf = SimpleDocTemplate(
             output, pagesize=A4, topMargin=21*mm, bottomMargin=21*mm,
             leftMargin=23*mm, rightMargin=23*mm,
-            title=heading, author="SmartPloy user-reviewed application",
+            title=heading, author="SmartPloy user-reviewed application", invariant=1,
         )
         pdf.build(story)
         mime = "application/pdf"

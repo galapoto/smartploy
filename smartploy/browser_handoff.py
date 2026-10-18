@@ -12,11 +12,11 @@ import ipaddress
 import re
 from urllib.parse import urlsplit
 
-from .application_workspace import ApplicationWorkspace
+from .application_workspace import ApplicationWorkspace, render_document
 from .domain import JobCandidate
 from .profile import CandidateProfile
 
-SCHEMA = "smartploy.browser_handoff.v1"
+SCHEMA = "smartploy.browser_handoff.v2"
 LIFETIME_SECONDS = 15 * 60
 PLACEHOLDERS = re.compile(
     r"\[(?:explain|your name|insert|add|describe|fill in|why|placeholder)\b[^]]*]",
@@ -143,6 +143,11 @@ def make_browser_packet(
         stamp = stamp.replace(tzinfo=timezone.utc)
     stamp = stamp.astimezone(timezone.utc)
     contact = _approved_contact(profile)
+    # Deterministic PDF rendering binds the handoff to the exact exported CV.
+    # The file itself is never placed in the packet, only its size/digest.
+    cv_pdf, _, _ = render_document(workspace, kind="cv", file_format="pdf")
+    if len(cv_pdf) > 2 * 1024 * 1024:
+        raise HandoffError("The reviewed PDF exceeds the companion attachment limit")
     packet = {
         "schema": SCHEMA,
         "issued_at": stamp.isoformat(),
@@ -155,6 +160,8 @@ def make_browser_packet(
         "document_sha256": sha256(
             (workspace.cv_text + "\0" + workspace.cover_letter_text).encode("utf-8")
         ).hexdigest(),
+        "cv_pdf_sha256": sha256(cv_pdf).hexdigest(),
+        "cv_pdf_size": len(cv_pdf),
         "fields": {
             **contact,
             "cover_letter": workspace.cover_letter_text[:10000],
