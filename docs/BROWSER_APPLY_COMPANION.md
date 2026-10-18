@@ -12,6 +12,13 @@ read the user's stored passwords, browsing history, or other tabs.
   `https://jobs.eu.lever.co/{employer}/{job-id}`.
 - English, Finnish and Swedish labels for ordinary name/contact text inputs,
   LinkedIn/GitHub URLs and a reviewed cover-letter text field.
+- **SP14 review-only candidate:** two clearly labeled, low-risk employer text questions
+  (where you heard about the role; why you are interested) may use applicant-typed,
+  ephemeral responses in the same popup. Unknown questions, salary, legal, work
+  authorization, visas/sponsorship and protected demographic fields remain manual.
+  The employer may immediately transmit entered text on a field change; one
+  additional explicit Fill approval and fresh same-job DOM verification are required.
+  No stored answer bank, model-generated answers or automatic submission.
 - Only explicitly approved contact details copied from SmartPloy, tied to the
   exact job, document digest, revision, and a **15-minute expiry**.
 - Optional **explicitly user-approved PDF attachment** to one unique visible Lever résumé input.
@@ -105,6 +112,16 @@ A code review and real browser QA are required before general deployment.
     your confirmation. The existing `actually_submitted` metric remains
     reserved for independently verified employer evidence. An observed
     browser page does not increase that count.
+
+## SP14 supplemental question preview (unmerged source only)
+
+In the same existing companion, select the specific employer page and **Inspect employer form**. If the page contains a unique visible, empty, plain-text question labeled like "How did you hear about us?" or "Why are you interested in this position?", the popup shows a field where **you personally type and review the answer**. The supported labels include limited Finnish/Swedish equivalents. No answer is proposed from a CV or model, and answers are cleared when the popup closes.
+
+Click **Fill approved fields and my answers (no submit)** and separately confirm that employer-side text events may transmit what you typed. The companion checks the same Lever job, original form URL, exact field index/id/name/type/label, live visibility, uniqueness, length and sensitive-term restrictions before inserting anything. If React or the page rerenders the field, the outcome is uncertain and no retry or submit is triggered. Always reread the actual employer form afterward. The prior PDF approval and final-submit approval are **separate and unchanged**.
+
+All salary, visa, immigration, work-authorization, nationality, EEO/demographic, legal/attestation/consent, security-challenge, checkbox/radio/select, unsupported or unrecognized required questions remain manual. Do not assume a supported question has been sent, saved or accepted merely because text appears in the employer's input.
+
+SP14 uses the existing reviewed packet and browser companion. It does not introduce remote LLM calls, broader extension host permissions, a second database, persistent private Q/A, unattended submission or verified employer receipts. See [SP14 REUSE-CHECK](REUSE_CHECK_SP14_LEVER_QUESTIONS.md); existing [SP13 upload](REUSE_CHECK_SP13_LEVER_PDF.md) is preserved.
 
 ## Security and implementation boundaries
 
