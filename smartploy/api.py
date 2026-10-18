@@ -26,6 +26,7 @@ from .application_storage import MemoryApplicationRepository, PostgresApplicatio
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from .browser_handoff import HandoffError, make_browser_packet, review_handoff
+from .employer_submit_claim_storage import EmployerSubmitClaimDenied, PostgresEmployerSubmitClaimRepository
 from .browser_receipt import ReceiptError, validate_browser_receipt
 from .browser_receipt_storage import (
     ReceiptConflict, MemoryBrowserReceiptRepository, PostgresBrowserReceiptRepository,
@@ -441,6 +442,8 @@ def create_app(
     app.state.cv_repository = PostgresCVRepository(dsn) if dsn else MemoryCVRepository()
     app.state.workspace_repository = PostgresWorkspaceRepository(dsn) if dsn else MemoryWorkspaceRepository()
     app.state.browser_receipts = PostgresBrowserReceiptRepository(dsn) if dsn else MemoryBrowserReceiptRepository()
+    # SP15b: read-only employer claim posture. No memory fallback, issuer or final-click API.
+    app.state.employer_claims = PostgresEmployerSubmitClaimRepository(dsn) if dsn else None
     app.state.local_ai = LocalDraftClient(LocalDraftSettings.from_env())
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
@@ -1168,14 +1171,87 @@ def create_app(
             raise HTTPException(status_code=409, detail="Draft changed during AI generation; reload and retry")
         return {"suggestion": suggestion, "workspace_revision": latest.revision}
 
+    def existing_employer_claim(binding: UserProfileBinding, workspace: Any) -> Any:
+        """Read the immutable cross-source/owner claim before offering another packet.
+
+        Called only after the request middleware bound a verified user. An
+        unavailable database is not permission to assume no previous attempt.
+        """
+        ledger = app.state.employer_claims
+        if ledger is None:
+            raise HTTPException(
+                status_code=503, detail="Durable employer attempt ledger is unavailable"
+            )
+        try:
+            try:
+                found = ledger.get_for_employer_url(binding, workspace.application_url)
+            except EmployerSubmitClaimDenied:
+                found = None  # Unsupported ATS: owner/canonical-key lookup only.
+            return found or ledger.get(binding, workspace.canonical_key)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503, detail="Employer attempt status cannot be verified"
+            ) from exc
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/employer-attempt")
+    def employer_attempt_status(workspace_id: str, request: Request) -> JSONResponse:
+        """Read-only, signed-in OIDC posture. No browser-submit authority.
+
+        Never serve this endpoint to anonymous/disabled-auth fixtures,
+        unbound Access-only principals or an extension origin. No tokens,
+        applicant documents, account IDs or employer URLs are returned.
+        """
+        tenant, binding = tenant_context(request)
+        if (
+            binding is None or not authentication.oidc_enabled
+            or not request.cookies.get(SESSION_COOKIE_NAME)
+        ):
+            raise HTTPException(status_code=403, detail="Signed-in SmartPloy account required")
+        if request.headers.get("Sec-Fetch-Site", "").casefold() not in {"", "same-origin", "none"}:
+            raise HTTPException(status_code=403, detail="Use the SmartPloy website")
+        origin = request.headers.get("Origin", "")
+        if origin and origin != public_origin:
+            raise HTTPException(status_code=403, detail="Use the SmartPloy website")
+        if app.state.employer_claims is None:
+            raise HTTPException(status_code=503, detail="Durable employer attempt ledger unavailable")
+        workspace = app.state.workspace_repository.get(binding.profile_id, workspace_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        claim = existing_employer_claim(binding, workspace)
+        return JSONResponse(
+            {
+                "previous_attempt_reserved": claim is not None,
+                "state": claim.state if claim is not None else "not_reserved",
+                "requires_human_reconciliation": claim is not None,
+                "automatic_employer_submit_authorized": False,
+                "external_confirmation_verified": False,
+                "cross_device_server_claim_required": True,
+            },
+            headers={
+                "Cache-Control": "private, no-store",
+                "Pragma": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
+
     @app.get("/api/v1/application-workspaces/{workspace_id}/handoff-readiness")
     def browser_handoff_readiness(workspace_id: str, request: Request) -> dict[str, Any]:
-        tenant, _ = tenant_context(request)
+        tenant, binding = tenant_context(request)
         item = app.state.workspace_repository.get(tenant.profile_repository.profile_id, workspace_id)
         if item is None:
             raise HTTPException(status_code=404, detail="Application workspace not found")
+        # Keep human-reviewed autofill but never issue a fresh packet once
+        # this signed-in account's employer job has a durable attempt.
+        claim = existing_employer_claim(binding, item) if binding else None
         job = tenant.get_job(item.canonical_key)
         result = review_handoff(item, job, tenant.profile())
+        if claim is not None:
+            result["ready"] = False
+            result["blockers"].append(
+                "This employer job already has an attempt reserved across devices. "
+                "Reconcile its outcome before any new application."
+            )
         if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:
             result["ready"] = False
             result["blockers"].append("An employer confirmation is already recorded for this application")
@@ -1187,10 +1263,15 @@ def create_app(
     ) -> JSONResponse:
         if payload.confirm_private_data_transfer is not True:
             raise HTTPException(status_code=422, detail="Confirm the per-job personal-data transfer")
-        tenant, _ = tenant_context(request)
+        tenant, binding = tenant_context(request)
         item = app.state.workspace_repository.get(tenant.profile_repository.profile_id, workspace_id)
         if item is None:
             raise HTTPException(status_code=404, detail="Application workspace not found")
+        if binding and existing_employer_claim(binding, item) is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This employer job already has a reserved attempt. Do not retry.",
+            )
         if item.revision != payload.expected_revision:
             raise HTTPException(status_code=409, detail="Document revision changed; review and retry")
         if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:

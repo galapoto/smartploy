@@ -11,6 +11,7 @@ vi.mock("./api", () => ({
   getApplicationWorkspaces: vi.fn(),
   getLocalAIStatus: vi.fn(),
   getBrowserHandoffReadiness: vi.fn(),
+  getEmployerAttemptStatus: vi.fn(),
   getBrowserReceipt: vi.fn(),
   editApplicationWorkspace: vi.fn(),
   deleteApplicationWorkspace: vi.fn(),
@@ -79,6 +80,11 @@ beforeEach(() => {
     will_require_manual_review: true, files_attached: false,
   });
   vi.mocked(api.getBrowserReceipt).mockResolvedValue({ present: false, receipt: null });
+  vi.mocked(api.getEmployerAttemptStatus).mockResolvedValue({
+    previous_attempt_reserved: false, state: "not_reserved",
+    requires_human_reconciliation: false, automatic_employer_submit_authorized: false,
+    external_confirmation_verified: false, cross_device_server_claim_required: true
+  });
   vi.mocked(api.editApplicationWorkspace).mockImplementation(async (_, __, cvText, coverLetterText) =>
     ({ workspace: { ...job("A"), cv_text: cvText, cover_letter_text: coverLetterText, revision: 2 } })
   );
@@ -104,6 +110,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Application Studio private-read account boundary", () => {
+  it("blocks a fresh private packet after the server reports an uncertain employer attempt", async () => {
+    vi.mocked(api.getEmployerAttemptStatus).mockResolvedValue({
+      previous_attempt_reserved: true, state: "uncertain",
+      requires_human_reconciliation: true, automatic_employer_submit_authorized: false,
+      external_confirmation_verified: false, cross_device_server_claim_required: true
+    });
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByText(/An attempt for this employer job is already reserved across devices/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: /Copy approved autofill packet/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+  });
+
+  it("shows manual-only guidance if the server attempt status cannot be verified", async () => {
+    vi.mocked(api.getEmployerAttemptStatus).mockRejectedValue(new Error("Synthetic database unavailable"));
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    expect(await screen.findByText(/server attempt status is currently unavailable/)).toBeTruthy();
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+  });
+
+
   it("keeps normal same-account loading, edits and refresh available", async () => {
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();

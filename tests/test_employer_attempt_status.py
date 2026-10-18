@@ -1,0 +1,92 @@
+"""SP15b: new employer claim status is signed-in/read-only and fails closed.
+
+All identities and employers in these tests are synthetic. No job applications.
+"""
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+from smartploy.api import create_app
+from smartploy.identity import AuthenticatedPrincipal, MemoryIdentityRepository
+from smartploy.oidc import MemorySessionRepository, SESSION_COOKIE_NAME
+from smartploy.service import SmartployService
+
+
+ORIGIN = "https://smartploy.obumai.com"
+ISSUER = "https://auth.example.invalid"
+PATH = "/api/v1/application-workspaces/kit-" + "a" * 30 + "/employer-attempt"
+
+
+def client_for_owner(monkeypatch):
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")
+    monkeypatch.setenv("SMARTPLOY_AUTH_MODE", "oidc")
+    monkeypatch.setenv("SMARTPLOY_ACCESS_ENABLED", "false")
+    monkeypatch.setenv("SMARTPLOY_PUBLIC_ORIGIN", ORIGIN)
+    monkeypatch.setenv("SMARTPLOY_ALLOWED_HOSTS", "smartploy.obumai.com")
+    monkeypatch.setenv("SMARTPLOY_OIDC_ISSUER", ISSUER)
+    monkeypatch.setenv("SMARTPLOY_OIDC_CLIENT_ID", "test-client")
+    monkeypatch.setenv("SMARTPLOY_OIDC_REDIRECT_URI", ORIGIN + "/auth/callback")
+    monkeypatch.setenv(
+        "SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI", ORIGIN + "/auth/logged-out",
+    )
+    monkeypatch.delenv("SMARTPLOY_DATABASE_URL", raising=False)
+    identities = MemoryIdentityRepository()
+    sessions = MemorySessionRepository()
+    principal = AuthenticatedPrincipal(
+        issuer=ISSUER, subject="synthetic-claim-a",
+        email="shared@example.invalid", auth_source="oidc",
+    )
+    binding = identities.resolve_or_create(principal)
+    record = sessions.create(
+        user_id=binding.user_id, principal=principal,
+        provider_session_id="fixture", ttl_seconds=3600,
+    )
+    app = create_app(
+        SmartployService(), identity_repository=identities,
+        session_repository=sessions, oidc_client=object(),
+    )
+    client = TestClient(app, base_url=ORIGIN)
+    client.cookies.set(SESSION_COOKIE_NAME, record.token)
+    return client
+
+
+def test_authenticated_read_fails_closed_when_durable_db_missing(monkeypatch):
+    api = client_for_owner(monkeypatch)
+    answer = api.get(PATH)
+    assert answer.status_code == 503, answer.text
+    assert "ledger" in answer.text.lower()
+    assert "no-store" in answer.headers["cache-control"]
+
+
+def test_cross_origin_and_extension_reads_cannot_access_status(monkeypatch):
+    api = client_for_owner(monkeypatch)
+    for headers in (
+        {"Sec-Fetch-Site": "cross-site"},
+        {"Sec-Fetch-Site": "same-site"},
+        {"Origin": "chrome-extension://synthetic-extension"},
+        {"Origin": "https://evil.example.invalid"},
+    ):
+        answer = api.get(PATH, headers=headers)
+        assert answer.status_code == 403, (headers, answer.text)
+        assert "no-store" in answer.headers["cache-control"]
+
+
+def test_anonymous_or_auth_disabled_client_cannot_inspect_claims(monkeypatch):
+    api = client_for_owner(monkeypatch)
+    api.cookies.clear()
+    answer = api.get(PATH)
+    assert answer.status_code == 401
+
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "test")
+    monkeypatch.setenv("SMARTPLOY_AUTH_MODE", "disabled")
+    fixture = TestClient(create_app(SmartployService()), base_url=ORIGIN)
+    denied = fixture.get(PATH)
+    assert denied.status_code == 403
+
+
+def test_status_has_no_writable_employer_attempt_endpoint(monkeypatch):
+    api = client_for_owner(monkeypatch)
+    attempt = api.post(PATH, json={
+        "final_user_approval": True, "employer_submission_permitted": True,
+    }, headers={"Origin": ORIGIN, "Sec-Fetch-Site": "same-origin"})
+    assert attempt.status_code == 405

@@ -40,10 +40,11 @@ def test_document_transfer_requires_explicit_owner_selection():
         assert prohibited not in page + policy
 
 
-def test_cv_identity_and_existing_one_attempt_submit_still_protected():
+def test_cv_identity_preserved_but_final_click_fail_closed_without_server_claim():
     popup = (ROOT / "popup.mjs").read_text()
-    assert '![path + "/apply", path + "/apply/"].includes(here.pathname)' in popup
     assert "A CV/résumé must be attached in its own labeled upload field." in popup
-    assert "Attach your CV in the labeled résumé field before submitting." in popup
-    assert 'chrome.storage.local.set({[key]:' in popup
-    assert popup.index('chrome.storage.local.set({[key]:') < popup.index('func: submitOnce')
+    assert 'crypto.subtle.digest("SHA-256", bytes)' in popup
+    assert 'attemptReserved' in popup
+    assert "Automatic final submission is unavailable until cross-device server authorization" in popup
+    assert "func: submitOnce" not in popup
+    assert "live[0].click()" not in popup

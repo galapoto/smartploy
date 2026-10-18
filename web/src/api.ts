@@ -15,6 +15,22 @@ import type {
   ApplicationWorkspacesResponse
 } from "./types";
 
+/** Read-only owner-scoped employer claim posture; never employer receipt. */
+export type EmployerAttemptState = {
+  previous_attempt_reserved: boolean;
+  state: "not_reserved" | "reserved_unverified" | "uncertain";
+  requires_human_reconciliation: boolean;
+  automatic_employer_submit_authorized: false;
+  external_confirmation_verified: false;
+  cross_device_server_claim_required: true;
+};
+
+export function getEmployerAttemptStatus(workspaceId: string): Promise<EmployerAttemptState> {
+  return request<EmployerAttemptState>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/employer-attempt"
+  );
+}
+
 const API_BASE = (import.meta.env.VITE_SMARTPLOY_API_BASE ?? "").replace(/\/$/, "");
 
 /** Browser mutations must carry the account captured BEFORE any async wait.

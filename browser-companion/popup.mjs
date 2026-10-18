@@ -6,7 +6,7 @@ import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, MAX_PD
 import { attachReviewedPdf } from "./page-attachment.mjs";
 import { QuestionError, planReviewedQuestions, validateReviewedAnswers } from "./questions.mjs";
 import { fillReviewedAnswers } from "./page-questions.mjs";
-import { AttemptError, oneAttemptKey, withSubmissionLock } from "./attempt-lock.mjs";
+import { AttemptError, oneAttemptKey } from "./attempt-lock.mjs";
 
 const $ = (id) => document.getElementById(id);
 let targetTabId = null;
@@ -251,47 +251,9 @@ function inspectFinalSubmit(exactUrl) {
 
 /* Single click after preflight, exact user approval and pre-allocated attempt.
    Do not navigate, set bypass flags, or retry. */
-function submitOnce(exactUrl) {
-  const here = new URL(location.href);
-  const expected = new URL(exactUrl);
-  const path = expected.pathname.replace(/\/apply\/?$/, "").replace(/\/+$/, "");
-  if (here.origin !== expected.origin || ![path + "/apply", path + "/apply/"].includes(here.pathname) ||
-      !["jobs.lever.co", "jobs.eu.lever.co"].includes(here.hostname) ||
-      !/\/apply\/?$/.test(here.pathname)) {
-    return { status: "blocked", reason: "Employer form changed. Submission was not attempted." };
-  }
-  const all = Array.from(document.querySelectorAll('button,input[type="submit"]'));
-  const live = all.filter((el) => {
-    const a = String(el.innerText || el.value || el.getAttribute("aria-label") || "")
-      .replace(/\s+/g, " ").trim().toLowerCase();
-    return ["submit application", "send application", "lähetä hakemus", "skicka ansökan"].includes(a) &&
-      !el.disabled && el.getClientRects().length > 0 && el.closest("form");
-  });
-  if (live.length !== 1) return { status: "blocked", reason: "Final button is missing or ambiguous." };
-  const required = Array.from(document.querySelectorAll("input[required],textarea[required],select[required]"));
-  for (const el of required) {
-    if (el.disabled || el.closest("[hidden],[inert]")) continue;
-    const type = String(el.type || "").toLowerCase();
-    const present = type === "file" ? Boolean(el.files?.length) :
-      ["checkbox", "radio"].includes(type) ? Boolean(el.checked) : Boolean(String(el.value || "").trim());
-    if (!present || (el.validity && !el.validity.valid)) {
-      return { status: "blocked", reason: "An employer-required field remains incomplete." };
-    }
-  }
-  if (!Array.from(document.querySelectorAll('input[type="file"]')).some((el) => {
-    const name = String(el.labels?.[0]?.innerText || el.getAttribute("aria-label") || el.name || el.id || "");
-    return Boolean(el.files?.length) &&
-      /(^|[^a-z])(cv|resume|r[ée]sum[ée]|ansioluettelo|meritförteckning)([^a-z]|$)/i.test(name);
-  })) {
-    return { status: "blocked", reason: "Attach your CV in the labeled résumé field before submitting." };
-  }
-  try {
-    live[0].click();
-    return { status: "attempted_unverified", reason: "One final-submit click was sent. Employer acceptance is not yet confirmed." };
-  } catch {
-    return { status: "ambiguous", reason: "Browser click outcome is uncertain. Do not retry before checking the employer." };
-  }
-}
+/* SP15b: no privileged employer final click is registered until the
+   owner-scoped PostgreSQL claim is atomically redeemed by this companion.
+   A local Web Lock alone cannot protect against a second browser/device. */
 
 async function inspectReceipt(expectedOrigin, expectedAccount) {
   const here = new URL(location.href);
@@ -628,74 +590,25 @@ async function onPreflight() {
     });
     if (!result?.result) throw new PacketError("Employer final-submit check did not complete.");
     const decision = result.result;
-    preflightPassed = Boolean(decision.ready) && !attemptReserved;
+    preflightPassed = false; // A local preflight never authorizes cross-device final click.
     $("preflight").textContent = decision.ready ?
       "Required fields and résumé attachment appear complete. Carefully check consent statements, questions and uploaded document before choosing Submit." :
       "Not ready: " + (decision.blockers || []).join("; ");
-    $("submit").disabled = !preflightPassed || !$("approve").checked;
+    $("submit").disabled = true; // Requires an authenticated one-time server grant.
     status(decision.ready ?
-      "Preflight passed. No final action has happened. Separate approval is still required." :
+      "Employer form appears ready. Submit using the employer website; SmartPloy automated final click is currently disabled." :
       "Preflight blocked. Complete the form or submit manually.", Boolean(decision.ready));
   } catch (error) { status(normalizeError(error)); }
 }
 
 async function onSubmit() {
-  if (!currentPacket || !preflightPassed || !$("approve").checked || attemptReserved) return;
-  try {
-    const tab = await activeTab();
-    validatePacket(currentPacketToJSON(), tab.url);
-    if (tab.id !== targetTabId) throw new PacketError("The employer tab changed. Inspect again.");
-    if (!window.confirm(
-      "FINAL APPROVAL: Click the employer's 'Submit application' button ONCE for " +
-      currentPacket.role_title + " at " + currentPacket.company + "?\n\n" +
-      "This may send personal information and your uploaded CV to the employer. " +
-      "You will not be able to undo that submission. SmartPloy will not retry automatically."
-    )) return;
-    const key = await oneAttemptKey(currentPacket);
-    const verdict = await withSubmissionLock(key, navigator.locks, async () => {
-      // The Web Locks exclusive lease serializes all extension popups in this
-      // browser profile. A changed document revision CANNOT bypass the
-      // existing job-scoped one-attempt marker.
-      const live = await activeTab();
-      validatePacket(currentPacketToJSON(), live.url);
-      if (live.id !== targetTabId || live.url !== tab.url) {
-        throw new PacketError("Employer tab changed during approval; reinspect.");
-      }
-      const existing = await chrome.storage.local.get(key);
-      if (existing[key]) {
-        throw new PacketError(
-          "This job/application already had a companion attempt, even with another CV revision. Do not retry."
-        );
-      }
-      const fresh = await chrome.scripting.executeScript({
-        target: {tabId: live.id}, func: inspectFinalSubmit,
-        args: [currentPacket.application_url]
-      });
-      if (!fresh?.[0]?.result?.ready) {
-        throw new PacketError("Employer form is no longer ready; complete the required fields.");
-      }
-      // Reserve before ANY final click. If the popup/browser crashes, a
-      // future attempt is blocked until an independent human reconciles it.
-      await chrome.storage.local.set({[key]: {
-        attempted_at: new Date().toISOString(),
-        state: "reserved_unverified"
-      }});
-      attemptReserved = true;
-      preflightPassed = false;
-      $("submit").disabled = true;
-      const [result] = await chrome.scripting.executeScript({
-        target: {tabId: live.id}, func: submitOnce,
-        args: [currentPacket.application_url]
-      });
-      return result?.result;
-    });
-    status(verdict?.reason || "Submission outcome is uncertain; do not repeat the click.",
-      verdict?.status === "attempted_unverified");
-    $("preflight").textContent =
-      "Submission attempt reserved for this job across all document revisions. Check the employer for a receipt.";
-  } catch (error) {
-    status(normalizeError(error));
-  }
+  // Never call chrome.scripting.executeScript with an employer submit click
+  // until an authenticated, one-time *server* claim consumption protocol has
+  // been designed, reviewed and tested with two separate devices.
+  // This handler remains as a fail-closed guard for old/unpacked popup pages.
+  $("submit").disabled = true;
+  preflightPassed = false;
+  status("Automatic final submission is unavailable until cross-device server authorization is implemented. Review the employer form and submit manually on the employer website. Never retry an uncertain prior attempt.");
 }
 
 async function onResumeReceipt() {
@@ -796,7 +709,7 @@ $("copyReceipt").addEventListener("click", async () => {
   }
 });
 $("approve").addEventListener("change", () => {
-  $("submit").disabled = !$("approve").checked || !preflightPassed || attemptReserved;
+  $("submit").disabled = true; // User approval alone is not a server-issued claim.
 });
 $("packet").addEventListener("input", () => {
   currentPacket = null; currentPlan = null; currentQuestionPlan = null; targetTabId = null;
