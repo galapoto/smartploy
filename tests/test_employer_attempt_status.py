@@ -164,7 +164,8 @@ def test_browser_verification_endpoint_is_not_extension_accessible(monkeypatch):
 def test_private_final_action_readiness_never_issues_employer_submit_authority(monkeypatch):
     api=client_for_owner(monkeypatch)
     path=PATH.replace("/employer-attempt","/final-action-readiness")
-    assert api.get(path).status_code==503
+    # Unknown private draft is hidden before the database posture check.
+    assert api.get(path).status_code==404
     assert api.post(path,json={
         "confirm_final_submit":True,"employer_permission":True,
     }).status_code in (403,405)

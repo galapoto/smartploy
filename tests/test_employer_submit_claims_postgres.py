@@ -624,7 +624,8 @@ def test_signed_in_review_http_to_postgres_end_to_end(scoped, monkeypatch):
         assert baseline_posture.json()["trusted_one_use_browser_redemption_available"] is False
         assert baseline_posture.json()["final_browser_click_authorized"] is False
         assert "independent_employer_permission_missing" in baseline_posture.json()["blockers"]
-        assert api.post(posture_route, json={}).status_code == 405
+        assert api.post(posture_route, json={}).status_code == 403
+        assert api.post(posture_route, json={}, headers=headers).status_code == 405
         verification_body = {
             "expected_revision":work.revision,
             "expected_document_sha256":packet["document_sha256"],
