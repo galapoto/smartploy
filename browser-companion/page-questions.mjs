@@ -26,6 +26,8 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
   const all = Array.from(document.querySelectorAll("input,textarea,select"));
   if (all.length > 250) return stop("The employer form is too large.");
   const sensitive = /\b(?:visa|citizenship|citizen|nationality|sponsor|sponsorship|work permit|right to work|work authori[sz]ation|salary|compensation|wage|expected pay|pay range|eeo|race|ethnic|gender|sex|sexual|religion|politic|union membership|disability|health condition|medical|veteran|military|criminal|felony|convict|background check|privacy|consent|gdpr|agree|agreement|attest|certif(?:y|ication)|signature|passport|social security|government id|tax id|birth date|date of birth|age|bank account|start date|notice period|työlupa|oleskelulupa|kansalaisuus|palkka|henkilötunnus|sukupuoli|uskonto|rikosrekisteri|suostumus|allekirjoitus|arbetstillstånd|medborgarskap|personnummer|samtycke|underskrift|lön|födelsetid|kön)\b/iu;
+  const restrictedIdentifiers =
+    /(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|citizen|nationality|gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|immigrat|taxid|nationalid|henkilötunnus|sukupuol|kansalaisuu|oleskelulup|työlup|palkka|arbetstillstånd|medborgarskap|personnummer|samtycke)/i;
   function labelFor(el) {
     const raw = el.labels?.[0]?.innerText || el.getAttribute("aria-label") ||
       (el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.innerText : "") ||
@@ -56,9 +58,22 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
         el.getClientRects().length === 0 ||
         (el.maxLength > 0 && a.value.length > el.maxLength)) return false;
     const metadata = [a.label, a.expected_id, a.expected_name, a.expected_placeholder]
-      .join(" ").normalize("NFKC").toLowerCase()
+      .join(" ").normalize("NFKC")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+      .toLowerCase()
       .replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
-    return !sensitive.test(metadata);
+    const identifiers = [a.expected_id, a.expected_name, a.expected_placeholder].join("");
+    if (sensitive.test(metadata) || restrictedIdentifiers.test(identifiers)) return false;
+    // A second live field with the same visible question could silently steal
+    // a reviewed answer even when the original index/id/name remain stable.
+    const duplicates = live.filter(other =>
+      other && other.isConnected && !other.closest("[hidden],[aria-hidden='true'],[inert]") &&
+      getComputedStyle(other).display !== "none" &&
+      getComputedStyle(other).visibility !== "hidden" &&
+      other.getClientRects().length > 0 && labelFor(other) === a.label
+    ).length;
+    return duplicates === 1;
   }
   const indices = actions.map(x => x.index);
   if (new Set(indices).size !== indices.length || !actions.every(valid)) {
@@ -82,6 +97,14 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
         return stop("The employer did not retain an answer; review manually.", filled);
       }
       filled++;
+      // Native input/change events may detach/recreate a React field, or append
+      // new required fields. A value on a detached old node is NOT a live fill.
+      const current = Array.from(document.querySelectorAll("input,textarea,select"));
+      if (!el.isConnected || current.length !== all.length ||
+          current[action.index] !== el || el.id !== action.expected_id ||
+          el.name !== action.expected_name || labelFor(el) !== action.label) {
+        return stop("Employer form rerendered after input; re-inspect manually.", filled);
+      }
     } catch {
       return stop("The employer form changed during an answer; review manually.", filled);
     }
