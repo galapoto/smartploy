@@ -77,7 +77,7 @@ test("a reviewed PDF is locally attached to the unique résumé input, not submi
   const expected_label = await page.locator("#resume_file").evaluate((el: HTMLInputElement) => {
     const found = el.labels?.[0]?.innerText ||
       el.getAttribute("aria-label") ||
-      (el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.textContent : "") ||
+      (el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.innerText : "") ||
       el.getAttribute("placeholder") || el.name || el.id || "";
     return String(found).trim().slice(0, 150);
   });
