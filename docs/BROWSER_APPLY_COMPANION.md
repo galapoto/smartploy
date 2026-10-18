@@ -17,7 +17,9 @@ read the user's stored passwords, browsing history, or other tabs.
 - Optional **explicitly user-approved PDF attachment** to one unique visible Lever résumé input.
   The user selects a trusted local PDF up to 2 MiB and approves the exact file/employer.
   Filename/type, PDF header/trailer, SHA-256 in transit and fresh form identity
-  are checked; this does not upload silently or submit the application.
+  are checked; the selected file must also match the **SHA-256 and size of the
+  exact deterministic SmartPloy CV PDF export** in the v2 packet. This does not
+  upload silently or submit the application.
 - One optional final-submit button click **after** the user has completed
   file upload, mandatory questions and privacy/CAPTCHA requirements, rechecked
   the same employer tab and explicitly approved the single attempt.
@@ -122,10 +124,10 @@ A code review and real browser QA are required before general deployment.
 - Only one visible, empty, uniquely labeled résumé input is supported. Hidden,
   ambiguous, prefilled, non-PDF or multiple-file inputs remain manual.
 - PDF header/trailer/filename/type checks are not malware scanning.
-- The current packet binds reviewed CV and letter **text**, but not the actual
-  exported PDF binary. The user must confirm the chosen PDF matches the saved
-  SmartPloy CV. A separate PDF export digest contract is still needed for
-  unattended document verification.
+- The version 2 packet binds both the approved CV+letter text revision and the
+  exact deterministic downloaded CV PDF's SHA-256/size. The companion refuses
+  a selected file that differs from those bytes. The user still must inspect
+  its contents, since hashes do not prove qualifications or employer acceptance.
 - Applicant must read consent statements and answer employer-specific questions.
 - Final click performs a last independent page-state check. An opaque
   attempt marker is stored **before** the click, so a crash does not cause
@@ -157,6 +159,16 @@ final acceptance still requires a user-signed-in SmartPloy browser, the
 locally installed extension, and a permitted live employer form observed
 and approved by the applicant. Do not label the workflow fully
 operational until those checks and genuine receipt evidence pass.
+
+## Export fingerprint and version boundary
+
+This release upgrades the ephemeral browser handoff to
+**smartploy.browser_handoff.v2**. Old packets are not accepted; copy a fresh
+one from the matching reviewed SmartPloy revision. PDF generation uses an
+invariant ReportLab output to reproduce identical bytes across downloads.
+Do not regenerate or edit the PDF after copying the packet. Changes require
+saving the revised CV and issuing a new handoff. DOCX remains for manual use;
+the automated attachment in this iteration supports only the bound PDF.
 
 ## Limitations and evidence
 
