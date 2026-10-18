@@ -1,5 +1,5 @@
 /* Pure, testable rules for SmartPloy's local-only browser companion. */
-export const SCHEMA = "smartploy.browser_handoff.v1";
+export const SCHEMA = "smartploy.browser_handoff.v2";
 
 export class PacketError extends Error {}
 
@@ -36,6 +36,11 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
       !/^kit-[a-f0-9]{30}$/.test(packet.workspace_id) ||
       !/^[a-f0-9]{64}$/.test(packet.document_sha256)) {
     throw new PacketError("Application packet revision or document identity is invalid");
+  }
+  if (!/^[a-f0-9]{64}$/.test(packet.cv_pdf_sha256) ||
+      !Number.isInteger(packet.cv_pdf_size) ||
+      packet.cv_pdf_size < 12 || packet.cv_pdf_size > 2 * 1024 * 1024) {
+    throw new PacketError("An exact reviewed CV PDF fingerprint is required. Copy a new SmartPloy packet.");
   }
   const issued = Date.parse(packet.issued_at);
   const expires = Date.parse(packet.expires_at);
@@ -91,6 +96,8 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
     role_title: text(packet.role_title, 150),
     revision: packet.revision,
     document_sha256: packet.document_sha256,
+    cv_pdf_sha256: packet.cv_pdf_sha256,
+    cv_pdf_size: packet.cv_pdf_size,
     expires_at: packet.expires_at,
     fields
   };

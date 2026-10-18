@@ -46,7 +46,9 @@ steps:
       - cd web && npm ci --no-audit --no-fund && npm run test && npm run build && npm run test:e2e && cd ..
       - node --check browser-companion/logic.mjs
       - node --check browser-companion/popup.mjs
-      - node --test browser-companion/tests/logic.test.mjs
+      - node --check browser-companion/upload.mjs
+      - node --check browser-companion/page-attachment.mjs
+      - node --test browser-companion/tests/*.test.mjs
 
   - name: exact-source-hold-receipt
     image: python:3.12-bookworm

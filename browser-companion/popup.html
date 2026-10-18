@@ -32,8 +32,14 @@
 
     <section id="submission" hidden>
       <h2>3. Review employer form and submit</h2>
-      <p class="warning">Attach your CV file manually, answer employer-specific questions,
-        review every field and privacy notice, and solve any security challenge yourself.</p>
+      <p class="warning">Select a reviewed SmartPloy CV PDF for an explicitly approved transfer,
+        or attach it yourself on the employer page. The employer may upload immediately
+        when the file is placed in its résumé field. You must personally review and
+        answer employer-specific questions, privacy notices and security challenges.</p>
+      <label for="cvFile">Select reviewed CV PDF (maximum 2 MiB)</label>
+      <input type="file" id="cvFile" accept=".pdf,application/pdf" />
+      <button id="attach" type="button" class="secondary">Approve and attach PDF (no submit)</button>
+      <p id="uploadInfo" role="status"></p>
       <button id="check">Check required fields</button>
       <p id="preflight" role="status"></p>
       <label class="confirm"><input type="checkbox" id="approve" />

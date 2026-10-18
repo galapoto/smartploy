@@ -335,7 +335,7 @@ export interface BrowserHandoffReadiness {
 }
 
 export interface BrowserHandoffPacket {
-  schema: "smartploy.browser_handoff.v1";
+  schema: "smartploy.browser_handoff.v2";
   issued_at: string;
   expires_at: string;
   application_url: string;
@@ -344,6 +344,8 @@ export interface BrowserHandoffPacket {
   workspace_id: string;
   revision: number;
   document_sha256: string;
+  cv_pdf_sha256: string;
+  cv_pdf_size: number;
   fields: {
     full_name: string;
     first_name: string;

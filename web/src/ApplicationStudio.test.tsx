@@ -324,7 +324,7 @@ describe("Application Studio delayed mutation and private clipboard safeguards",
     activeUser = "usr-b";
     await act(async () => {
       pending.resolve({ packet: {
-        schema: "smartploy.browser_handoff.v1",
+        schema: "smartploy.browser_handoff.v2",
         workspace_id: "workspace-A",
         fields: { full_name: "PRIVATE-ACCOUNT-A-NAME" },
       } } as never);
@@ -342,7 +342,7 @@ describe("Application Studio delayed mutation and private clipboard safeguards",
       configurable: true, value: { writeText: copy },
     });
     vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({ packet: {
-      schema: "smartploy.browser_handoff.v1",
+      schema: "smartploy.browser_handoff.v2",
       fields: { full_name: "PRIVATE-A" },
     } } as never);
     vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -515,7 +515,7 @@ describe("Application Studio per-draft result isolation", () => {
     selectB();
     await act(async () => {
       pending.resolve({ packet: {
-        schema: "smartploy.browser_handoff.v1",
+        schema: "smartploy.browser_handoff.v2",
         workspace_id: "workspace-A",
         fields: { full_name: "A-ONLY-PRIVATE-PACKET" },
       } } as never);

@@ -14,6 +14,12 @@ read the user's stored passwords, browsing history, or other tabs.
   LinkedIn/GitHub URLs and a reviewed cover-letter text field.
 - Only explicitly approved contact details copied from SmartPloy, tied to the
   exact job, document digest, revision, and a **15-minute expiry**.
+- Optional **explicitly user-approved PDF attachment** to one unique visible Lever résumé input.
+  The user selects a trusted local PDF up to 2 MiB and approves the exact file/employer.
+  Filename/type, PDF header/trailer, SHA-256 in transit and fresh form identity
+  are checked; the selected file must also match the **SHA-256 and size of the
+  exact deterministic SmartPloy CV PDF export** in the v2 packet. This does not
+  upload silently or submit the application.
 - One optional final-submit button click **after** the user has completed
   file upload, mandatory questions and privacy/CAPTCHA requirements, rechecked
   the same employer tab and explicitly approved the single attempt.
@@ -24,7 +30,7 @@ read the user's stored passwords, browsing history, or other tabs.
 
 **Not supported:** LinkedIn account takeover/scraping, Workday/Greenhouse
 automated final-submit, password-protected forms, employer OAuth bypass,
-CAPTCHA-solving, security challenge bypass, automatic résumé attachment,
+CAPTCHA-solving, security challenge bypass, unattended résumé attachment,
 automatic agreement to privacy terms, answers to unknown questions,
 recurring/automatic application submission, or any service-scheduled
 browser execution.
@@ -66,12 +72,14 @@ A code review and real browser QA are required before general deployment.
 7. Open the pinned extension, paste the packet, click
    **Inspect employer form** and review exactly which fields will be filled.
 8. Click **Fill approved fields (no submit)**. Inspect every inserted value.
-   Manually choose and upload your reviewed CV from your computer, answer
-   mandatory questions, accept terms only after reading them and complete
-   any MFA/CAPTCHA.
+   Select your reviewed SmartPloy CV PDF in the companion and click
+   **Approve and attach PDF (no submit)**, after confirming the file and target
+   employer. The employer site may transmit immediately upon file attachment.
+   Alternatively attach manually on the employer site. Answer required questions,
+   accept terms only after reading them, and complete MFA/CAPTCHA yourself.
 9. Click **Check required fields**. The companion will enable **Submit this
    application once** only if a unique Lever final-submit button is detected,
-   required fields are complete, some file is attached, and the owner checks
+   required fields are complete, a labeled résumé input has a file, and the owner checks
    the per-job consent box.
 10. Only if you intend to send this specific application to the employer,
     click the final button and confirm the OS/browser confirmation prompt.
@@ -108,7 +116,19 @@ A code review and real browser QA are required before general deployment.
 - Source descriptions are not instructions; they cannot grant authority.
 - The fill plan excludes passwords, files, checkbox/radio answers, select
   fields, salary, unknown required fields and company/employer identity.
-- File upload is not automatic. Applicant must read consent statements.
+- PDF attachment is never automatic or unattended: a user must choose a local
+  file and approve the exact target. The extension never stores the PDF bytes,
+  filename or its SHA-256 in persistent storage. Employer page handlers may
+  upload immediately when the file input changes. Only **local attachment** is
+  observed; no employer server acceptance is inferred.
+- Only one visible, empty, uniquely labeled résumé input is supported. Hidden,
+  ambiguous, prefilled, non-PDF or multiple-file inputs remain manual.
+- PDF header/trailer/filename/type checks are not malware scanning.
+- The version 2 packet binds both the approved CV+letter text revision and the
+  exact deterministic downloaded CV PDF's SHA-256/size. The companion refuses
+  a selected file that differs from those bytes. The user still must inspect
+  its contents, since hashes do not prove qualifications or employer acceptance.
+- Applicant must read consent statements and answer employer-specific questions.
 - Final click performs a last independent page-state check. An opaque
   attempt marker is stored **before** the click, so a crash does not cause
   a duplicate retry.
@@ -127,7 +147,10 @@ A code review and real browser QA are required before general deployment.
 ```bash
 node --check browser-companion/logic.mjs
 node --check browser-companion/popup.mjs
-node --test browser-companion/tests/logic.test.mjs
+node --check browser-companion/upload.mjs
+node --check browser-companion/page-attachment.mjs
+node --test browser-companion/tests/*.test.mjs
+# plus synthetic Chromium fixture in web/browser-tests/lever-upload.e2e.ts
 pytest -q tests/test_browser_handoff.py
 ```
 
@@ -136,6 +159,27 @@ final acceptance still requires a user-signed-in SmartPloy browser, the
 locally installed extension, and a permitted live employer form observed
 and approved by the applicant. Do not label the workflow fully
 operational until those checks and genuine receipt evidence pass.
+
+## Export fingerprint and version boundary
+
+This release upgrades the ephemeral browser handoff to
+**smartploy.browser_handoff.v2**. Old packets are not accepted; copy a fresh
+one from the matching reviewed SmartPloy revision. PDF generation uses an
+invariant ReportLab output to reproduce identical bytes across downloads.
+Do not regenerate or edit the PDF after copying the packet. Changes require
+saving the revised CV and issuing a new handoff. DOCX remains for manual use;
+the automated attachment in this iteration supports only the bound PDF.
+
+## Limitations and evidence
+
+This is still a **review-first** companion, not unattended AutoApply. The new
+attachment uses the user's own PDF and an explicitly approved extension action.
+A web application may hide its file input, replace the form or reject the chosen
+PDF; in these cases the companion fails closed and the user must attach manually.
+Synthetic Chromium cases demonstrate DOM assignment, not a real employer-side
+attachment receipt. Before production claiming, a permitted live employer form
+and authorized user must complete a real application, and evidence must be
+independently recorded. No live submission is performed by project CI.
 
 ## Rollback
 
