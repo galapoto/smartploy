@@ -8,6 +8,7 @@ const PLAIN_TYPES = new Set(["text", "textarea"]);
 const SOURCE_LABEL = /^(?:(?:how|where) did you (?:hear|learn|find out) about (?:us|this (?:job|role|position|opportunity))\??|how did you find (?:us|this (?:job|role|position))\??|mistä kuulit (?:meistä|tästä (?:työpaikasta|tehtävästä))\??|hur hörde du talas om (?:oss|den här tjänsten)\??)$/i;
 const MOTIVATION_LABEL = /^(?:why (?:are you interested in|do you want to apply for) this (?:job|role|position|opportunity)\??|what interests you about this (?:job|role|position)\??|why would you like to join (?:our team|us)\??|miksi olet kiinnostunut tästä tehtävästä\??|varför är du intresserad av den här tjänsten\??)$/i;
 const RESTRICTED = /(?:\b(?:visa|sponsor(?:ship)?|immigration|work\s+authori[sz]ation|work\s+permit|salary|compensation|wage|criminal|background\s+check|gender|sex|sexual|race|ethnic|religion|disability|veteran|birth|age|date\s+of\s+birth|passport|nationality|citizen(?:ship)?|bank|social\s+security|ssn|privacy|terms|consent|agree|accept|attest|signature|certify|captcha|recaptcha|mfa|password)\b|palkka|oleskelulup|työlup|kansalaisuu|sukupuol|uskont|syntym|ikäsi|henkilötunnus|suostum|tietosuoj|löneanspråk|arbetstillstånd|medborgarskap|samtycke|personnummer)/i;
+const IDENTIFIER_RISK = /(?:visa|sponsor|salary|compensation|gender|race|ethnic|birth|citizen|passport|consent|privacy|agreement|legal|attest|signature|security|workauth|workpermit|authorization|disab|veteran|sukupuol|palkka)/i;
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 
 function normal(value) {
@@ -34,7 +35,7 @@ export function classifySupplementalQuestion(row) {
       String(row.id || "").length > 150 ||
       String(row.placeholder || "").length > 150) return null;
   const descriptor = [row.label, row.name, row.id, row.placeholder].join(" ");
-  if (RESTRICTED.test(descriptor)) return null;
+  if (RESTRICTED.test(descriptor) || IDENTIFIER_RISK.test(descriptor)) return null;
   const kind = kindFor(row.label);
   if (!kind) return null;
   const maximum = kind === "source" ? 180 : 1200;
@@ -76,7 +77,7 @@ export function buildOwnerQuestionActions(questions, answers) {
     if (!row || !Number.isInteger(row.index) || row.index < 0 || row.index >= 250 ||
         !["source", "motivation"].includes(row.kind) ||
         seen.has(row.kind) || kindFor(row.label) !== row.kind ||
-        RESTRICTED.test([row.label, row.expected_id, row.expected_name].join(" ")) ||
+        (RESTRICTED.test([row.label, row.expected_id, row.expected_name].join(" ")) ||\n         IDENTIFIER_RISK.test([row.label, row.expected_id, row.expected_name].join(" "))) ||
         !PLAIN_TYPES.has(row.expected_type) || !Number.isInteger(row.maxLength) ||
         row.maxLength < 2 || row.maxLength > (row.kind === "source" ? 180 : 1200)) {
       throw new QuestionError("This supplemental field is no longer approved.");
