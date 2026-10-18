@@ -8,7 +8,7 @@ const JOB="https://jobs.lever.co/fictional-org/99999999-0000-4000-8000-123456789
 async function setup(page:Page) {
   let outside=0;
   await page.route("**/*",async route=>{
-    if(route.request().url!==JOB){outside++;await route.abort();return;}
+    if(route.request().url()!==JOB){outside++;await route.abort();return;}
     await route.fulfill({status:200,contentType:"text/html",body:[
       '<!doctype html><html><body><form id="apply">',
       '<label for="contact">Email</label><input id="contact" name="email" type="email" required>',
