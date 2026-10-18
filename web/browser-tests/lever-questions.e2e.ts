@@ -150,3 +150,57 @@ test("unknown consent control remains untouched even after partial text answer",
   expect(await page.locator("#terms").isChecked()).toBe(false);
   expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
 });
+
+
+test("camelCase visa/salary metadata changed after inspection denies local fill",async ({page})=>{
+  const outside=await setup(page);
+  await page.locator("#why").evaluate(el=>el.setAttribute("name","visaStatus"));
+  expect((await act(page,[{...why(),expected_name:"visaStatus"}])).status).toBe("blocked");
+  await page.locator("#why").evaluate(el=>{el.setAttribute("name","questions[why]");el.id="salaryExpectation";});
+  expect((await act(page,[{...why(),expected_id:"salaryExpectation"}])).status).toBe("blocked");
+  expect(await page.locator("#salary").inputValue()).toBe("");
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
+test("newly duplicated question label is refused even if original DOM identity is unchanged",async ({page})=>{
+  await setup(page);
+  await page.evaluate(()=>{
+    const form=document.querySelector("form")!;
+    const label=document.createElement("label");
+    label.htmlFor="new_why";
+    label.textContent="Why are you interested in this role?";
+    const input=document.createElement("textarea");
+    input.id="new_why";
+    input.name="other_question";
+    input.required=true;
+    form.append(label,input);
+  });
+  expect((await act(page,[why()])).status).toBe("blocked");
+  expect(await page.locator("#why").inputValue()).toBe("");
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+});
+
+test("single final answer detached or extra required field added on change remains partial",async ({page})=>{
+  await setup(page);
+  await page.locator("#why").evaluate(el=>{
+    el.addEventListener("input",()=>{
+      const replacement=el.cloneNode(true) as HTMLTextAreaElement;
+      el.replaceWith(replacement);
+    },{once:true});
+  });
+  const detached=await act(page,[why()]);
+  expect(detached.status).toBe("partial_needs_review");
+  expect(detached.filled).toBe(1);
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+});
+
+test("new required control added by last input is never reported as safely completed",async ({page})=>{
+  await setup(page);
+  await page.evaluate(() => {(window as any).injectDrift = true;});
+  const result=await act(page,[why()]);
+  expect(result.status).toBe("partial_needs_review");
+  expect(result.filled).toBe(1);
+  expect(await page.locator("#new_required").count()).toBe(1);
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+});
