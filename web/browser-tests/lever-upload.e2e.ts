@@ -72,7 +72,16 @@ async function attach(page: Page, payload: Record<string, unknown>) {
 
 test("a reviewed PDF is locally attached to the unique résumé input, not submitted", async ({page}) => {
   const external = await setup(page);
-  const reply = await attach(page, request());
+// Mirror the real inspectForm label algorithm rather than assuming
+  // headless Chromium's innerText is identical to source markup.
+  const expected_label = await page.locator("#resume_file").evaluate((el: HTMLInputElement) => {
+    const found = el.labels?.[0]?.innerText ||
+      el.getAttribute("aria-label") ||
+      (el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.textContent : "") ||
+      el.getAttribute("placeholder") || el.name || el.id || "";
+    return String(found).trim().slice(0, 150);
+  });
+  const reply = await attach(page, request({expected_label}));
   expect(reply.status, `Synthetic bridge rejected: ${reply.reason}`).toBe("attached_locally");
   const state = await page.evaluate(() => {
     const cv = document.querySelector<HTMLInputElement>("#resume_file");
