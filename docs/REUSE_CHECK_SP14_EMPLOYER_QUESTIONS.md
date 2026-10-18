@@ -32,3 +32,15 @@
 New pure Node tests, 5 synthetic Chromium scenarios and Python security-contract tests run through existing GitHub CI and proposed ObumDelivery pipeline. Synthetic tests do not contact employers and do not prove that a real form accepted an answer.
 
 **Remaining:** account-scoped approved-answer bank; SmartPloy/ObumAI draft-answer API with explicit per-job approval; guarded select/conditional controls; crash-safe multi-worker authorization and queue; permitted other ATS; employer receipt verification; trusted deployment and real applicant acceptance. These must reuse existing ObumAI capabilities rather than creating a second answer generator.
+## SP14 safety fix — no duplicate click after editing a CV
+
+Review of the existing native companion found the initial client-side one-attempt key
+included the CV revision/digest and could therefore change between document edits.
+The revised key is stable for the same tenant-scoped workspace + HTTPS Lever job ID,
+and a Web Locks exclusive claim serializes simultaneous extension popups before
+checking existing opaque storage, rechecking final preflight, reserving, and clicking.
+It uses the standard browser Web Locks API rather than importing a second
+dependency. Absence of the API is a **stop**, never an unlocked fallback.
+**Scope:** one Chrome profile only. Different browsers/devices and manual user
+submissions still require the future server-side atomic application claim.
+See test_browser_attempt_lock_contract.py and the Node concurrency tests.

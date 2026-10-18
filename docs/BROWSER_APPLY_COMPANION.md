@@ -24,7 +24,13 @@ read the user's stored passwords, browsing history, or other tabs.
   file upload, mandatory questions and privacy/CAPTCHA requirements, rechecked
   the same employer tab and explicitly approved the single attempt.
 - A local opaque SHA-256 attempt reservation prevents silent re-submission
-  after ambiguous errors. It records no CV, contact values or employer tokens.
+  after ambiguous errors. The key now binds one *applicant workspace and employer job*
+  **across CV revisions and query-string variations**. A browser-wide Web Locks
+  exclusive claim serializes concurrent companion popups before writing the marker
+  and clicking. It records no CV, contact values or employer tokens. If Web Locks
+  are unavailable the companion refuses an automatic click; use the employer form
+  manually instead. **This is not cross-device duplicate prevention**; that needs
+  the future tenant-scoped server ledger.
 - A read-only check for a *visible* confirmation phrase **plus**
   confirmation/reference ID after the action.
 
