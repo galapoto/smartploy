@@ -13,7 +13,7 @@ ALTER TABLE smartploy_employer_final_approvals
     ADD COLUMN IF NOT EXISTS action_scope TEXT NOT NULL
         DEFAULT 'single_user_initiated_browser_final_submit';
 -- The existing migration engine safely replays SQL for each isolated
--- acceptance fixture; rebuild this named constraint idempotently.
+-- acceptance fixture and rebuild this named constraint idempotently.
 ALTER TABLE smartploy_employer_final_approvals
     DROP CONSTRAINT IF EXISTS smartploy_employer_final_approvals_action_scope_check;
 ALTER TABLE smartploy_employer_final_approvals
