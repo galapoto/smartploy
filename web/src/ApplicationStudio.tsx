@@ -288,7 +288,8 @@ export default function ApplicationStudio(props: {
   }
 
   async function save() {
-    if (!selected || selected.status !== "draft" || browserReceipt) return;
+    if (!selected || selected.status !== "draft" || browserReceipt ||
+        partnerReceipt || employerAttempt?.previous_attempt_reserved) return;
     const ticket = captureDraft(selected);
     setBusy(true); setMessage(""); setError("");
     try {
@@ -545,6 +546,12 @@ export default function ApplicationStudio(props: {
         ? {...previous,prior_employer_attempt:true,eligible_for_explicit_partner_submit:false,
            review_evidence:null,provider_acknowledged:result.state==="provider_acknowledged"} : null);
       if (result.state==="provider_acknowledged") {
+        // The receipt repository already committed provider acknowledgement
+        // and workspace status together. Do not invent self-reported status.
+        setWorkspaces(items => items.map(item =>
+          item.workspace_id === selected.workspace_id
+            ? {...item,status:"provider_acknowledged"} : item
+        ));
         setPartnerReceipt(result);
         setMessage("Lever confirmed creation of this job application. Reference: " +
           result.provider_application_id + ". This is not a hiring decision.");
@@ -567,7 +574,8 @@ export default function ApplicationStudio(props: {
   }
 
   async function onImportObservedReceipt() {
-    if (!selected || selected.status !== "draft" || browserReceipt) return;
+    if (!selected || selected.status !== "draft" || browserReceipt ||
+        partnerReceipt || employerAttempt?.previous_attempt_reserved) return;
     let parsed: BrowserReceiptImport;
     try {
       if (receiptInput.length < 30 || receiptInput.length > 5000) {
@@ -604,7 +612,8 @@ export default function ApplicationStudio(props: {
   }
 
   async function markApplied() {
-    if (!selected || selected.status !== "draft") return;
+    if (!selected || selected.status !== "draft" || partnerReceipt ||
+        employerAttempt?.previous_attempt_reserved) return;
     if (dirty) { setError("Save the document changes before updating its application status."); return; }
     if (!window.confirm(
       "Confirm that you personally submitted this application on the employer's website. " +
@@ -630,7 +639,10 @@ export default function ApplicationStudio(props: {
 
   async function remove() {
     if (!selected || !window.confirm(
-      "Permanently delete this application workspace and its document text? Original CV and profile facts remain."
+      "Permanently delete this application workspace and its document text? " +
+      "Previously delivered applications are NOT withdrawn, and the durable anti-duplicate " +
+      "record and provider acknowledgment are preserved for reconciliation. " +
+      "Original CV and approved profile facts remain."
     )) return;
     const ticket = captureDraft(selected);
     setBusy(true); setError(""); setMessage("");
@@ -684,7 +696,7 @@ export default function ApplicationStudio(props: {
       </div>
     ) : <div className="studio-layout">
       <aside className="studio-list" aria-label="Your application drafts">
-        <div className="studio-list-heading"><strong>My drafts</strong><span>{workspaces.length}</span></div>
+        <div className="studio-list-heading"><strong>My applications</strong><span>{workspaces.length}</span></div>
         {workspaces.map((item) => <button
           key={item.workspace_id} type="button"
           className={"studio-list-item" + (selectedId === item.workspace_id ? " selected" : "")}
@@ -693,7 +705,9 @@ export default function ApplicationStudio(props: {
         >
           <span className="studio-list-icon"><BriefcaseBusiness size={17}/></span>
           <span className="studio-list-copy"><strong>{item.role_title}</strong><small>{item.company}</small>
-            <em>{item.status === "self_reported_applied" ? "Applied · self-reported" : "Draft · not submitted"}</em>
+            <em>{item.status === "provider_acknowledged" ? "Sent · Lever acknowledged" :
+              item.status === "self_reported_applied" ? "Applied · self-reported" :
+              "Draft · not submitted"}</em>
           </span>
         </button>)}
         <button type="button" className="secondary-btn studio-new" onClick={props.onFindJobs}>
@@ -705,8 +719,12 @@ export default function ApplicationStudio(props: {
           <div>
             <span className="section-kicker">APPLICATION FOR</span>
             <h3>{selected.role_title}</h3><p>{selected.company}</p>
-            {selected.status === "self_reported_applied" ?
-              <span className="state-pill waiting"><Clock3 size={13}/> User-reported applied · not employer-verified</span> :
+            {selected.status === "provider_acknowledged" ?
+              <span className="state-pill good"><CheckCircle2 size={13}/>
+                Employer system acknowledged your application</span> :
+              selected.status === "self_reported_applied" ?
+              <span className="state-pill waiting"><Clock3 size={13}/>
+                User-reported applied · not employer-verified</span> :
               <span className="state-pill good">{browserReceipt ?
                 "Confirmation observed · employer verification pending" :
                 "Editable draft · not submitted"}</span>}
@@ -719,7 +737,9 @@ export default function ApplicationStudio(props: {
         <div className="studio-info">
           <ShieldCheck size={18}/>
           <div><strong>Your content, your decision.</strong>
-            <p>SmartPloy has not sent this application to anyone. The starter cover letter contains prompts that you must replace with accurate, personal details.</p></div>
+            <p>{selected.status === "provider_acknowledged"
+                  ? "Lever confirmed creation of this application. Your approved CV/letter were sent. This is not a hiring decision."
+                  : "SmartPloy has not independently verified submission of this draft. Review every CV and cover-letter claim before sending."}</p></div>
         </div>
         <section className="studio-ai-card" aria-label="Optional local AI writing support">
           <div className="studio-ai-heading">
@@ -927,7 +947,20 @@ export default function ApplicationStudio(props: {
             must be verified from the employer's confirmation; preparing the packet is not applying.
           </p>
         </section> : null}
-        <section className="studio-receipt" aria-label="Browser-observed employer confirmation">
+        {selected.status === "provider_acknowledged" ? <section
+          className="studio-receipt" aria-label="Official Lever provider acknowledgement">
+          <div className="studio-receipt-header">
+            <strong><CheckCircle2 size={16}/> Lever received this application</strong>
+            <span className="state-pill good">Provider acknowledged</span>
+          </div>
+          {partnerReceipt ? <p role="status">
+            Employer application reference: <strong>{partnerReceipt.provider_application_id}</strong>
+          </p> : <p>Provider reference is stored in your private SmartPloy account. Refresh to retrieve it.</p>}
+          <p className="muted">Your application was created at the employer's ATS.
+            This confirms submission, not acceptance for the position or a hiring decision.</p>
+        </section> : null}
+        {selected.status !== "provider_acknowledged" ? <section
+          className="studio-receipt" aria-label="Browser-observed employer confirmation">
           <div className="studio-receipt-header">
             <strong><CheckCircle2 size={16}/> Employer confirmation evidence</strong>
             <span className="state-pill waiting">Not independently verified</span>
@@ -942,7 +975,7 @@ export default function ApplicationStudio(props: {
               copy the private receipt packet and import it here. An attempt alone is not success.</p>
             <button className="outline-btn compact" type="button"
               onClick={() => setReceiptOpen((current) => !current)}
-              disabled={selected.status !== "draft"}>
+              disabled={selected.status !== "draft" || !!partnerReceipt}>
               {receiptOpen ? "Hide receipt import" : "Import observed receipt"}
             </button>
             {receiptOpen ? <div className="studio-receipt-import">
@@ -957,19 +990,25 @@ export default function ApplicationStudio(props: {
               </button>
             </div> : null}
           </>}
-        </section>
+        </section> : null}
         <div className="studio-footer">
           <span><LockKeyhole size={14}/> Private workspace · revision {selected.revision}</span>
           {selected.status === "draft" ? <div className="studio-actions">
-            <button type="button" className="primary-btn" disabled={busy || !dirty || !!browserReceipt}
+            <button type="button" className="primary-btn" disabled={busy || !dirty || !!browserReceipt ||
+                !!partnerReceipt || employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void save()}><Save size={16}/>{busy ? "Working…" : "Save changes"}</button>
-            <button type="button" className="navy-btn" disabled={busy}
+            <button type="button" className="navy-btn" disabled={busy ||
+                !!partnerReceipt || employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void markApplied()}>I applied on employer site <CheckCircle2 size={16}/></button>
-          </div> : <p>Self-reported applied {selected.self_reported_applied_at ? new Date(selected.self_reported_applied_at).toLocaleDateString() : ""}{selected.self_reported_reference ? " · " + selected.self_reported_reference : ""}</p>}
+          </div> : selected.status === "provider_acknowledged" ?
+            <p>Lever acknowledged your application{partnerReceipt ?
+              " · Reference " + partnerReceipt.provider_application_id : ""}.
+              Documents are locked to preserve the submitted version.</p> :
+            <p>Self-reported applied {selected.self_reported_applied_at ? new Date(selected.self_reported_applied_at).toLocaleDateString() : ""}{selected.self_reported_reference ? " · " + selected.self_reported_reference : ""}</p>}
         </div>
         <div className="studio-delete-row">
           <button type="button" className="text-btn studio-delete" disabled={busy} onClick={() => void remove()}>
-            <Trash2 size={14}/> Delete this private draft
+            <Trash2 size={14}/> Delete this application workspace
           </button>
         </div>
       </div> : null}

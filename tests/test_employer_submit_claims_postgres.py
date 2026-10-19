@@ -1264,6 +1264,28 @@ def test_partner_lever_real_signed_in_provider_acknowledgment_and_cross_device_o
     assert first.json()["provider_application_id"]=="app-1234567890abcdef"
     assert first.json()["external_actions_performed"] is True
     assert first.json()["employer_hiring_decision_verified"] is False
+    # Employer-issued ID and the original application workspace move together,
+    # with no synthetic "self-reported applied" event or document change.
+    stored=app.state.workspace_repository.get(a.profile_id,packet["workspace_id"])
+    assert stored is not None
+    assert stored.status=="provider_acknowledged"
+    assert stored.revision==packet["revision"]
+    assert stored.self_reported_applied_at==""
+    assert stored.self_reported_reference==""
+    assert stored.to_dict()["authority"]["has_external_submission_proof"] is True
+    assert stored.to_dict()["authority"]["may_edit"] is False
+    assert api.get(route).json()["workspace"]["status"]=="provider_acknowledged"
+    listed=api.get("/api/v1/application-workspaces").json()
+    assert any(w["workspace_id"]==packet["workspace_id"] and
+               w["status"]=="provider_acknowledged" for w in listed["workspaces"])
+    assert api.put(route,json={
+        "expected_revision":packet["revision"],
+        "cv_text":"Forged replacement CV","cover_letter_text":"Forged replacement cover letter",
+    },headers=headers).status_code==409
+    assert api.post(route+"/report-applied",json={
+        "expected_revision":packet["revision"],
+        "confirmed_external_application":True,"reference":"fake manually self-reported",
+    },headers=headers).status_code==409
     assert sent==["GET","POST"]
     view=api.get(route+"/partner-lever-receipt")
     assert view.status_code==200 and view.json()["present"]
@@ -1300,6 +1322,19 @@ def test_partner_lever_rate_limit_outcome_sticky_and_no_second_post(signed_in_pa
     assert result.status_code==202,result.text
     assert result.json()["state"]=="outcome_uncertain"
     assert result.json()["automatic_retry_authorized"] is False
+    # No provider ID -> preserve draft status, but freeze it while the
+    # sticky outcome is still uncertain. Do not claim it was applied.
+    still=app.state.workspace_repository.get(a.profile_id,packet["workspace_id"])
+    assert still.status=="draft"
+    assert still.to_dict()["authority"]["has_external_submission_proof"] is False
+    assert api.put(route,json={
+        "expected_revision":packet["revision"],
+        "cv_text":"changed","cover_letter_text":"changed",
+    },headers=headers).status_code==409
+    assert api.post(route+"/report-applied",json={
+        "expected_revision":packet["revision"],
+        "confirmed_external_application":True,"reference":"",
+    },headers=headers).status_code==409
     assert PostgresEmployerSubmitClaimRepository(DSN).get_for_employer_url(a,url).state=="uncertain"
     assert api.get(route+"/partner-lever-receipt").json()["present"] is False
     assert api.post(route+"/partner-lever-apply",json=payload,headers=headers).status_code==409

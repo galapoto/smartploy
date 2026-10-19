@@ -248,13 +248,36 @@ describe("Application Studio private-read account boundary", () => {
       "c".repeat(64),1002,"usr-a"
     ));
     expect(await screen.findByText(/Lever confirmed creation/)).toBeTruthy();
-    expect(screen.getByLabelText("Official Lever partner submission").textContent)
-      .toContain("app-fixture-1234567890");
+    const acknowledged=await screen.findByLabelText("Official Lever provider acknowledgement");
+    expect(acknowledged.textContent).toContain("app-fixture-1234567890");
+    expect(await screen.findByText("Sent · Lever acknowledged")).toBeTruthy();
+    expect(screen.getByText(/Documents are locked to preserve the submitted version/)).toBeTruthy();
+    expect(screen.queryByRole("button",{name:/I applied on employer site/})).toBeNull();
     expect(screen.queryByRole("button",{
       name:/Submit reviewed application to authorized Lever employer/
     })).toBeNull();
     expect(api.sendLeverPartnerApplication).toHaveBeenCalledTimes(1);
     expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+  });
+
+  it("reloads an independently acknowledged application as non-editable, never a draft",async()=>{
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces:[{...job("A"),status:"provider_acknowledged"}],count:1
+    });
+    vi.mocked(api.getLeverPartnerReceipt).mockResolvedValue({
+      present:true,
+      receipt:{provider:"lever",provider_application_id:"confirmed-identity-12345",
+        provider_application_acknowledged:true,
+        employer_hiring_decision_verified:false,automatic_retry_authorized:false}
+    });
+    studio();
+    expect(await screen.findByText("Sent · Lever acknowledged")).toBeTruthy();
+    const proof=await screen.findByLabelText("Official Lever provider acknowledgement");
+    await waitFor(()=>expect(proof.textContent).toContain("confirmed-identity-12345"));
+    expect(screen.getByText(/Documents are locked to preserve the submitted version/)).toBeTruthy();
+    expect(screen.queryByRole("button",{name:/Save changes/})).toBeNull();
+    expect(screen.queryByRole("button",{name:/I applied on employer site/})).toBeNull();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 
   it("stale or withheld non-bearer evidence never creates an employer action",async()=>{

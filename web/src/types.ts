@@ -274,7 +274,7 @@ export interface ApplicationWorkspace {
   source_cv_sha256: string;
   approved_evidence_ids: string[];
   revision: number;
-  status: "draft" | "self_reported_applied";
+  status: "draft" | "self_reported_applied" | "provider_acknowledged";
   self_reported_applied_at: string;
   self_reported_reference: string;
   created_at: string;
