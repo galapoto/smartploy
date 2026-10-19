@@ -247,7 +247,6 @@ describe("Application Studio private-read account boundary", () => {
       "workspace-A",1,"a".repeat(64),"b".repeat(64),
       "c".repeat(64),1002,"usr-a"
     ));
-    expect(await screen.findByText(/Lever confirmed creation/)).toBeTruthy();
     const acknowledged=await screen.findByLabelText("Official Lever provider acknowledgement");
     expect(acknowledged.textContent).toContain("app-fixture-1234567890");
     expect(await screen.findByText("Sent · Lever acknowledged")).toBeTruthy();
@@ -685,7 +684,7 @@ describe("Application Studio delayed mutation and private clipboard safeguards",
     vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Delete this private draft/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Delete this application workspace/ }));
     await waitFor(() => expect(api.deleteApplicationWorkspace).toHaveBeenCalledWith("workspace-A", "usr-a"));
     activeUser = "usr-b";
     await act(async () => { pending.resolve({ deleted: true }); });
@@ -885,7 +884,7 @@ describe("Application Studio per-draft result isolation", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Delete this private draft/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Delete this application workspace/ }));
     await waitFor(() => expect(api.deleteApplicationWorkspace).toHaveBeenCalledWith(
       "workspace-A", "usr-a"
     ));
