@@ -17,7 +17,7 @@ import httpx
 from psycopg import connect
 
 from .browser_handoff import HandoffError, _posting_url
-from .employer_automation_rights import LEVER_API_ACTION, employer_job_key
+from .employer_automation_rights import employer_job_key
 from .employer_submit_claim_storage import EmployerSubmitClaim
 from .identity import UserProfileBinding
 
@@ -235,9 +235,9 @@ class LeverPartnerTransport:
                 ):
                     raise LeverPartnerUncertain()
                 return PartnerAcknowledgment(application_id=result["applicationId"])
-            except httpx.TimeoutException as exc:
+            except httpx.TimeoutException:
                 raise LeverPartnerUncertain("timeout") from None
-            except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            except (httpx.HTTPError, ValueError, KeyError, TypeError):
                 # Do not include request URLs, secrets, candidate data, or
                 # raw HTTP exception text in logs/response.
                 raise LeverPartnerUncertain() from None

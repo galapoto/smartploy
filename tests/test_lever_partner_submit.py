@@ -1,7 +1,6 @@
 """SP15f official Lever partner API: real wire contracts, no real employer calls."""
 from __future__ import annotations
 
-from hashlib import sha256
 import json
 
 import httpx
@@ -14,7 +13,6 @@ from smartploy.lever_partner_submit import (
 
 URL="https://jobs.lever.co/synthetic-partner/posting123/apply"
 KEY_ENV="SMARTPLOY_LEVER_PARTNER_KEY_SYNTHETIC"
-API_URL="https://api.lever.co/v0/postings/synthetic-partner/posting123"
 FIELDS={
     "full_name":"Synthetic Applicant",
     "email":"user@example.invalid",
