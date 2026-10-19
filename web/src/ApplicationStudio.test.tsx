@@ -200,14 +200,18 @@ describe("Application Studio private-read account boundary", () => {
   });
 
   it("lets the signed-in owner submit exactly one reviewed partner packet with provider ID",async()=>{
-    vi.mocked(api.getLeverPartnerReadiness).mockResolvedValue({
-      partner_provider:"lever",partner_api_configured:true,
+    const eligible={
+      partner_provider:"lever" as const,partner_api_configured:true,
       independent_partner_rights_reviewed:true,
       current_applicant_review_recorded:true,current_document_and_posting_ready:true,
       prior_employer_attempt:false,provider_acknowledged:false,
       eligible_for_explicit_partner_submit:true,
-      unattended_auto_apply_enabled:false,automatic_retry_authorized:false
-    });
+      unattended_auto_apply_enabled:false as const,automatic_retry_authorized:false as const
+    };
+    vi.mocked(api.getLeverPartnerReadiness)
+      .mockResolvedValueOnce({...eligible,current_applicant_review_recorded:false,
+        eligible_for_explicit_partner_submit:false})
+      .mockResolvedValue(eligible);
     const packet={
       schema:"smartploy.browser_handoff.v2" as const,
       issued_at:new Date().toISOString(),expires_at:"2099-01-01T00:15:00Z",
@@ -230,6 +234,9 @@ describe("Application Studio private-read account boundary", () => {
     vi.spyOn(window,"confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading",{name:"A private role"})).toBeTruthy();
+    expect(screen.queryByRole("button",{
+      name:/Submit reviewed application to authorized Lever employer/
+    })).toBeNull();
     const copy=screen.getByRole("button",{name:/Copy approved autofill packet/});
     await waitFor(()=>expect((copy as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(copy);
@@ -237,7 +244,8 @@ describe("Application Studio private-read account boundary", () => {
     await waitFor(()=>expect((review as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(review);
     await waitFor(()=>expect(screen.getByText(/Review recorded temporarily/)).toBeTruthy());
-    const send=screen.getByRole("button",{
+    await waitFor(()=>expect(api.getLeverPartnerReadiness).toHaveBeenCalledTimes(2));
+    const send=await screen.findByRole("button",{
       name:/Submit reviewed application to authorized Lever employer/
     });
     await waitFor(()=>expect((send as HTMLButtonElement).disabled).toBe(false));

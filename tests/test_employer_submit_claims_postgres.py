@@ -1258,7 +1258,8 @@ def test_partner_lever_real_signed_in_provider_acknowledgment_and_cross_device_o
     assert sent==["GET","POST"]
     api.cookies.set(SESSION_COOKIE_NAME,tokens["b"])
     assert api.get(route+"/partner-lever-receipt").status_code==404
-    assert api.post(route+"/partner-lever-apply",json=payload,headers=headers).status_code==403
+    assert api.post(route+"/partner-lever-apply",json=payload,headers=headers).status_code==409
+    assert sent==["GET","POST"]
     api.cookies.set(SESSION_COOKIE_NAME,tokens["a"])
     assert PostgresPartnerApplicationReceipts(DSN).get(a,url).application_id=="app-1234567890abcdef"
 

@@ -417,6 +417,18 @@ export default function ApplicationStudio(props: {
       if (!isCurrentDraft(ticket)) return;
       setFinalReview(item);
       setMessage("Review recorded temporarily. No application was sent and no browser authorization was issued.");
+      // The prior private eligibility snapshot was taken BEFORE the review.
+      // Recheck through the existing verified-account boundary, never
+      // optimistically enable employer transfer on a successful local write.
+      setPartnerReadiness(null);
+      try {
+        const refreshed = await runPrivateAction(
+          () => getLeverPartnerReadiness(selected.workspace_id), ticket
+        );
+        if (isCurrentDraft(ticket)) setPartnerReadiness(refreshed);
+      } catch {
+        if (isCurrentDraft(ticket)) setPartnerReadiness(null);
+      }
     } catch (exc) {
       reportActionError(exc, "Review was not recorded.");
     } finally { if (isCurrentDraft(ticket)) setReviewBusy(false); }
@@ -432,6 +444,7 @@ export default function ApplicationStudio(props: {
       );
       if (!isCurrentDraft(ticket)) return;
       setFinalReview(result);
+      setPartnerReadiness(null);
       setMessage("Review cancelled. No employer application was submitted.");
     } catch (exc) {
       reportActionError(exc, "Unable to cancel the review.");
