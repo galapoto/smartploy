@@ -198,4 +198,7 @@ def make_browser_packet(
             "employer_submit_allowed_without_new_approval": False,
         },
     }
+    # Server-owned exact contact/letter fingerprint for partner submissions.
+    # Contains no new private data and is never a browser submit grant.
+    packet["approved_fields_sha256"] = approved_fields_sha256(packet["fields"])
     return packet

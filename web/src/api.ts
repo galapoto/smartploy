@@ -273,6 +273,65 @@ export function createBrowserHandoffPacket(
 }
 
 
+/** Official Lever partner submit is available only with employer-specific
+ * reviewed API rights, exact configured posting and a fresh applicant gesture.
+ */
+export type LeverPartnerReadiness = {
+  partner_provider: "lever";
+  partner_api_configured: boolean;
+  independent_partner_rights_reviewed: boolean;
+  current_applicant_review_recorded: boolean;
+  current_document_and_posting_ready: boolean;
+  prior_employer_attempt: boolean;
+  provider_acknowledged: boolean;
+  eligible_for_explicit_partner_submit: boolean;
+  unattended_auto_apply_enabled: false;
+  automatic_retry_authorized: false;
+};
+
+export type LeverProviderAcknowledgment = {
+  provider: "lever";
+  provider_application_id: string;
+  provider_application_acknowledged: true;
+  employer_hiring_decision_verified: false;
+  automatic_retry_authorized: false;
+};
+
+export type LeverPartnerApplyResult =
+  | ({state: "provider_acknowledged";external_actions_performed:true} & LeverProviderAcknowledgment)
+  | {state:"outcome_uncertain";provider_acknowledged:false;automatic_retry_authorized:false;
+      employer_hiring_decision_verified:false;requires_human_reconciliation:true};
+
+export function getLeverPartnerReadiness(workspaceId: string): Promise<LeverPartnerReadiness> {
+  return request<LeverPartnerReadiness>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/partner-lever-readiness"
+  );
+}
+
+export function getLeverPartnerReceipt(
+  workspaceId: string
+): Promise<{present:boolean;receipt:LeverProviderAcknowledgment|null}> {
+  return request<{present:boolean;receipt:LeverProviderAcknowledgment|null}>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/partner-lever-receipt"
+  );
+}
+
+export function sendLeverPartnerApplication(
+  workspaceId: string, revision:number, documentSha:string,
+  cvPdfSha:string, fieldsSha:string, pdfSize:number, expectedUserId:string
+): Promise<LeverPartnerApplyResult> {
+  return request<LeverPartnerApplyResult>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/partner-lever-apply",
+    {method:"POST",body:JSON.stringify({
+      expected_revision:revision, expected_document_sha256:documentSha,
+      expected_cv_pdf_sha256:cvPdfSha,
+      expected_fields_sha256:fieldsSha,expected_cv_pdf_size:pdfSize,
+      explicit_final_user_approval:true,approve_employer_data_transfer:true,
+      affirm_reviewed_employer_form:true,
+    })},expectedUserId
+  );
+}
+
 /** Read-only independent employer-rights posture. There is NO submit capability. */
 export type EmployerFinalActionReadiness = {
   operator_permission_reviewed: boolean;

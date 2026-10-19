@@ -17,7 +17,7 @@ from psycopg import connect
 
 from .browser_handoff import _approved_contact, approved_fields_sha256
 from .employer_automation_rights import (
-    EmployerRightsDenied, approved_employer_rights_locked, employer_job_key,
+    ACTION, ALLOWED_ACTIONS, EmployerRightsDenied, approved_employer_rights_locked, employer_job_key,
 )
 from .employer_review_intent_storage import PostgresEmployerReviewIntentRepository
 from .employer_submit_claim_storage import (
@@ -52,6 +52,7 @@ class EmployerFinalApproval:
     created_at: datetime
     expires_at: datetime
     updated_at: datetime
+    action_scope: str = ACTION
 
     def public_status(self, *, workspace_id: str, revision: int) -> dict[str, object]:
         return {
@@ -182,7 +183,8 @@ class PostgresEmployerFinalActionGate:
         return """SELECT approval_id,user_id,profile_id,employer_job_key_sha256,
                          workspace_id,document_revision,document_sha256,cv_pdf_sha256,
                          approved_fields_sha256,application_url_sha256,
-                         permission_evidence_sha256,state,created_at,expires_at,updated_at
+                         permission_evidence_sha256,state,created_at,expires_at,updated_at,
+                         action_scope
                   FROM smartploy_employer_final_approvals"""
 
     @staticmethod
@@ -195,6 +197,7 @@ class PostgresEmployerFinalActionGate:
             application_url_sha256=str(row[9]),
             permission_evidence_sha256=str(row[10]),state=str(row[11]),
             created_at=row[12],expires_at=row[13],updated_at=row[14],
+            action_scope=str(row[15]),
         )
 
     def approve(
@@ -205,6 +208,7 @@ class PostgresEmployerFinalActionGate:
         expected_fields_sha256: str,
         explicit_final_user_approval: bool,
         acknowledge_external_employer_transfer: bool,
+        action_scope: str = ACTION,
     ) -> tuple[EmployerFinalApproval, bool]:
         """Store bounded final USER intent; DOES NOT authorize an external click.
 
@@ -220,6 +224,8 @@ class PostgresEmployerFinalActionGate:
             raise EmployerFinalActionDenied(
                 "Fresh applicant final approval and external-transfer acknowledgement required"
             )
+        if action_scope not in ALLOWED_ACTIONS:
+            raise EmployerFinalActionDenied("Unsupported final action channel")
         employer_hash = _request_checks(
             binding,workspace_id,expected_revision,expected_document_sha256,
             expected_cv_pdf_sha256,expected_fields_sha256,expected_application_url,
@@ -234,7 +240,7 @@ class PostgresEmployerFinalActionGate:
                         expected_application_url=expected_application_url,
                         expected_job_fingerprint=expected_job_fingerprint,
                     )
-                    rights = approved_employer_rights_locked(cur,employer_hash)
+                    rights = approved_employer_rights_locked(cur,employer_hash, action_scope=action_scope)
                 except (EmployerSubmitClaimDenied,EmployerRightsDenied) as exc:
                     raise EmployerFinalActionDenied(str(exc)) from exc
                 doc_hash = sha256((cv+"\0"+letter).encode("utf-8")).hexdigest()
@@ -265,8 +271,8 @@ class PostgresEmployerFinalActionGate:
                        (approval_id,user_id,profile_id,employer_job_key_sha256,
                         workspace_id,document_revision,document_sha256,cv_pdf_sha256,
                         approved_fields_sha256,application_url_sha256,
-                        permission_evidence_sha256,state,expires_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'approved',
+                        permission_evidence_sha256,action_scope,state,expires_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'approved',
                                now()+interval '90 seconds')
                        ON CONFLICT (user_id,profile_id,employer_job_key_sha256)
                        DO UPDATE SET
@@ -278,6 +284,7 @@ class PostgresEmployerFinalActionGate:
                          approved_fields_sha256=EXCLUDED.approved_fields_sha256,
                          application_url_sha256=EXCLUDED.application_url_sha256,
                          permission_evidence_sha256=EXCLUDED.permission_evidence_sha256,
+                         action_scope=EXCLUDED.action_scope,
                          state='approved',created_at=now(),
                          expires_at=now()+interval '90 seconds',updated_at=now()
                        WHERE smartploy_employer_final_approvals.state='cancelled'
@@ -288,7 +295,7 @@ class PostgresEmployerFinalActionGate:
                        RETURNING approval_id""",
                     (approval_id,binding.user_id,binding.profile_id,employer_hash,
                      workspace_id,expected_revision,doc_hash,expected_cv_pdf_sha256,
-                     fields_hash,url_hash,rights.permission_evidence_sha256),
+                     fields_hash,url_hash,rights.permission_evidence_sha256,action_scope),
                 )
                 inserted = cur.fetchone() is not None
                 cur.execute(
@@ -310,6 +317,7 @@ class PostgresEmployerFinalActionGate:
                     or item.approved_fields_sha256!=fields_hash
                     or item.application_url_sha256!=url_hash
                     or item.permission_evidence_sha256!=rights.permission_evidence_sha256
+                    or item.action_scope!=action_scope
                 ):
                     raise EmployerFinalActionDenied(
                         "A different final approval exists. Cancel before creating another."
@@ -355,6 +363,7 @@ class PostgresEmployerFinalActionGate:
         expected_application_url:str,expected_job_fingerprint:str,
         expected_document_sha256:str,expected_cv_pdf_sha256:str,
         expected_fields_sha256:str,
+        action_scope: str = ACTION,
     )->FinalActionReservation:
         """Internal durable handoff primitive; not exposed via HTTP/MV3.
 
@@ -363,6 +372,8 @@ class PostgresEmployerFinalActionGate:
         exactly one sticky claim in the SAME transaction as approval consume.
         A successful return is not a browser authorization or employer receipt.
         """
+        if action_scope not in ALLOWED_ACTIONS:
+            raise EmployerFinalActionDenied("Unsupported final action channel")
         employer_hash=_request_checks(
             binding,workspace_id,expected_revision,expected_document_sha256,
             expected_cv_pdf_sha256,expected_fields_sha256,expected_application_url,
@@ -382,7 +393,7 @@ class PostgresEmployerFinalActionGate:
                         expected_application_url=expected_application_url,
                         expected_job_fingerprint=expected_job_fingerprint,
                     )
-                    rights=approved_employer_rights_locked(cur,employer_hash)
+                    rights=approved_employer_rights_locked(cur,employer_hash, action_scope=action_scope)
                 except (EmployerSubmitClaimDenied,EmployerRightsDenied) as exc:
                     raise EmployerFinalActionDenied(str(exc)) from exc
                 doc_hash=sha256((cv+"\0"+letter).encode("utf-8")).hexdigest()
@@ -420,6 +431,7 @@ class PostgresEmployerFinalActionGate:
                         expected_application_url.encode("utf-8")
                     ).hexdigest()
                     or approved.permission_evidence_sha256!=rights.permission_evidence_sha256
+                    or approved.action_scope!=action_scope
                 ):
                     raise EmployerFinalActionDenied(
                         "Final approval, employer rights, CV or job identity drifted"

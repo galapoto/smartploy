@@ -261,6 +261,7 @@ EXPECTED_OWNER_TABLES = frozenset({
     "smartploy_employer_submit_claims",
     "smartploy_employer_review_intents",
     "smartploy_employer_final_approvals",
+    "smartploy_partner_application_receipts",
     "smartploy_account_erasure_requests",
 })
 
@@ -370,6 +371,10 @@ def inspect_quarantined_account(
         ),
         "employer_final_approvals": (
             "SELECT count(*) FROM smartploy_employer_final_approvals WHERE user_id=%s AND profile_id=%s",
+            (user_id, profile_id),
+        ),
+        "partner_application_receipts": (
+            "SELECT count(*) FROM smartploy_partner_application_receipts WHERE user_id=%s AND profile_id=%s",
             (user_id, profile_id),
         ),
     }

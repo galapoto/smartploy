@@ -346,6 +346,8 @@ export interface BrowserHandoffPacket {
   document_sha256: string;
   cv_pdf_sha256: string;
   cv_pdf_size: number;
+  /** Server-owned SHA fingerprint for the EXACT approved employer transfer. */
+  approved_fields_sha256?: string;
   fields: {
     full_name: string;
     first_name: string;

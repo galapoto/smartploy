@@ -7,6 +7,9 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from hashlib import sha256
+import json
+
+import httpx
 import os
 from uuid import uuid4
 
@@ -39,6 +42,7 @@ from smartploy.employer_automation_rights import (
 from smartploy.employer_final_action_gate import (
     EmployerFinalActionDenied, PostgresEmployerFinalActionGate,
 )
+from smartploy.lever_partner_submit import LeverPartnerTransport, PostgresPartnerApplicationReceipts
 from smartploy.identity import AuthenticatedPrincipal, PostgresIdentityRepository
 from smartploy.storage import PostgresJobRepository
 
@@ -1052,3 +1056,251 @@ def test_employer_rights_expire_after_final_user_approval_before_consume(scoped)
     with pytest.raises(EmployerFinalActionDenied,match="permission"):
         gate.consume_once_for_trusted_adapter(a,approval_id=approval.approval_id,**args)
     assert PostgresEmployerSubmitClaimRepository(DSN).get(a,scoped[4]) is None
+
+
+
+@pytest.fixture
+def signed_in_partner_workflow(scoped, monkeypatch):
+    """Reuse real SmartPloy job normalization, OIDC identities, CV PDF and SQL."""
+    a,b,_,_,source_key,_,_,_,_,_=scoped
+    nonce=uuid4().hex
+    site="syntheticpartner"
+    origin="https://smartploy.obumai.com"
+    url=f"https://jobs.lever.co/{site}/{nonce}/apply"
+    seen=normalize_observation(
+        SourceObservation(
+            source_id="manual-import",source_mode="manual",source_url=url,
+            raw_text="Synthetic junior data analyst",
+            payload={
+                "role_title":"Junior Data Analyst","company":"Synthetic Partner",
+                "description":"SQL data quality and business analytics",
+                "application_url":url,"location":"Helsinki",
+            },
+            observed_at="2026-10-18T15:00:00+00:00",
+        ),
+        SourcePolicy("manual-import","Manual","manual",("manual",)),
+    )
+    assert seen.candidate
+    job=seen.candidate
+    jobs=PostgresJobRepository(DSN)
+    profiles=PostgresProfileRepository(DSN,profile_id=a.profile_id)
+    workspaces=PostgresWorkspaceRepository(DSN)
+    for kind,val in (("identity","Synthetic Applicant"),("email","same@example.invalid"),
+                     ("skill","Synthetic SQL")):
+        profiles.upsert_fact(ProfileFact(kind,val,"user-entered",approved=True))
+    jobs.upsert(job)
+    workspace=new_workspace(
+        job,profiles.profile(),
+        source_cv_text="Synthetic Applicant\n\nSQL quality analytics experience"
+    )
+    workspace=replace(workspace,cover_letter_text=(
+        "Dear hiring manager, I am applying for your synthetic data role. "
+        "The reviewed SQL experience supports your advertised requirements. "
+        "Kind regards, Synthetic Applicant."
+    ))
+    assert workspaces.create_or_get(workspace)[1]
+    packet=make_browser_packet(workspace,job,profiles.profile())
+    key=employer_job_key(url)
+    partner_key="SMARTPLOY_LEVER_PARTNER_KEY_SYNTHETIC"
+    monkeypatch.setenv("SMARTPLOY_LEVER_PARTNER_JOBS_JSON",json.dumps({
+        f"{site}/{nonce}":{
+            "region":"global","form_review_sha256":"a"*64,
+            "api_key_env":partner_key,"standard_form_only_reviewed":True,
+            "consent_policy_reviewed":True,
+        }
+    }))
+    monkeypatch.setenv(partner_key,"synthetic-employer-super-admin-key-1234567890")
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT","production")
+    monkeypatch.setenv("SMARTPLOY_AUTH_MODE","oidc")
+    monkeypatch.setenv("SMARTPLOY_ACCESS_ENABLED","false")
+    monkeypatch.setenv("SMARTPLOY_PUBLIC_ORIGIN",origin)
+    monkeypatch.setenv("SMARTPLOY_ALLOWED_HOSTS","smartploy.obumai.com")
+    monkeypatch.setenv("SMARTPLOY_OIDC_ISSUER","https://sso.example.invalid")
+    monkeypatch.setenv("SMARTPLOY_OIDC_CLIENT_ID","fixture")
+    monkeypatch.setenv("SMARTPLOY_OIDC_REDIRECT_URI",origin+"/auth/callback")
+    monkeypatch.setenv("SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI",origin+"/auth/logged-out")
+    monkeypatch.setenv("SMARTPLOY_DATABASE_URL",DSN)
+    sessions=MemorySessionRepository()
+    tokens={}
+    original_nonce=source_key.removeprefix("employer-job-")
+    for binding,label in ((a,"a"),(b,"b")):
+        principal=AuthenticatedPrincipal(
+            issuer="https://sso.example.invalid",
+            subject=f"claim-{label}-{original_nonce}",
+            email="same@example.invalid",auth_source="oidc",
+        )
+        tokens[label]=sessions.create(
+            user_id=binding.user_id,principal=principal,
+            provider_session_id="synthetic-"+label,ttl_seconds=3600,
+        ).token
+    app=create_app(
+        identity_repository=PostgresIdentityRepository(DSN),
+        session_repository=sessions,oidc_client=object(),
+    )
+    api=TestClient(app,base_url=origin)
+    api.cookies.set(SESSION_COOKIE_NAME,tokens["a"])
+    route=f"/api/v1/application-workspaces/{workspace.workspace_id}"
+    headers={
+        "Origin":origin,"Sec-Fetch-Site":"same-origin",
+        "X-Smartploy-Expected-User-Id":a.user_id,
+    }
+    with connect(DSN) as conn:
+        conn.execute(
+            """INSERT INTO smartploy_employer_automation_rights (
+                 employer_job_key_sha256,action_scope,permission_basis,
+                 permission_evidence_sha256,terms_evidence_sha256,
+                 reviewed_by,independently_approved_by,
+                 reviewed_at,expires_at,state
+               ) VALUES (
+                 %s,'partner_lever_postings_api_submit',
+                 'documented_partner_integration',%s,%s,
+                 'independent-A','independent-B',
+                 now()-interval '1 day',now()+interval '1 day','approved')""",
+            (key,"a"*64,"b"*64),
+        )
+    try:
+        yield api,app,route,headers,a,b,packet,url,nonce,tokens,key
+    finally:
+        with connect(DSN) as conn:
+            conn.execute(
+                "DELETE FROM smartploy_partner_application_receipts WHERE user_id=%s",(a.user_id,)
+            )
+            conn.execute(
+                "DELETE FROM smartploy_employer_final_approvals WHERE user_id=%s",(a.user_id,)
+            )
+            conn.execute(
+                "DELETE FROM smartploy_employer_submit_claims WHERE user_id=%s AND employer_job_key_sha256=%s",
+                (a.user_id,key),
+            )
+            conn.execute(
+                "DELETE FROM smartploy_employer_review_intents WHERE user_id=%s AND employer_job_key_sha256=%s",
+                (a.user_id,key),
+            )
+            conn.execute(
+                "DELETE FROM smartploy_employer_automation_rights WHERE employer_job_key_sha256=%s",
+                (key,),
+            )
+        workspaces.delete(a.profile_id,workspace.workspace_id)
+        with connect(DSN) as conn:
+            conn.execute(
+                "DELETE FROM smartploy_profile_facts WHERE profile_id=%s",(a.profile_id,)
+            )
+            conn.execute("DELETE FROM smartploy_jobs WHERE canonical_key=%s",(job.canonical_key,))
+
+
+def _partner_review(api,route,headers,packet):
+    doc={
+        "expected_revision":packet["revision"],
+        "expected_document_sha256":packet["document_sha256"],
+        "expected_cv_pdf_sha256":packet["cv_pdf_sha256"],
+        "confirm_reviewed_application":True,
+        "acknowledge_manual_only":True,
+    }
+    r=api.post(route+"/submit-review-intent",headers=headers,json=doc)
+    assert r.status_code==200,r.text
+
+
+def _partner_submit_payload(packet):
+    return {
+        "expected_revision":packet["revision"],
+        "expected_document_sha256":packet["document_sha256"],
+        "expected_cv_pdf_sha256":packet["cv_pdf_sha256"],
+        "expected_fields_sha256":packet["approved_fields_sha256"],
+        "expected_cv_pdf_size":packet["cv_pdf_size"],
+        "explicit_final_user_approval":True,
+        "approve_employer_data_transfer":True,
+        "affirm_reviewed_employer_form":True,
+    }
+
+
+def test_partner_lever_real_signed_in_provider_acknowledgment_and_cross_device_once(
+    signed_in_partner_workflow
+):
+    api,app,route,headers,a,b,packet,url,nonce,tokens,key=signed_in_partner_workflow
+    sent=[]
+    def handler(request):
+        sent.append(request.method)
+        if request.method=="GET":
+            return httpx.Response(200,json={"id":nonce,"applyUrl":url})
+        assert request.url.host=="api.lever.co"
+        assert request.url.params["key"]=="synthetic-employer-super-admin-key-1234567890"
+        assert b"%PDF-1.4" in request.content
+        assert b"Synthetic Applicant" in request.content
+        assert b"name=\"resume\"" in request.content
+        return httpx.Response(200,json={"ok":True,"applicationId":"app-1234567890abcdef"})
+    app.state.partner_lever_transport=LeverPartnerTransport(httpx.MockTransport(handler))
+    ready=api.get(route+"/partner-lever-readiness")
+    assert ready.status_code==200,ready.text
+    assert ready.json()["eligible_for_explicit_partner_submit"] is False
+    assert ready.json()["current_applicant_review_recorded"] is False
+    assert ready.json()["independent_partner_rights_reviewed"] is True
+    payload=_partner_submit_payload(packet)
+    assert api.post(route+"/partner-lever-apply",json=payload,headers=headers).status_code==409
+    assert sent==[]
+    _partner_review(api,route,headers,packet)
+    assert api.get(route+"/partner-lever-readiness").json()["eligible_for_explicit_partner_submit"] is True
+    first=api.post(route+"/partner-lever-apply",json=payload,headers=headers)
+    assert first.status_code==200,first.text
+    assert first.json()["state"]=="provider_acknowledged"
+    assert first.json()["provider_application_id"]=="app-1234567890abcdef"
+    assert first.json()["external_actions_performed"] is True
+    assert first.json()["employer_hiring_decision_verified"] is False
+    assert sent==["GET","POST"]
+    view=api.get(route+"/partner-lever-receipt")
+    assert view.status_code==200 and view.json()["present"]
+    assert view.json()["receipt"]["provider_application_id"]=="app-1234567890abcdef"
+    after=api.get(route+"/partner-lever-readiness").json()
+    assert after["provider_acknowledged"] is True
+    assert after["prior_employer_attempt"] is True
+    assert after["eligible_for_explicit_partner_submit"] is False
+    replay=api.post(route+"/partner-lever-apply",json=payload,headers=headers)
+    assert replay.status_code==409
+    assert sent==["GET","POST"]
+    api.cookies.set(SESSION_COOKIE_NAME,tokens["b"])
+    assert api.get(route+"/partner-lever-receipt").status_code==404
+    assert api.post(route+"/partner-lever-apply",json=payload,headers=headers).status_code==403
+    api.cookies.set(SESSION_COOKIE_NAME,tokens["a"])
+    assert PostgresPartnerApplicationReceipts(DSN).get(a,url).application_id=="app-1234567890abcdef"
+
+
+def test_partner_lever_rate_limit_outcome_sticky_and_no_second_post(signed_in_partner_workflow):
+    api,app,route,headers,a,b,packet,url,nonce,tokens,key=signed_in_partner_workflow
+    methods=[]
+    def handler(request):
+        methods.append(request.method)
+        if request.method=="GET":
+            return httpx.Response(200,json={"id":nonce,"applyUrl":url})
+        return httpx.Response(429,json={"ok":False,"error":"rate_limited"})
+    app.state.partner_lever_transport=LeverPartnerTransport(httpx.MockTransport(handler))
+    _partner_review(api,route,headers,packet)
+    payload=_partner_submit_payload(packet)
+    result=api.post(route+"/partner-lever-apply",json=payload,headers=headers)
+    assert result.status_code==202,result.text
+    assert result.json()["state"]=="outcome_uncertain"
+    assert result.json()["automatic_retry_authorized"] is False
+    assert PostgresEmployerSubmitClaimRepository(DSN).get_for_employer_url(a,url).state=="uncertain"
+    assert api.get(route+"/partner-lever-receipt").json()["present"] is False
+    assert api.post(route+"/partner-lever-apply",json=payload,headers=headers).status_code==409
+    assert methods==["GET","POST"]
+
+
+def test_partner_lever_revoked_permission_and_invalid_consent_cannot_call_api(signed_in_partner_workflow):
+    api,app,route,headers,a,b,packet,url,nonce,tokens,key=signed_in_partner_workflow
+    requests=[]
+    app.state.partner_lever_transport=LeverPartnerTransport(
+        httpx.MockTransport(lambda req: requests.append(req) or httpx.Response(200,json={"ok":True}))
+    )
+    _partner_review(api,route,headers,packet)
+    payload=_partner_submit_payload(packet)
+    assert api.post(route+"/partner-lever-apply",json={
+        **payload,"approve_employer_data_transfer":False,
+    },headers=headers).status_code==422
+    assert api.post(route+"/partner-lever-apply",json=payload,
+        headers={**headers,"Origin":"https://evil.invalid"}).status_code==403
+    with connect(DSN) as conn:
+        conn.execute("UPDATE smartploy_employer_automation_rights SET state='revoked' WHERE employer_job_key_sha256=%s",
+            (key,))
+    assert api.get(route+"/partner-lever-readiness").json()["eligible_for_explicit_partner_submit"] is False
+    assert api.post(route+"/partner-lever-apply",json=payload,headers=headers).status_code==409
+    assert requests==[]
+    assert PostgresEmployerSubmitClaimRepository(DSN).get_for_employer_url(a,url) is None

@@ -18,6 +18,8 @@ from .employer_submit_claim_storage import (
 )
 
 ACTION = "single_user_initiated_browser_final_submit"
+LEVER_API_ACTION = "partner_lever_postings_api_submit"
+ALLOWED_ACTIONS = frozenset({ACTION, LEVER_API_ACTION})
 BASES = frozenset({
     "explicit_employer_authorization", "documented_partner_integration",
 })
@@ -54,7 +56,9 @@ def employer_job_key(application_url: str) -> str:
         raise EmployerRightsDenied("Verified HTTPS employer application URL required") from exc
 
 
-def approved_employer_rights_locked(cur, employer_job_key_sha256: str) -> ReviewedEmployerRights:
+def approved_employer_rights_locked(
+    cur, employer_job_key_sha256: str, *, action_scope: str = ACTION,
+) -> ReviewedEmployerRights:
     """Must run in the SAME transaction as final approval/one-shot claim.
 
     FOR SHARE prevents permission revocation overtaking an in-flight
@@ -68,6 +72,8 @@ def approved_employer_rights_locked(cur, employer_job_key_sha256: str) -> Review
         or any(c not in "0123456789abcdef" for c in employer_job_key_sha256)
     ):
         raise EmployerRightsDenied("Exact employer job identity required")
+    if action_scope not in ALLOWED_ACTIONS:
+        raise EmployerRightsDenied("Unrecognized employer submission channel")
     cur.execute(
         """SELECT permission_basis,permission_evidence_sha256,
                   terms_evidence_sha256,expires_at
@@ -80,7 +86,7 @@ def approved_employer_rights_locked(cur, employer_job_key_sha256: str) -> Review
              AND reviewed_by<>independently_approved_by
              AND reviewed_at<=now() AND expires_at>now()
            FOR SHARE""",
-        (employer_job_key_sha256, ACTION),
+        (employer_job_key_sha256, action_scope),
     )
     row = cur.fetchone()
     if row is None:
@@ -109,12 +115,12 @@ class PostgresEmployerAutomationRightsRepository:
         if not self.dsn:
             raise ValueError("PostgreSQL required for independent rights attestations")
 
-    def inspect(self, application_url: str) -> dict[str, object]:
+    def inspect(self, application_url: str, *, action_scope: str = ACTION) -> dict[str, object]:
         key = employer_job_key(application_url)
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 try:
-                    rights = approved_employer_rights_locked(cur, key)
+                    rights = approved_employer_rights_locked(cur, key, action_scope=action_scope)
                 except EmployerRightsDenied:
                     return {
                         "operator_permission_reviewed": False,
