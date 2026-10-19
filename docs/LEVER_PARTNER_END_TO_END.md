@@ -100,9 +100,18 @@ httpx package. No Lever code has been copied or relicensed.
   automatically after any attempt.
 - A 200 response with ok:true and a bounded applicationId is stored as a
   provider-issued acknowledgment, NOT proof of recruiter acceptance or a
-  hiring outcome. Users can see their provider reference in their private
-  Studio. A timeout, 429, 5xx, malformed response, connection error or
-  interrupted receipt write stays uncertain, with no automatic retry.
+  hiring outcome. A single PostgreSQL transaction records the original
+  sticky-claim-linked receipt AND advances the EXISTING workspace to
+  provider_acknowledged. It remains separate from self_reported_applied,
+  preserves the submitted document revision and cannot be edited or
+  downgraded to a manual claim.
+- Application Studio now displays this distinct "Sent · Lever acknowledged"
+  state and the provider reference immediately and after reload. No user is
+  told the application is only a draft after a verified provider ACK.
+- A timeout, 429, 5xx, malformed response, connection error or interrupted
+  receipt write stays uncertain, with no automatic retry or false submitted
+  status. The same locked-workspace / SP15a claim guard prevents editing or
+  manually reporting a reserved attempt while its result is unknown.
 
 ## Operational boundaries and follow-up
 

@@ -8,6 +8,7 @@ one-shot applicant approval/claim. Never retry an ambiguous provider result.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 import json
 import os
 import re
@@ -263,6 +264,39 @@ class PostgresPartnerApplicationReceipts:
             raise LeverPartnerUnavailable("Verified account and claim required")
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
+                # Trust only the ORIGINAL durable claim in PostgreSQL, not a
+                # caller-supplied claim dataclass. No new submission ledger.
+                cur.execute(
+                    """SELECT canonical_key,workspace_id,document_revision,
+                              application_url_sha256,employer_job_key_sha256,state
+                       FROM smartploy_employer_submit_claims
+                       WHERE claim_id=%s AND user_id=%s AND profile_id=%s
+                       FOR SHARE""",
+                    (claim.claim_id,binding.user_id,binding.profile_id),
+                )
+                durable=cur.fetchone()
+                if (
+                    durable is None or durable[0]!=claim.canonical_key
+                    or durable[1]!=claim.workspace_id
+                    or int(durable[2])!=claim.document_revision
+                    or durable[3]!=claim.application_url_sha256
+                    or durable[4]!=claim.employer_job_key_sha256
+                    or durable[5]!="reserved_unverified"
+                ):
+                    raise LeverPartnerUnavailable("Original one-attempt claim cannot be verified")
+                cur.execute(
+                    """SELECT canonical_key,application_url
+                       FROM smartploy_application_workspaces
+                       WHERE profile_id=%s AND workspace_id=%s FOR UPDATE""",
+                    (binding.profile_id,claim.workspace_id),
+                )
+                workspace=cur.fetchone()
+                if workspace is not None and (
+                    workspace[0]!=claim.canonical_key
+                    or sha256(str(workspace[1]).encode("utf-8")).hexdigest()
+                       !=claim.application_url_sha256
+                ):
+                    raise LeverPartnerUnavailable("Employer job identity changed since submission")
                 cur.execute(
                     """INSERT INTO smartploy_partner_application_receipts
                        (claim_id,user_id,profile_id,workspace_id,
@@ -277,6 +311,20 @@ class PostgresPartnerApplicationReceipts:
                 )
                 if cur.fetchone() is None:
                     raise LeverPartnerUnavailable("Provider receipt already recorded or conflicted")
+                # Keep the EXISTING workspace in the SAME transaction as the
+                # real provider acknowledgment. No self-reported downgrade and
+                # no unverified "applied" status. If a user intentionally
+                # deleted their workspace during the HTTP send, the original
+                # claim and provider receipt survive for reconciliation.
+                if workspace is not None:
+                    cur.execute(
+                        """UPDATE smartploy_application_workspaces
+                           SET status='provider_acknowledged',updated_at=now()
+                           WHERE profile_id=%s AND workspace_id=%s
+                             AND canonical_key=%s
+                             AND status IN ('draft','self_reported_applied')""",
+                        (binding.profile_id,claim.workspace_id,claim.canonical_key),
+                    )
         return acknowledgment
 
     def get(
