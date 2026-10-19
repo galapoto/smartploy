@@ -93,6 +93,7 @@ beforeEach(() => {
     browser_grant_issued: false,
   });
   vi.mocked(api.getLeverPartnerReadiness).mockResolvedValue({
+    review_evidence:null,review_evidence_is_authorization:false,
     partner_provider:"lever",partner_api_configured:false,
     independent_partner_rights_reviewed:false,
     current_applicant_review_recorded:false,current_document_and_posting_ready:false,
@@ -199,51 +200,43 @@ describe("Application Studio private-read account boundary", () => {
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 
-  it("lets the signed-in owner submit exactly one reviewed partner packet with provider ID",async()=>{
-    const eligible={
+  it("reviews and completes a real authorized partner application without copying private data",async()=>{
+    const reviewEvidence={
+      workspace_id:"workspace-A", revision:1,
+      expires_at:"2099-01-01T00:15:00Z",
+      document_sha256:"a".repeat(64),cv_pdf_sha256:"b".repeat(64),
+      approved_fields_sha256:"c".repeat(64),cv_pdf_size:1002
+    };
+    const ready={
       partner_provider:"lever" as const,partner_api_configured:true,
       independent_partner_rights_reviewed:true,
       current_applicant_review_recorded:true,current_document_and_posting_ready:true,
       prior_employer_attempt:false,provider_acknowledged:false,
-      eligible_for_explicit_partner_submit:true,
+      eligible_for_explicit_partner_submit:true,review_evidence:reviewEvidence,
+      review_evidence_is_authorization:false as const,
       unattended_auto_apply_enabled:false as const,automatic_retry_authorized:false as const
     };
     vi.mocked(api.getLeverPartnerReadiness)
-      .mockResolvedValueOnce({...eligible,current_applicant_review_recorded:false,
+      .mockResolvedValueOnce({...ready,current_applicant_review_recorded:false,
         eligible_for_explicit_partner_submit:false})
-      .mockResolvedValue(eligible);
-    const packet={
-      schema:"smartploy.browser_handoff.v2" as const,
-      issued_at:new Date().toISOString(),expires_at:"2099-01-01T00:15:00Z",
-      application_url:"https://jobs.lever.co/synthetic/role/apply",
-      company:"Synthetic",role_title:"Synthetic Analyst",
-      workspace_id:"workspace-A",revision:1,
-      document_sha256:"a".repeat(64),cv_pdf_sha256:"b".repeat(64),
-      approved_fields_sha256:"c".repeat(64),cv_pdf_size:1002,
-      fields:{full_name:"Test Applicant",first_name:"Test",last_name:"Applicant",
-        email:"test@example.invalid",phone:"",location:"",linkedin:"",github:"",
-        cover_letter:"Personally reviewed and complete cover letter"},
-      privacy:{approved_contact_only:true as const,
-        original_cv_included:false as const,
-        browser_form_fill_allowed_after_user_click:true as const,
-        employer_submit_allowed_without_new_approval:false as const}
-    };
-    vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({
-      packet,external_actions_performed:false
-    });
+      .mockResolvedValue(ready);
     vi.spyOn(window,"confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading",{name:"A private role"})).toBeTruthy();
+    const official=await screen.findByLabelText("Official Lever partner submission");
+    expect(official.textContent).toContain("No extension, copied personal-data packet or clipboard");
     expect(screen.queryByRole("button",{
       name:/Submit reviewed application to authorized Lever employer/
     })).toBeNull();
-    const copy=screen.getByRole("button",{name:/Copy approved autofill packet/});
-    await waitFor(()=>expect((copy as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(copy);
-    const review=await screen.findByRole("button",{name:/Record exact CV and job review/});
-    await waitFor(()=>expect((review as HTMLButtonElement).disabled).toBe(false));
+    const review=await screen.findByRole("button",{
+      name:/Record reviewed CV, letter and job \(no submit\)/
+    });
     fireEvent.click(review);
-    await waitFor(()=>expect(screen.getByText(/Review recorded temporarily/)).toBeTruthy());
+    await waitFor(()=>expect(api.recordEmployerReviewIntent).toHaveBeenCalledWith(
+      "workspace-A",1,"a".repeat(64),"b".repeat(64),"usr-a"
+    ));
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
     await waitFor(()=>expect(api.getLeverPartnerReadiness).toHaveBeenCalledTimes(2));
     const send=await screen.findByRole("button",{
       name:/Submit reviewed application to authorized Lever employer/
@@ -261,7 +254,38 @@ describe("Application Studio private-read account boundary", () => {
       name:/Submit reviewed application to authorized Lever employer/
     })).toBeNull();
     expect(api.sendLeverPartnerApplication).toHaveBeenCalledTimes(1);
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
   });
+
+  it("stale or withheld non-bearer evidence never creates an employer action",async()=>{
+    const evidence={
+      workspace_id:"workspace-A",revision:2,
+      expires_at:"2099-01-01T00:15:00Z",
+      document_sha256:"a".repeat(64),cv_pdf_sha256:"b".repeat(64),
+      approved_fields_sha256:"c".repeat(64),cv_pdf_size:1002,
+    };
+    vi.mocked(api.getLeverPartnerReadiness).mockResolvedValue({
+      partner_provider:"lever",partner_api_configured:true,
+      independent_partner_rights_reviewed:true,
+      current_applicant_review_recorded:true,current_document_and_posting_ready:true,
+      prior_employer_attempt:false,provider_acknowledged:false,
+      eligible_for_explicit_partner_submit:true,review_evidence:evidence,
+      review_evidence_is_authorization:false,
+      unattended_auto_apply_enabled:false,automatic_retry_authorized:false,
+    });
+    studio();
+    expect(await screen.findByRole("heading",{name:"A private role"})).toBeTruthy();
+    expect(await screen.findByLabelText("Official Lever partner submission")).toBeTruthy();
+    expect(screen.queryByRole("button",{
+      name:/Record reviewed CV, letter and job/
+    })).toBeNull();
+    expect(screen.queryByRole("button",{
+      name:/Submit reviewed application to authorized Lever employer/
+    })).toBeNull();
+    expect(api.recordEmployerReviewIntent).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
 
   it("records the approved packet hashes for one job and can cancel, without a submit API", async () => {
     const packet = {

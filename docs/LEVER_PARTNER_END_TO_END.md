@@ -67,14 +67,27 @@ httpx package. No Lever code has been copied or relicensed.
 
 ## Applicant flow after approved deployment
 
-- Sign in with ZITADEL, choose and review one current vacancy, save CV and
-  cover letter, and record the existing 10-minute exact reviewed intent.
-- Open the job's Application Studio and prepare the approved CV packet.
-- For a supported partner posting only, the **Submit reviewed application to
-  authorized Lever employer** button appears. The applicant reads a separate
-  final confirmation naming the employer, exact reviewed documents, privacy
-  terms and the fact this is an ACTUAL application. It does not send on
-  application creation, AI drafting or page load.
+- Sign in with ZITADEL, choose and review one current vacancy, and save
+  the exact CV and cover letter. Inspect the rendered CV PDF, approved contact
+  and employer form in the original Application Studio.
+- For an independently authorized standard Lever partner posting, the
+  **Record reviewed CV, letter and job (no submit)** control is available
+  immediately, without creating a browser packet, installing the extension
+  or COPYING contact details/letter to the system clipboard.
+- This explicitly records the EXISTING 10-minute owner-scoped review intent,
+  using only document/CV/contact SHA-256 fingerprints fetched from SmartPloy's
+  signed-in same-origin readiness API. The fingerprints are NON-BEARER and
+  cannot authorize a final employer submission.
+- After the server rechecks review and independent exact-job API rights,
+  **Submit reviewed application to authorized Lever employer** becomes
+  available. The applicant receives a SECOND distinct final confirmation
+  naming the employer, exact documents, privacy transfer and the fact this
+  creates a REAL application. It never sends on job search, AI drafting,
+  page load, browser-packet preparation or merely recording the review.
+- The earlier copy/paste browser packet and assisted Lever form companion
+  are PRESERVED for employer systems without an independently authorized
+  direct integration. A private packet should NEVER be needed to send
+  through the official Lever partner API.
 - The FastAPI endpoint recomputes every owner/job/contact/PDF hash, rechecks
   the still-current job and exact partner rights, creates a separate 90-second
   final applicant approval, and atomically consumes that approval with the

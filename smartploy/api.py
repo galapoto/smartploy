@@ -1523,18 +1523,32 @@ def create_app(
                 workspace_id=workspace_id, revision=workspace.revision
             )["review_recorded"]
         )
-        current = False
+        # Reuse the EXISTING exact CV PDF, contact and letter fingerprint
+        # computation. Official provider applications do NOT need a copied
+        # extension packet or private contact data sent to the clipboard.
+        # These hashes are strictly NON-BEARER review evidence.
+        packet = None
         try:
-            make_browser_packet(
+            packet = make_browser_packet(
                 workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
             )
-            current = True
         except HandoffError:
             pass
-        eligible = bool(
+        current = packet is not None
+        authorized = bool(
             config["partner_api_configured"] and rights["operator_permission_reviewed"]
-            and reviewed and current and receipt is None and prior is None
+            and current and receipt is None and prior is None
         )
+        review_evidence = {
+            "workspace_id": packet["workspace_id"],
+            "revision": packet["revision"],
+            "document_sha256": packet["document_sha256"],
+            "cv_pdf_sha256": packet["cv_pdf_sha256"],
+            "approved_fields_sha256": packet["approved_fields_sha256"],
+            "cv_pdf_size": packet["cv_pdf_size"],
+            "expires_at": packet["expires_at"],
+        } if authorized and packet is not None else None
+        eligible = bool(authorized and reviewed)
         return binding, workspace, tenant, {
             "partner_provider": "lever",
             "partner_api_configured": config["partner_api_configured"],
@@ -1544,6 +1558,8 @@ def create_app(
             "prior_employer_attempt": prior is not None,
             "provider_acknowledged": receipt is not None,
             "eligible_for_explicit_partner_submit": eligible,
+            "review_evidence": review_evidence,
+            "review_evidence_is_authorization": False,
             "unattended_auto_apply_enabled": False,
             "automatic_retry_authorized": False,
         }
