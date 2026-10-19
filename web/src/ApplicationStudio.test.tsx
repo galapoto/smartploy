@@ -14,6 +14,9 @@ vi.mock("./api", () => ({
   getEmployerAttemptStatus: vi.fn(),
   getEmployerReviewIntent: vi.fn(),
   getEmployerFinalActionReadiness: vi.fn(),
+  getLeverPartnerReadiness: vi.fn(),
+  getLeverPartnerReceipt: vi.fn(),
+  sendLeverPartnerApplication: vi.fn(),
   recordEmployerReviewIntent: vi.fn(),
   cancelEmployerReviewIntent: vi.fn(),
   getBrowserReceipt: vi.fn(),
@@ -88,6 +91,24 @@ beforeEach(() => {
     review_recorded: false, review_state: "not_recorded", expires_at: "",
     automatic_employer_submit_authorized: false, external_actions_performed: false,
     browser_grant_issued: false,
+  });
+  vi.mocked(api.getLeverPartnerReadiness).mockResolvedValue({
+    partner_provider:"lever",partner_api_configured:false,
+    independent_partner_rights_reviewed:false,
+    current_applicant_review_recorded:false,current_document_and_posting_ready:false,
+    prior_employer_attempt:false,provider_acknowledged:false,
+    eligible_for_explicit_partner_submit:false,
+    unattended_auto_apply_enabled:false,automatic_retry_authorized:false
+  });
+  vi.mocked(api.getLeverPartnerReceipt).mockResolvedValue({
+    present:false,receipt:null,
+  });
+  vi.mocked(api.sendLeverPartnerApplication).mockResolvedValue({
+    state:"provider_acknowledged", provider:"lever",
+    provider_application_id:"app-fixture-1234567890",
+    provider_application_acknowledged:true,
+    employer_hiring_decision_verified:false,automatic_retry_authorized:false,
+    external_actions_performed:true,
   });
   vi.mocked(api.getEmployerFinalActionReadiness).mockResolvedValue({
     operator_permission_reviewed: false,
@@ -166,6 +187,81 @@ describe("Application Studio private-read account boundary", () => {
     expect(panel.textContent).toContain("blocked");
   });
 
+
+  it("keeps direct partner submission unavailable for an unapproved employer",async()=>{
+    studio();
+    expect(await screen.findByRole("heading",{name:"A private role"})).toBeTruthy();
+    const panel=await screen.findByLabelText("Official Lever partner submission");
+    expect(panel.textContent).toContain("No authorized direct Lever submission");
+    expect(screen.queryByRole("button",{
+      name:/Submit reviewed application to authorized Lever employer/
+    })).toBeNull();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("lets the signed-in owner submit exactly one reviewed partner packet with provider ID",async()=>{
+    const eligible={
+      partner_provider:"lever" as const,partner_api_configured:true,
+      independent_partner_rights_reviewed:true,
+      current_applicant_review_recorded:true,current_document_and_posting_ready:true,
+      prior_employer_attempt:false,provider_acknowledged:false,
+      eligible_for_explicit_partner_submit:true,
+      unattended_auto_apply_enabled:false as const,automatic_retry_authorized:false as const
+    };
+    vi.mocked(api.getLeverPartnerReadiness)
+      .mockResolvedValueOnce({...eligible,current_applicant_review_recorded:false,
+        eligible_for_explicit_partner_submit:false})
+      .mockResolvedValue(eligible);
+    const packet={
+      schema:"smartploy.browser_handoff.v2" as const,
+      issued_at:new Date().toISOString(),expires_at:"2099-01-01T00:15:00Z",
+      application_url:"https://jobs.lever.co/synthetic/role/apply",
+      company:"Synthetic",role_title:"Synthetic Analyst",
+      workspace_id:"workspace-A",revision:1,
+      document_sha256:"a".repeat(64),cv_pdf_sha256:"b".repeat(64),
+      approved_fields_sha256:"c".repeat(64),cv_pdf_size:1002,
+      fields:{full_name:"Test Applicant",first_name:"Test",last_name:"Applicant",
+        email:"test@example.invalid",phone:"",location:"",linkedin:"",github:"",
+        cover_letter:"Personally reviewed and complete cover letter"},
+      privacy:{approved_contact_only:true as const,
+        original_cv_included:false as const,
+        browser_form_fill_allowed_after_user_click:true as const,
+        employer_submit_allowed_without_new_approval:false as const}
+    };
+    vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({
+      packet,external_actions_performed:false
+    });
+    vi.spyOn(window,"confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading",{name:"A private role"})).toBeTruthy();
+    expect(screen.queryByRole("button",{
+      name:/Submit reviewed application to authorized Lever employer/
+    })).toBeNull();
+    const copy=screen.getByRole("button",{name:/Copy approved autofill packet/});
+    await waitFor(()=>expect((copy as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(copy);
+    const review=await screen.findByRole("button",{name:/Record exact CV and job review/});
+    await waitFor(()=>expect((review as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(review);
+    await waitFor(()=>expect(screen.getByText(/Review recorded temporarily/)).toBeTruthy());
+    await waitFor(()=>expect(api.getLeverPartnerReadiness).toHaveBeenCalledTimes(2));
+    const send=await screen.findByRole("button",{
+      name:/Submit reviewed application to authorized Lever employer/
+    });
+    await waitFor(()=>expect((send as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(send);
+    await waitFor(()=>expect(api.sendLeverPartnerApplication).toHaveBeenCalledWith(
+      "workspace-A",1,"a".repeat(64),"b".repeat(64),
+      "c".repeat(64),1002,"usr-a"
+    ));
+    expect(await screen.findByText(/Lever confirmed creation/)).toBeTruthy();
+    expect(screen.getByLabelText("Official Lever partner submission").textContent)
+      .toContain("app-fixture-1234567890");
+    expect(screen.queryByRole("button",{
+      name:/Submit reviewed application to authorized Lever employer/
+    })).toBeNull();
+    expect(api.sendLeverPartnerApplication).toHaveBeenCalledTimes(1);
+  });
 
   it("records the approved packet hashes for one job and can cancel, without a submit API", async () => {
     const packet = {

@@ -30,7 +30,14 @@ from .employer_submit_claim_storage import EmployerSubmitClaimDenied, PostgresEm
 from .employer_review_intent_storage import (
     EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
 )
-from .employer_automation_rights import PostgresEmployerAutomationRightsRepository
+from .employer_automation_rights import (
+    LEVER_API_ACTION, PostgresEmployerAutomationRightsRepository,
+)
+from .lever_partner_submit import (
+    LeverPartnerRegistry, LeverPartnerTransport, LeverPartnerUnavailable,
+    LeverPartnerUncertain, PostgresPartnerApplicationReceipts,
+)
+from .employer_final_action_gate import EmployerFinalActionDenied
 from .employer_final_action_gate import PostgresEmployerFinalActionGate
 from .browser_receipt import ReceiptError, validate_browser_receipt
 from .browser_receipt_storage import (
@@ -220,6 +227,19 @@ class EmployerReviewIntentPayload(BaseModel):
     expected_cv_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     confirm_reviewed_application: StrictBool
     acknowledge_manual_only: StrictBool
+
+
+class LeverPartnerApplicationPayload(BaseModel):
+    """Real provider transfer only after exact signed-in applicant click."""
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    expected_document_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_fields_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_size: int = Field(ge=12, le=2 * 1024 * 1024)
+    explicit_final_user_approval: StrictBool
+    approve_employer_data_transfer: StrictBool
+    affirm_reviewed_employer_form: StrictBool
 
 
 class BrowserReviewVerificationPayload(BaseModel):
@@ -474,6 +494,9 @@ def create_app(
     # SP15e: read-only posture. No web issuer/redeemer or browser final click.
     app.state.employer_rights = PostgresEmployerAutomationRightsRepository(dsn) if dsn else None
     app.state.employer_final_actions = PostgresEmployerFinalActionGate(dsn) if dsn else None
+    app.state.partner_lever_registry = LeverPartnerRegistry.from_env()
+    app.state.partner_lever_transport = LeverPartnerTransport()
+    app.state.partner_lever_receipts = PostgresPartnerApplicationReceipts(dsn) if dsn else None
     app.state.local_ai = LocalDraftClient(LocalDraftSettings.from_env())
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
@@ -1466,6 +1489,210 @@ def create_app(
                 "Pragma": "no-cache",
                 "Referrer-Policy": "no-referrer",
             },
+        )
+
+    def _partner_lever_ready(
+        workspace_id: str, request: Request,
+    ) -> tuple[UserProfileBinding, Any, Any, dict[str, object]]:
+        binding = signed_in_employer_review(request)
+        workspace = _review_workspace(workspace_id, binding)
+        if (
+            app.state.employer_final_actions is None
+            or app.state.employer_review_intents is None
+            or app.state.employer_rights is None
+            or app.state.employer_claims is None
+            or app.state.partner_lever_receipts is None
+        ):
+            raise HTTPException(status_code=503, detail="Durable partner submission unavailable")
+        tenant, _ = tenant_context(request)
+        registry = app.state.partner_lever_registry
+        config = registry.public_readiness(workspace.application_url)
+        try:
+            rights = app.state.employer_rights.inspect(
+                workspace.application_url, action_scope=LEVER_API_ACTION
+            )
+            review = app.state.employer_review_intents.get(binding, workspace.application_url)
+            receipt = app.state.partner_lever_receipts.get(binding, workspace.application_url)
+            prior = existing_employer_claim(binding, workspace)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Partner-readiness lookup unavailable") from exc
+        reviewed = bool(
+            review and review.public_status(
+                workspace_id=workspace_id, revision=workspace.revision
+            )["review_recorded"]
+        )
+        current = False
+        try:
+            make_browser_packet(
+                workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+            )
+            current = True
+        except HandoffError:
+            pass
+        eligible = bool(
+            config["partner_api_configured"] and rights["operator_permission_reviewed"]
+            and reviewed and current and receipt is None and prior is None
+        )
+        return binding, workspace, tenant, {
+            "partner_provider": "lever",
+            "partner_api_configured": config["partner_api_configured"],
+            "independent_partner_rights_reviewed": rights["operator_permission_reviewed"],
+            "current_applicant_review_recorded": reviewed,
+            "current_document_and_posting_ready": current,
+            "prior_employer_attempt": prior is not None,
+            "provider_acknowledged": receipt is not None,
+            "eligible_for_explicit_partner_submit": eligible,
+            "unattended_auto_apply_enabled": False,
+            "automatic_retry_authorized": False,
+        }
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/partner-lever-readiness")
+    def partner_lever_readiness(workspace_id: str, request: Request) -> JSONResponse:
+        _, _, _, readiness = _partner_lever_ready(workspace_id, request)
+        return JSONResponse(
+            readiness,
+            headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},
+        )
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/partner-lever-receipt")
+    def partner_lever_receipt(workspace_id: str, request: Request) -> JSONResponse:
+        binding = signed_in_employer_review(request)
+        workspace = _review_workspace(workspace_id, binding)
+        if app.state.partner_lever_receipts is None:
+            raise HTTPException(status_code=503, detail="Provider receipt storage unavailable")
+        try:
+            receipt = app.state.partner_lever_receipts.get(binding, workspace.application_url)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Provider receipt unavailable") from exc
+        return JSONResponse(
+            {"present": receipt is not None,
+             "receipt": receipt.public_status() if receipt else None},
+            headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},
+        )
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/partner-lever-apply")
+    def submit_to_authorized_lever_partner(
+        workspace_id: str, payload: LeverPartnerApplicationPayload, request: Request,
+    ) -> JSONResponse:
+        """The only supported REAL submission endpoint, gated by partner key.
+
+        Never invokes this endpoint from background jobs or the Chrome
+        companion. The actual user must deliberately click and confirm a
+        reviewed application on the signed-in SmartPloy first-party origin.
+        """
+        binding = signed_in_employer_review(request)
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Same-origin verified applicant required")
+        if (
+            payload.explicit_final_user_approval is not True
+            or payload.approve_employer_data_transfer is not True
+            or payload.affirm_reviewed_employer_form is not True
+        ):
+            raise HTTPException(status_code=422, detail="Fresh explicit user review and transfer consent required")
+        binding, workspace, tenant, readiness = _partner_lever_ready(workspace_id, request)
+        if not readiness["eligible_for_explicit_partner_submit"]:
+            raise HTTPException(
+                status_code=409,
+                detail="The employer lacks reviewed partner rights, current CV review or has an existing attempt",
+            )
+        if payload.expected_revision != workspace.revision:
+            raise HTTPException(status_code=409, detail="Saved application revision changed")
+        try:
+            posting = app.state.partner_lever_registry.match(workspace.application_url)
+            packet = make_browser_packet(
+                workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+            )
+            cv_pdf, _, _ = render_document(workspace, kind="cv", file_format="pdf")
+        except (LeverPartnerUnavailable, HandoffError, WorkspaceError) as exc:
+            raise HTTPException(status_code=409, detail="Approved partner packet unavailable") from exc
+        if (
+            packet["document_sha256"] != payload.expected_document_sha256
+            or packet["cv_pdf_sha256"] != payload.expected_cv_pdf_sha256
+            or packet["cv_pdf_size"] != payload.expected_cv_pdf_size
+            or approved_fields_sha256(packet["fields"]) != payload.expected_fields_sha256
+            or sha256(cv_pdf).hexdigest() != payload.expected_cv_pdf_sha256
+        ):
+            raise HTTPException(status_code=409, detail="Approved PDF, contact or job snapshot drifted")
+        try:
+            approval, _ = app.state.employer_final_actions.approve(
+                binding,workspace_id=workspace_id,
+                expected_revision=workspace.revision,
+                expected_application_url=workspace.application_url,
+                expected_job_fingerprint=workspace.job_fingerprint,
+                expected_document_sha256=packet["document_sha256"],
+                expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                expected_fields_sha256=payload.expected_fields_sha256,
+                explicit_final_user_approval=True,
+                acknowledge_external_employer_transfer=True,
+                action_scope=LEVER_API_ACTION,
+            )
+            reserved = app.state.employer_final_actions.consume_once_for_trusted_adapter(
+                binding,approval_id=approval.approval_id,workspace_id=workspace_id,
+                expected_revision=workspace.revision,
+                expected_application_url=workspace.application_url,
+                expected_job_fingerprint=workspace.job_fingerprint,
+                expected_document_sha256=packet["document_sha256"],
+                expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                expected_fields_sha256=payload.expected_fields_sha256,
+                action_scope=LEVER_API_ACTION,
+            )
+        except EmployerFinalActionDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Final submission reservation unavailable") from exc
+        # Sticky attempt COMMITTED before any external request; another device
+        # can never POST the same employer job, even on timeout or crash.
+        try:
+            ack = app.state.partner_lever_transport.send(
+                posting,application_url=workspace.application_url,
+                fields=packet["fields"],pdf=cv_pdf,
+            )
+        except LeverPartnerUncertain as exc:
+            try:
+                app.state.employer_claims.mark_uncertain(
+                    binding,reserved.claim.claim_id,code=exc.code
+                )
+            except Exception:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Employer outcome uncertain and claim retained; operator review required",
+                ) from None
+            return JSONResponse(
+                {
+                    "state":"outcome_uncertain","provider_acknowledged":False,
+                    "automatic_retry_authorized":False,
+                    "employer_hiring_decision_verified":False,
+                    "requires_human_reconciliation":True,
+                },status_code=202,headers={"Cache-Control":"private, no-store"},
+            )
+        except Exception:
+            # Unanticipated transport error after the durable reservation:
+            # NEVER try the external call again. No secrets in client detail.
+            raise HTTPException(
+                status_code=503,
+                detail="Employer outcome cannot be confirmed; reserved attempt requires reconciliation",
+            ) from None
+        try:
+            confirmed = app.state.partner_lever_receipts.record(
+                binding,reserved.claim,ack
+            )
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail="Lever may have acknowledged the application but local receipt is unavailable",
+            ) from None
+        return JSONResponse(
+            {
+                "state":"provider_acknowledged",
+                **confirmed.public_status(),
+                "external_actions_performed":True,
+            },
+            headers={"Cache-Control":"private, no-store", "Referrer-Policy":"no-referrer"},
         )
 
     @app.post("/api/v1/application-workspaces/{workspace_id}/verify-reviewed-packet")

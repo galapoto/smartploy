@@ -10,12 +10,13 @@ import {
   getLocalAIStatus, requestLocalAISuggestions,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
   getEmployerAttemptStatus, getEmployerReviewIntent, getEmployerFinalActionReadiness,
+  getLeverPartnerReadiness, getLeverPartnerReceipt, sendLeverPartnerApplication,
   recordEmployerReviewIntent, cancelEmployerReviewIntent,
   getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
 import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
-import type { EmployerAttemptState, EmployerReviewIntentState, EmployerFinalActionReadiness } from "./api";
+import type { EmployerAttemptState, EmployerReviewIntentState, EmployerFinalActionReadiness, LeverPartnerReadiness, LeverProviderAcknowledgment } from "./api";
 
 const ACCOUNT_CHANGED_NOTICE =
   "Your signed-in SmartPloy account changed or could not be verified. Reload SmartPloy to continue safely.";
@@ -45,6 +46,9 @@ export default function ApplicationStudio(props: {
   const [employerAttempt, setEmployerAttempt] = useState<EmployerAttemptState | null>(null);
   const [finalReview, setFinalReview] = useState<EmployerReviewIntentState | null>(null);
   const [finalAction, setFinalAction] = useState<EmployerFinalActionReadiness | null>(null);
+  const [partnerReadiness, setPartnerReadiness] = useState<LeverPartnerReadiness | null>(null);
+  const [partnerReceipt, setPartnerReceipt] = useState<LeverProviderAcknowledgment | null>(null);
+  const [partnerBusy, setPartnerBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [handoffPacketText, setHandoffPacketText] = useState("");
@@ -80,10 +84,11 @@ export default function ApplicationStudio(props: {
     ++selectedDraftRef.current.epoch;
     setWorkspaces([]); setSelectedId("");
     setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
-    setHandoff(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null); setHandoffPacketText("");
+    setHandoff(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
+    setPartnerReadiness(null); setPartnerReceipt(null); setPartnerBusy(false); setHandoffPacketText("");
     setBrowserReceipt(null); setReceiptOpen(false); setReceiptInput("");
     setMessage(""); setError(ACCOUNT_CHANGED_NOTICE);
-    setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false);
+    setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
     setAccountBlocked(true); setLoading(false);
   }, []);
 
@@ -195,13 +200,15 @@ export default function ApplicationStudio(props: {
     const key = selected ? JSON.stringify([selected.workspace_id, selected.revision]) : "";
     if (selectedDraftRef.current.key !== key) {
       selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
-      setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false);
+      setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
       setAISuggestion(null);
       setCvText(selected?.cv_text || "");
       setLetterText(selected?.cover_letter_text || "");
       setHandoffPacketText(""); setFinalReview(null); setFinalAction(null);
+      setPartnerReadiness(null); setPartnerReceipt(null);
       setReceiptOpen(false); setReceiptInput("");
       setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
+          setPartnerReadiness(null); setPartnerReceipt(null);
     }
   }, [selected?.workspace_id, selected?.revision]);
 
@@ -215,12 +222,15 @@ export default function ApplicationStudio(props: {
         if (!alive || accountBlockedRef.current) return;
         // Private owner reads revalidate identity both before and after.
         // Policy posture is NOT a browser grant or a submission instruction.
-        const [handoffResult, receiptResult, attemptResult, reviewResult, finalActionResult] = await Promise.allSettled([
+        const [handoffResult, receiptResult, attemptResult, reviewResult, finalActionResult,
+          partnerReadyResult, partnerReceiptResult] = await Promise.allSettled([
           getBrowserHandoffReadiness(workspaceId),
           getBrowserReceipt(workspaceId),
           getEmployerAttemptStatus(workspaceId),
           getEmployerReviewIntent(workspaceId),
           getEmployerFinalActionReadiness(workspaceId),
+          getLeverPartnerReadiness(workspaceId),
+          getLeverPartnerReceipt(workspaceId),
         ]);
         if (!alive || accountBlockedRef.current) return;
         await verifyAccount();
@@ -230,11 +240,14 @@ export default function ApplicationStudio(props: {
         setEmployerAttempt(attemptResult.status === "fulfilled" ? attemptResult.value : null);
         setFinalReview(reviewResult.status === "fulfilled" ? reviewResult.value : null);
         setFinalAction(finalActionResult.status === "fulfilled" ? finalActionResult.value : null);
+        setPartnerReadiness(partnerReadyResult.status === "fulfilled" ? partnerReadyResult.value : null);
+        setPartnerReceipt(partnerReceiptResult.status === "fulfilled" ? partnerReceiptResult.value.receipt : null);
       } catch {
         // verifyAccount clears private state and blocks the editor on any
         // missing or different session. Ordinary API failures show no data.
         if (alive && !accountBlockedRef.current) {
           setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
+          setPartnerReadiness(null); setPartnerReceipt(null);
         }
       }
     })();
@@ -404,6 +417,18 @@ export default function ApplicationStudio(props: {
       if (!isCurrentDraft(ticket)) return;
       setFinalReview(item);
       setMessage("Review recorded temporarily. No application was sent and no browser authorization was issued.");
+      // The prior private eligibility snapshot was taken BEFORE the review.
+      // Recheck through the existing verified-account boundary, never
+      // optimistically enable employer transfer on a successful local write.
+      setPartnerReadiness(null);
+      try {
+        const refreshed = await runPrivateAction(
+          () => getLeverPartnerReadiness(selected.workspace_id), ticket
+        );
+        if (isCurrentDraft(ticket)) setPartnerReadiness(refreshed);
+      } catch {
+        if (isCurrentDraft(ticket)) setPartnerReadiness(null);
+      }
     } catch (exc) {
       reportActionError(exc, "Review was not recorded.");
     } finally { if (isCurrentDraft(ticket)) setReviewBusy(false); }
@@ -419,10 +444,75 @@ export default function ApplicationStudio(props: {
       );
       if (!isCurrentDraft(ticket)) return;
       setFinalReview(result);
+      setPartnerReadiness(null);
       setMessage("Review cancelled. No employer application was submitted.");
     } catch (exc) {
       reportActionError(exc, "Unable to cancel the review.");
     } finally { if (isCurrentDraft(ticket)) setReviewBusy(false); }
+  }
+
+  /** Actual provider transfer only when an exact reviewed partner job is enabled. */
+  async function sendPartnerApplication() {
+    if (!selected || dirty || !handoff?.ready || !handoffPacketText ||
+        !finalReview?.review_recorded || !partnerReadiness?.eligible_for_explicit_partner_submit ||
+        employerAttempt?.previous_attempt_reserved || browserReceipt || partnerReceipt || partnerBusy) return;
+    let packet;
+    try {
+      packet = JSON.parse(handoffPacketText) as {
+        workspace_id:string;revision:number;expires_at:string;
+        document_sha256:string;cv_pdf_sha256:string;
+        approved_fields_sha256?:string;cv_pdf_size:number;
+      };
+      if (packet.workspace_id !== selected.workspace_id ||
+          packet.revision !== selected.revision ||
+          Date.parse(packet.expires_at) <= Date.now() ||
+          !/^[a-f0-9]{64}$/.test(packet.document_sha256) ||
+          !/^[a-f0-9]{64}$/.test(packet.cv_pdf_sha256) ||
+          !/^[a-f0-9]{64}$/.test(packet.approved_fields_sha256 || "") ||
+          !Number.isSafeInteger(packet.cv_pdf_size) || packet.cv_pdf_size < 12) {
+        throw new Error("The exact employer packet is missing or stale. Prepare a new packet.");
+      }
+    } catch (exc) {
+      reportActionError(exc, "Partner application evidence is unavailable.");
+      return;
+    }
+    if (!window.confirm(
+      "SEND THIS APPLICATION TO THE AUTHORIZED LEVER EMPLOYER?\n\n" +
+      selected.role_title + " · " + selected.company + "\n\n" +
+      "I have reviewed the exact CV PDF, cover letter, contact details, employer form " +
+      "and employer data-processing terms. I approve transferring them to the employer " +
+      "now. This can create a real job application. If the outcome is uncertain, " +
+      "SmartPloy will NOT retry automatically."
+    )) return;
+    const ticket = captureDraft(selected);
+    setPartnerBusy(true); setError(""); setMessage("");
+    try {
+      const result = await runPrivateAction(
+        () => sendLeverPartnerApplication(
+          selected.workspace_id,selected.revision,
+          packet.document_sha256,packet.cv_pdf_sha256,
+          packet.approved_fields_sha256!,packet.cv_pdf_size,
+          props.expectedUserId
+        ),ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
+      setPartnerReadiness(previous => previous
+        ? {...previous,prior_employer_attempt:true,eligible_for_explicit_partner_submit:false,
+           provider_acknowledged:result.state==="provider_acknowledged"} : null);
+      if (result.state==="provider_acknowledged") {
+        setPartnerReceipt(result);
+        setMessage("Lever confirmed creation of this job application. Reference: " +
+          result.provider_application_id + ". This is not a hiring decision.");
+      } else {
+        setMessage("Employer response is uncertain. Do not retry; check the employer portal or contact support.");
+      }
+    } catch (exc) {
+      // The HTTP response may have been lost after the employer accepted an
+      // application. Fail closed locally, preserving the sticky server claim.
+      setPartnerReadiness(previous => previous
+        ? {...previous,eligible_for_explicit_partner_submit:false} : null);
+      reportActionError(exc,"The partner outcome is unknown. Do not retry automatically.");
+    } finally { if (isCurrentDraft(ticket)) setPartnerBusy(false); }
   }
 
   async function onImportObservedReceipt() {
@@ -732,6 +822,31 @@ export default function ApplicationStudio(props: {
               </p>
             </> : <p role="status">Policy verification unavailable. Automated final submission remains blocked.</p>}
             <p className="muted">This indicator is informational and never permits an automatic employer submission.</p>
+          </div>
+          <div className="studio-packet-fallback" aria-label="Official Lever partner submission">
+            <strong>Complete the application via official Lever integration</strong>
+            {partnerReceipt ? <>
+              <p role="status">Lever acknowledged the application. Reference:
+                <strong> {partnerReceipt.provider_application_id}</strong>.</p>
+              <p className="muted">The employer's system confirmed creation of the application.
+                This is not a hiring decision; do not submit the same job again.</p>
+            </> : partnerReadiness?.eligible_for_explicit_partner_submit ? <>
+              <p className="muted">This exact employer posting has a configured Lever API integration
+                and separately reviewed authorization. A fresh, explicit action is required.</p>
+              <button className="navy-btn" type="button"
+                disabled={partnerBusy || !finalReview?.review_recorded ||
+                  !handoffPacketText || dirty || !!browserReceipt ||
+                  employerAttempt?.previous_attempt_reserved === true}
+                onClick={() => void sendPartnerApplication()}>
+                {partnerBusy ? "Submitting once…" : "Submit reviewed application to authorized Lever employer"}
+              </button>
+            </> : <p className="muted">
+              {partnerReadiness?.prior_employer_attempt
+                ? "This employer already has an application attempt. Reconcile before any new action."
+                : "No authorized direct Lever submission is available for this posting yet. " +
+                  "Use the reviewed browser companion and submit manually on the employer website."}
+            </p>}
+            {!partnerReadiness ? <p role="status">Partner readiness unavailable. No employer transfer is permitted.</p> : null}
           </div>
           <p className="studio-handoff-disclaimer">
             Browser-only, 15-minute packet. Upload your CV on the employer's page and answer
