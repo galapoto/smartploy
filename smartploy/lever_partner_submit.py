@@ -133,6 +133,8 @@ class LeverPartnerRegistry:
         except (HandoffError, TypeError) as exc:
             raise LeverPartnerUnavailable("Only exact HTTPS Lever jobs are supported") from exc
         path = urlsplit(application_url)
+        if path.query or path.fragment:
+            raise LeverPartnerUnavailable("Partner application URLs must be exact and untracked")
         site, posting = path.path.strip("/").split("/")[:2]
         k = site.casefold() + "/" + posting.casefold()
         record = self._records.get(k)
