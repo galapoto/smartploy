@@ -276,6 +276,19 @@ export function createBrowserHandoffPacket(
 /** Official Lever partner submit is available only with employer-specific
  * reviewed API rights, exact configured posting and a fresh applicant gesture.
  */
+/** Hashed server-produced preview of the ALREADY reviewed application.
+ * No bearer token, applicant contact data, CV, credential or execution grant.
+ */
+export type LeverPartnerReviewEvidence = {
+  workspace_id: string;
+  revision: number;
+  document_sha256: string;
+  cv_pdf_sha256: string;
+  approved_fields_sha256: string;
+  cv_pdf_size: number;
+  expires_at: string;
+};
+
 export type LeverPartnerReadiness = {
   partner_provider: "lever";
   partner_api_configured: boolean;
@@ -285,6 +298,8 @@ export type LeverPartnerReadiness = {
   prior_employer_attempt: boolean;
   provider_acknowledged: boolean;
   eligible_for_explicit_partner_submit: boolean;
+  review_evidence: LeverPartnerReviewEvidence | null;
+  review_evidence_is_authorization: false;
   unattended_auto_apply_enabled: false;
   automatic_retry_authorized: false;
 };

@@ -1234,6 +1234,25 @@ def test_partner_lever_real_signed_in_provider_acknowledgment_and_cross_device_o
     assert ready.json()["eligible_for_explicit_partner_submit"] is False
     assert ready.json()["current_applicant_review_recorded"] is False
     assert ready.json()["independent_partner_rights_reviewed"] is True
+    # The server reuses the existing deterministic PDF/contact/letter
+    # packet to produce NON-BEARER hashes; no clipboard, PII, API key or
+    # external employer request is involved in reading this posture.
+    assert ready.json()["review_evidence"] == {
+        "workspace_id":packet["workspace_id"],
+        "revision":packet["revision"],
+        "document_sha256":packet["document_sha256"],
+        "cv_pdf_sha256":packet["cv_pdf_sha256"],
+        "approved_fields_sha256":packet["approved_fields_sha256"],
+        "cv_pdf_size":packet["cv_pdf_size"],
+        "expires_at":ready.json()["review_evidence"]["expires_at"],
+    }
+    assert ready.json()["review_evidence_is_authorization"] is False
+    assert "user@example.invalid" not in ready.text
+    assert "same@example.invalid" not in ready.text
+    assert "Synthetic Applicant" not in ready.text
+    assert "super-admin-key" not in ready.text
+    assert "no-store" in ready.headers["cache-control"]
+    assert sent == []
     payload=_partner_submit_payload(packet)
     assert api.post(route+"/partner-lever-apply",json=payload,headers=headers).status_code==409
     assert sent==[]
@@ -1253,10 +1272,12 @@ def test_partner_lever_real_signed_in_provider_acknowledgment_and_cross_device_o
     assert after["provider_acknowledged"] is True
     assert after["prior_employer_attempt"] is True
     assert after["eligible_for_explicit_partner_submit"] is False
+    assert after["review_evidence"] is None
     replay=api.post(route+"/partner-lever-apply",json=payload,headers=headers)
     assert replay.status_code==409
     assert sent==["GET","POST"]
     api.cookies.set(SESSION_COOKIE_NAME,tokens["b"])
+    assert api.get(route+"/partner-lever-readiness").status_code==404
     assert api.get(route+"/partner-lever-receipt").status_code==404
     assert api.post(route+"/partner-lever-apply",json=payload,headers=headers).status_code==409
     assert sent==["GET","POST"]
@@ -1301,7 +1322,9 @@ def test_partner_lever_revoked_permission_and_invalid_consent_cannot_call_api(si
     with connect(DSN) as conn:
         conn.execute("UPDATE smartploy_employer_automation_rights SET state='revoked' WHERE employer_job_key_sha256=%s",
             (key,))
-    assert api.get(route+"/partner-lever-readiness").json()["eligible_for_explicit_partner_submit"] is False
+    restricted=api.get(route+"/partner-lever-readiness").json()
+    assert restricted["eligible_for_explicit_partner_submit"] is False
+    assert restricted["review_evidence"] is None
     assert api.post(route+"/partner-lever-apply",json=payload,headers=headers).status_code==409
     assert requests==[]
     assert PostgresEmployerSubmitClaimRepository(DSN).get_for_employer_url(a,url) is None
