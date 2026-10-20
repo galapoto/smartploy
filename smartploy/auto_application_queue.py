@@ -19,6 +19,7 @@ from .application_workspace import WorkspaceError, new_workspace
 from .domain import JobCandidate
 from .profile import CandidateProfile
 from .search_preferences import SearchPreferences, _seniority, search_jobs
+from .scoring import score_candidate
 
 MAX_NEW_DRAFTS_PER_DAY = 5
 MAX_DRAFTS_PER_CYCLE = 5
@@ -159,6 +160,12 @@ def prepare_matching_application_drafts(
             and preferences.seniority != "senior"
             and not any(_seniority(role) == "senior" for role in preferences.roles)
         ):
+            continue
+        # Source preference fit is NOT proof of meeting every mandatory
+        # employer requirement. Reuse the already-built approved-evidence
+        # requirement matcher; do not offer a misleading ready-to-apply
+        # draft when the job explicitly asks for unsupported credentials.
+        if score_candidate(candidate, profile).mandatory_gaps:
             continue
         eligible.append(candidate)
 

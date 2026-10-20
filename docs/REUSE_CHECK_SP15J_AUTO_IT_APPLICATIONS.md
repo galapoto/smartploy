@@ -85,6 +85,32 @@ employer-authorized keys per the provider documentation.
   daily quota, anti-duplicate existing claim, general search opt-out,
   and no injected CV facts. Existing broader regression suite runs too.
 
+## Consolidation check: independently discovered overlap, no parallel engine
+
+A second draft [PR #170](https://github.com/galapoto/smartploy/pull/170)
+had independently implemented the same user request, despite existing
+PR #169. To respect the project's reuse-first policy, PR #169 was
+selected as the **single canonical implementation**: it already has
+real multi-account PostgreSQL tests, serialized cross-worker quota,
+five/day owner limits, signed-in one-click review, separate opt-in
+and a tested editable Finnish IT/data/QA role preset. The second
+engine and its separate worker flag/endpoint MUST NOT be merged.
+PR #170 is closed as superseded; nothing from its duplicate
+`auto_stage_matches.py` runtime is deployed.
+
+One useful safety gap WAS identified during comparison: title/location
+matching alone could promote a job whose explicitly mandatory education
+or certification was absent from the candidate's approved evidence.
+Instead of inventing a second scorer, the original shared
+`smartploy/scoring.score_candidate` is now REUSED inside
+`auto_application_queue.prepare_matching_application_drafts`:
+jobs with `mandatory_gaps` stay visible in discovery, but cannot
+be automatically promoted into a ready-to-review draft. An added
+synthetic test proves an unverified Master's degree is not inferred
+from a Python/SQL skill fact. No new production module or dependency
+was introduced by this consolidation—only adaptation of an EXISTING
+source file plus a new negative test in the EXISTING test file.
+
 ## Systemic limits / release gate
 
 This advances **the AUTO DISCOVER + MATCH + DRAFT part** of requested

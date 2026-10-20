@@ -26,7 +26,7 @@ from smartploy.service import SmartployService
 SOURCE = SourcePolicy("manual-import", "Manual", "manual", ("manual",))
 
 
-def candidate(title="Junior Data Analyst", *, city="Helsinki", app_url=None):
+def candidate(title="Junior Data Analyst", *, city="Helsinki", app_url=None, requirements=()):
     slug = title.casefold().replace(" ", "-")
     url = app_url if app_url is not None else "https://careers.example.fi/jobs/" + slug
     result = normalize_observation(SourceObservation(
@@ -38,6 +38,7 @@ def candidate(title="Junior Data Analyst", *, city="Helsinki", app_url=None):
             "description":"Use Python SQL to analyze data",
             "location":city, "language":"English",
             "work_mode":"remote", "application_url":url,
+            "requirements":list(requirements),
         },
     ),SOURCE)
     assert result.candidate is not None
@@ -112,6 +113,24 @@ def test_auto_drafts_never_prepare_another_owner_or_unspecified_criteria():
             candidates=[candidate()],workspace_repository=repository,
         )
     assert not repository.list("alice")
+
+
+def test_explicit_mandatory_qualification_gaps_block_auto_drafts_without_discarding_job():
+    """Reuse existing approved-evidence requirement scoring, no invented degree."""
+    from smartploy.scoring import score_candidate
+    job=candidate(requirements=("Master's degree in computer science",))
+    assert score_candidate(job,profile()).mandatory_gaps
+    repo=MemoryWorkspaceRepository()
+    result=prepare_matching_application_drafts(
+        profile=profile(),preferences=prefs(),candidates=[job],
+        workspace_repository=repo,
+    )
+    assert result.to_dict()["created_count"]==0
+    assert repo.list(profile().profile_id)==[]
+    # The public feed is still discoverable; only automatic promotion
+    # to a purported application draft is conservatively blocked.
+    from smartploy.search_preferences import search_jobs
+    assert len(search_jobs([job],prefs())["recommendations"])==1
 
 
 def test_previous_employer_attempt_and_bad_url_are_excluded():
