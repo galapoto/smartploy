@@ -345,6 +345,7 @@ export default function App() {
 
     const expectedIdentity = lastSessionIdentity.current;
     const expectedUserId = session?.user_id?.trim() || "";
+    const previouslyOptedIn = preferences?.auto_draft_enabled === true;
     let accountUnverified = false;
     const requireSameAccount = async () => {
       let observedIdentity: string | null = null;
@@ -374,13 +375,47 @@ export default function App() {
       await requireSameAccount();
       const fresh = await getSearchResults();
       await requireSameAccount();
+
+      // Use the ORIGINAL signed-in private POST when auto-drafting is first
+      // enabled. Otherwise the user must discover a separate button or wait
+      // for the background worker, which might not even be installed yet.
+      // This is local draft preparation, never external employer submission.
+      const newlyOptedIn = result.auto_draft_enabled === true && !previouslyOptedIn;
+      let firstScan: Awaited<ReturnType<typeof prepareMyMatchingDrafts>> | null = null;
+      let scanUnavailable = false;
+      if (newlyOptedIn) {
+        try {
+          firstScan = await prepareMyMatchingDrafts(expectedUserId);
+        } catch {
+          // Do not roll back an already-saved preference or leak private
+          // profile/database exceptions. The immediate button remains usable.
+          scanUnavailable = true;
+        }
+        // In particular, reject an old-account success after a cookie switch.
+        await requireSameAccount();
+      }
+
       setPreferences(result);
       setDiscovery(fresh);
-      setPage("dashboard");
       setView("top");
-      setNotice(result.mode === "general"
-        ? "General search enabled: all current jobs, no personalization."
-        : "Your search targets were saved. Recommendations now reflect your criteria.");
+      if (newlyOptedIn && firstScan?.status === "needs_approved_profile") {
+        setPage("profile");
+        setNotice("Automatic IT search is enabled. Approve your career facts to prepare your first applications; nothing has been sent.");
+      } else if (newlyOptedIn && firstScan?.status === "prepared" && firstScan.created > 0) {
+        setPage("applications");
+        setNotice(firstScan.created + " matched IT application draft(s) prepared privately. Review each CV and letter before any employer submission.");
+      } else if (newlyOptedIn && firstScan?.status === "prepared") {
+        setPage("jobs");
+        setNotice("Automatic IT search is enabled. No new safe matches were ready; you can review current jobs and prepare drafts again.");
+      } else if (newlyOptedIn && (scanUnavailable || firstScan?.status !== "prepared")) {
+        setPage("jobs");
+        setNotice("Your automatic IT search setting was saved, but the first draft scan could not finish. Use 'Find and prepare matching drafts now' to retry.");
+      } else {
+        setPage("dashboard");
+        setNotice(result.mode === "general"
+          ? "General search enabled: all current jobs, no personalization."
+          : "Your search targets were saved. Recommendations now reflect your criteria.");
+      }
     } catch (exc) {
       // A rejected PUT can coincide with logout/account switching. Check
       // again before keeping the previous account's editable workspace.

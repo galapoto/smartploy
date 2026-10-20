@@ -140,3 +140,33 @@ flag remained disabled.
 confirmed. The existing explicit user-run button remains available.
 Three Vitest cases cover all states and direct action wiring.
 No user/job data sent outside SmartPloy and no invented employer receipts.
+
+## SP15l — truly immediate first-run IT application preparation
+
+**Observed UX/core gap:** Previous SP15j required a user to save their
+opt-in setting and then separately discover/click "Find and prepare".
+Unattended scheduling might be disabled for safety, so users could
+enable automation without a single application draft being created.
+
+**REUSE FIRST:** Reuses original `POST /api/v1/auto-draft/prepare`
+and `prepareMyMatchingDrafts`, original `App.tsx`
+`saveSearchPreferences` session/expected-account checks, original
+`ApplicationStudio` for saved document review, and the original
+opt-in revision. No new endpoint, worker, employer submitter, browser,
+credential, model, or permission. This first scan is only triggered
+after the server confirms the user's new explicit opted-in preference.
+
+**NEW GLUE:** The existing Settings/first-use flow immediately runs
+one consented private scan on the first transition OFF -> ON.
+If drafts were saved, it opens the existing My Applications editor;
+if approved facts are missing, it routes to the existing profile editor;
+if no current safe matches exist, the Jobs panel remains available;
+if the optional scan fails, the saved search preference is retained
+and the user gets a retry direction, without exposing backend errors.
+Before publishing any private counts or navigating, the existing
+verified account is checked again. No browser-closed processing or
+external submission is falsely implied.
+
+**Tests:** Four React/Vitest first-use/account-switch/failed-scan
+regressions on the actual App integration, not a stub duplicate UI.
+Full exact-HEAD CI and live authenticated OVH acceptance still required.

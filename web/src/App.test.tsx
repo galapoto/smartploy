@@ -15,6 +15,7 @@ vi.mock("./api", () => ({
   startApplicationWorkspace: vi.fn(), uploadCV: vi.fn(),
   getSearchPreferences: vi.fn(), updateSearchPreferences: vi.fn(),
   getSearchResults: vi.fn(), getLocalAIStatus: vi.fn(),
+  prepareMyMatchingDrafts: vi.fn(),
   getJobAIConsents: vi.fn(), getJobAIConsentEvents: vi.fn(),
   grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
@@ -122,6 +123,11 @@ beforeEach(() => {
   vi.mocked(api.startApplicationWorkspace).mockResolvedValue({
     created: true, workspace: { workspace_id: "kit-" + "a".repeat(30) },
   } as never);
+  vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValue({
+    status: "prepared", checked: 1, eligible: 1, created: 1, already_prepared: 0,
+    stopped_on_opt_out: false, provider_calls: 0,
+    employer_actions_performed: false, automatic_submission_authorized: false,
+  });
 });
 afterEach(() => cleanup());
 
@@ -908,5 +914,71 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /prepare documents/i })).toBeTruthy();
+  });
+});
+
+
+describe("first opt-in creates private IT applications immediately", () => {
+  const openOptIn = async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Use IT job starter targets/i }));
+    fireEvent.click(screen.getByRole("checkbox", {
+      name: /Automatically prepare suitable job drafts/i,
+    }));
+    fireEvent.click(screen.getByRole("button", { name: /Show my matched jobs/i }));
+  };
+
+  it("connects saved opt-in to the existing private draft engine with no second click", async () => {
+    await openOptIn();
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledExactlyOnceWith(
+      "usr-synthetic-1"
+    ));
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(screen.getByText(/matched IT application draft\(s\) prepared privately/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.grantJobAIConsent).not.toHaveBeenCalled();
+  });
+
+  it("keeps the saved preference and directs users without approved facts to their profile", async () => {
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "needs_approved_profile", checked: 0, eligible: 0, created: 0,
+      already_prepared: 0, stopped_on_opt_out: false, provider_calls: 0,
+      employer_actions_performed: false, automatic_submission_authorized: false,
+    });
+    await openOptIn();
+    expect(await screen.findByText(/Approve your career facts to prepare your first applications/i)).toBeTruthy();
+    expect(currentPrefs.auto_draft_enabled).toBe(true);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+
+  it("saves opt-in even if the immediate scan fails, without pretending drafts exist", async () => {
+    vi.mocked(api.prepareMyMatchingDrafts).mockRejectedValueOnce(new Error("PRIVATE-DATABASE-ERROR"));
+    await openOptIn();
+    expect(await screen.findByText(/first draft scan could not finish/i)).toBeTruthy();
+    expect(screen.queryByText(/PRIVATE-DATABASE-ERROR/i)).toBeNull();
+    expect(currentPrefs.auto_draft_enabled).toBe(true);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+
+  it("discards an old account's in-flight first scan after session switch", async () => {
+    const switchToB = switchableSession();
+    let finish: (value: Awaited<ReturnType<typeof api.prepareMyMatchingDrafts>>) => void =
+      () => { throw new Error("Expected a pending first scan"); };
+    vi.mocked(api.prepareMyMatchingDrafts).mockImplementationOnce(
+      () => new Promise(resolve => { finish = resolve; })
+    );
+    await openOptIn();
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
+    switchToB();
+    await act(async () => {
+      finish({
+        status: "prepared", checked: 1, eligible: 1, created: 1,
+        already_prepared: 0, stopped_on_opt_out: false, provider_calls: 0,
+        employer_actions_performed: false, automatic_submission_authorized: false,
+      });
+    });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByText(/matched IT application draft\(s\)/i)).toBeNull();
+    expect(screen.queryByTestId("application-editor")).toBeNull();
   });
 });
