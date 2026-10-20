@@ -18,6 +18,9 @@ vi.mock("./api", () => ({
   getJobAIConsents: vi.fn(), getJobAIConsentEvents: vi.fn(),
   grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
+vi.mock("./AutoShortlistPanel", () => ({
+  default: () => <section aria-label="Automatic IT-job drafts">Automatic local IT job drafts</section>,
+}));
 vi.mock("./ApplicationStudio", () => ({
   default: ({ focusId }: { focusId: string }) =>
     <div data-testid="application-editor" data-workspace={focusId}>Application editor</div>,

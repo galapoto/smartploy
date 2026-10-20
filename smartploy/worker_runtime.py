@@ -7,6 +7,9 @@ from datetime import datetime, timezone
 import os
 
 from .application_storage import PostgresApplicationRepository
+from .auto_shortlist import (
+    AutoShortlistDenied, PostgresAutoShortlistRepository, run_local_shortlist,
+)
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
 from .preparation_storage import PostgresPreparationRepository, REFRESHABLE_PREPARATION_STATES
 from .profile_storage import PostgresProfileRepository
@@ -211,6 +214,59 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
                 },
             )
         )
+
+    # Separate from obsolete GLOBAL auto AI/ObumAI permission. Every enabled
+    # account independently opted into LOCAL non-modelled review drafts.
+    # The original source pollers fetch jobs; this consumes their current
+    # saved observations and the ORIGINAL search preferences matcher.
+    local_enabled = os.getenv("SMARTPLOY_WORKER_SHORTLIST_ENABLED", "false").strip().casefold()
+    if local_enabled not in {"true", "false"}:
+        raise ValueError("SMARTPLOY_WORKER_SHORTLIST_ENABLED must be literal true or false")
+    if local_enabled == "true":
+        cadence = _positive_int("SMARTPLOY_WORKER_SHORTLIST_CADENCE_SECONDS", 600)
+        owner_limit = _positive_int("SMARTPLOY_WORKER_SHORTLIST_OWNER_LIMIT", 20,maximum=100)
+
+        def run_auto_shortlists() -> WorkerTaskResult:
+            repo = PostgresAutoShortlistRepository(dsn)
+            counts = Counter()
+            failures = 0
+            for profile_id in repo.enabled_profiles(limit=owner_limit):
+                try:
+                    report = run_local_shortlist(dsn,profile_id)
+                except AutoShortlistDenied:
+                    # Already running, revoked or quarantined: skip safely.
+                    counts["skipped"] += 1
+                    continue
+                except Exception:
+                    # Do NOT write a job/CV/user/email to worker logs.
+                    failures += 1
+                    continue
+                counts["accounts_processed"] += 1
+                counts["drafts_created"] += int(report["created"])
+                counts["candidates_inspected"] += int(report["inspected"])
+                counts[str(report["status"])] += 1
+            return WorkerTaskResult(
+                status="degraded" if failures else "healthy",
+                details={
+                    **dict(counts), "accounts_failed": failures,
+                    "external_actions_authorized": False,
+                    "automatic_employer_submission": False,
+                    "external_ai_processing": False,
+                },
+                error=f"{failures} private cycles failed" if failures else "",
+            )
+
+        specs.append(WorkerTaskSpec(
+            task_id="application:local-shortlist",
+            task_kind="application_prepare",
+            cadence_seconds=cadence,runner=run_auto_shortlists,
+            metadata={
+                "per_user_explicit_local_opt_in": True,
+                "external_actions_authorized": False,
+                "automatic_employer_submission": False,
+                "external_ai_processing": False,
+            },
+        ))
 
     auto_prepare_enabled = _auto_prepare_opt_in()
     obum_settings = ObumAISettings.from_env()

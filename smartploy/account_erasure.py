@@ -122,6 +122,16 @@ class PostgresAccountErasureRepository:
                         (request_id, user_id, profile_id),
                     )
 
+                # User-ordered lock acquisition prevents a local shortlist
+                # cycle starting after quarantine or continuing past commit.
+                # This does NOT erase previously generated private drafts.
+                cur.execute(
+                    """UPDATE smartploy_auto_shortlist_settings
+                       SET enabled=false,revision=revision+1,updated_at=now()
+                       WHERE profile_id=%s AND enabled=true""",
+                    (profile_id,),
+                )
+
                 # Do not retain user email after a quarantine. Session metadata
                 # is also erased, not merely marked revoked.
                 cur.execute(
@@ -256,6 +266,7 @@ EXPECTED_OWNER_TABLES = frozenset({
     "smartploy_application_preparations", "smartploy_applications",
     "smartploy_application_workspaces", "smartploy_browser_receipts",
     "smartploy_search_preferences", "smartploy_private_saved_jobs",
+    "smartploy_auto_shortlist_settings",
     "smartploy_obumai_consents", "smartploy_obumai_consent_events",
     "smartploy_obumai_dispatch_attempts",
     "smartploy_employer_submit_claims",
@@ -319,6 +330,10 @@ def inspect_quarantined_account(
         ),
         "search_preferences": (
             "SELECT count(*) FROM smartploy_search_preferences WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "auto_shortlist_settings": (
+            "SELECT count(*) FROM smartploy_auto_shortlist_settings WHERE profile_id=%s",
             (profile_id,),
         ),
         "private_saved_jobs": (
