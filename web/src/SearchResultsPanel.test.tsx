@@ -185,3 +185,33 @@ describe("job posting link safety", () => {
     expect(common.onPrepare).not.toHaveBeenCalled();
   });
 });
+
+
+describe("automatic draft scheduling truthfulness", () => {
+  it("does not claim a background service merely from the applicant opting in", () => {
+    const onAutoDraft = vi.fn();
+    render(<SearchResultsPanel {...common} data={personalized}
+      autoDraftEnabled={true} autoDraftWorkerStatus="not_configured"
+      onAutoDraft={onAutoDraft} />);
+    expect(screen.getByText(/background scheduling is not confirmed/i)).toBeTruthy();
+    expect(screen.queryByText(/background draft task is registered/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /find and prepare matching drafts now/i }));
+    expect(onAutoDraft).toHaveBeenCalledOnce();
+  });
+
+  it("reports an actually registered background task and never implies employer submission", () => {
+    render(<SearchResultsPanel {...common} data={personalized}
+      autoDraftEnabled={true} autoDraftWorkerStatus="registered" onAutoDraft={vi.fn()} />);
+    expect(screen.getByText(/background draft task is registered/i)).toBeTruthy();
+    expect(screen.getByText(/No employer application is submitted automatically/i)).toBeTruthy();
+  });
+
+  it("shows a degraded worker warning without suppressing the direct prepare action", () => {
+    const onAutoDraft = vi.fn();
+    render(<SearchResultsPanel {...common} data={personalized}
+      autoDraftEnabled={true} autoDraftWorkerStatus="degraded" onAutoDraft={onAutoDraft} />);
+    expect(screen.getByRole("status").textContent).toMatch(/reported failures/i);
+    fireEvent.click(screen.getByRole("button", { name: /find and prepare matching drafts now/i }));
+    expect(onAutoDraft).toHaveBeenCalledOnce();
+  });
+});

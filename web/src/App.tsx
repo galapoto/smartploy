@@ -679,6 +679,15 @@ export default function App() {
     else { navigate("tools"); setNotice("Interactive interview practice is planned, but not active yet."); }
   };
 
+  // Derive background capability from the ORIGINAL worker task registry,
+  // never from a candidate's opt-in checkbox alone.
+  const autoDraftTask = dashboard.worker.tasks.find((task) =>
+    task.task_id === "application:auto-draft-shortlist" && task.enabled
+  );
+  const autoDraftWorkerStatus: "not_configured" | "registered" | "degraded" =
+    !dashboard.worker.ready || !autoDraftTask ? "not_configured" :
+    ["failed", "degraded"].includes(autoDraftTask.last_status) ? "degraded" : "registered";
+
   const jobsSection = <SearchResultsPanel
     data={discovery} search={search} sector={sector} onSector={setSector}
     view={view} onView={setView} displayMode={mode}
@@ -689,6 +698,7 @@ export default function App() {
     onChangeCriteria={() => navigate("settings")}
     onChangeMode={(choice) => void changeSearchMode(choice)}
     autoDraftEnabled={preferences?.auto_draft_enabled === true}
+    autoDraftWorkerStatus={autoDraftWorkerStatus}
     autoDraftBusy={autoDraftBusy}
     onAutoDraft={() => void onPrepareMyAutoDrafts()}
   />;

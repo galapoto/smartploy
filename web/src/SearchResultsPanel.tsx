@@ -77,6 +77,7 @@ export default function SearchResultsPanel(props: {
   onChangeCriteria: () => void;
   onChangeMode: (value: "personalized" | "general") => void;
   autoDraftEnabled?: boolean;
+  autoDraftWorkerStatus?: "not_configured" | "registered" | "degraded";
   autoDraftBusy?: boolean;
   onAutoDraft?: () => void;
 }) {
@@ -110,8 +111,18 @@ export default function SearchResultsPanel(props: {
     {!general && props.autoDraftEnabled && props.onAutoDraft ? <div className="studio-packet-fallback"
       aria-label="Automatic application drafts">
       <strong>IT job shortlist is on</strong>
-      <p>SmartPloy scans matching current job listings in the background and prepares private drafts
-        using approved CV evidence. Nothing is submitted automatically to an employer.</p>
+      {props.autoDraftWorkerStatus === "registered" ? <p>
+        A background draft task is registered on this server. It can prepare private matched drafts
+        while your browser is closed, subject to worker health and your approved CV evidence.
+        No employer application is submitted automatically.
+      </p> : props.autoDraftWorkerStatus === "degraded" ? <p role="status">
+        Background job preparation has reported failures. Some accounts may not have been checked.
+        You can still run an immediate private scan; no employer application is submitted automatically.
+      </p> : <p role="status">
+        You opted into local application drafts, but background scheduling is not confirmed on this
+        server. Automatic checks should not be assumed to run with your browser closed.
+        You can still prepare matching private drafts now.
+      </p>}
       <button type="button" className="secondary-btn" disabled={props.autoDraftBusy}
         onClick={props.onAutoDraft}>
         {props.autoDraftBusy ? "Checking matches…" : "Find and prepare matching drafts now"}

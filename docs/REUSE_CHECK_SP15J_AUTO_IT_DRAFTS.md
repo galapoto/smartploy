@@ -124,3 +124,19 @@ No new external dependencies.
 **Still blocked from production:** original signed-in/OIDC, native
 ObumDelivery exact-SHA/negative test, external source readiness and
 reviewed OVH deploy; final employer submissions remain independent.
+
+## SP15k UI truth: app opt-in is not operator deployment
+
+**REUSE FIRST:** The original `dashboard.worker.tasks` already exposes
+the durable registered task ID, enablement and last_status; no new
+status API or monitoring service was built. Added a derived status prop
+to the existing `App` / `SearchResultsPanel`. Before this correction,
+the form checkbox alone caused the UI to claim the app was checking
+jobs in the background even when the independently-controlled worker
+flag remained disabled.
+
+**NEW GLUE:** Three honest user states: background task registered
+(not a proof of completed runs), task degraded, or background not
+confirmed. The existing explicit user-run button remains available.
+Three Vitest cases cover all states and direct action wiring.
+No user/job data sent outside SmartPloy and no invented employer receipts.
