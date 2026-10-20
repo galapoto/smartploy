@@ -930,9 +930,10 @@ describe("first opt-in creates private IT applications immediately", () => {
 
   it("connects saved opt-in to the existing private draft engine with no second click", async () => {
     await openOptIn();
-    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledExactlyOnceWith(
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledWith(
       "usr-synthetic-1"
     ));
+    expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1);
     expect(await screen.findByTestId("application-editor")).toBeTruthy();
     expect(screen.getByText(/matched IT application draft\(s\) prepared privately/i)).toBeTruthy();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
