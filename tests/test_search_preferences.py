@@ -460,6 +460,10 @@ def test_preference_validation_limits_bad_inputs():
         {"languages": ["Portuguese"]},
         {"work_modes": ["maybe"]},
         {"seniority": "superexpert"},
+        {"auto_draft_enabled": "yes"},
+        {"auto_draft_enabled": 1},
+        {"mode": "general", "auto_draft_enabled": True},
+        {"roles": [], "keywords": ["Python"], "auto_draft_enabled": True},
         {"keywords": ["one"] * 13},
         {"skills": ["one"] * 17},
         {"locations": ["x" * 100]},
@@ -577,3 +581,19 @@ def test_inline_brand_mark_and_favicon_have_separate_static_assets():
     assert "smartploy-mark-v2.svg?v=2" in html
     assert "src=\"/smartploy-mark.png\"" not in app
     assert "<svg" in brand
+
+
+
+def test_auto_draft_opt_in_is_profile_scoped_and_revocable_at_next_revision():
+    repo=MemorySearchPreferenceRepository()
+    original=repo.save("p1",search_settings(auto_draft_enabled=True),expected_revision=0)
+    assert original.auto_draft_enabled is True
+    assert original.to_dict()["auto_draft_enabled"] is True
+    assert original.to_dict()["auto_draft_external_actions_authorized"] is False
+    assert repo.get("p2").auto_draft_enabled is False
+    with repo.auto_draft_guard("p1",original.revision) as allowed:
+        assert allowed
+    stopped=repo.save("p1",search_settings(auto_draft_enabled=False),expected_revision=1)
+    assert stopped.auto_draft_enabled is False
+    with repo.auto_draft_guard("p1",original.revision) as allowed:
+        assert not allowed

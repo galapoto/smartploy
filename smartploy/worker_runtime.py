@@ -6,6 +6,7 @@ from collections import Counter
 from datetime import datetime, timezone
 import os
 
+from .auto_draft_shortlist import prepare_worker_shortlists
 from .application_storage import PostgresApplicationRepository
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
 from .preparation_storage import PostgresPreparationRepository, REFRESHABLE_PREPARATION_STATES
@@ -105,6 +106,33 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
         raise ValueError("SMARTPLOY_DATABASE_URL is required for continuous worker tasks")
 
     specs: list[WorkerTaskSpec] = []
+
+    # The original per-source pollers run independently of this LOCAL-ONLY,
+    # revocable per-account draft shortlister. No CV is sent to ObumAI and
+    # no ATS receives an application without a separate final user gesture.
+    draft_flag = os.getenv("SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED", "false").strip().casefold()
+    if draft_flag not in {"true", "false"}:
+        raise ValueError("SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED must be true or false")
+    if draft_flag == "true":
+        draft_cadence = _positive_int(
+            "SMARTPLOY_WORKER_AUTO_DRAFT_CADENCE_SECONDS", 600, maximum=86400
+        )
+
+        def run_auto_draft() -> WorkerTaskResult:
+            stats = prepare_worker_shortlists(dsn)
+            return WorkerTaskResult(status="healthy", details=stats)
+
+        specs.append(WorkerTaskSpec(
+            task_id="application:auto-draft-shortlist",
+            task_kind="application_draft",
+            cadence_seconds=draft_cadence,
+            runner=run_auto_draft,
+            metadata={
+                "private_opt_in_required": True,
+                "processing": "local_only",
+                "external_actions_authorized": False,
+            },
+        ))
 
     kuntarekry = KuntarekryFeedSettings.from_env()
     if kuntarekry is not None:

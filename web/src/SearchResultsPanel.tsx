@@ -76,6 +76,9 @@ export default function SearchResultsPanel(props: {
   onAllJobs: () => void;
   onChangeCriteria: () => void;
   onChangeMode: (value: "personalized" | "general") => void;
+  autoDraftEnabled?: boolean;
+  autoDraftBusy?: boolean;
+  onAutoDraft?: () => void;
 }) {
   const data = props.data;
   const general = data?.mode === "general";
@@ -104,6 +107,16 @@ export default function SearchResultsPanel(props: {
       {props.currentPage === "dashboard" ? <button className="text-link" onClick={props.onAllJobs} type="button">
         View all jobs <ArrowRight size={15}/></button> : null}
     </div>
+    {!general && props.autoDraftEnabled && props.onAutoDraft ? <div className="studio-packet-fallback"
+      aria-label="Automatic application drafts">
+      <strong>IT job shortlist is on</strong>
+      <p>SmartPloy scans matching current job listings in the background and prepares private drafts
+        using approved CV evidence. Nothing is submitted automatically to an employer.</p>
+      <button type="button" className="secondary-btn" disabled={props.autoDraftBusy}
+        onClick={props.onAutoDraft}>
+        {props.autoDraftBusy ? "Checking matches…" : "Find and prepare matching drafts now"}
+      </button>
+    </div> : null}
     <div className="search-mode-bar" role="group" aria-label="Search experience">
       <div className="search-mode-choices">
         <button type="button" className={!general ? "active" : ""}

@@ -22,6 +22,7 @@ from .ai_processing_consent import (
     ConsentIdentityError, JobAIConsentRepository, MemoryJobAIConsentRepository,
     PostgresJobAIConsentRepository,
 )
+from .auto_draft_shortlist import prepare_profile_shortlist
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
@@ -198,6 +199,7 @@ class SearchPreferencesPayload(BaseModel):
     keywords: list[str] = Field(default_factory=list, max_length=12)
     skills: list[str] = Field(default_factory=list, max_length=16)
     seniority: str = "any"
+    auto_draft_enabled: StrictBool = False
     expected_revision: int = Field(ge=0)
 
 
@@ -1122,6 +1124,44 @@ def create_app(
         preferences = app.state.search_preferences.get(profile_id)
         result = search_jobs(tenant.list_jobs(), preferences)
         return {**result, "external_actions_authorized": False}
+
+    @app.post("/api/v1/auto-draft/prepare")
+    def prepare_automatic_application_drafts(request: Request) -> JSONResponse:
+        """Opted-in user prepares their own exact matching IT job drafts NOW.
+
+        No ObumAI calls, ATS submits, browser clicks or provider consent
+        inference. The original middleware authenticates & checks CSRF;
+        expected-user-ID must match the verified account before writes.
+        """
+        tenant, binding = tenant_context(request)
+        if (
+            binding is None
+            or request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Sec-Fetch-Site", "").casefold() not in
+                {"", "same-origin", "none"}
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin user required")
+        pref = app.state.search_preferences.get(binding.profile_id)
+        if not pref.auto_draft_enabled or pref.mode != "personalized":
+            raise HTTPException(status_code=409, detail="Enable automatic draft preparation in your private job settings")
+        cv_repo = app.state.cv_repository
+        try:
+            summary = prepare_profile_shortlist(
+                binding.profile_id,
+                preferences_repository=app.state.search_preferences,
+                job_repository=tenant.repository,
+                profile_repository=tenant.profile_repository,
+                cv_repository=cv_repo,
+                workspace_repository=app.state.workspace_repository,
+            )
+        except Exception as exc:
+            # Do not leak candidate CV, source URLs, DB secrets or private IDs.
+            raise HTTPException(status_code=503, detail="Automatic draft preparation unavailable") from None
+        return JSONResponse(
+            summary.public_counts(),
+            headers={"Cache-Control": "private, no-store"},
+        )
 
     @app.get("/api/v1/jobs")
     def list_jobs() -> dict[str, Any]:

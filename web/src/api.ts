@@ -433,6 +433,27 @@ export function importBrowserReceipt(
 }
 
 
+/** Explicit opt-in LOCAL match-to-private-draft run.
+ * It never submits to an employer or sends a CV to remote AI.
+ */
+export type AutoDraftResult = {
+  status: "disabled" | "needs_approved_profile" | "owner_mismatch" |
+    "disabled_after_revocation" | "prepared";
+  checked: number;
+  eligible: number;
+  created: number;
+  already_prepared: number;
+  stopped_on_opt_out: boolean;
+  provider_calls: 0;
+  employer_actions_performed: false;
+  automatic_submission_authorized: false;
+};
+
+export function prepareMyMatchingDrafts(expectedUserId: string): Promise<AutoDraftResult> {
+  return request<AutoDraftResult>("/api/v1/auto-draft/prepare",
+    {method: "POST", body: JSON.stringify({})}, expectedUserId);
+}
+
 export function getSearchPreferences(): Promise<import("./types").SearchPreferences> {
   return request<import("./types").SearchPreferences>("/api/v1/search-preferences");
 }

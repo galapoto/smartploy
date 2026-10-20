@@ -15,6 +15,7 @@ ENV_KEYS = [
     "OBUMAI_BASE_URL",
     "OBUMAI_HTTP_HEADERS_JSON",
     "SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED",
+    "SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED",
     "SMARTPLOY_ENVIRONMENT",
 ]
 
@@ -182,3 +183,23 @@ def test_systemd_worker_unit_contains_no_credentials():
     assert "KIPA-Subscription-Key" not in text
     assert "JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY=" not in text
     assert "OBUMAI_HTTP_HEADERS_JSON=" not in text
+
+
+def test_scoped_local_draft_worker_runs_without_remote_ai_or_global_submit(monkeypatch):
+    clear_worker_sources(monkeypatch)
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")
+    monkeypatch.setenv("SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED", "true")
+    specs = build_worker_task_specs("postgresql://fixture")
+    assert {s.task_id for s in specs} == {"application:auto-draft-shortlist"}
+    one=specs[0]
+    assert one.cadence_seconds == 600
+    assert one.metadata["private_opt_in_required"] is True
+    assert one.metadata["processing"] == "local_only"
+    assert one.metadata["external_actions_authorized"] is False
+    monkeypatch.setenv("SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED", "false")
+    assert build_worker_task_specs("postgresql://fixture") == []
+    for bad in ("yes","1","fast",""):
+        monkeypatch.setenv("SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED", bad)
+        import pytest
+        with pytest.raises(ValueError, match="must be true or false"):
+            build_worker_task_specs("postgresql://fixture")

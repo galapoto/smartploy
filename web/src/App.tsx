@@ -11,7 +11,8 @@ import {
   getCV, getDashboard, getHealth, getJobs, getPrivateSavedJobs, getProfileFacts, getSession,
   startApplicationWorkspace, uploadCV, getJobAIConsents, getJobAIConsentEvents,
   grantJobAIConsent, revokeJobAIConsent,
-  getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus
+  getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus,
+  prepareMyMatchingDrafts
 } from "./api";
 import {
   filterBySector, formatState, queueLabel, relativeFreshness, safeExternalJobUrl, scoreBand,
@@ -127,6 +128,7 @@ export default function App() {
   const [busyCV, setBusyCV] = useState(false);
   const [busyFact, setBusyFact] = useState("");
   const [preparing, setPreparing] = useState("");
+  const [autoDraftBusy, setAutoDraftBusy] = useState(false);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -166,6 +168,7 @@ export default function App() {
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
     setBusyCV(false); setBusyFact(""); setPreparing(""); setManualBusy(false);
+    setAutoDraftBusy(false);
     setRemovingPrivateJob("");
     if (uploadRef.current) uploadRef.current.value = "";
     setJobForm({
@@ -596,6 +599,36 @@ export default function App() {
     }
   }
 
+  async function onPrepareMyAutoDrafts() {
+    if (!preferences?.auto_draft_enabled || autoDraftBusy) return;
+    const actionIdentity = lastSessionIdentity.current;
+    setAutoDraftBusy(true);
+    try {
+      const result = await runPrivateMutation((userId) => prepareMyMatchingDrafts(userId));
+      // The existing account-verification helper checked the response
+      // after the mutation. Never publish a cross-account success message.
+      if (lastSessionIdentity.current !== actionIdentity) return;
+      if (result.status === "needs_approved_profile") {
+        navigate("profile");
+        setNotice("Approve your career facts before SmartPloy prepares matched IT applications.");
+      } else if (result.status !== "prepared") {
+        setNotice("Automatic drafts are not available for these account settings.");
+      } else {
+        navigate("applications");
+        setNotice(result.created
+          ? result.created + " new matched IT application draft(s) saved privately. Review each CV and letter before submitting."
+          : "No new safe matches this time. Existing drafts are preserved, and the background search continues.");
+      }
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged) &&
+          lastSessionIdentity.current === actionIdentity) {
+        setNotice(exc instanceof Error ? exc.message : "Automatic draft preparation is unavailable.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setAutoDraftBusy(false);
+    }
+  }
+
   async function onPrepare(canonicalKey: string) {
     const actionIdentity = lastSessionIdentity.current;
     setPreparing(canonicalKey);
@@ -655,6 +688,9 @@ export default function App() {
     onAllJobs={() => navigate("jobs")}
     onChangeCriteria={() => navigate("settings")}
     onChangeMode={(choice) => void changeSearchMode(choice)}
+    autoDraftEnabled={preferences?.auto_draft_enabled === true}
+    autoDraftBusy={autoDraftBusy}
+    onAutoDraft={() => void onPrepareMyAutoDrafts()}
   />;
 
   const cvBlock = <section className="panel cv-panel">
