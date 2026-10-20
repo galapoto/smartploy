@@ -123,7 +123,7 @@ def test_owner_auth_preferences_optin_immediate_scan_and_same_email_isolation(mo
     assert other.status_code==200 and not other.json()["enabled"]
     assert api.get("/api/v1/application-workspaces").json()["workspaces"]==[]
     assert api.post("/api/v1/autodraft/run",headers=headers(users[1][0].user_id)).status_code==409
-    assert api.put("/api/v1/autodraft",json=settings,headers=headers(owner.user_id)).status_code==403
+    assert api.put("/api/v1/autodraft",json=settings,headers=headers(owner.user_id)).status_code==409
 
 
 def test_autodraft_mutation_requires_firstparty_origin_and_verified_current_owner(monkeypatch):
