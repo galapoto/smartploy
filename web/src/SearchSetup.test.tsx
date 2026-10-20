@@ -82,6 +82,33 @@ describe("first-use choice and saved settings", () => {
     });
   });
 
+  it("asks permission for local draft staging separately from any employer submit",async()=>{
+    const save=vi.fn(async (_value: SearchPreferencesUpdate)=>undefined);
+    render(<SearchSetup initial={{...firstVisit,roles:["Data Analyst"]}} onSave={save}/>);
+    const optin=screen.getByRole("checkbox",{
+      name:/automatically prepare review-only drafts for strong matching jobs/i
+    });
+    expect((optin as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(optin);
+    expect((optin as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText(/it never sends your application to an employer/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button",{name:/show my matched jobs/i}));
+    await waitFor(()=>expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      auto_stage_drafts:true,mode:"personalized",roles:["Data Analyst"]
+    })));
+  });
+
+  it("turning off personalized mode also turns off automatic drafts",async()=>{
+    const save=vi.fn(async(_value:SearchPreferencesUpdate)=>undefined);
+    render(<SearchSetup initial={{...firstVisit,roles:["Data Analyst"],
+      auto_stage_drafts:true}} onSave={save}/>);
+    fireEvent.click(screen.getByRole("radio",{name:/general job search/i}));
+    fireEvent.click(screen.getByRole("button",{name:/browse all jobs/i}));
+    await waitFor(()=>expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      mode:"general",auto_stage_drafts:false
+    })));
+  });
+
   it("preserves previously configured targets when switching modes and allows edits", async () => {
     const save = vi.fn(async (_value: SearchPreferencesUpdate) => undefined);
     render(<SearchSetup settings onSave={save} initial={{

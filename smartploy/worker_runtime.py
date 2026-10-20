@@ -26,6 +26,7 @@ from .sources.public_ats import (
 )
 from .sources.public_ats_polling import poll_public_ats
 from .storage import PostgresJobRepository
+from .auto_stage_matches import stage_matched_drafts_once
 from .worker_schedule import WorkerTaskResult, WorkerTaskSpec
 
 
@@ -211,6 +212,43 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
                 },
             )
         )
+
+    # Local-only matched jobs -> private draft workspaces. This is NOT
+    # the legacy unattended ObumAI sender; it sends nothing externally.
+    # Both an operator switch and a user's persisted per-profile opt-in
+    # are required. Default OFF during staged production rollout.
+    auto_stage_setting = os.getenv(
+        "SMARTPLOY_WORKER_MATCHED_DRAFTS_ENABLED", "false"
+    ).strip().casefold()
+    if auto_stage_setting not in {"true", "false"}:
+        raise ValueError("SMARTPLOY_WORKER_MATCHED_DRAFTS_ENABLED must be literal true or false")
+    if auto_stage_setting == "true":
+        auto_stage_cadence = _positive_int(
+            "SMARTPLOY_WORKER_MATCHED_DRAFTS_CADENCE_SECONDS", 600
+        )
+
+        def run_local_matched_drafts() -> WorkerTaskResult:
+            report = stage_matched_drafts_once(
+                dsn, owner_limit=_positive_int(
+                    "SMARTPLOY_WORKER_MATCHED_DRAFTS_OWNER_LIMIT", 50, maximum=100
+                ),
+            )
+            return WorkerTaskResult(
+                status="healthy", details=report,
+            )
+
+        specs.append(WorkerTaskSpec(
+            task_id="application:stage-matched-drafts",
+            task_kind="application_stage",
+            cadence_seconds=auto_stage_cadence,
+            runner=run_local_matched_drafts,
+            metadata={
+                "external_actions_authorized": False,
+                "external_ai_forwarding": False,
+                "requires_per_account_opt_in": True,
+                "creates_review_only_workspaces": True,
+            },
+        ))
 
     auto_prepare_enabled = _auto_prepare_opt_in()
     obum_settings = ObumAISettings.from_env()

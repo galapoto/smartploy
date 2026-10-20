@@ -11,7 +11,7 @@ import {
   getCV, getDashboard, getHealth, getJobs, getPrivateSavedJobs, getProfileFacts, getSession,
   startApplicationWorkspace, uploadCV, getJobAIConsents, getJobAIConsentEvents,
   grantJobAIConsent, revokeJobAIConsent,
-  getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus
+  getSearchPreferences, updateSearchPreferences, getSearchResults, stageMatchedDraftsNow, getLocalAIStatus
 } from "./api";
 import {
   filterBySector, formatState, queueLabel, relativeFreshness, safeExternalJobUrl, scoreBand,
@@ -127,6 +127,7 @@ export default function App() {
   const [busyCV, setBusyCV] = useState(false);
   const [busyFact, setBusyFact] = useState("");
   const [preparing, setPreparing] = useState("");
+  const [stagingMatches, setStagingMatches] = useState(false);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -396,6 +397,38 @@ export default function App() {
     }
   }
 
+  async function stageNewMatchedApplications() {
+    if (stagingMatches || preferences?.auto_stage_drafts !== true ||
+        preferences.mode !== "personalized") return;
+    const expectedIdentity=lastSessionIdentity.current;
+    const userId=session?.user_id || "";
+    if (!userId || !expectedIdentity) return;
+    setStagingMatches(true);
+    setError("");
+    try {
+      if (sessionIdentity(await getSession()) !== expectedIdentity ||
+          lastSessionIdentity.current !== expectedIdentity) {
+        throw new PrivateActionIdentityChanged("Account changed before building drafts.");
+      }
+      const report=await stageMatchedDraftsNow(userId);
+      if (sessionIdentity(await getSession()) !== expectedIdentity ||
+          lastSessionIdentity.current !== expectedIdentity) {
+        throw new PrivateActionIdentityChanged("Account changed during draft preparation.");
+      }
+      setNotice(
+        report.created > 0
+          ? report.created + " matching job application draft(s) created locally. Review each before submitting."
+          : "No new eligible drafts. Existing or weaker matches remain visible under Jobs."
+      );
+      navigate("applications");
+    } catch (exc) {
+      if (exc instanceof PrivateActionIdentityChanged) {
+        clearPrivateWorkspace();
+      }
+      setError(exc instanceof Error ? exc.message : "Could not prepare matching jobs.");
+    } finally { setStagingMatches(false); }
+  }
+
   async function changeAIConsent(action: (userId: string) => Promise<unknown>, message: string) {
     if (savingAIConsent.current || aiConsentStatus !== "ready") return;
     const originatingIdentity = lastSessionIdentity.current;
@@ -646,7 +679,18 @@ export default function App() {
     else { navigate("tools"); setNotice("Interactive interview practice is planned, but not active yet."); }
   };
 
-  const jobsSection = <SearchResultsPanel
+  const jobsSection = <div className="stacked">
+    {preferences?.auto_stage_drafts === true && preferences.mode === "personalized"
+      ? <section className="panel" aria-label="Automatic job draft preparation">
+          <div className="panel-heading"><div><h3>Automatic IT job drafts</h3>
+            <p className="muted">Your saved search criteria guide local draft preparation.
+              No employer application is sent automatically.</p></div></div>
+          <button type="button" className="primary-btn"
+            onClick={() => void stageNewMatchedApplications()} disabled={stagingMatches}>
+            {stagingMatches ? "Preparing matching drafts…" : "Find matches and prepare drafts now"}
+          </button>
+        </section> : null}
+    <SearchResultsPanel
     data={discovery} search={search} sector={sector} onSector={setSector}
     view={view} onView={setView} displayMode={mode}
     onToggleDisplay={() => setMode(mode === "heatmap" ? "percentage" : "heatmap")}
@@ -655,7 +699,8 @@ export default function App() {
     onAllJobs={() => navigate("jobs")}
     onChangeCriteria={() => navigate("settings")}
     onChangeMode={(choice) => void changeSearchMode(choice)}
-  />;
+    />
+  </div>;
 
   const cvBlock = <section className="panel cv-panel">
     <div className="panel-heading"><div><p className="section-kicker">YOUR CAREER EVIDENCE</p><h2>Your CV</h2><p>Private, on this SmartPloy account.</p></div></div>

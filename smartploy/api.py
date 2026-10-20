@@ -81,6 +81,7 @@ from .preparations import (
     approved_evidence_snapshot, preparation_job_snapshot,
 )
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
+from .auto_stage_matches import stage_owner_matches
 from .search_preferences import SearchPreferenceConflict, SearchPreferenceError, search_jobs
 from .search_preference_storage import MemorySearchPreferenceRepository, PostgresSearchPreferenceRepository
 from .service import SmartployService
@@ -1122,6 +1123,54 @@ def create_app(
         preferences = app.state.search_preferences.get(profile_id)
         result = search_jobs(tenant.list_jobs(), preferences)
         return {**result, "external_actions_authorized": False}
+
+    @app.post("/api/v1/job-autopilot/stage")
+    def stage_current_user_matches(request: Request) -> JSONResponse:
+        """Create local review-only workspaces from current opted-in matches.
+
+        Only authenticated first-party OIDC users; no external job application,
+        no AI processing or inferred employer/user consent for a final click.
+        """
+        binding = signed_in_employer_review(request)
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin applicant required")
+        dsn = os.getenv("SMARTPLOY_DATABASE_URL", "").strip()
+        if not dsn:
+            raise HTTPException(status_code=503, detail="Durable applicant workspace unavailable")
+        tenant, who = tenant_context(request)
+        if who is None or who.profile_id != binding.profile_id:
+            raise HTTPException(status_code=403, detail="Verified owner changed")
+        prefs = app.state.search_preferences.get(binding.profile_id)
+        if prefs.auto_stage_drafts is not True or prefs.mode != "personalized":
+            raise HTTPException(status_code=409, detail="Enable automatic local drafts in personalized job settings first")
+        from psycopg import connect
+        with connect(dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT canonical_key FROM smartploy_employer_submit_claims WHERE profile_id=%s",
+                    (binding.profile_id,),
+                )
+                claimed = frozenset(str(row[0]) for row in cur.fetchall())
+        report = stage_owner_matches(
+            preferences=prefs,
+            candidates=tenant.list_jobs(),
+            profile=tenant.profile(),
+            cv=app.state.cv_repository.get(binding.profile_id),
+            workspaces=app.state.workspace_repository,
+            claimed_keys=claimed,
+        )
+        # Counts only: never echo another account ID, CV, contact or private URL.
+        return JSONResponse(
+            {
+                **report, "result": "review_only",
+                "employer_submissions": 0,
+                "user_must_review_each_draft": True,
+            },
+            headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},
+        )
 
     @app.get("/api/v1/jobs")
     def list_jobs() -> dict[str, Any]:

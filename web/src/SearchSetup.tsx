@@ -42,6 +42,7 @@ export default function SearchSetup(props: {
   const [languages, setLanguages] = useState(props.initial.languages);
   const [workModes, setWorkModes] = useState(props.initial.work_modes);
   const [seniority, setSeniority] = useState(props.initial.seniority);
+  const [autoStageDrafts, setAutoStageDrafts] = useState(props.initial.auto_stage_drafts === true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   // The initial form state was already hydrated by useState. A redundant
@@ -61,6 +62,7 @@ export default function SearchSetup(props: {
     setLanguages(props.initial.languages);
     setWorkModes(props.initial.work_modes);
     setSeniority(props.initial.seniority);
+    setAutoStageDrafts(props.initial.auto_stage_drafts === true);
   }, [props.initial.revision]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -78,6 +80,7 @@ export default function SearchSetup(props: {
         mode, roles: chosenRoles, locations: list(locations),
         keywords: chosenKeywords, skills: list(skills),
         languages, work_modes: workModes, seniority,
+        auto_stage_drafts: mode === "personalized" && autoStageDrafts,
         expected_revision: props.initial.revision
       });
     } catch (exc) {
@@ -110,7 +113,7 @@ export default function SearchSetup(props: {
         </label>
         <label className={"setup-choice" + (mode === "general" ? " chosen" : "")}>
           <input type="radio" name="job-mode" checked={mode === "general"}
-            onChange={() => setMode("general")} />
+            onChange={() => { setMode("general"); setAutoStageDrafts(false); }} />
           <span className="setup-choice-icon"><Globe2 size={21} /></span>
           <strong>General job search</strong>
           <small>Explore every current job. No profile, CV, or search preferences required.</small>
@@ -168,6 +171,20 @@ export default function SearchSetup(props: {
               onChange={() => setLanguages(toggle(languages, choice.value))}/>{choice.label}
           </label>)}</div>
           <small>Languages are used only where the employer has provided enough information to assess them.</small>
+        </fieldset>
+        <fieldset className="setup-check-options" aria-label="Automatic matching and drafts">
+          <legend><Sparkles size={15}/> Automatic local application drafts</legend>
+          <label>
+            <input type="checkbox" checked={autoStageDrafts}
+              onChange={(event) => setAutoStageDrafts(event.target.checked)} />
+            Automatically prepare review-only drafts for strong matching jobs
+          </label>
+          <small>
+            SmartPloy can create up to three new private drafts per worker cycle from current
+            vacancies and your approved CV or profile evidence. It never sends your application
+            to an employer or shares your CV with AI on this setting. You review every draft and
+            explicitly authorize any final submission. Switch off anytime.
+          </small>
         </fieldset>
         <p className="setup-fineprint">The results are ranked by your stated search preferences, not a guarantee that you meet every employer requirement. You can upload a CV and approve career evidence separately for stronger qualification checks.</p>
       </div> : <div className="setup-general-note">

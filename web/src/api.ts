@@ -445,6 +445,24 @@ export function updateSearchPreferences(
   }, expectedUserId);
 }
 
+export type AutoStageResult = {
+  status: "staged_for_owner_review" | "not_opted_in";
+  created: number;
+  existing: number;
+  considered: number;
+  skipped?: Record<string, number>;
+  result: "review_only";
+  employer_submissions: 0;
+  no_employer_actions: true;
+  user_must_review_each_draft: true;
+};
+
+export function stageMatchedDraftsNow(expectedUserId: string): Promise<AutoStageResult> {
+  return request<AutoStageResult>("/api/v1/job-autopilot/stage", {
+    method: "POST", body: "{}",
+  },expectedUserId);
+}
+
 export function getSearchResults(): Promise<import("./types").SearchResults> {
   return request<import("./types").SearchResults>("/api/v1/search-results");
 }

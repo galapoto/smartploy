@@ -406,6 +406,8 @@ export interface SearchPreferences {
   keywords: string[];
   skills: string[];
   seniority: string;
+  /** Explicit local draft staging; never employer submission. */
+  auto_stage_drafts?: boolean;
   revision: number;
   updated_at: string;
   verified_qualification_fit: false;

@@ -16,6 +16,7 @@ ENV_KEYS = [
     "OBUMAI_HTTP_HEADERS_JSON",
     "SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED",
     "SMARTPLOY_ENVIRONMENT",
+    "SMARTPLOY_WORKER_MATCHED_DRAFTS_ENABLED",
 ]
 
 
@@ -182,3 +183,41 @@ def test_systemd_worker_unit_contains_no_credentials():
     assert "KIPA-Subscription-Key" not in text
     assert "JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY=" not in text
     assert "OBUMAI_HTTP_HEADERS_JSON=" not in text
+
+
+
+def test_opted_in_local_job_stage_worker_registers_without_ai_or_submit(monkeypatch):
+    clear_worker_sources(monkeypatch)
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT","production")
+    monkeypatch.setenv("SMARTPLOY_WORKER_MATCHED_DRAFTS_ENABLED","true")
+    import smartploy.worker_runtime as runtime
+    called=[]
+    def synthetic_stage(dsn,*,owner_limit):
+        called.append((dsn,owner_limit))
+        return {"status":"healthy","created":2,"accounts_checked":1,
+                "no_employer_actions":True}
+    monkeypatch.setattr(runtime,"stage_matched_drafts_once",synthetic_stage)
+    specs=build_worker_task_specs("postgresql://fixture")
+    assert len(specs)==1
+    task=specs[0]
+    assert task.task_id=="application:stage-matched-drafts"
+    assert task.task_kind=="application_stage"
+    assert task.cadence_seconds==600
+    assert task.metadata["external_actions_authorized"] is False
+    assert task.metadata["external_ai_forwarding"] is False
+    assert task.metadata["requires_per_account_opt_in"] is True
+    report=task.runner()
+    assert report.status=="healthy"
+    assert report.details["created"]==2
+    assert called==[("postgresql://fixture",50)]
+    monkeypatch.setenv("SMARTPLOY_WORKER_MATCHED_DRAFTS_ENABLED","false")
+    assert build_worker_task_specs("postgresql://fixture")==[]
+
+
+def test_local_stage_worker_flag_fails_closed_on_invalid_value(monkeypatch):
+    import pytest
+    clear_worker_sources(monkeypatch)
+    for invalid in ("yes","1","","TRUE only","auto"):
+        monkeypatch.setenv("SMARTPLOY_WORKER_MATCHED_DRAFTS_ENABLED",invalid)
+        with pytest.raises(ValueError,match="must be literal true or false"):
+            build_worker_task_specs("postgresql://fixture")

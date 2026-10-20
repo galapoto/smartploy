@@ -27,6 +27,7 @@ def _stored(profile_id: str, row: tuple[Any, ...] | None) -> SearchPreferences:
         keywords=tuple(criteria.get("keywords") or ()),
         skills=tuple(criteria.get("skills") or ()),
         seniority=str(criteria.get("seniority") or "any"),
+        auto_stage_drafts=criteria.get("auto_stage_drafts") is True,
         revision=int(revision),
         updated_at=updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at),
     )
@@ -38,6 +39,7 @@ def _criteria(item: SearchPreferences) -> dict[str, Any]:
         "languages": list(item.languages), "work_modes": list(item.work_modes),
         "keywords": list(item.keywords), "skills": list(item.skills),
         "seniority": item.seniority,
+        "auto_stage_drafts": item.auto_stage_drafts,
     }
 
 
@@ -98,3 +100,26 @@ class PostgresSearchPreferenceRepository:
         if not row:
             raise SearchPreferenceConflict("Search preferences changed in another session; reload before saving")
         return _stored(profile_id, row)
+
+    def list_auto_stage_profiles(self, *, limit: int = 50) -> list[SearchPreferences]:
+        """Read ONLY explicitly opted-in active owner settings, no email/PII.
+
+        The original verified OIDC account binding remains authoritative.
+        This is a planning cursor, never permission to send CVs to employers.
+        """
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT p.profile_id, p.mode, p.criteria, p.revision, p.updated_at
+                       FROM smartploy_search_preferences p
+                       JOIN smartploy_user_profiles up ON up.profile_id=p.profile_id
+                       JOIN smartploy_users u ON u.user_id=up.user_id
+                       WHERE u.status='active' AND p.mode='personalized'
+                         AND p.criteria->>'auto_stage_drafts'='true'
+                       ORDER BY p.updated_at ASC, p.profile_id ASC
+                       LIMIT %s""",
+                    (max(1, min(int(limit), 100)),),
+                )
+                rows = cur.fetchall()
+        return [_stored(str(row[0]), row[1:]) for row in rows]
+

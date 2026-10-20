@@ -14,7 +14,7 @@ vi.mock("./api", () => ({
   getJobs: vi.fn(), getProfileFacts: vi.fn(), getSession: vi.fn(),
   startApplicationWorkspace: vi.fn(), uploadCV: vi.fn(),
   getSearchPreferences: vi.fn(), updateSearchPreferences: vi.fn(),
-  getSearchResults: vi.fn(), getLocalAIStatus: vi.fn(),
+  getSearchResults: vi.fn(), stageMatchedDraftsNow: vi.fn(), getLocalAIStatus: vi.fn(),
   getJobAIConsents: vi.fn(), getJobAIConsentEvents: vi.fn(),
   grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
@@ -109,6 +109,11 @@ beforeEach(() => {
     personalJobs = personalJobs.filter((item) => item.saved_job_id !== id);
     return { deleted: true };
   });
+  vi.mocked(api.stageMatchedDraftsNow).mockResolvedValue({
+    status:"staged_for_owner_review",created:1,existing:0,considered:1,
+    skipped:{},result:"review_only",employer_submissions:0,
+    no_employer_actions:true,user_must_review_each_draft:true,
+  });
   vi.mocked(api.getLocalAIStatus).mockResolvedValue({
     configured: false, ready: false, provider: "disabled", model: "", external_ai_forwarding: false,
   });
@@ -189,6 +194,22 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledWith("test-analyst", "usr-synthetic-1"));
     expect(await screen.findByTestId("application-editor")).toBeTruthy();
     expect(screen.getByTestId("application-editor").getAttribute("data-workspace")).toMatch(/^kit-/);
+  });
+
+  it("one click uses original sign-in boundary to stage matching drafts only",async()=>{
+    currentPrefs={...initial,completed:true,mode:"personalized",
+      roles:["Data Analyst"],auto_stage_drafts:true,revision:1};
+    render(<App/>);
+    const btn=await screen.findByRole("button",{
+      name:/find matches and prepare drafts now/i
+    });
+    fireEvent.click(btn);
+    await waitFor(()=>expect(api.stageMatchedDraftsNow).toHaveBeenCalledWith(
+      "usr-synthetic-1"
+    ));
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(screen.getByText(/1 matching job application draft\(s\) created locally/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
   it("keeps General selected while optional user-profile requests finish in the background", async () => {

@@ -473,6 +473,23 @@ def test_preference_validation_limits_bad_inputs():
     assert chosen.languages == ("english", "finnish")
 
 
+def test_local_automatic_draft_opt_in_is_explicit_revocable_and_not_submission():
+    pref=revise_preferences("user",search_settings(auto_stage_drafts=True),revision=0)
+    assert pref.auto_stage_drafts is True
+    assert pref.to_dict()["auto_stage_drafts"] is True
+    from smartploy.search_preference_storage import _criteria,_stored
+    assert _criteria(pref)["auto_stage_drafts"] is True
+    stored=_stored("user",("personalized",_criteria(pref),pref.revision,pref.updated_at))
+    assert stored.auto_stage_drafts is True
+    assert revise_preferences("user",search_settings(),revision=0).auto_stage_drafts is False
+    assert revise_preferences("user",search_settings(auto_stage_drafts=False),revision=1).auto_stage_drafts is False
+    for invalid in ("true",1,None,{}):
+        with pytest.raises(SearchPreferenceError,match="explicitly true or false"):
+            revise_preferences("user",search_settings(auto_stage_drafts=invalid),revision=0)
+    with pytest.raises(SearchPreferenceError,match="requires personalized"):
+        revise_preferences("user",{"mode":"general","auto_stage_drafts":True},revision=0)
+
+
 def test_memory_preferences_stay_isolated_and_switch_modes_in_place():
     store = MemorySearchPreferenceRepository()
     assert store.get("alice").completed is False
