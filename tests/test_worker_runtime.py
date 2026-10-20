@@ -206,7 +206,7 @@ def test_existing_worker_reuses_scoped_opt_in_for_local_job_application_drafts(m
 def test_local_auto_draft_global_flag_is_not_a_disguised_ai_or_submit_permission(monkeypatch):
     import pytest
     clear_worker_sources(monkeypatch)
-    for bad in ("1","yes","", "TRUE", "enabled"):
+    for bad in ("1","yes","", "enabled", "true-but-not-authorized"):
         monkeypatch.setenv("SMARTPLOY_WORKER_LOCAL_AUTO_DRAFT_ENABLED",bad)
         with pytest.raises(ValueError,match="literal true or false"):
             build_worker_task_specs("postgresql://fixture")

@@ -179,7 +179,7 @@ export default function SearchSetup(props: {
           </label>)}</div>
           <small>Languages are used only where the employer has provided enough information to assess them.</small>
         </fieldset>
-        <label className="setup-choice" aria-label="Automatically prepare matching job application drafts">
+        <label className="setup-choice">
           <input type="checkbox" checked={autoDrafts}
             onChange={(event) => setAutoDrafts(event.target.checked)}/>
           <span className="setup-choice-icon"><Sparkles size={20}/></span>
