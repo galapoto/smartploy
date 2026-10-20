@@ -158,7 +158,7 @@ def test_verified_owner_enables_local_automatic_it_drafts_and_reloads(world):
     # Separate account with identical email cannot see, grant or use A's opt-in.
     api.cookies.set(SESSION_COOKIE_NAME,tokens["b"])
     assert api.get("/api/v1/auto-shortlist").json()["enabled"] is False
-    assert api.post("/api/v1/auto-shortlist/run-now",headers=headers).status_code==403
+    assert api.post("/api/v1/auto-shortlist/run-now",headers=headers).status_code==409
     assert PostgresWorkspaceRepository(DSN).list(b.profile_id)==[]
     api.cookies.set(SESSION_COOKIE_NAME,tokens["a"])
 

@@ -24,7 +24,11 @@ def vacancy(title: str, *, location="Helsinki", current=True, url=None):
         ),SourcePolicy("manual-import","Manual","manual",("manual",))
     )
     assert result.candidate
-    return replace(result.candidate,source_current=current)
+    candidate = replace(result.candidate, source_current=current)
+    # Normalizer may rewrite untrusted URLs to its safe canonical fallback.
+    # Inject the original hostile URL at THIS planner boundary to prove the
+    # local auto-draft path independently rejects it.
+    return replace(candidate, job=replace(candidate.job, application_url=url)) if url else candidate
 
 
 def preferences(profile_id="p", *, mode="personalized",seniority="entry"):
