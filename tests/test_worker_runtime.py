@@ -15,6 +15,8 @@ ENV_KEYS = [
     "OBUMAI_BASE_URL",
     "OBUMAI_HTTP_HEADERS_JSON",
     "SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED",
+    "SMARTPLOY_WORKER_AUTODRAFT_ENABLED",
+    "SMARTPLOY_WORKER_AUTODRAFT_CADENCE_SECONDS",
     "SMARTPLOY_ENVIRONMENT",
 ]
 
@@ -182,3 +184,27 @@ def test_systemd_worker_unit_contains_no_credentials():
     assert "KIPA-Subscription-Key" not in text
     assert "JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY=" not in text
     assert "OBUMAI_HTTP_HEADERS_JSON=" not in text
+
+
+
+def test_scheduled_match_drafting_is_per_account_optin_not_employer_submissions(monkeypatch):
+    clear_worker_sources(monkeypatch)
+    monkeypatch.setenv("SMARTPLOY_WORKER_AUTODRAFT_ENABLED", "true")
+    specs=build_worker_task_specs("postgresql://synthetic")
+    assert {item.task_id for item in specs} == {"application:auto-draft-matches"}
+    task=specs[0]
+    assert task.cadence_seconds==600
+    assert task.metadata["requires_account_opt_in"] is True
+    assert task.metadata["external_actions_authorized"] is False
+    assert task.metadata["llm_calls"]==0
+    monkeypatch.setenv("SMARTPLOY_WORKER_AUTODRAFT_ENABLED", "false")
+    assert build_worker_task_specs("postgresql://synthetic")==[]
+
+
+def test_invalid_automatic_draft_worker_flag_denied(monkeypatch):
+    import pytest
+    clear_worker_sources(monkeypatch)
+    for wrong in ("", "1","yes","TRUE?","enabled","on"):
+        monkeypatch.setenv("SMARTPLOY_WORKER_AUTODRAFT_ENABLED", wrong)
+        with pytest.raises(ValueError,match="literal true or false"):
+            build_worker_task_specs("postgresql://synthetic")

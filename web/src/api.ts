@@ -476,3 +476,53 @@ export function revokeJobAIConsent(consentId: string, expectedUserId: string):
     method: "DELETE"
   }, expectedUserId);
 }
+
+
+/** Opt-in deterministic IT-job matching to REVIEWABLE drafts only.
+ * No browser application, AI processing consent or employer POST authority.
+ */
+export type AutoDraftSettings = {
+  enabled: boolean;
+  minimum_score: number;
+  max_per_cycle: number;
+  revision: number;
+  draft_only: true;
+  automatic_employer_submission_authorized: false;
+  external_ai_processing_authorized: false;
+};
+
+export type AutoDraftScan = {
+  status: string;
+  created: Array<{ workspace_id: string; canonical_key: string;
+    preference_score: number; reasons: string[] }>;
+  created_count: number;
+  existing_count: number;
+  skipped_count: number;
+  inspected_recommendations?: number;
+  external_actions_performed: false;
+  external_ai_calls: 0;
+  employer_applications_submitted: 0;
+  requires_individual_review_before_application: true;
+};
+
+export function getAutoDraftSettings(): Promise<AutoDraftSettings> {
+  return request<AutoDraftSettings>("/api/v1/autodraft");
+}
+
+export function saveAutoDraftSettings(
+  settings: Pick<AutoDraftSettings,"enabled"|"minimum_score"|"max_per_cycle"|"revision">,
+  expectedUserId:string
+): Promise<AutoDraftSettings> {
+  return request<AutoDraftSettings>("/api/v1/autodraft",{
+    method:"PUT",body:JSON.stringify({
+      enabled:settings.enabled,
+      minimum_score:settings.minimum_score,max_per_cycle:settings.max_per_cycle,
+      expected_revision:settings.revision,
+      acknowledge_review_before_any_employer_submission:true,
+    })
+  },expectedUserId);
+}
+
+export function scanAutoDrafts(expectedUserId:string):Promise<AutoDraftScan> {
+  return request<AutoDraftScan>("/api/v1/autodraft/run",{method:"POST"},expectedUserId);
+}

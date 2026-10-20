@@ -144,6 +144,14 @@ class PostgresAccountErasureRepository:
                     (user_id,),
                 )
                 revoked_sessions = cur.rowcount
+                # Revocable background draft opt-in stops during account
+                # quarantine, before a worker may select this owner again.
+                cur.execute(
+                    """UPDATE smartploy_autodraft_settings
+                       SET enabled=false,revision=revision+1,updated_at=now()
+                       WHERE user_id=%s AND profile_id=%s AND enabled=true""",
+                    (user_id,profile_id),
+                )
                 cur.execute(
                     """
                     WITH changed AS (
@@ -255,7 +263,8 @@ EXPECTED_OWNER_TABLES = frozenset({
     "smartploy_profile_facts", "smartploy_cv_files",
     "smartploy_application_preparations", "smartploy_applications",
     "smartploy_application_workspaces", "smartploy_browser_receipts",
-    "smartploy_search_preferences", "smartploy_private_saved_jobs",
+    "smartploy_search_preferences", "smartploy_autodraft_settings",
+    "smartploy_private_saved_jobs",
     "smartploy_obumai_consents", "smartploy_obumai_consent_events",
     "smartploy_obumai_dispatch_attempts",
     "smartploy_employer_submit_claims",
@@ -320,6 +329,10 @@ def inspect_quarantined_account(
         "search_preferences": (
             "SELECT count(*) FROM smartploy_search_preferences WHERE profile_id=%s",
             (profile_id,),
+        ),
+        "autodraft_settings": (
+            "SELECT count(*) FROM smartploy_autodraft_settings WHERE user_id=%s AND profile_id=%s",
+            (user_id,profile_id),
         ),
         "private_saved_jobs": (
             "SELECT count(*) FROM smartploy_private_saved_jobs WHERE profile_id=%s",
