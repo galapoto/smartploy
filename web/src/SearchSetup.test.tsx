@@ -82,6 +82,42 @@ describe("first-use choice and saved settings", () => {
     });
   });
 
+  it("offers reusable IT role presets and a separate revocable local auto-draft opt-in", async () => {
+    const save=vi.fn(async (_value:SearchPreferencesUpdate)=>undefined);
+    render(<SearchSetup initial={firstVisit} onSave={save}/>);
+    fireEvent.click(screen.getByRole("button",{name:/Start with IT, data and QA roles/}));
+    expect((screen.getByPlaceholderText(/Data analyst, Junior software tester/) as HTMLTextAreaElement)
+      .value).toContain("Junior Data Analyst");
+    const option=screen.getByRole("checkbox",{
+      name:/Automatically find matching IT jobs and prepare my drafts/
+    }) as HTMLInputElement;
+    expect(option.checked).toBe(false);
+    fireEvent.click(option);
+    expect(option.checked).toBe(true);
+    fireEvent.click(screen.getByRole("button",{name:/Show my matched jobs/}));
+    await waitFor(()=>expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][0]).toMatchObject({
+      mode:"personalized",auto_drafts_enabled:true,seniority:"any",
+      expected_revision:0
+    });
+    expect(save.mock.calls[0][0].roles).toContain("Junior Data Analyst");
+    expect(save.mock.calls[0][0].languages).toEqual(["finnish","english"]);
+  });
+
+  it("disarms background preparation on switching to general browsing",async()=>{
+    const save=vi.fn(async (_value:SearchPreferencesUpdate)=>undefined);
+    render(<SearchSetup initial={{
+      ...firstVisit,completed:true,revision:1,
+      roles:["Data Analyst"],auto_drafts_enabled:true,
+    }} onSave={save}/>);
+    fireEvent.click(screen.getByRole("radio",{name:/general job search/i}));
+    fireEvent.click(screen.getByRole("button",{name:/browse all jobs/i}));
+    await waitFor(()=>expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][0]).toMatchObject({
+      mode:"general",auto_drafts_enabled:false,expected_revision:1,
+    });
+  });
+
   it("preserves previously configured targets when switching modes and allows edits", async () => {
     const save = vi.fn(async (_value: SearchPreferencesUpdate) => undefined);
     render(<SearchSetup settings onSave={save} initial={{

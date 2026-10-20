@@ -185,6 +185,22 @@ export function startApplicationWorkspace(canonicalKey: string, expectedUserId: 
   );
 }
 
+/** Current source jobs -> owner-only CV/letter drafts, never an employer action. */
+export function prepareMatchingApplicationDrafts(
+  expectedPreferencesRevision: number, expectedUserId: string,
+  maxNewDrafts = 5
+): Promise<import("./types").MatchedApplicationDraftRun> {
+  return request<import("./types").MatchedApplicationDraftRun>(
+    "/api/v1/application-workspaces/prepare-matches", {
+      method: "POST", body: JSON.stringify({
+        expected_preferences_revision: expectedPreferencesRevision,
+        confirm_private_local_drafting: true,
+        max_new_drafts: maxNewDrafts
+      })
+    }, expectedUserId
+  );
+}
+
 export function getApplicationWorkspaces(): Promise<ApplicationWorkspacesResponse> {
   return request<ApplicationWorkspacesResponse>("/api/v1/application-workspaces");
 }

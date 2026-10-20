@@ -15,6 +15,8 @@ ENV_KEYS = [
     "OBUMAI_BASE_URL",
     "OBUMAI_HTTP_HEADERS_JSON",
     "SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED",
+    "SMARTPLOY_WORKER_LOCAL_AUTO_DRAFT_ENABLED",
+    "SMARTPLOY_WORKER_LOCAL_AUTO_DRAFT_CADENCE_SECONDS",
     "SMARTPLOY_ENVIRONMENT",
 ]
 
@@ -182,3 +184,35 @@ def test_systemd_worker_unit_contains_no_credentials():
     assert "KIPA-Subscription-Key" not in text
     assert "JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY=" not in text
     assert "OBUMAI_HTTP_HEADERS_JSON=" not in text
+
+
+def test_existing_worker_reuses_scoped_opt_in_for_local_job_application_drafts(monkeypatch):
+    clear_worker_sources(monkeypatch)
+    monkeypatch.setenv("SMARTPLOY_WORKER_LOCAL_AUTO_DRAFT_ENABLED","true")
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT","production")
+    specs=build_worker_task_specs("postgresql://fixture")
+    assert len(specs)==1
+    task=specs[0]
+    assert task.task_id=="application:auto-draft-matches"
+    assert task.task_kind=="application_prepare"
+    assert task.cadence_seconds==600
+    assert task.metadata["per_account_opt_in_required"] is True
+    assert task.metadata["external_actions_authorized"] is False
+    assert task.metadata["external_ai_forwarding_performed"] is False
+    monkeypatch.setenv("SMARTPLOY_WORKER_LOCAL_AUTO_DRAFT_ENABLED","false")
+    assert build_worker_task_specs("postgresql://fixture")==[]
+
+
+def test_local_auto_draft_global_flag_is_not_a_disguised_ai_or_submit_permission(monkeypatch):
+    import pytest
+    clear_worker_sources(monkeypatch)
+    for bad in ("1","yes","", "TRUE", "enabled"):
+        monkeypatch.setenv("SMARTPLOY_WORKER_LOCAL_AUTO_DRAFT_ENABLED",bad)
+        with pytest.raises(ValueError,match="literal true or false"):
+            build_worker_task_specs("postgresql://fixture")
+    # The old global ObumAI submitter remains prohibited in production.
+    monkeypatch.setenv("SMARTPLOY_WORKER_LOCAL_AUTO_DRAFT_ENABLED","true")
+    monkeypatch.setenv("SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED","true")
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT","production")
+    with pytest.raises(ValueError,match="unavailable in production"):
+        build_worker_task_specs("postgresql://fixture")

@@ -12,7 +12,7 @@ vi.mock("./api", () => ({
   deleteCV: vi.fn(), deleteFact: vi.fn(), getApplications: vi.fn(),
   getCV: vi.fn(), getDashboard: vi.fn(), getHealth: vi.fn(),
   getJobs: vi.fn(), getProfileFacts: vi.fn(), getSession: vi.fn(),
-  startApplicationWorkspace: vi.fn(), uploadCV: vi.fn(),
+  startApplicationWorkspace: vi.fn(), prepareMatchingApplicationDrafts: vi.fn(), uploadCV: vi.fn(),
   getSearchPreferences: vi.fn(), updateSearchPreferences: vi.fn(),
   getSearchResults: vi.fn(), getLocalAIStatus: vi.fn(),
   getJobAIConsents: vi.fn(), getJobAIConsentEvents: vi.fn(),
@@ -175,6 +175,35 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.queryByRole("link", { name: /Sign out securely/i })).toBeNull();
+  });
+
+  it("finds personalized IT jobs and opens batch-prepared drafts without job links or employer submission", async () => {
+    currentPrefs={
+      ...initial,completed:true,mode:"personalized",roles:["Data Analyst"],
+      revision:1,auto_drafts_enabled:true,
+    };
+    vi.mocked(api.getCV).mockResolvedValue({present:true,filename:"approved-cv.pdf"} as never);
+    vi.mocked(api.prepareMatchingApplicationDrafts).mockResolvedValue({
+      mode:"local_auto_draft",candidates_reviewed:5,eligible_count:1,
+      created_count:1,
+      created:[{workspace_id:"kit-auto-123",canonical_key:"test-analyst",
+        role_title:"Junior Data Analyst",company:"Example Oy"}],
+      already_prepared:0,skipped_previous_attempt:0,remaining_today:4,
+      requires_owner_review:true,actual_employer_submissions:0,
+      external_actions_authorized:false,external_ai_forwarding_performed:false,
+    });
+    vi.spyOn(window,"confirm").mockReturnValue(true);
+    render(<App/>);
+    fireEvent.click(await screen.findByRole("button",{name:"My applications"}));
+    const trigger=await screen.findByRole("button",{name:"Find jobs and prepare applications"});
+    fireEvent.click(trigger);
+    await waitFor(()=>expect(api.prepareMatchingApplicationDrafts).toHaveBeenCalledWith(
+      1,"usr-synthetic-1"
+    ));
+    expect(await screen.findByText(/1 matched IT application drafts prepared/)).toBeTruthy();
+    expect(screen.getByTestId("application-editor").getAttribute("data-workspace"))
+      .toBe("kit-auto-123");
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
   it("supports general browsing and opens an application without personalized criteria", async () => {

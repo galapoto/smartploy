@@ -406,15 +406,34 @@ export interface SearchPreferences {
   keywords: string[];
   skills: string[];
   seniority: string;
+  /** Opt-in for locally created review drafts from discovered matches only. */
+  auto_drafts_enabled?: boolean;
+  /** Never a client-configurable employer submission permission. */
+  auto_submit_enabled?: false;
   revision: number;
   updated_at: string;
   verified_qualification_fit: false;
 }
 
 export type SearchPreferencesUpdate = Omit<SearchPreferences,
-  "completed" | "revision" | "updated_at" | "verified_qualification_fit"> & {
+  "completed" | "revision" | "updated_at" | "verified_qualification_fit" | "auto_submit_enabled"> & {
     expected_revision: number;
   };
+
+export interface MatchedApplicationDraftRun {
+  mode: "local_auto_draft";
+  candidates_reviewed: number;
+  eligible_count: number;
+  created_count: number;
+  created: {workspace_id: string; canonical_key: string; role_title: string; company: string}[];
+  already_prepared: number;
+  skipped_previous_attempt: number;
+  remaining_today: number;
+  requires_owner_review: true;
+  actual_employer_submissions: 0;
+  external_actions_authorized: false;
+  external_ai_forwarding_performed: false;
+}
 
 export interface SearchJobCard {
   canonical_key: string;
