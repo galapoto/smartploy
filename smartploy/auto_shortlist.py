@@ -6,7 +6,6 @@ User approval applies only to LOCAL creation of review-required workspaces.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from typing import Sequence
 

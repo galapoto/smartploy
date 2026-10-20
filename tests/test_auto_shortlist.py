@@ -1,6 +1,5 @@
 """SP16: reuse established source matching for opt-in LOCAL draft automation."""
 from dataclasses import replace
-import json
 
 import pytest
 
