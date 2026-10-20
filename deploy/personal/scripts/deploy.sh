@@ -6,7 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${COMPOSE_DIR}/../.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/env"
-POLICY_FILE="${COMPOSE_DIR}/runtime.production.env"
+POLICY_FILE="$(bash "${SCRIPT_DIR}/select-runtime-policy.sh")"
+IDENTITY_PROFILE="${SMARTPLOY_PRODUCTION_IDENTITY_MODE:-cloudflare}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Missing ${ENV_FILE}. Copy env.example to env and add production values." >&2
@@ -55,6 +56,18 @@ DEPLOY_SHA="$(git rev-parse HEAD)"
 export SMARTPLOY_IMAGE_TAG="${DEPLOY_SHA:0:12}"
 
 bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "${POLICY_FILE}"
+# The existing preflight is shared with backups/restore and now knows both
+# immutable production profiles. Refuse a public first-party OIDC rollout if
+# Cloudflare Access still challenges the static login shell.
+if [[ "${IDENTITY_PROFILE}" == "oidc" ]]; then
+  [[ "${SMARTPLOY_RELEASE_APPROVED_SHA:-}" == "${DEPLOY_SHA}" ]] || {
+    echo "OIDC rollout requires a separately approved EXACT release commit SHA" >&2
+    exit 1
+  }
+  bash "${SCRIPT_DIR}/preflight.sh" --online >/dev/null
+else
+  bash "${SCRIPT_DIR}/preflight.sh" >/dev/null
+fi
 
 COMPOSE=(
   docker compose
@@ -111,9 +124,15 @@ assert health["ok"] is True
 assert health["service"] == "smartploy"
 assert health["public_origin"] == "https://smartploy.obumai.com"
 assert health["storage"]["ready"] is True
-assert health["access"]["enabled"] is True
+identity = health.get("authentication") or {}
 assert health["access"]["environment"] == "production"
-assert health["access"]["owner_restricted"] is True
+if identity.get("mode") == "oidc":
+    assert health["access"]["enabled"] is False
+    assert identity.get("login_available") is True
+    assert identity.get("persistent_sessions") is True
+else:
+    assert health["access"]["enabled"] is True
+    assert health["access"]["owner_restricted"] is True
 assert health["external_actions_authorized"] is False
 PY
     then
@@ -155,6 +174,7 @@ fi
 
 printf '%s
 ' "${DEPLOY_SHA}" > "${STATE_DIR}/deployed-sha"
+printf '%s\n' "${IDENTITY_PROFILE}" > "${STATE_DIR}/deployed-auth-profile"
 date -u +'%Y-%m-%dT%H:%M:%SZ' > "${STATE_DIR}/deployed-at"
 "${COMPOSE[@]}" ps
 echo "SmartPloy deployed successfully at ${DEPLOY_SHA}."

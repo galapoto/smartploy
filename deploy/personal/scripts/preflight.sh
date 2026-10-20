@@ -14,7 +14,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/env"
-POLICY_FILE="${COMPOSE_DIR}/runtime.production.env"
+POLICY_FILE="$(bash "${SCRIPT_DIR}/select-runtime-policy.sh")"
 COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
 
 fail() {
@@ -43,7 +43,7 @@ for command_name in docker git curl flock realpath sha256sum stat grep sed awk p
 done
 
 [[ -f "${ENV_FILE}" && ! -L "${ENV_FILE}" ]]   || fail "deploy/personal/env must exist as a regular non-symlink file"
-[[ -f "${POLICY_FILE}" && ! -L "${POLICY_FILE}" ]]   || fail "runtime.production.env must exist as a regular non-symlink file"
+[[ -f "${POLICY_FILE}" && ! -L "${POLICY_FILE}" ]]   || fail "selected runtime identity policy must be a regular non-symlink file"
 [[ -f "${COMPOSE_FILE}" && ! -L "${COMPOSE_FILE}" ]]   || fail "docker-compose.yml must exist as a regular non-symlink file"
 
 ENV_MODE="$(stat -c '%a' "${ENV_FILE}")"
@@ -64,6 +64,12 @@ WEB_PORT="$(read_env_value SMARTPLOY_WEB_HOST_PORT)"
 ACCESS_ISSUER="$(read_env_value SMARTPLOY_ACCESS_ISSUER)"
 ACCESS_AUDIENCE="$(read_env_value SMARTPLOY_ACCESS_AUDIENCE)"
 ACCESS_EMAIL="$(read_env_value SMARTPLOY_ACCESS_ALLOWED_EMAIL)"
+PROFILE="${SMARTPLOY_PRODUCTION_IDENTITY_MODE:-cloudflare}"
+OIDC_ISSUER="$(read_env_value SMARTPLOY_OIDC_ISSUER)"
+OIDC_CLIENT_ID="$(read_env_value SMARTPLOY_OIDC_CLIENT_ID)"
+OIDC_REDIRECT_URI="$(read_env_value SMARTPLOY_OIDC_REDIRECT_URI)"
+OIDC_LOGOUT_URI="$(read_env_value SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI)"
+OIDC_SCOPE="$(read_env_value SMARTPLOY_OIDC_SCOPE)"
 BACKUP_DIR="$(read_env_value SMARTPLOY_BACKUP_DIR)"
 STATE_DIR="$(read_env_value SMARTPLOY_DEPLOY_STATE_DIR)"
 ATS_JSON="$(read_env_value SMARTPLOY_PUBLIC_ATS_SOURCES_JSON)"
@@ -85,16 +91,31 @@ if (( WEB_PORT < 1024 || WEB_PORT > 65535 )); then
   fail "SMARTPLOY_WEB_HOST_PORT must be between 1024 and 65535"
 fi
 
-if is_placeholder "${ACCESS_ISSUER}" || [[ ! "${ACCESS_ISSUER}" =~ ^https://[A-Za-z0-9.-]+$ ]]; then
-  fail "SMARTPLOY_ACCESS_ISSUER must be a non-placeholder origin-style HTTPS issuer"
+if [[ "${PROFILE}" == "cloudflare" ]]; then
+  if is_placeholder "${ACCESS_ISSUER}" || [[ ! "${ACCESS_ISSUER}" =~ ^https://[A-Za-z0-9.-]+$ ]]; then
+    fail "SMARTPLOY_ACCESS_ISSUER must be a non-placeholder origin-style HTTPS issuer"
+  fi
+  if is_placeholder "${ACCESS_AUDIENCE}" || [[ ! "${ACCESS_AUDIENCE}" =~ ^[A-Za-z0-9._~:/+-]{10,2048}$ ]]; then
+    fail "SMARTPLOY_ACCESS_AUDIENCE must be a non-placeholder audience identifier"
+  fi
+  if is_placeholder "${ACCESS_EMAIL}" || [[ ! "${ACCESS_EMAIL}" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; then
+    fail "SMARTPLOY_ACCESS_ALLOWED_EMAIL must contain one non-placeholder email"
+  fi
+else
+  # Existing first-party OIDC settings: no new sign-in service or auth stack.
+  if is_placeholder "${OIDC_ISSUER}" || [[ ! "${OIDC_ISSUER}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{2,5})?$ ]]; then
+    fail "SMARTPLOY_OIDC_ISSUER must be a real origin-only HTTPS issuer"
+  fi
+  if is_placeholder "${OIDC_CLIENT_ID}" || [[ -z "${OIDC_CLIENT_ID}" || "${#OIDC_CLIENT_ID}" -gt 2048 ]]; then
+    fail "SMARTPLOY_OIDC_CLIENT_ID must be a real registered public-client identifier"
+  fi
+  [[ "${OIDC_REDIRECT_URI}" == "https://smartploy.obumai.com/auth/callback" ]] ||
+    fail "OIDC redirect must exactly match SmartPloy signed-in callback"
+  [[ "${OIDC_LOGOUT_URI}" == "https://smartploy.obumai.com/auth/logged-out" ]] ||
+    fail "OIDC logout must exactly match SmartPloy signed-out callback"
+  [[ " ${OIDC_SCOPE:-openid profile email} " == *" openid "* ]] ||
+    fail "OIDC scope must include openid"
 fi
-if is_placeholder "${ACCESS_AUDIENCE}" || [[ ! "${ACCESS_AUDIENCE}" =~ ^[A-Za-z0-9._~:/+-]{10,2048}$ ]]; then
-  fail "SMARTPLOY_ACCESS_AUDIENCE must be a non-placeholder audience identifier"
-fi
-if is_placeholder "${ACCESS_EMAIL}" || [[ ! "${ACCESS_EMAIL}" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; then
-  fail "SMARTPLOY_ACCESS_ALLOWED_EMAIL must contain one non-placeholder email"
-fi
-
 [[ "${BACKUP_DIR}" == /* ]] || fail "SMARTPLOY_BACKUP_DIR must be an absolute path"
 [[ "${STATE_DIR}" == /* ]] || fail "SMARTPLOY_DEPLOY_STATE_DIR must be an absolute path"
 
@@ -158,13 +179,15 @@ trap cleanup EXIT
 
 "${COMPOSE[@]}" config --format json > "${COMPOSE_JSON}"
 
-python3 - "${COMPOSE_JSON}" "${WEB_PORT}" <<'PY'
+python3 - "${COMPOSE_JSON}" "${WEB_PORT}" "${PROFILE}" <<'PY'
 import json
+import re
 import sys
 from pathlib import Path
 
 config = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 expected_port = int(sys.argv[2])
+identity_profile = sys.argv[3]
 services = config.get("services") or {}
 required = {"postgres", "api", "worker", "web"}
 missing = required - services.keys()
@@ -207,18 +230,24 @@ worker_forbidden = {
     "SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI",
     "SMARTPLOY_ACCESS_AUDIENCE",
     "SMARTPLOY_ACCESS_ALLOWED_EMAIL",
+    "SMARTPLOY_LEVER_PARTNER_JOBS_JSON",
+    "SMARTPLOY_LEVER_PARTNER_KEY_PRIMARY",
+    "SMARTPLOY_LEVER_PARTNER_KEY_SECONDARY",
+    "SMARTPLOY_LEVER_PARTNER_KEY_TERTIARY",
 }
 web_forbidden_prefixes = (
     "POSTGRES_",
     "SMARTPLOY_DATABASE_",
     "SMARTPLOY_ACCESS_",
     "SMARTPLOY_OIDC_",
+    "SMARTPLOY_LEVER_PARTNER_",
     "OBUMAI_",
     "JOBMARKET_",
     "KUNTAREKRY_",
 )
 postgres_forbidden_prefixes = (
     "SMARTPLOY_ACCESS_",
+    "SMARTPLOY_LEVER_PARTNER_",
     "OBUMAI_",
     "JOBMARKET_",
     "KUNTAREKRY_",
@@ -242,13 +271,66 @@ if leaked_web:
 if leaked_postgres:
     raise SystemExit("PostgreSQL environment contains forbidden keys: " + ", ".join(leaked_postgres))
 
-required_api = {
-    "SMARTPLOY_DATABASE_URL",
-    "SMARTPLOY_AUTH_MODE",
-    "SMARTPLOY_ACCESS_ISSUER",
-    "SMARTPLOY_ACCESS_AUDIENCE",
-    "SMARTPLOY_ACCESS_ALLOWED_EMAIL",
+
+allowed_keys = {
+    "SMARTPLOY_LEVER_PARTNER_KEY_PRIMARY",
+    "SMARTPLOY_LEVER_PARTNER_KEY_SECONDARY",
+    "SMARTPLOY_LEVER_PARTNER_KEY_TERTIARY",
 }
+raw_partners = api_env.get("SMARTPLOY_LEVER_PARTNER_JOBS_JSON", "")
+if not isinstance(raw_partners, str):
+    raise SystemExit("Partner configuration must be a string")
+try:
+    partners = json.loads(raw_partners) if raw_partners.strip() else {}
+except (ValueError, TypeError):
+    raise SystemExit("Partner configuration JSON is invalid") from None
+if not isinstance(partners, dict) or len(partners) > 100:
+    raise SystemExit("Maximum 100 exact independently reviewed partner postings per stack")
+selected_keys: set[str] = set()
+for job, config in partners.items():
+    if not isinstance(job, str) or not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+", job):
+        raise SystemExit("Partner job must be an exact Lever site/posting ID")
+    if not isinstance(config, dict) or set(config) != {
+        "region", "form_review_sha256", "api_key_env",
+        "standard_form_only_reviewed", "consent_policy_reviewed",
+    }:
+        raise SystemExit("Partner job must include exact audited form and consent fields")
+    if (config["api_key_env"] not in allowed_keys
+        or config["region"] not in {"eu", "global"}
+        or config["standard_form_only_reviewed"] is not True
+        or config["consent_policy_reviewed"] is not True
+        or not isinstance(config["form_review_sha256"], str)
+        or not re.fullmatch(r"[a-f0-9]{64}", config["form_review_sha256"])):
+        raise SystemExit("Partner API configuration lacks reviewed form, consent or fixed key slot")
+    key_slot = config["api_key_env"]
+    key_value = api_env.get(key_slot, "")
+    if (not isinstance(key_value, str) or not 16 <= len(key_value) <= 512
+        or "replace-with" in key_value.casefold()
+        or any(ord(char) < 33 or ord(char) > 126 for char in key_value)):
+        raise SystemExit("Partner API credential is absent or invalid")
+    selected_keys.add(key_slot)
+for key_slot in allowed_keys - selected_keys:
+    if str(api_env.get(key_slot, "")).strip():
+        raise SystemExit("Unused partner API credential must not be present")
+
+if identity_profile == "oidc":
+    required_api = {
+        "SMARTPLOY_DATABASE_URL", "SMARTPLOY_AUTH_MODE", "SMARTPLOY_ACCESS_ENABLED",
+        "SMARTPLOY_OIDC_ISSUER", "SMARTPLOY_OIDC_CLIENT_ID",
+        "SMARTPLOY_OIDC_REDIRECT_URI", "SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI",
+    }
+    if (api_env.get("SMARTPLOY_AUTH_MODE") != "oidc"
+        or str(api_env.get("SMARTPLOY_ACCESS_ENABLED")).lower() != "false"):
+        raise SystemExit("OIDC-only profile must NOT enable Cloudflare assertion authentication")
+else:
+    required_api = {
+        "SMARTPLOY_DATABASE_URL", "SMARTPLOY_AUTH_MODE", "SMARTPLOY_ACCESS_ENABLED",
+        "SMARTPLOY_ACCESS_ISSUER", "SMARTPLOY_ACCESS_AUDIENCE", "SMARTPLOY_ACCESS_ALLOWED_EMAIL",
+    }
+    if (api_env.get("SMARTPLOY_AUTH_MODE") != "cloudflare"
+        or str(api_env.get("SMARTPLOY_ACCESS_ENABLED")).lower() != "true"):
+        raise SystemExit("Legacy protected profile must require Cloudflare Access")
+
 required_worker = {
     "SMARTPLOY_DATABASE_URL",
     "JOBMARKET_FINLAND_API_ENABLED",
@@ -269,12 +351,15 @@ if "${ONLINE}"; then
   if (( HTTP_STATUS >= 500 )); then
     fail "smartploy.obumai.com returned server error HTTP ${HTTP_STATUS}"
   fi
+  if [[ "${PROFILE}" == "oidc" && "${HTTP_STATUS}" != "200" ]]; then
+    fail "OIDC release requires public static login shell; remove the Cloudflare Access challenge at the EDGE only after ZITADEL is ready"
+  fi
 fi
 
 echo "SmartPloy preflight: PASS"
 echo "  production environment: private"
 echo "  loopback ingress: validated"
-echo "  Cloudflare Access configuration: present"
+echo "  production identity profile: ${PROFILE} (no secrets echoed)"
 echo "  ObumAI integration: ${OBUMAI_STATUS}"
 echo "  Job Market Finland: ${JOBMARKET_STATUS}"
 echo "  Kuntarekry: ${KUNTAREKRY_STATUS}"

@@ -7,6 +7,7 @@ from smartploy.live_acceptance import (
     parse_probe_lines,
     validate_origin_health,
     validate_public_probe,
+    validate_oidc_public_probe,
 )
 
 
@@ -124,3 +125,72 @@ def test_probe_parser_uses_selected_headers_only():
     assert probe.status_code == 302
     assert probe.cf_ray == "abc-HEL"
     assert probe.server == "cloudflare"
+
+
+
+def oidc_healthy_origin():
+    payload = healthy_origin()
+    payload["access"]["enabled"] = False
+    payload["access"]["owner_restricted"] = False
+    payload["authentication"] = {
+        "mode": "oidc", "login_available": True, "persistent_sessions": True,
+    }
+    return payload
+
+
+def test_production_oidc_origin_requires_durable_signin_and_no_access_fallback():
+    validate_origin_health(oidc_healthy_origin())
+    for path, bad in [
+        (("authentication", "login_available"), False),
+        (("authentication", "persistent_sessions"), False),
+        (("authentication", "mode"), "disabled"),
+        (("access", "enabled"), True),
+    ]:
+        payload = oidc_healthy_origin()
+        payload[path[0]][path[1]] = bad
+        with pytest.raises(LiveAcceptanceError):
+            validate_origin_health(payload)
+
+
+def test_oidc_public_static_shell_private_api_and_trusted_login_redirect():
+    edge = {"server": "cloudflare", "cf_ray": "test-HEL"}
+    assert validate_oidc_public_probe(
+        PublicProbe(status_code=200, **edge), "root", "https://auth.obumai.com"
+    ) == "public_login_shell"
+    assert validate_oidc_public_probe(
+        PublicProbe(status_code=401, **edge), "api", "https://auth.obumai.com"
+    ) == "protected_by_app_session"
+    assert validate_oidc_public_probe(
+        PublicProbe(
+            status_code=302, location="https://auth.obumai.com/oauth/v2/authorize?state=opaque",
+            **edge
+        ), "login", "https://auth.obumai.com"
+    ) == "redirect_to_trusted_oidc"
+
+
+@pytest.mark.parametrize(("surface", "status", "location"), [
+    ("root", 302, "https://team.cloudflareaccess.com/cdn-cgi/access/login"),
+    ("root", 403, ""),
+    ("api", 200, ""),
+    ("api", 500, ""),
+    ("api", 302, "https://team.cloudflareaccess.com/cdn-cgi/access/login"),
+    ("login", 200, ""),
+    ("login", 302, "https://evil.invalid/login"),
+    ("login", 302, "http://auth.obumai.com/oauth/v2/authorize"),
+    ("login", 302, "https://auth.obumai.com.evil.invalid/oauth"),
+    ("login", 302, "https://attacker@auth.obumai.com/oauth"),
+    ("login", 302, "/cdn-cgi/access/login"),
+])
+def test_oidc_public_acceptance_rejects_bad_signin_or_unprotected_api(surface, status, location):
+    with pytest.raises(LiveAcceptanceError):
+        validate_oidc_public_probe(
+            PublicProbe(status_code=status, location=location, server="cloudflare"),
+            surface, "https://auth.obumai.com"
+        )
+
+
+def test_oidc_public_acceptance_requires_cloudflare_tls_edge():
+    with pytest.raises(LiveAcceptanceError, match="Cloudflare"):
+        validate_oidc_public_probe(
+            PublicProbe(status_code=200), "root", "https://auth.obumai.com"
+        )
