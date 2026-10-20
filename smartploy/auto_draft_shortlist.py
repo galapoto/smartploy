@@ -8,6 +8,9 @@ reports counts only, without applicant data, job URLs or account identities.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from ipaddress import ip_address
+import re
 from urllib.parse import urlsplit
 
 from .application_workspace import WorkspaceError, new_workspace
@@ -46,17 +49,65 @@ class AutoDraftSummary:
 
 
 def _safe_current_application_url(value: str) -> bool:
+    """Reuse original browser handoff's HTTPS/no-IP/no-credentials guard."""
     try:
-        parsed = urlsplit(str(value or ""))
+        raw = str(value or "")
+        if len(raw) > 1500:
+            return False
+        parsed = urlsplit(raw)
+        host = parsed.hostname or ""
+        try:
+            ip_address(host)
+            return False
+        except ValueError:
+            pass  # Require a DNS hostname, not any IP literal.
         return bool(
-            parsed.scheme == "https" and parsed.hostname
-            and "." in parsed.hostname
+            parsed.scheme == "https" and host
+            and "." in host and not host.endswith((".localhost", ".local"))
             and not parsed.username and not parsed.password
             and parsed.port in (None, 443)
-            and parsed.hostname not in {"localhost", "127.0.0.1"}
         )
     except ValueError:
         return False
+
+
+def _deadline_open(value: str, *, now: datetime | None = None) -> bool:
+    """Don't automatically draft expired or ambiguous employer deadlines.
+
+    Missing dates are normal for genuine public ATS postings. Date-only
+    ISO/Finnish deadlines remain valid through the stated day. A timestamp
+    must include an explicit timezone to be trusted for automatic drafting.
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return True
+    stamp = now or datetime.now(timezone.utc)
+    try:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+            return datetime.fromisoformat(raw).date() >= stamp.date()
+        if re.fullmatch(r"\d{2}\.\d{2}\.\d{4}", raw):
+            return datetime.strptime(raw, "%d.%m.%Y").date() >= stamp.date()
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return False
+        return parsed.astimezone(timezone.utc) > stamp
+    except (ValueError, OverflowError, TypeError):
+        return False
+
+
+def _same_reviewable_posting(original, latest) -> bool:
+    """A description hash alone misses changed employer requirements/links."""
+    if original.description_fingerprint != latest.description_fingerprint:
+        return False
+    significant = (
+        "company", "role_title", "application_url", "location", "work_mode",
+        "language", "deadline", "requirements", "nice_to_have",
+        "required_documents", "questions",
+    )
+    return all(
+        getattr(original.job, field) == getattr(latest.job, field)
+        for field in significant
+    )
 
 
 def prepare_profile_shortlist(
@@ -105,7 +156,11 @@ def prepare_profile_shortlist(
             continue
         key = match["canonical_key"]
         candidate = by_key.get(key)
-        if candidate is None or not _safe_current_application_url(candidate.job.application_url):
+        if (
+            candidate is None
+            or not _safe_current_application_url(candidate.job.application_url)
+            or not _deadline_open(candidate.job.deadline)
+        ):
             continue
         fit = score_candidate(candidate, profile)
         if fit.mandatory_gaps or fit.fit_score < MIN_APPROVED_FIT_SCORE:
@@ -122,8 +177,9 @@ def prepare_profile_shortlist(
             latest = job_repository.get(key)
             if (
                 latest is None or not latest.source_current
-                or latest.description_fingerprint != candidate.description_fingerprint
+                or not _same_reviewable_posting(candidate, latest)
                 or not _safe_current_application_url(latest.job.application_url)
+                or not _deadline_open(latest.job.deadline)
             ):
                 continue
             try:
