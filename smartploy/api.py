@@ -25,6 +25,10 @@ from .ai_processing_consent import (
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
+from .autodraft import (
+    AutoDraftConflict, AutoDraftError, MemoryAutoDraftRepository,
+    PostgresAutoDraftRepository, draft_matching_jobs,
+)
 from .browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
 from .employer_submit_claim_storage import EmployerSubmitClaimDenied, PostgresEmployerSubmitClaimRepository
 from .employer_review_intent_storage import (
@@ -199,6 +203,16 @@ class SearchPreferencesPayload(BaseModel):
     skills: list[str] = Field(default_factory=list, max_length=16)
     seniority: str = "any"
     expected_revision: int = Field(ge=0)
+
+
+class AutoDraftSettingsPayload(BaseModel):
+    """Schedule only local draft creation; never grants sending or AI processing."""
+    model_config = ConfigDict(extra="forbid")
+    enabled: StrictBool
+    minimum_score: int = Field(ge=60, le=100)
+    max_per_cycle: int = Field(ge=1, le=10)
+    expected_revision: int = Field(ge=0)
+    acknowledge_review_before_any_employer_submission: StrictBool
 
 
 class WorkspaceEditPayload(BaseModel):
@@ -486,6 +500,7 @@ def create_app(
     app.state.tenant_services = {}
     app.state.cv_repository = PostgresCVRepository(dsn) if dsn else MemoryCVRepository()
     app.state.workspace_repository = PostgresWorkspaceRepository(dsn) if dsn else MemoryWorkspaceRepository()
+    app.state.autodraft = PostgresAutoDraftRepository(dsn) if dsn else MemoryAutoDraftRepository()
     app.state.browser_receipts = PostgresBrowserReceiptRepository(dsn) if dsn else MemoryBrowserReceiptRepository()
     # SP15b: read-only employer claim posture. No memory fallback, issuer or final-click API.
     app.state.employer_claims = PostgresEmployerSubmitClaimRepository(dsn) if dsn else None
@@ -1122,6 +1137,103 @@ def create_app(
         preferences = app.state.search_preferences.get(profile_id)
         result = search_jobs(tenant.list_jobs(), preferences)
         return {**result, "external_actions_authorized": False}
+
+    def verified_auto_draft_owner(
+        request: Request, *, mutation: bool,
+    ) -> tuple[SmartployService, UserProfileBinding]:
+        tenant, binding = tenant_context(request)
+        if (
+            binding is None or not authentication.oidc_enabled
+            or not request.cookies.get(SESSION_COOKIE_NAME)
+        ):
+            raise HTTPException(
+                status_code=403, detail="Sign in with SmartPloy to manage automatic IT drafts"
+            )
+        if request.headers.get("Sec-Fetch-Site", "").casefold() not in {
+            "", "same-origin", "none",
+        }:
+            raise HTTPException(status_code=403, detail="Use the SmartPloy website")
+        origin = request.headers.get("Origin", "")
+        if origin and origin != public_origin:
+            raise HTTPException(status_code=403, detail="Use the SmartPloy website")
+        if mutation and (
+            origin != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin account required")
+        return tenant, binding
+
+    @app.get("/api/v1/autodraft")
+    def get_auto_draft_settings(request: Request) -> JSONResponse:
+        _, owner = verified_auto_draft_owner(request, mutation=False)
+        try:
+            settings = app.state.autodraft.get(owner.user_id, owner.profile_id)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Automatic draft preferences unavailable") from exc
+        return JSONResponse(
+            settings.public(),
+            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+        )
+
+    @app.put("/api/v1/autodraft")
+    def update_auto_draft_settings(
+        payload: AutoDraftSettingsPayload, request: Request,
+    ) -> JSONResponse:
+        tenant, owner = verified_auto_draft_owner(request, mutation=True)
+        if payload.acknowledge_review_before_any_employer_submission is not True:
+            raise HTTPException(
+                status_code=422, detail="Confirm that generated applications need your review"
+            )
+        preferences = app.state.search_preferences.get(owner.profile_id)
+        if payload.enabled and (
+            not preferences.completed or preferences.mode != "personalized"
+            or not (preferences.roles or preferences.keywords)
+        ):
+            raise HTTPException(
+                status_code=409, detail="Save personalized IT roles or keywords before enabling"
+            )
+        try:
+            updated = app.state.autodraft.save(
+                owner, expected_revision=payload.expected_revision,
+                enabled=payload.enabled, minimum_score=payload.minimum_score,
+                max_per_cycle=payload.max_per_cycle,
+            )
+        except AutoDraftConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except AutoDraftError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return JSONResponse(
+            {**updated.public(), "job_sources_still_polled_separately": True},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.post("/api/v1/autodraft/run")
+    def run_auto_draft_now(request: Request) -> JSONResponse:
+        tenant, owner = verified_auto_draft_owner(request, mutation=True)
+        try:
+            settings = app.state.autodraft.get(owner.user_id, owner.profile_id)
+            if not settings.enabled:
+                raise HTTPException(status_code=409, detail="Enable automatic drafts first")
+            profile = tenant.profile()
+            cv = app.state.cv_repository.get(owner.profile_id)
+            result = draft_matching_jobs(
+                owner,settings,
+                app.state.search_preferences.get(owner.profile_id),
+                tenant.list_jobs(),profile,cv,app.state.workspace_repository,
+                still_enabled=lambda: (
+                    (fresh := app.state.autodraft.get(owner.user_id, owner.profile_id)).enabled
+                    and fresh.revision == settings.revision
+                ),
+            )
+        except HTTPException:
+            raise
+        except AutoDraftError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Draft scan unavailable") from exc
+        return JSONResponse(
+            result,headers={"Cache-Control": "private, no-store"},
+        )
 
     @app.get("/api/v1/jobs")
     def list_jobs() -> dict[str, Any]:

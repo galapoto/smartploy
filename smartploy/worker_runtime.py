@@ -7,6 +7,11 @@ from datetime import datetime, timezone
 import os
 
 from .application_storage import PostgresApplicationRepository
+from .application_workspace_storage import PostgresWorkspaceRepository
+from .autodraft import PostgresAutoDraftRepository, draft_matching_jobs
+from .cv_storage import PostgresCVRepository
+from .identity import PostgresIdentityRepository
+from .search_preference_storage import PostgresSearchPreferenceRepository
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
 from .preparation_storage import PostgresPreparationRepository, REFRESHABLE_PREPARATION_STATES
 from .profile_storage import PostgresProfileRepository
@@ -208,6 +213,77 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
                     "employer_sector": config.employer_sector,
                     "external_ai_forwarding_allowed": config.external_ai_forwarding_allowed,
                     "location_terms": list(config.location_terms),
+                },
+            )
+        )
+
+    # Unlike legacy LLM auto-preparation, these jobs are purely local
+    # deterministic REVIEWABLE drafts. Source polling continues separately.
+    # Default false for non-Compose developers. The Compose worker enables
+    # only this tenant-opt-in scanner; it never calls ObumAI or an employer.
+    autodraft_flag = os.getenv("SMARTPLOY_WORKER_AUTODRAFT_ENABLED", "false").strip().casefold()
+    if autodraft_flag not in {"true", "false"}:
+        raise ValueError("SMARTPLOY_WORKER_AUTODRAFT_ENABLED must be literal true or false")
+    if autodraft_flag == "true":
+        draft_cadence = _positive_int("SMARTPLOY_WORKER_AUTODRAFT_CADENCE_SECONDS", 600)
+
+        def run_autodraft() -> WorkerTaskResult:
+            identities = PostgresIdentityRepository(dsn)
+            choices = PostgresAutoDraftRepository(dsn)
+            preferences_repo = PostgresSearchPreferenceRepository(dsn)
+            jobs = PostgresJobRepository(dsn).values()
+            checked = created = skipped = blocked = 0
+            # Strict bound on identities and locally generated drafts.
+            for setting in choices.list_enabled(limit=25):
+                checked += 1
+                try:
+                    binding = identities.get(setting.user_id)
+                    if (
+                        binding is None or binding.status != "active"
+                        or binding.profile_id != setting.profile_id
+                    ):
+                        blocked += 1
+                        continue
+                    result = draft_matching_jobs(
+                        binding, setting,
+                        preferences_repo.get(setting.profile_id),
+                        jobs,
+                        PostgresProfileRepository(dsn, profile_id=setting.profile_id).profile(),
+                        PostgresCVRepository(dsn).get(setting.profile_id),
+                        PostgresWorkspaceRepository(dsn),
+                        still_enabled=lambda cfg=setting: (
+                            (fresh := choices.get(cfg.user_id, cfg.profile_id)).enabled
+                            and fresh.revision == cfg.revision
+                        ),
+                    )
+                    created += int(result["created_count"])
+                    skipped += int(result["skipped_count"])
+                    if result["status"] != "ready":
+                        blocked += 1
+                except Exception:
+                    # Owner IDs, documents, site URLs and profile data must
+                    # never be published as worker metadata or errors.
+                    blocked += 1
+            return WorkerTaskResult(
+                status="degraded" if blocked else "healthy",
+                details={
+                    "owners_checked": checked, "review_drafts_created": created,
+                    "skipped": skipped, "owners_needing_attention": blocked,
+                    "external_actions_authorized": False, "llm_calls": 0,
+                    "employer_submissions": 0,
+                },
+            )
+
+        specs.append(
+            WorkerTaskSpec(
+                task_id="application:auto-draft-matches",
+                task_kind="application_prepare",
+                cadence_seconds=draft_cadence, runner=run_autodraft,
+                metadata={
+                    "requires_account_opt_in": True,
+                    "review_drafts_only": True,
+                    "external_actions_authorized": False,
+                    "llm_calls": 0,
                 },
             )
         )
