@@ -415,12 +415,14 @@ export default function App() {
           lastSessionIdentity.current !== expectedIdentity) {
         throw new PrivateActionIdentityChanged("Account changed during draft preparation.");
       }
+      // navigate clears old toast messages. Navigate FIRST, then publish
+      // the precise local-draft result on the new Applications screen.
+      navigate("applications");
       setNotice(
         report.created > 0
           ? report.created + " matching job application draft(s) created locally. Review each before submitting."
           : "No new eligible drafts. Existing or weaker matches remain visible under Jobs."
       );
-      navigate("applications");
     } catch (exc) {
       if (exc instanceof PrivateActionIdentityChanged) {
         clearPrivateWorkspace();
