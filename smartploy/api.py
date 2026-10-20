@@ -1155,7 +1155,7 @@ def create_app(
                 cv_repository=cv_repo,
                 workspace_repository=app.state.workspace_repository,
             )
-        except Exception as exc:
+        except Exception:
             # Do not leak candidate CV, source URLs, DB secrets or private IDs.
             raise HTTPException(status_code=503, detail="Automatic draft preparation unavailable") from None
         return JSONResponse(
