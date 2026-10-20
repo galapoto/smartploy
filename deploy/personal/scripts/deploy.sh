@@ -162,6 +162,13 @@ done
 bash "${SCRIPT_DIR}/assert-healthy-stack.sh"
 bash "${SCRIPT_DIR}/assert-running-images.sh" "${DEPLOY_SHA}"
 
+# OIDC release must prove the ACTUAL public login -> trusted issuer, public
+# static shell, and signed-out private API before recording the release SHA.
+# The original Cloudflare profile remains subject to its existing probes.
+if [[ "${IDENTITY_PROFILE}" == "oidc" ]]; then
+  bash "${SCRIPT_DIR}/live-acceptance.sh" >/dev/null
+fi
+
 if [[ -f "${STATE_DIR}/deployed-sha" ]]; then
   PREVIOUS="$(tr -d '[:space:]' < "${STATE_DIR}/deployed-sha")"
   if [[ "${PREVIOUS}" =~ ^[0-9a-f]{40}$ && "${PREVIOUS}" != "${DEPLOY_SHA}" ]]; then

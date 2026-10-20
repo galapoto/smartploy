@@ -104,6 +104,11 @@ def test_oidc_rollout_requires_explicit_approved_sha_and_verified_public_login()
     assert 'SMARTPLOY_PRODUCTION_IDENTITY_MODE' in deploy
     assert 'preflight.sh" --online' in deploy
     assert "deployed-auth-profile" in deploy
+    assert (
+        deploy.index('bash "${SCRIPT_DIR}/assert-running-images.sh" "${DEPLOY_SHA}"')
+        < deploy.index('bash "${SCRIPT_DIR}/live-acceptance.sh"')
+        < deploy.rindex('> "${STATE_DIR}/deployed-sha"')
+    )
     assert "deployed-auth-profile" in restore
     assert "deployed-auth-profile" in evidence
     assert "oidc-root" in live and "oidc-api" in live and "oidc-login" in live
