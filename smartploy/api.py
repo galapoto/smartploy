@@ -23,6 +23,10 @@ from .ai_processing_consent import (
     PostgresJobAIConsentRepository,
 )
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
+from .auto_application_queue import (
+    AutoDraftSetupRequired, per_profile_draft_lock,
+    prepare_matching_application_drafts,
+)
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from .browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
@@ -198,7 +202,15 @@ class SearchPreferencesPayload(BaseModel):
     keywords: list[str] = Field(default_factory=list, max_length=12)
     skills: list[str] = Field(default_factory=list, max_length=16)
     seniority: str = "any"
+    auto_drafts_enabled: bool = False
     expected_revision: int = Field(ge=0)
+
+
+class AutoDraftRunPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_preferences_revision: int = Field(ge=1)
+    confirm_private_local_drafting: bool
+    max_new_drafts: int = Field(default=5, ge=1, le=5)
 
 
 class WorkspaceEditPayload(BaseModel):
@@ -1181,6 +1193,66 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         stored, created = app.state.workspace_repository.create_or_get(proposed)
         return {"workspace": stored.to_dict(), "created": created}
+
+    @app.post("/api/v1/application-workspaces/prepare-matches")
+    def prepare_matched_application_workspaces(
+        payload: AutoDraftRunPayload, request: Request
+    ) -> dict[str, Any]:
+        """Convert live existing matched-source jobs to local owner-only drafts.
+
+        No client-supplied job keys or CV; no model or employer network calls.
+        This reuses deterministic new_workspace and owner-scoped storage.
+        """
+        if payload.confirm_private_local_drafting is not True:
+            raise HTTPException(status_code=422, detail="Explicit local-draft action required")
+        tenant, binding = tenant_context(request)
+        preferences = app.state.search_preferences.get(tenant.profile_repository.profile_id)
+        if preferences.revision != payload.expected_preferences_revision:
+            raise HTTPException(status_code=409, detail="Search criteria changed. Reload before preparing applications.")
+        profile = tenant.profile()
+        cv = app.state.cv_repository.get(profile.profile_id)
+
+        def already_attempted(candidate):
+            if binding is None or app.state.employer_claims is None:
+                # Production cannot use a missing or disabled duplicate
+                # protection store as proof of no previous attempts.
+                if authentication.mode != "disabled":
+                    raise HTTPException(status_code=503, detail="Duplicate protection unavailable")
+                return False
+            try:
+                claims = app.state.employer_claims
+                if claims.get(binding,candidate.canonical_key) is not None:
+                    return True
+                host = urlsplit(candidate.job.application_url).hostname or ""
+                if host in {"jobs.lever.co","jobs.eu.lever.co"}:
+                    return claims.get_for_employer_url(
+                        binding,candidate.job.application_url
+                    ) is not None
+                return False
+            except Exception as exc:
+                raise HTTPException(status_code=503, detail="Duplicate protection unavailable") from exc
+
+        try:
+            with per_profile_draft_lock(dsn,profile.profile_id):
+                # Re-read after acquiring the per-account quota lock. Two
+                # browsers / worker replicas cannot overbook the daily limit.
+                latest=app.state.search_preferences.get(profile.profile_id)
+                if latest.revision != payload.expected_preferences_revision:
+                    raise HTTPException(
+                        status_code=409, detail="Search criteria changed while preparing."
+                    )
+                result = prepare_matching_application_drafts(
+                    profile=profile, preferences=latest,
+                    candidates=tenant.list_jobs(),
+                    workspace_repository=app.state.workspace_repository,
+                    cv_text=cv.text if cv else "",
+                    cv_sha256=cv.digest if cv else "",
+                    previous_attempt=already_attempted,
+                    limit=payload.max_new_drafts,
+                )
+        except AutoDraftSetupRequired as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return result.to_dict()
 
     @app.get("/api/v1/application-workspaces")
     def list_application_workspaces(request: Request, limit: int = 100) -> dict[str, Any]:

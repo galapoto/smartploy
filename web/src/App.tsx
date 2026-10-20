@@ -9,7 +9,8 @@ import {
 import {
   addManualJob, approveFact, createFact, deleteCV, deleteFact, deletePrivateSavedJob, getApplications,
   getCV, getDashboard, getHealth, getJobs, getPrivateSavedJobs, getProfileFacts, getSession,
-  startApplicationWorkspace, uploadCV, getJobAIConsents, getJobAIConsentEvents,
+  startApplicationWorkspace, prepareMatchingApplicationDrafts, uploadCV,
+  getJobAIConsents, getJobAIConsentEvents,
   grantJobAIConsent, revokeJobAIConsent,
   getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus
 } from "./api";
@@ -127,6 +128,7 @@ export default function App() {
   const [busyCV, setBusyCV] = useState(false);
   const [busyFact, setBusyFact] = useState("");
   const [preparing, setPreparing] = useState("");
+  const [autoPreparing, setAutoPreparing] = useState(false);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -165,7 +167,8 @@ export default function App() {
     setPage("dashboard"); setSearch(""); setExpandedJob("");
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
-    setBusyCV(false); setBusyFact(""); setPreparing(""); setManualBusy(false);
+    setBusyCV(false); setBusyFact(""); setPreparing(""); setAutoPreparing(false);
+    setManualBusy(false);
     setRemovingPrivateJob("");
     if (uploadRef.current) uploadRef.current.value = "";
     setJobForm({
@@ -449,6 +452,7 @@ export default function App() {
         languages: preferences.languages, work_modes: preferences.work_modes,
         keywords: preferences.keywords, skills: preferences.skills,
         seniority: preferences.seniority,
+        auto_drafts_enabled: target === "personalized" && preferences.auto_drafts_enabled === true,
         expected_revision: preferences.revision
       });
     } catch (exc) {
@@ -614,6 +618,47 @@ export default function App() {
       }
     } finally {
       if (lastSessionIdentity.current === actionIdentity) setPreparing("");
+    }
+  }
+
+  async function onAutoPrepareMatches() {
+    if (!preferences || !preferences.completed || preferences.mode !== "personalized") {
+      navigate("settings");
+      setNotice("Choose your target IT job titles in Settings to find matched applications.");
+      return;
+    }
+    if (!cv.present && !facts.some((item) => item.approved)) {
+      navigate("profile");
+      setNotice("Upload and review your CV or approve profile facts before preparing applications.");
+      return;
+    }
+    if (!window.confirm(
+      "Prepare up to five PRIVATE draft applications from current jobs matching my saved IT criteria?\\n\\n" +
+      "This reuses my approved CV/profile to prepare documents locally. " +
+      "It will NOT submit to employers, contact any ATS, or send my CV to an AI provider. " +
+      "I must review each draft before applying."
+    )) return;
+    const actionIdentity = lastSessionIdentity.current;
+    setAutoPreparing(true); setError(""); setNotice("");
+    try {
+      const response = await runPrivateMutation((userId) =>
+        prepareMatchingApplicationDrafts(preferences.revision,userId)
+      );
+      if (actionIdentity !== lastSessionIdentity.current) return;
+      if (response.created_count) {
+        setSelectedWorkspaceId(response.created[0].workspace_id);
+        navigate("applications");
+      }
+      setNotice(response.created_count
+        ? response.created_count + " matched IT application drafts prepared in My applications. " +
+          "Review each document before any employer submission. None were sent."
+        : "No new eligible drafts created. Check your current IT criteria, CV, " +
+          "previously prepared jobs, or today's five-draft limit.");
+    } catch (exc) {
+      if (exc instanceof PrivateActionIdentityChanged) return;
+      setNotice(exc instanceof Error ? exc.message : "Could not prepare matched applications.");
+    } finally {
+      if (actionIdentity === lastSessionIdentity.current) setAutoPreparing(false);
     }
   }
 
@@ -827,7 +872,15 @@ export default function App() {
         </> : null}
         {page !== "dashboard" ? <>
           <div className="page-intro"><div><p className="section-kicker">SMARTPLOY / {selectedNav?.label.toUpperCase()}</p><h1>{selectedNav?.label}</h1><p>{preferences?.mode === "general" ? "General search across current Finnish vacancies." : "Your private workspace, ranked by the search criteria you chose."}</p></div>
-            {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Save job</button> : null}
+            {page === "jobs" ? <>
+              <button type="button" className="navy-btn"
+                disabled={autoPreparing} onClick={() => void onAutoPrepareMatches()}>
+                <Sparkles size={17}/> {autoPreparing ? "Finding matches…" : "Prepare matched IT applications"}
+              </button>
+              <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}>
+                <Plus size={17}/> Save job
+              </button>
+            </> : null}
             {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}
           </div>
           {page === "jobs" ? <div className="stacked"><div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>{privateSavedJobsPanel}</div> : null}
@@ -835,6 +888,30 @@ export default function App() {
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}
           {page === "applications" ? <div className="stacked">
+            <section className="panel" aria-label="Automatic matched job preparation">
+              <div className="panel-heading"><div>
+                <p className="section-kicker">NEW MATCHES, NO JOB LINKS NEEDED</p>
+                <h2>Let SmartPloy find IT roles for you</h2>
+                <p>Existing job feeds scan current postings. Your saved titles, language,
+                  location and level choose what is worth preparing. Drafts require your
+                  review; external applications are separately authorized.</p>
+              </div></div>
+              <div className="row-actions">
+                <button type="button" className="navy-btn"
+                  disabled={autoPreparing} onClick={() => void onAutoPrepareMatches()}>
+                  <Sparkles size={16}/>
+                  {autoPreparing ? "Matching IT vacancies…" : "Find jobs and prepare applications"}
+                </button>
+                <button type="button" className="outline-btn"
+                  onClick={() => navigate("settings")}>
+                  {preferences?.auto_drafts_enabled ? "Auto-draft enabled · edit criteria" :
+                    "Enable ongoing auto-drafting in Settings"}
+                </button>
+              </div>
+              <p className="privacy-note"><LockKeyhole size={14}/>
+                Automatic discovery and local drafts do not mean an employer received an application.
+              </p>
+            </section>
             <ApplicationStudio key={accountViewKey} focusId={selectedWorkspaceId}
               expectedUserId={session?.user_id || ""} expectedAuthSource={session?.auth_source || ""}
               onFindJobs={() => navigate("jobs")} />

@@ -7,6 +7,12 @@ from datetime import datetime, timezone
 import os
 
 from .application_storage import PostgresApplicationRepository
+from .auto_application_queue import per_profile_draft_lock, prepare_matching_application_drafts
+from .cv_storage import PostgresCVRepository
+from .employer_submit_claim_storage import PostgresEmployerSubmitClaimRepository
+from .identity import PostgresIdentityRepository
+from .application_workspace_storage import PostgresWorkspaceRepository
+from .search_preference_storage import PostgresSearchPreferenceRepository
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
 from .preparation_storage import PostgresPreparationRepository, REFRESHABLE_PREPARATION_STATES
 from .profile_storage import PostgresProfileRepository
@@ -211,6 +217,101 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
                 },
             )
         )
+
+    # The already running scheduled SOURCE worker can now turn current
+    # personalized matches into private, review-only application drafts.
+    # This flag enables only the LOCAL scheduler, NOT consent or employer
+    # authority: each active profile MUST opt in in private search settings.
+    local_flag = os.getenv("SMARTPLOY_WORKER_LOCAL_AUTO_DRAFT_ENABLED","false").strip().casefold()
+    if local_flag not in {"true","false"}:
+        raise ValueError("SMARTPLOY_WORKER_LOCAL_AUTO_DRAFT_ENABLED must be literal true or false")
+    if local_flag == "true":
+        cadence = _positive_int(
+            "SMARTPLOY_WORKER_LOCAL_AUTO_DRAFT_CADENCE_SECONDS",600,maximum=86400
+        )
+
+        def run_local_auto_drafts() -> WorkerTaskResult:
+            identity_repo = PostgresIdentityRepository(dsn)
+            search_repo = PostgresSearchPreferenceRepository(dsn)
+            job_repo = PostgresJobRepository(dsn)
+            cv_repo = PostgresCVRepository(dsn)
+            workspace_repo = PostgresWorkspaceRepository(dsn)
+            claim_repo = PostgresEmployerSubmitClaimRepository(dsn)
+            # Reuse the already polled jobs. NO new web scraping, AI calls,
+            # employer API operations or applicant data forwarding.
+            jobs = job_repo.values()
+            inspected = 0
+            created = 0
+            failures = 0
+            for user_id,profile_id in search_repo.list_auto_draft_profiles(limit=50):
+                inspected += 1
+                try:
+                    binding = identity_repo.get(user_id)
+                    if (
+                        binding is None or binding.status != "active"
+                        or binding.profile_id != profile_id
+                    ):
+                        continue
+                    # A fresh read immediately before queueing also respects
+                    # settings revocation and general-mode switch.
+                    preferences = search_repo.get(profile_id)
+                    if not preferences.auto_drafts_enabled or preferences.mode != "personalized":
+                        continue
+                    profile = PostgresProfileRepository(
+                        dsn,profile_id=profile_id
+                    ).profile()
+                    cv = cv_repo.get(profile_id)
+
+                    def claimed(candidate, owner=binding):
+                        if claim_repo.get(owner,candidate.canonical_key):
+                            return True
+                        from urllib.parse import urlsplit
+                        host = urlsplit(candidate.job.application_url).hostname or ""
+                        return host in {"jobs.lever.co","jobs.eu.lever.co"} and bool(
+                            claim_repo.get_for_employer_url(
+                                owner,candidate.job.application_url
+                            )
+                        )
+
+                    with per_profile_draft_lock(dsn,profile_id):
+                        latest=search_repo.get(profile_id)
+                        if not latest.auto_drafts_enabled or latest.mode != "personalized":
+                            continue
+                        result = prepare_matching_application_drafts(
+                            profile=profile,preferences=latest,
+                            candidates=jobs,workspace_repository=workspace_repo,
+                            cv_text=cv.text if cv else "",
+                            cv_sha256=cv.digest if cv else "",
+                            previous_attempt=claimed,
+                        )
+                        created += len(result.created)
+                except Exception:
+                    # No account data, CV text, job link, exception body or
+                    # employer keys ever leave the local worker in task logs.
+                    failures += 1
+            return WorkerTaskResult(
+                status="degraded" if failures else "healthy",
+                details={
+                    "opted_in_accounts_checked":inspected,
+                    "private_drafts_created":created,
+                    "failures":failures,
+                    "external_actions_authorized":False,
+                    "external_ai_forwarding_performed":False,
+                    "employer_submissions":0,
+                },
+            )
+
+        specs.append(WorkerTaskSpec(
+            task_id="application:auto-draft-matches",
+            task_kind="application_prepare",
+            cadence_seconds=cadence,
+            runner=run_local_auto_drafts,
+            metadata={
+                "per_account_opt_in_required":True,
+                "external_actions_authorized":False,
+                "external_ai_forwarding_performed":False,
+            },
+        ))
 
     auto_prepare_enabled = _auto_prepare_opt_in()
     obum_settings = ObumAISettings.from_env()

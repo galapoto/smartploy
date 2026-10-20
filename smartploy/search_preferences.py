@@ -82,6 +82,9 @@ class SearchPreferences:
     keywords: tuple[str, ...] = ()
     skills: tuple[str, ...] = ()
     seniority: str = "any"
+    # Account-owner opt-in for local, review-only matching drafts; this never
+    # authorizes ObumAI forwarding or an external ATS submission.
+    auto_drafts_enabled: bool = False
     revision: int = 0
     updated_at: str = ""
 
@@ -92,6 +95,8 @@ class SearchPreferences:
             "languages": list(self.languages), "work_modes": list(self.work_modes),
             "keywords": list(self.keywords), "skills": list(self.skills),
             "seniority": self.seniority,
+            "auto_drafts_enabled": self.auto_drafts_enabled,
+            "auto_submit_enabled": False,
             "revision": self.revision, "updated_at": self.updated_at,
             "verified_qualification_fit": False,
         }
@@ -116,12 +121,18 @@ def revise_preferences(
     skills = _items(data.get("skills", []), field="skills", maximum=16, size=60)
     if mode == "personalized" and not roles and not keywords:
         raise SearchPreferenceError("Personalized search needs at least one job title or keyword")
+    auto_drafts = data.get("auto_drafts_enabled", False)
+    if type(auto_drafts) is not bool:
+        raise SearchPreferenceError("Automatic local drafting must be an explicit boolean choice")
+    if mode != "personalized" and auto_drafts:
+        raise SearchPreferenceError("Automatic matched drafts require personalized search")
     if revision < 0:
         raise SearchPreferenceError("Preference revision cannot be negative")
     return SearchPreferences(
         profile_id=profile_id, completed=True, mode=mode, roles=roles,
         locations=locations, languages=languages, work_modes=work_modes,
         keywords=keywords, skills=skills, seniority=seniority,
+        auto_drafts_enabled=auto_drafts,
         revision=revision + 1, updated_at=utc_now_iso(),
     )
 

@@ -42,6 +42,7 @@ export default function SearchSetup(props: {
   const [languages, setLanguages] = useState(props.initial.languages);
   const [workModes, setWorkModes] = useState(props.initial.work_modes);
   const [seniority, setSeniority] = useState(props.initial.seniority);
+  const [autoDrafts, setAutoDrafts] = useState(props.initial.auto_drafts_enabled === true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   // The initial form state was already hydrated by useState. A redundant
@@ -61,6 +62,7 @@ export default function SearchSetup(props: {
     setLanguages(props.initial.languages);
     setWorkModes(props.initial.work_modes);
     setSeniority(props.initial.seniority);
+    setAutoDrafts(props.initial.auto_drafts_enabled === true);
   }, [props.initial.revision]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -78,6 +80,7 @@ export default function SearchSetup(props: {
         mode, roles: chosenRoles, locations: list(locations),
         keywords: chosenKeywords, skills: list(skills),
         languages, work_modes: workModes, seniority,
+        auto_drafts_enabled: mode === "personalized" && autoDrafts,
         expected_revision: props.initial.revision
       });
     } catch (exc) {
@@ -120,6 +123,13 @@ export default function SearchSetup(props: {
 
       {mode === "personalized" ? <div className="setup-fields">
         <div className="setup-fields-heading"><BriefcaseBusiness size={18}/><strong>Your ideal opportunities</strong><small>Only job titles or keywords are required.</small></div>
+        <button type="button" className="outline-btn compact" onClick={() => {
+          setRoles("Data Analyst, Junior Data Analyst, Business Analyst, QA Engineer, Software Tester, IT Support Specialist, Junior Data Engineer");
+          setLanguages(["finnish", "english"]);
+          setSeniority("any");
+        }}>
+          <BriefcaseBusiness size={15}/> Start with IT, data and QA roles
+        </button>
         <div className="setup-field-grid">
           <label className="setup-field">
             <span>Target roles <em>Recommended</em></span>
@@ -169,6 +179,16 @@ export default function SearchSetup(props: {
           </label>)}</div>
           <small>Languages are used only where the employer has provided enough information to assess them.</small>
         </fieldset>
+        <label className="setup-choice">
+          <input type="checkbox" checked={autoDrafts}
+            onChange={(event) => setAutoDrafts(event.target.checked)}/>
+          <span className="setup-choice-icon"><Sparkles size={20}/></span>
+          <strong>Automatically find matching IT jobs and prepare my drafts</strong>
+          <small>Opt in to private local draft preparation from verified current postings,
+            up to five new drafts daily. You can turn this off at any time.
+            CVs and cover letters still require your review. No AI provider
+            forwarding, employer application or final submission occurs automatically.</small>
+        </label>
         <p className="setup-fineprint">The results are ranked by your stated search preferences, not a guarantee that you meet every employer requirement. You can upload a CV and approve career evidence separately for stronger qualification checks.</p>
       </div> : <div className="setup-general-note">
         <Globe2 size={19}/><p>All available jobs will be shown, newest first. You can still search by keyword and filter by employer sector, but SmartPloy will not score jobs against your profile.</p>

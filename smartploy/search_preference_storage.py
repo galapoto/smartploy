@@ -27,6 +27,7 @@ def _stored(profile_id: str, row: tuple[Any, ...] | None) -> SearchPreferences:
         keywords=tuple(criteria.get("keywords") or ()),
         skills=tuple(criteria.get("skills") or ()),
         seniority=str(criteria.get("seniority") or "any"),
+        auto_drafts_enabled=criteria.get("auto_drafts_enabled") is True,
         revision=int(revision),
         updated_at=updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at),
     )
@@ -38,6 +39,7 @@ def _criteria(item: SearchPreferences) -> dict[str, Any]:
         "languages": list(item.languages), "work_modes": list(item.work_modes),
         "keywords": list(item.keywords), "skills": list(item.skills),
         "seniority": item.seniority,
+        "auto_drafts_enabled": item.auto_drafts_enabled,
     }
 
 
@@ -73,6 +75,29 @@ class PostgresSearchPreferenceRepository:
                 )
                 row = cursor.fetchone()
         return _stored(profile_id, row)
+
+    def list_auto_draft_profiles(self, *, limit: int = 50) -> list[tuple[str, str]]:
+        """Only verified active owner/profile pairs who opted in to local drafting.
+
+        Reuse the ORIGINAL account identity and search preferences tables;
+        no separate privacy or consent ledger, no global profile fallback.
+        """
+        with connect(self.dsn) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """SELECT u.user_id,p.profile_id
+                       FROM smartploy_search_preferences AS prefs
+                       JOIN smartploy_user_profiles AS p
+                         ON p.profile_id=prefs.profile_id
+                       JOIN smartploy_users AS u ON u.user_id=p.user_id
+                       WHERE u.status='active' AND prefs.mode='personalized'
+                         AND prefs.criteria->>'auto_drafts_enabled'='true'
+                       ORDER BY prefs.updated_at ASC,p.profile_id
+                       LIMIT %s""",
+                    (max(1,min(int(limit),100)),),
+                )
+                rows=cursor.fetchall()
+        return [(str(user_id),str(profile_id)) for user_id,profile_id in rows]
 
     def save(self, profile_id: str, data: dict[str, Any], expected_revision: int) -> SearchPreferences:
         candidate = revise_preferences(profile_id, data, revision=expected_revision)
