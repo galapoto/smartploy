@@ -170,3 +170,37 @@ external submission is falsely implied.
 **Tests:** Four React/Vitest first-use/account-switch/failed-scan
 regressions on the actual App integration, not a stub duplicate UI.
 Full exact-HEAD CI and live authenticated OVH acceptance still required.
+
+## SP15m — avoid wasted drafts for expired or retargeted employer jobs
+
+**Exact underlying code inspected before writing:** Original
+`domain.JobRecord.deadline`, original `search_preferences._published_order`
+ISO date handling, existing `browser_handoff._posting_url` HTTPS /
+no-IP / credential policy, original `description_fingerprint`,
+`PostgresJobRepository.get`, `auto_draft_guard`, `new_workspace`,
+and the existing private job/workspace storage. These components remain
+the engine; no duplicate scrapers, CV composers or submitters.
+
+**Core defect fixed in product code:** An active source row may advertise
+an expired deadline, and its apply URL, job title, location, or mandatory
+requirements could change between initial candidate ranking and durable
+workspace creation without changing the description fingerprint.
+
+**New narrow glue:** `_deadline_open` keeps an absent deadline valid,
+accepts an unexpired ISO/Finnish calendar date or timezone-explicit
+ISO timestamp, and excludes malformed/ambiguous deadlines from *automatic*
+drafts (still available for manual review). The existing URL safety check
+now also rejects raw IPv4/IPv6 and local pseudo-hosts.
+`_same_reviewable_posting` rechecks role, employer, job link, deadline,
+location, languages, work mode, requirements, question/documents,
+and fingerprint inside the original owner opt-out guard immediately
+before the existing `create_or_get` write. A changed listing waits for
+a later matching cycle rather than using stale eligibility.
+
+**Scratch vs reused:** Three tiny first-party validators and local checks
+are new; job ingestion, ranking, eligibility engine, persistence, native
+PostgreSQL tests and browser handoff policy are reused. Added deterministic
+Finnish/ISO date and current-deadline tests, private-IP link rejects, and
+six post-ranking employer mutation regression cases. **Never claims a
+provider application was submitted.** Release still requires ObumDelivery,
+signed-in user acceptance and independent OVH deployment proof.
