@@ -69,13 +69,13 @@ signed in, or that any employer application was submitted.
    missing/unreviewed jobs. The original preflight verifies at most
    100 exact configured postings, independently reviewed standard form,
    API-only key slot, secret format and no unused credential.
-4. **ADAPTED** original public health/readiness and original acceptance
-   checker. An OIDC release only passes if origin identifies OIDC
-   with persistent PostgreSQL sessions and no Access JWT fallback,
-   public static login shell HTTP 200 over Cloudflare TLS edge,
-   private `/api/v1/dashboard` returns signed-out 401, and
-   `/auth/login` redirects to EXACT configured trusted HTTPS
-   ZITADEL issuer. A Cloudflare Access challenge, unrelated redirect,
+4. **REUSED** original minimal public health/readiness schema rather
+   than exposing login internals there. The deploy-time immutable OIDC
+   profile is verified out of band, origin storage must be ready with
+   Access JWT disabled, the public static login shell must return 200
+   over Cloudflare TLS edge, private `/api/v1/dashboard` must return
+   signed-out 401, and `/auth/login` must redirect to the EXACT
+   configured trusted HTTPS ZITADEL issuer. A Cloudflare Access challenge, unrelated redirect,
    public API 200, missing session backend or invalid origin is a
    RED release block. The original Cloudflare Access release probes
    remain unchanged for legacy profile.

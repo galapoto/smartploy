@@ -31,7 +31,7 @@ class PublicProbe:
         return bool(self.cf_ray.strip()) or self.server.strip().casefold() == "cloudflare"
 
 
-def validate_origin_health(payload: dict[str, object]) -> None:
+def validate_origin_health(payload: dict[str, object], identity_profile: str = "cloudflare") -> None:
     if payload.get("ok") is not True:
         raise LiveAcceptanceError("origin health is not ready")
     if payload.get("service") != "smartploy":
@@ -48,16 +48,12 @@ def validate_origin_health(payload: dict[str, object]) -> None:
         raise LiveAcceptanceError("origin Access health is missing")
     if access.get("environment") != "production":
         raise LiveAcceptanceError("origin environment is not production")
-    identity = payload.get("authentication")
-    mode = identity.get("mode") if isinstance(identity, dict) else "cloudflare"
-    if mode == "oidc":
+    # Reuse the private operator-selected immutable policy, NOT a public
+    # disclosure of OIDC issuer/mode/session internals via /healthz.
+    if identity_profile == "oidc":
         if access.get("enabled") is not False:
             raise LiveAcceptanceError("first-party OIDC must disable Access assertions")
-        if identity.get("login_available") is not True:
-            raise LiveAcceptanceError("first-party OIDC login is unavailable")
-        if identity.get("persistent_sessions") is not True:
-            raise LiveAcceptanceError("first-party OIDC requires durable sessions")
-    elif mode == "cloudflare":
+    elif identity_profile == "cloudflare":
         if access.get("enabled") is not True:
             raise LiveAcceptanceError("origin Access is not enabled")
         if access.get("owner_restricted") is not True:
@@ -166,14 +162,18 @@ def _main(argv: list[str]) -> int:
         print(status)
         return 0
 
-    if len(argv) != 2 or argv[0] not in {"origin-health", "public-probe"}:
+    if not (
+        (len(argv) in {2, 3} and argv[0] == "origin-health")
+        or (len(argv) == 2 and argv[0] == "public-probe")
+    ):
         raise SystemExit(
             "usage: python -m smartploy.live_acceptance "
             "(origin-health <json-file> | public-probe <probe-file> | "
             "oidc-root/oidc-api/oidc-login <probe-file> <issuer-origin>)"
         )
 
-    command, path = argv
+    command, path = argv[:2]
+    identity_profile = argv[2] if len(argv) == 3 else "cloudflare"
     raw = Path(path).read_text(encoding="utf-8")
     if command == "origin-health":
         try:
@@ -183,7 +183,7 @@ def _main(argv: list[str]) -> int:
         if not isinstance(payload, dict):
             raise SystemExit("origin health payload must be an object")
         try:
-            validate_origin_health(payload)
+            validate_origin_health(payload, identity_profile)
         except LiveAcceptanceError as exc:
             raise SystemExit(str(exc)) from exc
         print("pass")

@@ -59,7 +59,7 @@ if ! curl --fail --silent --show-error --max-time 10 \
 fi
 
 if ! PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
-  origin-health "${HEALTH_FILE}" >/dev/null; then
+  origin-health "${HEALTH_FILE}" "${PROFILE}" >/dev/null; then
   fail "local production origin health contract failed"
 fi
 echo "origin_health=pass"

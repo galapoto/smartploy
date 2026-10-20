@@ -132,24 +132,20 @@ def oidc_healthy_origin():
     payload = healthy_origin()
     payload["access"]["enabled"] = False
     payload["access"]["owner_restricted"] = False
-    payload["authentication"] = {
-        "mode": "oidc", "login_available": True, "persistent_sessions": True,
-    }
     return payload
 
 
-def test_production_oidc_origin_requires_durable_signin_and_no_access_fallback():
-    validate_origin_health(oidc_healthy_origin())
-    for path, bad in [
-        (("authentication", "login_available"), False),
-        (("authentication", "persistent_sessions"), False),
-        (("authentication", "mode"), "disabled"),
-        (("access", "enabled"), True),
-    ]:
-        payload = oidc_healthy_origin()
-        payload[path[0]][path[1]] = bad
-        with pytest.raises(LiveAcceptanceError):
-            validate_origin_health(payload)
+def test_production_oidc_origin_requires_no_access_assertion_and_expected_profile():
+    payload = oidc_healthy_origin()
+    assert "authentication" not in payload
+    validate_origin_health(payload, "oidc")
+    with pytest.raises(LiveAcceptanceError):
+        validate_origin_health(payload, "cloudflare")
+    with pytest.raises(LiveAcceptanceError):
+        validate_origin_health(payload, "disabled")
+    payload["access"]["enabled"] = True
+    with pytest.raises(LiveAcceptanceError):
+        validate_origin_health(payload, "oidc")
 
 
 def test_oidc_public_static_shell_private_api_and_trusted_login_redirect():

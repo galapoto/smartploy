@@ -575,13 +575,6 @@ def create_app(
                 "ready": bool(storage.get("ready")),
             },
             "obumai_configured": active.obumai is not None,
-            # Only non-secret readiness booleans for deployment verification.
-            # Existing ZITADEL OIDC must have durable sessions in production.
-            "authentication": {
-                "mode": authentication.mode,
-                "login_available": oidc_settings is not None,
-                "persistent_sessions": bool(dsn),
-            },
             "access": {
                 "enabled": access_settings.enabled,
                 "environment": access_settings.environment,

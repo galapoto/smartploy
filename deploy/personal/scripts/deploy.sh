@@ -113,7 +113,7 @@ HEALTH_FILE="$(mktemp)"
 HEALTH_OK=false
 for _ in $(seq 1 45); do
   if curl --fail --silent --show-error     -H 'Host: smartploy.obumai.com'     "http://127.0.0.1:${WEB_PORT}/healthz" > "${HEALTH_FILE}"; then
-    if python3 - "${HEALTH_FILE}" <<'PY'
+    if python3 - "${HEALTH_FILE}" "${IDENTITY_PROFILE}" <<'PY'
 import json
 import sys
 
@@ -124,13 +124,11 @@ assert health["ok"] is True
 assert health["service"] == "smartploy"
 assert health["public_origin"] == "https://smartploy.obumai.com"
 assert health["storage"]["ready"] is True
-identity = health.get("authentication") or {}
 assert health["access"]["environment"] == "production"
-if identity.get("mode") == "oidc":
+if sys.argv[2] == "oidc":
     assert health["access"]["enabled"] is False
-    assert identity.get("login_available") is True
-    assert identity.get("persistent_sessions") is True
 else:
+    assert sys.argv[2] == "cloudflare"
     assert health["access"]["enabled"] is True
     assert health["access"]["owner_restricted"] is True
 assert health["external_actions_authorized"] is False
