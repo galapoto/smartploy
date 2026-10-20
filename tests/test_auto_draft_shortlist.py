@@ -144,6 +144,9 @@ def test_expired_posting_and_https_safety_never_create_offsite_application():
         "https://localhost/jobs/123",
         "https://person:secret@careers.example.fi/jobs/1",
         "https://careers.example.fi:444/jobs/123",
+        "https://8.8.8.8/jobs/123",
+        "https://printer.local/jobs/123",
+        "https://[2001:db8::1]/jobs/123",
     ):
         # The upstream canonicalizer normally STRIPS userinfo from URLs
         # before storage. Inject the uncanonicalized record directly to
@@ -314,3 +317,78 @@ def test_worker_cycle_isolates_one_account_failure_and_reports_only_aggregate_co
     assert "sensitive CV" not in str(result)
     assert result["model_calls"] == 0
     assert result["employer_actions_performed"] is False
+
+
+def test_deadline_parser_reuses_iso_finnish_dates_without_ambiguous_timezone():
+    from datetime import datetime, timezone
+    from smartploy.auto_draft_shortlist import _deadline_open
+    now = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
+    assert _deadline_open("", now=now)
+    assert _deadline_open("2026-10-20", now=now)
+    assert _deadline_open("20.10.2026", now=now)
+    assert not _deadline_open("2026-10-20T15:00:00+03:00", now=now)
+    assert _deadline_open("2026-10-20T15:01:00+03:00", now=now)
+    assert not _deadline_open("2026-10-19", now=now)
+    assert not _deadline_open("19.10.2026", now=now)
+    assert not _deadline_open("not-confirmed", now=now)
+    assert not _deadline_open("2026-10-20T18:00:00", now=now)
+
+
+def test_auto_draft_skips_expired_or_unparseable_deadlines_but_accepts_future():
+    fx = fixture()
+    pid, prefs, jobs, profile, cv, spaces, _ = fx
+    base = candidate("Junior Data Analyst")
+    for deadline in ("2000-01-01", "01.01.2000", "2000-01-01T00:00:00Z", "unknown date"):
+        old = replace(base, job=replace(base.job, deadline=deadline))
+        result = prepare_profile_shortlist(
+            pid, preferences_repository=prefs,
+            job_repository=MemoryJobRepositoryWith(old),
+            profile_repository=profile, cv_repository=cv,
+            workspace_repository=spaces,
+        )
+        assert result.created == 0
+    assert spaces.list(pid) == []
+    future = replace(base, job=replace(base.job, deadline="2099-12-31"))
+    result = prepare_profile_shortlist(
+        pid, preferences_repository=prefs,
+        job_repository=MemoryJobRepositoryWith(future),
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces,
+    )
+    assert result.created == 1
+    assert spaces.list(pid)[0].role_title == "Junior Data Analyst"
+
+
+def test_auto_draft_rechecks_employer_url_role_requirements_after_source_race():
+    """Reuse source fingerprint, but do not trust fields it never hashed."""
+    fx = fixture()
+    pid, prefs, jobs, profile, cv, spaces, _ = fx
+    original = candidate("Junior Data Analyst")
+    changes = (
+        {"application_url": "https://another.example.fi/jobs/redirect"},
+        {"company": "An unrelated employer"},
+        {"role_title": "Senior Manager"},
+        {"location": "Overseas"},
+        {"deadline": "2099-12-31"},
+        {"requirements": ("Unapproved license",)},
+    )
+
+    class ChangedAfterRanking(MemoryJobRepository):
+        def __init__(self, stale, changed):
+            super().__init__()
+            self.upsert(stale)
+            self.changed = changed
+
+        def get(self, canonical_key):
+            return self.changed
+
+    for change in changes:
+        latest = replace(original, job=replace(original.job, **change))
+        assert latest.description_fingerprint == original.description_fingerprint
+        assert prepare_profile_shortlist(
+            pid, preferences_repository=prefs,
+            job_repository=ChangedAfterRanking(original, latest),
+            profile_repository=profile, cv_repository=cv,
+            workspace_repository=spaces,
+        ).created == 0
+    assert spaces.list(pid) == []
