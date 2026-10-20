@@ -15,6 +15,9 @@ ENV_KEYS = [
     "OBUMAI_BASE_URL",
     "OBUMAI_HTTP_HEADERS_JSON",
     "SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED",
+    "SMARTPLOY_WORKER_SHORTLIST_ENABLED",
+    "SMARTPLOY_WORKER_SHORTLIST_CADENCE_SECONDS",
+    "SMARTPLOY_WORKER_SHORTLIST_OWNER_LIMIT",
     "SMARTPLOY_ENVIRONMENT",
 ]
 
@@ -182,3 +185,57 @@ def test_systemd_worker_unit_contains_no_credentials():
     assert "KIPA-Subscription-Key" not in text
     assert "JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY=" not in text
     assert "OBUMAI_HTTP_HEADERS_JSON=" not in text
+
+
+
+def test_opted_in_local_shortlist_registers_without_obumai_or_external_submit(monkeypatch):
+    clear_worker_sources(monkeypatch)
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT","production")
+    monkeypatch.setenv("SMARTPLOY_WORKER_SHORTLIST_ENABLED","true")
+    specs=build_worker_task_specs("postgresql://fixture")
+    assert len(specs)==1
+    task=specs[0]
+    assert task.task_id=="application:local-shortlist"
+    assert task.task_kind=="application_prepare"
+    assert task.cadence_seconds==600
+    assert task.metadata["per_user_explicit_local_opt_in"] is True
+    assert task.metadata["automatic_employer_submission"] is False
+    assert task.metadata["external_ai_processing"] is False
+
+
+def test_local_shortlist_worker_processes_only_opted_in_account_ids(monkeypatch):
+    from smartploy import worker_runtime as runtime
+    clear_worker_sources(monkeypatch)
+    monkeypatch.setenv("SMARTPLOY_WORKER_SHORTLIST_ENABLED","true")
+    approved=["profile-a","profile-b"]
+    calls=[]
+    class Repo:
+        def __init__(self,dsn):
+            assert dsn=="postgresql://fixture"
+        def enabled_profiles(self,*,limit):
+            assert limit==20
+            return approved
+    def fake_run(dsn,profile_id):
+        calls.append(profile_id)
+        return {
+            "status":"ready","created":1,"inspected":2,
+            "employer_submissions":0,"external_actions_authorized":False,
+        }
+    monkeypatch.setattr(runtime,"PostgresAutoShortlistRepository",Repo)
+    monkeypatch.setattr(runtime,"run_local_shortlist",fake_run)
+    worker=build_worker_task_specs("postgresql://fixture")[0]
+    done=worker.runner()
+    assert done.status=="healthy"
+    assert done.details["accounts_processed"]==2
+    assert done.details["drafts_created"]==2
+    assert done.details["external_actions_authorized"] is False
+    assert calls==approved
+
+
+def test_invalid_local_worker_flag_fails_closed(monkeypatch):
+    import pytest
+    clear_worker_sources(monkeypatch)
+    for value in ("yes","1","","ENABLED"):
+        monkeypatch.setenv("SMARTPLOY_WORKER_SHORTLIST_ENABLED",value)
+        with pytest.raises(ValueError,match="literal true or false"):
+            build_worker_task_specs("postgresql://fixture")

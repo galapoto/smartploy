@@ -476,3 +476,53 @@ export function revokeJobAIConsent(consentId: string, expectedUserId: string):
     method: "DELETE"
   }, expectedUserId);
 }
+
+
+/** Per-account LOCAL draft-only automation, distinct from ObumAI and employer consent. */
+export type LocalShortlistSettings = {
+  enabled: boolean;
+  minimum_score: number;
+  max_per_cycle: number;
+  revision: number;
+  last_run_at: string;
+  last_status: "not_run" | "ready" | "needs_preferences" | "needs_profile";
+  last_created: number;
+  last_inspected: number;
+  review_required: true;
+  automatic_employer_submission: false;
+  external_ai_processing: false;
+  background_worker_enabled: boolean;
+};
+
+export type LocalShortlistRun = {
+  status: "ready" | "needs_preferences" | "needs_profile";
+  created: number;
+  inspected: number;
+  review_required: true;
+  employer_submissions: 0;
+  external_ai_processing: false;
+  external_actions_authorized: false;
+};
+
+export function getLocalShortlistSettings(): Promise<LocalShortlistSettings> {
+  return request<LocalShortlistSettings>("/api/v1/auto-shortlist");
+}
+
+export function saveLocalShortlistSettings(
+  options: {
+    enabled:boolean; acknowledge_local_drafts_only:boolean;
+    minimum_score:number; max_per_cycle:number; expected_revision:number;
+  },
+  expectedUserId:string
+): Promise<LocalShortlistSettings> {
+  return request<LocalShortlistSettings>(
+    "/api/v1/auto-shortlist",
+    {method:"PUT",body:JSON.stringify(options)},expectedUserId
+  );
+}
+
+export function runLocalShortlistNow(expectedUserId:string): Promise<LocalShortlistRun> {
+  return request<LocalShortlistRun>(
+    "/api/v1/auto-shortlist/run-now",{method:"POST"},expectedUserId
+  );
+}

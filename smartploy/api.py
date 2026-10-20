@@ -82,6 +82,10 @@ from .preparations import (
 )
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
 from .search_preferences import SearchPreferenceConflict, SearchPreferenceError, search_jobs
+from .auto_shortlist import (
+    AutoShortlistConflict, AutoShortlistDenied,
+    PostgresAutoShortlistRepository, run_local_shortlist,
+)
 from .search_preference_storage import MemorySearchPreferenceRepository, PostgresSearchPreferenceRepository
 from .service import SmartployService
 from .storage import MemoryJobRepository, PostgresJobRepository
@@ -186,6 +190,16 @@ class ProfileFactPayload(BaseModel):
 class FactApprovalPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     approved: bool
+
+
+class LocalAutoShortlistPayload(BaseModel):
+    """Account owner's literal opt-in for LOCAL drafts, not employer apply."""
+    model_config = ConfigDict(extra="forbid")
+    enabled: StrictBool
+    acknowledge_local_drafts_only: StrictBool
+    minimum_score: int = Field(ge=70, le=100)
+    max_per_cycle: int = Field(ge=1, le=10)
+    expected_revision: int = Field(ge=0)
 
 
 class SearchPreferencesPayload(BaseModel):
@@ -501,6 +515,7 @@ def create_app(
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
     )
+    app.state.auto_shortlist = PostgresAutoShortlistRepository(dsn) if dsn else None
     app.state.private_saved_jobs = (
         PostgresPrivateSavedJobRepository(dsn) if dsn
         else MemoryPrivateSavedJobRepository()
@@ -1114,6 +1129,80 @@ def create_app(
         except SearchPreferenceError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return prefs.to_dict()
+
+    def verified_local_draft_owner(request: Request) -> UserProfileBinding:
+        # Never accept client-supplied profile/email. A valid cookie and a
+        # verified owner are mandatory even if an auth-disabled fixture is
+        # accidentally reachable. This is a private persistent permission.
+        _, binding = tenant_context(request)
+        if binding is None or authentication.mode == "disabled":
+            raise HTTPException(status_code=401, detail="Signed-in SmartPloy account required")
+        if app.state.auto_shortlist is None:
+            raise HTTPException(status_code=503, detail="Durable local-draft preferences unavailable")
+        return binding
+
+    @app.get("/api/v1/auto-shortlist")
+    def get_auto_shortlist(request: Request) -> JSONResponse:
+        binding = verified_local_draft_owner(request)
+        try:
+            setting = app.state.auto_shortlist.get(binding.profile_id)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Local-draft preferences unavailable") from exc
+        return JSONResponse(
+            {**setting.to_dict(),
+             "background_worker_enabled": os.getenv(
+                 "SMARTPLOY_WORKER_SHORTLIST_ENABLED", "false"
+             ).strip().casefold() == "true"},
+            headers={"Cache-Control": "private, no-store", "Referrer-Policy":"no-referrer"},
+        )
+
+    def require_local_draft_mutation(request: Request, binding: UserProfileBinding) -> None:
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Exact same-origin account required")
+
+    @app.put("/api/v1/auto-shortlist")
+    def set_auto_shortlist(payload: LocalAutoShortlistPayload, request: Request) -> JSONResponse:
+        binding = verified_local_draft_owner(request)
+        require_local_draft_mutation(request,binding)
+        if payload.enabled is True and payload.acknowledge_local_drafts_only is not True:
+            raise HTTPException(
+                status_code=422,
+                detail="Explicit permission for local review-only drafts is required",
+            )
+        try:
+            pref = app.state.auto_shortlist.save(
+                binding.profile_id,enabled=payload.enabled,
+                minimum_score=payload.minimum_score,
+                max_per_cycle=payload.max_per_cycle,
+                expected_revision=payload.expected_revision,
+            )
+        except AutoShortlistConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except AutoShortlistDenied as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        return JSONResponse(
+            {**pref.to_dict(), "external_actions_performed": False},
+            headers={"Cache-Control":"private, no-store"},
+        )
+
+    @app.post("/api/v1/auto-shortlist/run-now")
+    def run_auto_shortlist_now(request: Request) -> JSONResponse:
+        binding = verified_local_draft_owner(request)
+        require_local_draft_mutation(request,binding)
+        if not dsn:
+            raise HTTPException(status_code=503, detail="Durable local-draft workflow unavailable")
+        try:
+            result = run_local_shortlist(dsn,binding.profile_id)
+        except AutoShortlistDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Local job shortlist unavailable") from exc
+        return JSONResponse(
+            result, headers={"Cache-Control":"private, no-store"},
+        )
 
     @app.get("/api/v1/search-results")
     def user_search_results(request: Request) -> dict[str, Any]:

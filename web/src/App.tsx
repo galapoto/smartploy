@@ -22,6 +22,7 @@ import SearchSetup from "./SearchSetup";
 import SearchResultsPanel from "./SearchResultsPanel";
 import BrandMark from "./BrandMark";
 import AIConsentSettings from "./AIConsentSettings";
+import AutoShortlistPanel from "./AutoShortlistPanel";
 import type {
   ApplicationRecord, CandidateFact, CVDocument, Dashboard, HealthResponse,
   ManualJobPayload, PrivateSavedJob, RankingCard, SavedJob, SessionInfo,
@@ -830,7 +831,13 @@ export default function App() {
             {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Save job</button> : null}
             {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}
           </div>
-          {page === "jobs" ? <div className="stacked"><div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>{privateSavedJobsPanel}</div> : null}
+          {page === "jobs" ? <div className="stacked">
+            <AutoShortlistPanel key={accountViewKey + "-jobs-autofind"}
+              expectedUserId={session?.user_id || ""} personalized={preferences?.mode === "personalized"}
+              onPrepared={() => navigate("applications")} />
+            <div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>
+            {privateSavedJobsPanel}
+          </div> : null}
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">{cvBlock}{factPanel}</div><aside>{sidePanel}</aside></div> : null}
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}
@@ -845,6 +852,9 @@ export default function App() {
           {page === "insights" ? <div className="secondary-grid"><section className="panel insights-panel"><p className="section-kicker">PROFILE INSIGHTS</p><h2>Your evidence, at a glance</h2><p className="muted">These figures come from your own verified profile, not estimates.</p><div className="insight-numbers"><div><strong>{facts.length}</strong><span>Total facts</span></div><div><strong>{approved.length}</strong><span>Approved facts</span></div><div><strong>{dashboard.top_matches.length + dashboard.possible_matches.length}</strong><span>Ranked matches</span></div></div><button className="primary-btn" type="button" onClick={() => navigate("profile")}>Improve profile <ArrowRight size={16} /></button></section><aside>{sourcePanel}</aside></div> : null}
           {page === "settings" && preferences ? <div className="stacked">
             <SearchSetup key={accountViewKey} initial={preferences} settings onSave={saveSearchPreferences} />
+            <AutoShortlistPanel key={accountViewKey + "-settings-autofind"}
+              expectedUserId={session?.user_id || ""} personalized={preferences.mode === "personalized"}
+              onPrepared={() => navigate("applications")} />
             <AIConsentSettings key={accountViewKey + "-ai-consent"}
               jobs={jobs} consents={aiConsents} events={aiConsentEvents}
               status={aiConsentStatus} busy={aiConsentBusy}
