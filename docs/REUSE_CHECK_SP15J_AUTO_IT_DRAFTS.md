@@ -60,7 +60,8 @@ NOT pretend to have sent these drafts to employers.
   `SELECT ... FOR SHARE OF p,u` around each draft insert.
   A completed revision-based opt-out blocks later draft creation after
   the update commits, including an overlapping worker operation.
-  No database migration or new private-PII table.
+  The initial SP15j required no migration. SP15k adds only a non-PII
+  last-scan timestamp to this existing table for fair scheduling.
 - Adapted existing worker scheduler with
   `application:auto-draft-shortlist` task, 600-second default; the
   task is local-only and respects individual user opt-in.
@@ -94,3 +95,32 @@ ObumDelivery exact-SHA and deliberate negative run; release gates and
 signed-in live domain; actual source feed and user opt-in test;
 explicit employer rights on any real provider call. Do not report
 production readiness from a GitHub PR.
+
+## SP15k continuation — fair account scanning and failure isolation
+
+**Observed core flaw:** Sorting enabled profiles by `updated_at` reselected
+the same first 100 accounts each cycle, starving newer opted-in owners.
+One invalid CV/profile also aborted the remaining scheduled accounts.
+
+**REUSE FIRST:** Adapted SP16 draft PR #172's already-implemented
+`last_run_at ASC NULLS FIRST` scheduling idea from its
+`migrations/024_auto_shortlist.sql` (blob
+`5bd86db2ba4bc7719780cb9d2d3cf9bc0dbf0e66`).
+Did NOT copy its redundant opt-in settings table or rival matcher.
+Kept existing SP15j JSONB opt-in/revision guard, PostgreSQL owner/erasure
+filter, actual source pollers, `search_jobs`, `new_workspace`,
+unique account+job workspace insertion, and original leased worker task.
+
+**NEW GLUE:** Migration 024 adds one non-PII last-checked timestamp/index
+to the existing preferences table. The queue sorts least recently checked
+first, resets on every user criteria change and only marks a matching
+opt-in revision (never a replaced/disabled revision). A failing user
+scan is contained, subsequent users are attempted, and the scheduler
+reports `degraded` with aggregate counts, no user IDs or CV details.
+Added real PostgreSQL rotation/revocation and synthetic worker-failure
+regressions. No new scraping, model, browser or employer submission engine.
+No new external dependencies.
+
+**Still blocked from production:** original signed-in/OIDC, native
+ObumDelivery exact-SHA/negative test, external source readiness and
+reviewed OVH deploy; final employer submissions remain independent.

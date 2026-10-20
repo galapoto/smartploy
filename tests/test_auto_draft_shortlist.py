@@ -238,6 +238,14 @@ def test_actual_postgres_only_lists_active_opted_in_accounts_and_persists_one_dr
             profile_repository=profiles,cv_repository=cv,workspace_repository=spaces,
             candidates=[job],
         ).created==0
+        # SP16's least-recently-scanned queue design prevents starvation.
+        second_saved=prefs.save(other.profile_id,config,expected_revision=1)
+        assert prefs.mark_auto_draft_checked(owner.profile_id,saved.revision)
+        scan_order=prefs.list_auto_draft_profiles(limit=500)
+        assert scan_order.index(other.profile_id) < scan_order.index(owner.profile_id)
+        assert not prefs.mark_auto_draft_checked(owner.profile_id,saved.revision+1)
+        prefs.save(other.profile_id,{**config,"auto_draft_enabled":False},
+                   expected_revision=second_saved.revision)
         with prefs.auto_draft_guard(owner.profile_id,saved.revision) as allowed:
             assert allowed
         prefs.save(owner.profile_id,{**config,"auto_draft_enabled":False},
@@ -245,6 +253,7 @@ def test_actual_postgres_only_lists_active_opted_in_accounts_and_persists_one_dr
         with prefs.auto_draft_guard(owner.profile_id,saved.revision) as allowed:
             assert not allowed
         assert owner.profile_id not in prefs.list_auto_draft_profiles(limit=500)
+        assert not prefs.mark_auto_draft_checked(owner.profile_id,saved.revision)
         assert prepare_profile_shortlist(
             owner.profile_id,preferences_repository=prefs,job_repository=jobs,
             profile_repository=profiles,cv_repository=cv,workspace_repository=spaces,
@@ -257,3 +266,51 @@ def test_actual_postgres_only_lists_active_opted_in_accounts_and_persists_one_dr
                     cur.execute("DELETE FROM smartploy_application_workspaces WHERE profile_id=%s",(pid,))
                     cur.execute("DELETE FROM smartploy_search_preferences WHERE profile_id=%s",(pid,))
                     cur.execute("DELETE FROM smartploy_profile_facts WHERE profile_id=%s",(pid,))
+
+
+def test_worker_cycle_isolates_one_account_failure_and_reports_only_aggregate_counts(monkeypatch):
+    """A broken account must not prevent the next user's applications."""
+    from types import SimpleNamespace
+    from smartploy import auto_draft_shortlist as module
+    from smartploy.auto_draft_shortlist import AutoDraftSummary
+
+    class Preferences:
+        def __init__(self):
+            self.marked = []
+
+        def list_auto_draft_profiles(self, limit):
+            assert limit == 7
+            return ["private-broken", "private-healthy"]
+
+        def get(self, profile_id):
+            return SimpleNamespace(revision=4)
+
+        def mark_auto_draft_checked(self, profile_id, revision):
+            self.marked.append((profile_id, revision))
+            return True
+
+    prefs = Preferences()
+    monkeypatch.setattr(module, "PostgresSearchPreferenceRepository", lambda dsn: prefs)
+    monkeypatch.setattr(
+        module, "PostgresJobRepository",
+        lambda dsn: SimpleNamespace(values=lambda: []),
+    )
+    monkeypatch.setattr(module, "PostgresWorkspaceRepository", lambda dsn: object())
+    monkeypatch.setattr(module, "PostgresCVRepository", lambda dsn: object())
+    monkeypatch.setattr(module, "PostgresProfileRepository", lambda dsn, profile_id: object())
+
+    def fake_prepare(profile_id, **kwargs):
+        if profile_id == "private-broken":
+            raise ValueError("private-broken: sensitive CV content")
+        return AutoDraftSummary("prepared", checked=2, eligible=1, created=1)
+
+    monkeypatch.setattr(module, "prepare_profile_shortlist", fake_prepare)
+    result = module.prepare_worker_shortlists("synthetic", profile_limit=7, total_new_limit=4)
+    assert result["profiles_checked"] == 2
+    assert result["profiles_failed"] == 1
+    assert result["drafts_created"] == 1
+    assert prefs.marked == [("private-broken", 4), ("private-healthy", 4)]
+    assert "private-broken" not in str(result)
+    assert "sensitive CV" not in str(result)
+    assert result["model_calls"] == 0
+    assert result["employer_actions_performed"] is False

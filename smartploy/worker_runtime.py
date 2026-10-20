@@ -120,7 +120,8 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
 
         def run_auto_draft() -> WorkerTaskResult:
             stats = prepare_worker_shortlists(dsn)
-            return WorkerTaskResult(status="healthy", details=stats)
+            status = "degraded" if stats["profiles_failed"] else "healthy"
+            return WorkerTaskResult(status=status, details=stats)
 
         specs.append(WorkerTaskSpec(
             task_id="application:auto-draft-shortlist",

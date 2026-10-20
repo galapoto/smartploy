@@ -96,7 +96,8 @@ class PostgresSearchPreferenceRepository:
                          mode = EXCLUDED.mode,
                          criteria = EXCLUDED.criteria,
                          revision = EXCLUDED.revision,
-                         updated_at = now()
+                         updated_at = now(),
+                         auto_draft_last_checked_at = NULL
                        WHERE smartploy_search_preferences.revision = %s
                        RETURNING mode, criteria, revision, updated_at""",
                     (
@@ -130,12 +131,30 @@ class PostgresSearchPreferenceRepository:
                              SELECT 1 FROM smartploy_account_erasure_requests e
                              WHERE e.user_id = u.user_id OR e.profile_id = p.profile_id
                          )
-                       ORDER BY p.updated_at ASC, p.profile_id
+                       ORDER BY p.auto_draft_last_checked_at ASC NULLS FIRST, p.profile_id
                        LIMIT %s""",
                     (bounded,),
                 )
                 rows = cur.fetchall()
         return [str(row[0]) for row in rows]
+
+    def mark_auto_draft_checked(self, profile_id: str, revision: int) -> bool:
+        """Rotate one worker scan without changing user criteria or revision.
+
+        A newer user edit resets the timestamp to NULL and wins queue priority.
+        Older in-flight cycles cannot postpone that newer opt-in/revision.
+        """
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE smartploy_search_preferences
+                       SET auto_draft_last_checked_at = now()
+                       WHERE profile_id = %s AND revision = %s
+                         AND mode = 'personalized'
+                         AND criteria @> '{"auto_draft_enabled": true}'::jsonb""",
+                    (profile_id, revision),
+                )
+                return cur.rowcount == 1
 
     @contextmanager
     def auto_draft_guard(self, profile_id: str, revision: int) -> Iterator[bool]:

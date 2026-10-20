@@ -148,27 +148,44 @@ def prepare_worker_shortlists(
     workspace = PostgresWorkspaceRepository(dsn)
     cv = PostgresCVRepository(dsn)
     current = jobs.values()
-    checked_users = new_count = already = opted_out = 0
+    checked_users = new_count = already = opted_out = failed_profiles = 0
     for pid in prefs.list_auto_draft_profiles(limit=profile_limit):
         if new_count >= total_new_limit:
             break
-        result = prepare_profile_shortlist(
-            pid,
-            preferences_repository=prefs,
-            job_repository=jobs,
-            profile_repository=PostgresProfileRepository(dsn, profile_id=pid),
-            cv_repository=cv,
-            workspace_repository=workspace,
-            max_new=min(MAX_DRAFTS_PER_USER, total_new_limit - new_count),
-            candidates=current,
-        )
         checked_users += 1
-        new_count += result.created
-        already += result.already_prepared
-        opted_out += int(result.stopped_on_opt_out)
+        revision = None
+        failed = False
+        try:
+            # Keep the original strict revision and opt-out guard on inserts.
+            revision = prefs.get(pid).revision
+            result = prepare_profile_shortlist(
+                pid,
+                preferences_repository=prefs,
+                job_repository=jobs,
+                profile_repository=PostgresProfileRepository(dsn, profile_id=pid),
+                cv_repository=cv,
+                workspace_repository=workspace,
+                max_new=min(MAX_DRAFTS_PER_USER, total_new_limit - new_count),
+                candidates=current,
+            )
+            new_count += result.created
+            already += result.already_prepared
+            opted_out += int(result.stopped_on_opt_out)
+        except Exception:
+            # A faulty CV/profile must not starve the next opted-in account.
+            # Never disclose an exception containing applicant or DB details.
+            failed = True
+        finally:
+            if revision is not None:
+                try:
+                    prefs.mark_auto_draft_checked(pid, revision)
+                except Exception:
+                    failed = True
+            failed_profiles += int(failed)
     return {
         "mode": "per_user_opt_in_local_drafts",
-        "profiles_checked": checked_users, "drafts_created": new_count,
+        "profiles_checked": checked_users, "profiles_failed": failed_profiles,
+        "drafts_created": new_count,
         "already_prepared": already, "revocations_honored": opted_out,
         "model_calls": 0, "employer_actions_performed": False,
         "automatic_submission_authorized": False,
