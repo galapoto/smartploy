@@ -5,13 +5,12 @@ No network, ObumAI or employer final-submit engine is mocked in or invoked.
 """
 from __future__ import annotations
 
-from dataclasses import replace
 import os
 from uuid import uuid4
 
 import pytest
 
-from smartploy.auto_draft_shortlist import prepare_profile_shortlist, prepare_worker_shortlists
+from smartploy.auto_draft_shortlist import prepare_profile_shortlist
 from smartploy.application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from smartploy.cv_storage import MemoryCVRepository, PostgresCVRepository
 from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
@@ -51,9 +50,10 @@ def fixture():
     prefs = MemorySearchPreferenceRepository()
     repo = MemoryJobRepository()
     profile = MemoryProfileRepository(profile_id=owner)
-    profile.upsert_fact(ProfileFact(
-        "skill", "Python", "user-entered", approved=True
-    ))
+    for skill in ("Python", "SQL", "data analysis"):
+        profile.upsert_fact(ProfileFact(
+            "skill", skill, "user-entered", approved=True
+        ))
     cv = MemoryCVRepository()
     spaces = MemoryWorkspaceRepository()
     pref_payload = {
@@ -159,6 +159,20 @@ class MemoryJobRepositoryWith(MemoryJobRepository):
         self.upsert(job)
 
 
+def test_incomplete_approved_skills_are_not_upgraded_to_high_fit():
+    fx=fixture()
+    pid,prefs,jobs,profile,cv,spaces,_=fx
+    weak=MemoryProfileRepository(profile_id=pid)
+    weak.upsert_fact(ProfileFact("skill","Python","user-entered",approved=True))
+    result=prepare_profile_shortlist(
+        pid,preferences_repository=prefs,job_repository=jobs,
+        profile_repository=weak,cv_repository=cv,workspace_repository=spaces,
+    )
+    assert result.status=="prepared"
+    assert result.created==0
+    assert spaces.list(pid)==[]
+
+
 def test_mismatched_profile_id_does_not_cross_account_or_copy_cv():
     fx=fixture()
     pid,prefs,jobs,profile,cv,spaces,_=fx
@@ -196,7 +210,8 @@ def test_actual_postgres_only_lists_active_opted_in_accounts_and_persists_one_dr
     cv=PostgresCVRepository(DSN)
     job=candidate("Junior Data Analyst",url="https://careers.example.fi/jobs/"+unique)
     try:
-        profiles.upsert_fact(ProfileFact("skill","Python","user-entered",approved=True))
+        for skill in ("Python", "SQL", "data analysis"):
+            profiles.upsert_fact(ProfileFact("skill",skill,"user-entered",approved=True))
         jobs.upsert(job)
         config={"mode":"personalized","roles":["Data Analyst"],
                 "auto_draft_enabled":True}
