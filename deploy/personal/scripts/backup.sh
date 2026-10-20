@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/env"
-POLICY_FILE="${COMPOSE_DIR}/runtime.production.env"
+POLICY_FILE="$(bash "${SCRIPT_DIR}/select-runtime-policy.sh")"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Missing ${ENV_FILE}. Copy env.example to env and add production values." >&2

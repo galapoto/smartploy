@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${COMPOSE_DIR}/../.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/env"
+POLICY_FILE="$(bash "${SCRIPT_DIR}/select-runtime-policy.sh")"
+PROFILE="${SMARTPLOY_PRODUCTION_IDENTITY_MODE:-cloudflare}"
 
 PRODUCTION_HOST="smartploy.obumai.com"
 PRODUCTION_ORIGIN="https://smartploy.obumai.com"
@@ -32,6 +34,8 @@ done
 
 WEB_PORT="$(read_env_value SMARTPLOY_WEB_HOST_PORT)"
 WEB_PORT="${WEB_PORT:-8091}"
+OIDC_ISSUER="$(read_env_value SMARTPLOY_OIDC_ISSUER)"
+bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "${POLICY_FILE}" >/dev/null
 [[ "${WEB_PORT}" =~ ^[0-9]+$ ]] \
   || fail "SMARTPLOY_WEB_HOST_PORT must be numeric"
 if (( WEB_PORT < 1024 || WEB_PORT > 65535 )); then
@@ -55,7 +59,7 @@ if ! curl --fail --silent --show-error --max-time 10 \
 fi
 
 if ! PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
-  origin-health "${HEALTH_FILE}" >/dev/null; then
+  origin-health "${HEALTH_FILE}" "${PROFILE}" >/dev/null; then
   fail "local production origin health contract failed"
 fi
 echo "origin_health=pass"
@@ -79,9 +83,15 @@ ROOT_PROBE="${TMP_DIR}/root.probe"
 if ! probe_public "${PRODUCTION_ORIGIN}/" "${ROOT_PROBE}"; then
   fail "public HTTPS/TLS probe failed"
 fi
-ROOT_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
-  public-probe "${ROOT_PROBE}")" \
-  || fail "public root protection validation failed"
+if [[ "${PROFILE}" == "oidc" ]]; then
+  ROOT_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
+    oidc-root "${ROOT_PROBE}" "${OIDC_ISSUER}")" \
+    || fail "first-party OIDC public root validation failed"
+else
+  ROOT_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
+    public-probe "${ROOT_PROBE}")" \
+    || fail "legacy Access public root validation failed"
+fi
 
 echo "tls=pass"
 echo "cloudflare_edge=pass"
@@ -91,9 +101,24 @@ API_PROBE="${TMP_DIR}/api.probe"
 if ! probe_public "${PRODUCTION_ORIGIN}/api/v1/dashboard" "${API_PROBE}"; then
   fail "public protected API probe failed"
 fi
-API_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
-  public-probe "${API_PROBE}")" \
-  || fail "public API protection validation failed"
+if [[ "${PROFILE}" == "oidc" ]]; then
+  API_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
+    oidc-api "${API_PROBE}" "${OIDC_ISSUER}")" \
+    || fail "first-party OIDC API protection validation failed"
+  LOGIN_PROBE="${TMP_DIR}/login.probe"
+  if ! probe_public "${PRODUCTION_ORIGIN}/auth/login" "${LOGIN_PROBE}"; then
+    fail "OIDC login initiation probe failed"
+  fi
+  LOGIN_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
+    oidc-login "${LOGIN_PROBE}" "${OIDC_ISSUER}")" \
+    || fail "OIDC issuer redirect verification failed"
+  echo "oidc_login=${LOGIN_CLASS}"
+else
+  API_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
+    public-probe "${API_PROBE}")" \
+    || fail "legacy Access public API protection validation failed"
+fi
 
 echo "access_api=${API_CLASS}"
+echo "identity_profile=${PROFILE}"
 echo "live_acceptance=pass"
