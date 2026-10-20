@@ -5,6 +5,7 @@ No network, ObumAI or employer final-submit engine is mocked in or invoked.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 import os
 from uuid import uuid4
 
@@ -144,7 +145,11 @@ def test_expired_posting_and_https_safety_never_create_offsite_application():
         "https://person:secret@careers.example.fi/jobs/1",
         "https://careers.example.fi:444/jobs/123",
     ):
-        j=candidate("Junior Data Analyst",url=url)
+        # The upstream canonicalizer normally STRIPS userinfo from URLs
+        # before storage. Inject the uncanonicalized record directly to
+        # verify this additional safe-final-link gate itself.
+        original=candidate("Junior Data Analyst")
+        j=replace(original,job=replace(original.job,application_url=url))
         assert prepare_profile_shortlist(
             pid,preferences_repository=prefs,
             job_repository=MemoryJobRepositoryWith(j),
