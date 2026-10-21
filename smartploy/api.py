@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 import os
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from authlib.integrations.base_client import OAuthError
 from fastapi import FastAPI, HTTPException, Request
@@ -66,10 +66,16 @@ from .oidc import (
     PostgresOIDCStateCache,
     PostgresSessionRepository,
     SESSION_COOKIE_NAME,
+    OIDC_FLOW_COOKIE_NAME,
     SmartployAuthenticationMiddleware,
+    authlib_oidc_session_marker,
     build_oidc_registry,
+    clear_oidc_flow_cookie,
     clear_session_cookie,
+    consume_browser_bound_oidc_flow,
+    set_oidc_flow_cookie,
     set_session_cookie,
+    start_browser_bound_oidc_flow,
 )
 from .private_saved_jobs import (
     MemoryPrivateSavedJobRepository,
@@ -602,16 +608,47 @@ def create_app(
         if oidc_settings is None or oidc_remote is None:
             raise HTTPException(status_code=404, detail="OIDC login is not enabled")
         request.scope.setdefault("session", {})
-        return await oidc_remote.authorize_redirect(
-            request,
-            oidc_settings.redirect_uri,
-        )
+        response = await oidc_remote.authorize_redirect(request, oidc_settings.redirect_uri)
+        # Authlib caches PKCE + nonce in PostgreSQL. Its modern CSRF protection
+        # also requires a browser-specific marker across the ZITADEL redirect.
+        # The previous ephemeral request.scope["session"] was lost on redirect.
+        state_values = parse_qs(urlsplit(response.headers.get("location", "")).query).get("state", [])
+        if len(state_values) != 1:
+            raise HTTPException(status_code=502, detail="OIDC login could not be initiated")
+        try:
+            browser_token = await start_browser_bound_oidc_flow(
+                state_cache, state_values[0], oidc_settings.state_ttl_seconds,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail="OIDC login could not be initiated") from exc
+        set_oidc_flow_cookie(response, browser_token, oidc_settings.state_ttl_seconds)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
 
     @app.api_route("/auth/callback", methods=["GET", "POST"])
     async def auth_callback(request: Request):
         if oidc_settings is None or oidc_remote is None:
             raise HTTPException(status_code=404, detail="OIDC login is not enabled")
-        request.scope.setdefault("session", {})
+        if request.method == "POST":
+            # ZITADEL currently uses GET/query callbacks; preserve fail-closed
+            # form-post compatibility only when the form is parseable.
+            try:
+                state = str((await request.form()).get("state") or "")
+            except Exception:
+                state = ""
+        else:
+            state = request.query_params.get("state", "")
+        browser_token = request.cookies.get(OIDC_FLOW_COOKIE_NAME, "")
+        if not await consume_browser_bound_oidc_flow(state_cache, state, browser_token):
+            raise HTTPException(status_code=401, detail="OIDC callback validation failed")
+        # The marker is issued ONLY after verifying the independent,
+        # host-only browser cookie against the single-use PostgreSQL binding.
+        # Authlib still validates OAuth state, PKCE and OIDC ID-token nonce.
+        marker_key, marker_value = authlib_oidc_session_marker(
+            state, oidc_settings.state_ttl_seconds,
+        )
+        request.scope["session"] = {marker_key: marker_value}
         try:
             token = await oidc_remote.authorize_access_token(request)
         except OAuthError as exc:
@@ -650,6 +687,8 @@ def create_app(
 
         response = RedirectResponse(url="/", status_code=303)
         set_session_cookie(response, issued.token, oidc_settings.session_ttl_seconds)
+        clear_oidc_flow_cookie(response)
+        response.headers["Cache-Control"] = "no-store"
         return response
 
     # These pages contain no account-specific values, cookies or identity

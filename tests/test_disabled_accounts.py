@@ -11,6 +11,7 @@ import os
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from fastapi.responses import RedirectResponse
 import pytest
 from psycopg import connect
 
@@ -45,6 +46,15 @@ class FictionalAccessVerifier:
 
 
 class FakeOIDCCallback:
+    async def authorize_redirect(self, request, redirect_uri):
+        del request, redirect_uri
+        return RedirectResponse(
+            "https://auth.obumai.com/oauth/v2/authorize"
+            "?response_type=code&state=synthetic-disabled-identity-oidc-state-2026"
+            "&code_challenge=synthetic&code_challenge_method=S256",
+            status_code=302,
+        )
+
     async def authorize_access_token(self, request):
         del request
         return {
@@ -213,7 +223,17 @@ def test_oidc_callback_rejects_disabled_identity_without_issuing_cookie(monkeypa
         base_url="https://smartploy.obumai.com",
         follow_redirects=False,
     )
-    result = api.get("/auth/callback?code=synthetic&state=synthetic")
+    # A callback with no preceding login is rejected before account lookup.
+    unbound = api.get(
+        "/auth/callback?code=synthetic&state=synthetic-disabled-identity-oidc-state-2026"
+    )
+    assert unbound.status_code == 401
+
+    login = api.get("/auth/login")
+    assert login.status_code == 302
+    result = api.get(
+        "/auth/callback?code=synthetic&state=synthetic-disabled-identity-oidc-state-2026"
+    )
     assert result.status_code == 403
     assert "access is disabled" in result.text
     assert SESSION_COOKIE_NAME not in result.headers.get("set-cookie", "")
