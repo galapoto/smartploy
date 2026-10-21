@@ -30,6 +30,17 @@ MIN_APPROVED_FIT_SCORE = 60
 # Never silently prepare an unattended draft from an old cached listing.
 MAX_VERIFIED_AGE = timedelta(hours=48)
 
+# Reuse the three source-policy types actually issued by the existing
+# public ATS, national Job Market Finland and approved Kuntarekry adapters.
+# Manual bookmarks, ad-hoc imports, browser discoveries and unreviewed
+# source policies never gain *unattended* draft authority merely because
+# they happen to have a recent observation timestamp.
+TRUSTED_AUTO_DRAFT_SOURCES = {
+    ("direct_employer_ats", "api"),
+    ("national_job_market", "api"),
+    ("public_sector_jobs", "feed"),
+}
+
 
 @dataclass(frozen=True)
 class AutoDraftSummary:
@@ -40,6 +51,7 @@ class AutoDraftSummary:
     already_prepared: int = 0
     stopped_on_opt_out: bool = False
     stale_skipped: int = 0
+    unverified_source_skipped: int = 0
 
     def public_counts(self) -> dict[str, object]:
         return {
@@ -48,6 +60,7 @@ class AutoDraftSummary:
             "already_prepared": self.already_prepared,
             "stopped_on_opt_out": self.stopped_on_opt_out,
             "stale_skipped": self.stale_skipped,
+            "unverified_source_skipped": self.unverified_source_skipped,
             "provider_calls": 0, "employer_actions_performed": False,
             "automatic_submission_authorized": False,
         }
@@ -98,6 +111,40 @@ def _deadline_open(value: str, *, now: datetime | None = None) -> bool:
         return parsed.astimezone(timezone.utc) > stamp
     except (ValueError, OverflowError, TypeError):
         return False
+
+
+def _approved_source_for_auto_draft(candidate) -> bool:
+    """Only source-policy-approved employer/public feeds may create drafts.
+
+    The original normalizer attaches source_class/source_mode both to
+    candidate.metadata and to job.raw. Requiring agreement protects
+    against merge_candidates choosing the job body from a different,
+    unreviewed source while retaining a newer verification timestamp.
+    Existing source IDs are used as a second independent provenance
+    check, not as a substitute for the original source policy.
+    """
+    source_ids = tuple(candidate.source_ids)
+    if not source_ids or candidate.job.raw.get("archived") is True:
+        return False
+    job_class = candidate.job.raw.get("source_class")
+    job_mode = candidate.job.raw.get("source_mode")
+    if (
+        not isinstance(job_class, str)
+        or not isinstance(job_mode, str)
+        or job_class != candidate.metadata.get("source_class")
+        or job_mode != candidate.metadata.get("source_mode")
+        or (job_class, job_mode) not in TRUSTED_AUTO_DRAFT_SOURCES
+    ):
+        return False
+    if job_class == "national_job_market":
+        return source_ids == ("job-market-finland",)
+    if job_class == "public_sector_jobs":
+        return source_ids == ("kuntarekry",)
+    return all(
+        sid.startswith(("lever-global-", "lever-eu-", "greenhouse-",
+                        "smartrecruiters-"))
+        for sid in source_ids
+    )
 
 
 def _recently_verified(candidate, *, now: datetime | None = None) -> bool:
@@ -171,7 +218,7 @@ def prepare_profile_shortlist(
     by_key = {item.canonical_key: item for item in current if item.source_current}
     ranked = search_jobs(current, pref)["recommendations"]
     checked = len(ranked)
-    eligible = created = existing = stale_skipped = 0
+    eligible = created = existing = stale_skipped = unverified_skipped = 0
     for match in ranked:
         if created >= bound:
             break
@@ -189,6 +236,9 @@ def prepare_profile_shortlist(
             or not _deadline_open(candidate.job.deadline)
         ):
             continue
+        if not _approved_source_for_auto_draft(candidate):
+            unverified_skipped += 1
+            continue
         if not _recently_verified(candidate):
             stale_skipped += 1
             continue
@@ -202,6 +252,7 @@ def prepare_profile_shortlist(
                     "disabled_after_revocation", checked, eligible, created,
                     existing, stopped_on_opt_out=True,
                     stale_skipped=stale_skipped,
+                    unverified_source_skipped=unverified_skipped,
                 )
             # Job may have been retired between initial matching and the
             # owner approval guard; re-fetch and enforce exact same content.
@@ -216,6 +267,9 @@ def prepare_profile_shortlist(
             # The original PostgresJobRepository.get() runs while the
             # revocable account preference guard is held. Check the live
             # snapshot age AGAIN before creating an application workspace.
+            if not _approved_source_for_auto_draft(latest):
+                unverified_skipped += 1
+                continue
             if not _recently_verified(latest):
                 stale_skipped += 1
                 continue
@@ -230,10 +284,14 @@ def prepare_profile_shortlist(
             created += int(added)
             existing += int(not added)
     return AutoDraftSummary(
-        status=("needs_source_refresh" if stale_skipped and not created and not existing
-                else "prepared"),
+        status=(
+            "needs_source_refresh" if stale_skipped and not created and not existing
+            else "needs_trusted_source" if unverified_skipped and not created and not existing
+            else "prepared"
+        ),
         checked=checked, eligible=eligible, created=created,
         already_prepared=existing, stale_skipped=stale_skipped,
+        unverified_source_skipped=unverified_skipped,
     )
 
 
