@@ -199,8 +199,43 @@ def test_oidc_public_acceptance_rejects_bad_signin_or_unprotected_api(surface, s
         )
 
 
-def test_oidc_public_acceptance_requires_cloudflare_tls_edge():
-    with pytest.raises(LiveAcceptanceError, match="Cloudflare"):
+def test_oidc_public_acceptance_supports_direct_ovh_https_ingress():
+    """Cloudflare headers are not a ZITADEL or TLS security requirement.
+
+    The production caller verifies the exact HTTPS host/certificate first;
+    the app itself must still protect account data and route to the issuer.
+    """
+    issuer = "https://auth.komplyint.fi"
+    assert validate_oidc_public_probe(
+        PublicProbe(status_code=200), "root", issuer
+    ) == "public_login_shell"
+    assert validate_oidc_public_probe(
+        PublicProbe(status_code=401), "api", issuer
+    ) == "protected_by_app_session"
+    assert validate_oidc_public_probe(
+        PublicProbe(
+            status_code=302,
+            location="https://auth.komplyint.fi/oauth/v2/authorize?state=opaque",
+        ), "login", issuer
+    ) == "redirect_to_trusted_oidc"
+
+
+@pytest.mark.parametrize(
+    ("surface", "status", "location"),
+    [
+        ("root", 302, "https://team.cloudflareaccess.com/cdn-cgi/access/login"),
+        ("root", 502, ""),
+        ("api", 200, ""),
+        ("api", 302, "https://team.cloudflareaccess.com/cdn-cgi/access/login"),
+        ("login", 302, "https://team.cloudflareaccess.com/cdn-cgi/access/login"),
+        ("login", 302, "https://auth.komplyint.fi.evil.invalid/oauth"),
+    ],
+)
+def test_oidc_direct_https_does_not_weaken_app_or_issuer_gates(
+    surface, status, location
+):
+    with pytest.raises(LiveAcceptanceError):
         validate_oidc_public_probe(
-            PublicProbe(status_code=200), "root", "https://auth.obumai.com"
+            PublicProbe(status_code=status, location=location),
+            surface, "https://auth.komplyint.fi"
         )
