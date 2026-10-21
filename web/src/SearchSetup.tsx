@@ -73,6 +73,13 @@ export default function SearchSetup(props: {
       setError("Enter at least one job title or search keyword, or choose general search.");
       return;
     }
+    if (mode === "personalized" && autoDraft && !chosenRoles.length) {
+      // Reuse the server's exact role-target opt-in rule. A keyword-only
+      // search is valid, but unattended application drafting isn't: it
+      // needs explicit target job titles for conservative matching.
+      setError("Automatic application drafts need a target job title. Add at least one role, or turn off automatic drafts to search by keyword only.");
+      return;
+    }
     setError("");
     setWorking(true);
     try {
