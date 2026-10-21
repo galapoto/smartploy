@@ -20,9 +20,14 @@ WORK_MODE_OPTIONS = frozenset({"remote", "hybrid", "onsite"})
 # Conservative bilingual title pairs, not a generic translation or qualification engine.
 ROLE_EQUIVALENTS = (
     ("data analyst", "data-analyytikko"),
+    ("data engineer", "data-insinööri"),
+    ("data engineer", "datainsinööri"),
     ("business analyst", "liiketoiminta-analyytikko"),
     ("software tester", "ohjelmistotestaaja"),
+    ("software developer", "ohjelmistokehittäjä"),
+    ("it support specialist", "it-tukihenkilö"),
     ("project coordinator", "projektikoordinaattori"),
+    ("project planner", "projektisuunnittelija"),
 )
 LANGUAGE_LABELS = {
     "english": frozenset({"english", "englanti", "englanninkielinen", "englanniksi", "en"}),
@@ -168,7 +173,17 @@ def _role_alignment(title: str, roles: tuple[str, ...]) -> tuple[float, str]:
         overlap = len(title_words & wanted) / len(wanted) if wanted else 0.0
         # A target such as "AI" must not match "Paid". Whole-phrase matching
         # also retains punctuation-only tokens like "C++" and title separators.
-        if _mentions_phrase(title, term) or _translated_role_match(title, term):
+        # The Finnish base profession "suunnittelija" is commonly
+        # published as a compound ("hankesuunnittelija",
+        # "projektisuunnittelija"). The user explicitly selected this
+        # broad title, so accept the complete *title token* only, never
+        # a job-description occurrence or a manager-level inference.
+        planning_compound = (
+            term.strip().casefold() == "suunnittelija"
+            and re.search(r"(?<!\\w)[a-zåäö]*suunnittelij[a-zåäö]*(?!\\w)", title.casefold())
+            is not None
+        )
+        if _mentions_phrase(title, term) or _translated_role_match(title, term) or planning_compound:
             overlap = 1.0
         if overlap > strongest[0]:
             strongest = overlap, term
