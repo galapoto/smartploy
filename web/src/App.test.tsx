@@ -983,7 +983,7 @@ describe("first opt-in creates private IT applications immediately", () => {
     });
     render(<App />);
     expect(await screen.findByText(/90% search match/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
     expect(await screen.findByText("SQL")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(api.approveFact).toHaveBeenCalledWith(
@@ -1015,7 +1015,7 @@ describe("first opt-in creates private IT applications immediately", () => {
     });
     render(<App />);
     expect(await screen.findByText(/90% search match/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
     fireEvent.change(screen.getByPlaceholderText(/e\.g\. Python, Finnish B2/i), {
       target: { value: "SQL" },
     });
