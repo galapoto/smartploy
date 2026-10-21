@@ -110,7 +110,7 @@ describe("first-use choice and saved settings", () => {
   it("keeps automatic IT drafts OFF by default, requires opt-in and revokes in general mode", async () => {
     const save = vi.fn(async (_value: SearchPreferencesUpdate) => undefined);
     render(<SearchSetup initial={firstVisit} onSave={save}/>);
-    fireEvent.click(screen.getByRole("button",{name:"Use IT job starter targets"}));
+    fireEvent.click(screen.getByRole("button",{name:"Use nationwide junior IT & planning targets"}));
     const box=screen.getByRole("checkbox",{
       name:/Automatically prepare suitable job drafts/
     }) as HTMLInputElement;
@@ -121,9 +121,10 @@ describe("first-use choice and saved settings", () => {
     await waitFor(()=>expect(save).toHaveBeenCalledOnce());
     expect(save.mock.calls[0][0]).toMatchObject({
       mode:"personalized",auto_draft_enabled:true,
-      roles:["Data Analyst","Junior Software Tester","Junior Business Analyst",
-             "IT Support Specialist","Junior Python Developer"],
-      locations:["Helsinki","Espoo","Vantaa"],seniority:"entry",
+      roles:["Junior Data Analyst","Data Engineer","Junior Software Tester",
+             "Junior Business Analyst","IT Support Specialist","Suunnittelija",
+             "Projektikoordinaattori"],
+      locations:[],seniority:"entry",
     });
     fireEvent.click(screen.getByRole("radio",{name:/general job search/i}));
     fireEvent.click(screen.getByRole("button",{name:/Browse all jobs/}));
