@@ -1,0 +1,8 @@
+# OPTIONAL — do not install before real new-host acceptance.
+# The old hostname may be routed through Cloudflare rather than the
+# same Caddy ingress. Coordinate its actual edge ownership first.
+# Enable a temporary redirect only after the new hostname completes
+# TLS, ZITADEL two-account login, owner review and AutoApply checks.
+smartploy.obumai.com {
+    redir https://smartploy.komplyint.fi{uri} temporary
+}
