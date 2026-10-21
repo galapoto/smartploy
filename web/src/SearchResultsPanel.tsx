@@ -83,6 +83,10 @@ export default function SearchResultsPanel(props: {
 }) {
   const data = props.data;
   const general = data?.mode === "general";
+  // General browsing defaults to career-relevant job titles. All
+  // occupations remain available without touching the stored source jobs.
+  const [careerFocus, setCareerFocus] = useState<"it_planning" | "all">("it_planning");
+  const [levelFocus, setLevelFocus] = useState<"junior_unspecified" | "all">("junior_unspecified");
   const all = general ? data?.all_jobs || [] :
     props.view === "top" ? data?.recommendations || [] : data?.broader || [];
   const rows = useMemo(() => {
@@ -90,19 +94,26 @@ export default function SearchResultsPanel(props: {
     return all.filter((item) => {
       const sector = item.job.employer_sector || "unknown";
       if (props.sector !== "all" && sector !== props.sector) return false;
+      // Published title only: a delivery driver mentioning apps or data
+      // in the description is not a relevant technical vacancy.
+      if (general && careerFocus === "it_planning" &&
+          !["it_data", "planning"].includes(item.job.career_area || "other")) return false;
+      // Never infer a junior level from an absent experience label.
+      if (general && levelFocus === "junior_unspecified" &&
+          item.job.title_experience === "senior") return false;
       return !query || [item.job.role_title, item.job.company, item.job.location].some(
         (field) => (field || "").toLocaleLowerCase().includes(query)
       );
     });
-  }, [all, props.sector, props.search]);
+  }, [all, props.sector, props.search, general, careerFocus, levelFocus]);
   const shown = props.currentPage === "dashboard" ? rows.slice(0, 8) : rows;
   return <section className="panel jobs-panel">
     <div className="panel-heading">
       <div>
         <p className="section-kicker">{general ? "EXPLORE FINLAND" : "PERSONALIZED DISCOVERY"}</p>
-        <h2>{props.currentPage === "jobs" ? general ? "All current jobs" : "Opportunities for your goals" :
-          general ? "Latest jobs in Finland" : "Recommended opportunities"}</h2>
-        <p>{general ? "Browse current source listings without personal ranking." :
+        <h2>{props.currentPage === "jobs" ? general ? "IT, data & planning jobs in Finland" : "Opportunities for your goals" :
+          general ? "IT & planning opportunities across Finland" : "Recommended opportunities"}</h2>
+        <p>{general ? "Browse published vacancies across Finland by career category and experience level. No private profiling." :
           "Ranked by the search criteria you chose — not a verified qualification score."}</p>
       </div>
       {props.currentPage === "dashboard" ? <button className="text-link" onClick={props.onAllJobs} type="button">
@@ -149,6 +160,16 @@ export default function SearchResultsPanel(props: {
         <Search size={15}/> {data?.available_count ?? 0} current job listings
       </div>}
       <div className="filter-right">
+        {general ? <><select aria-label="Career focus" value={careerFocus}
+          onChange={(event) => setCareerFocus(event.target.value as "it_planning" | "all")}>
+          <option value="it_planning">IT, data & planning</option>
+          <option value="all">All occupations</option>
+        </select>
+        <select aria-label="Experience focus" value={levelFocus}
+          onChange={(event) => setLevelFocus(event.target.value as "junior_unspecified" | "all")}>
+          <option value="junior_unspecified">Junior + level unspecified</option>
+          <option value="all">All experience levels</option>
+        </select></> : null}
         <select aria-label="Employer sector" value={props.sector}
           onChange={(event) => props.onSector(event.target.value as SectorFilter)}>
           <option value="all">All sectors</option><option value="public">Public</option>
@@ -158,6 +179,11 @@ export default function SearchResultsPanel(props: {
           onClick={props.onToggleDisplay}><Target size={18}/></button> : null}
       </div>
     </div>
+    {general ? <p className="muted" role="status">
+      Showing {rows.length} of {data?.available_count ?? 0} current listings.
+      {careerFocus === "it_planning" ? " Unrelated driving and other titles are hidden in this view, not deleted." : " All occupations selected."}
+      {levelFocus === "junior_unspecified" ? " Senior-labelled titles are hidden; missing experience labels are not treated as verified junior jobs." : ""}
+    </p> : null}
     <div className="job-list">
       {shown.map((item) => <JobCard key={item.canonical_key} item={item}
         displayMode={props.displayMode}
@@ -167,7 +193,7 @@ export default function SearchResultsPanel(props: {
         <BriefcaseBusiness size={30}/>
         <h3>{general ? "No jobs for these filters" : props.view === "top" ?
           "No recommended roles in the current sources yet" : "No more jobs for these filters"}</h3>
-        <p>{general ? "Try a different keyword or employer sector." :
+        <p>{general ? "Try All occupations, All experience levels, another keyword or employer sector. Additional sources may require authorization." :
           "Adjust your titles, location, language or filters in Settings. You can also explore every current job with General search."}</p>
         <button type="button" className="secondary-btn" onClick={props.onChangeCriteria}>
           Adjust search criteria <ArrowRight size={15}/>
