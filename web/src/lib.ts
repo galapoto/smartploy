@@ -117,7 +117,7 @@ export function listingObservationLabels(
     origin,
     observation: "Last observed " + ageWords(observedAge),
     caution: observedAge >= SOURCE_AGE_CAUTION_MS
-      ? "Source was last observed at least 48h ago — automatic drafts require a fresh source poll. Confirm on employer site."
+      ? "Source was last observed at least 48h ago — automatic drafts require a fresh source poll; confirm on employer site."
       : null
   };
 }
