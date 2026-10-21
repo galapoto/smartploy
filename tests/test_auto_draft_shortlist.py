@@ -609,3 +609,170 @@ def test_source_provenance_rechecked_after_race_but_before_workspace_creation():
     assert result.unverified_source_skipped == 1
     assert result.created == 0
     assert spaces.list(pid) == []
+
+
+def test_approved_fact_revoked_after_ranking_cannot_be_used_in_a_new_draft():
+    """Reuse the original profile store and guard; never copy revoked evidence."""
+    fx = fixture()
+    pid, prefs, jobs, profile, cv, spaces, _ = fx
+
+    class RevokedDuringMatching:
+        def __init__(self):
+            self.reads = 0
+
+        def profile(self):
+            self.reads += 1
+            if self.reads == 2:
+                for fact in profile.list_facts():
+                    profile.upsert_fact(replace(fact, approved=False))
+            return profile.profile()
+
+    changing = RevokedDuringMatching()
+    outcome = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=changing, cv_repository=cv,
+        workspace_repository=spaces,
+    )
+    assert changing.reads == 2
+    assert outcome.created == 0
+    assert spaces.list(pid) == []
+    assert outcome.public_counts()["employer_actions_performed"] is False
+
+
+def test_downgraded_qualification_after_ranking_must_be_rescored():
+    """A remaining approved skill does not license missing job requirements."""
+    fx = fixture()
+    pid, prefs, jobs, profile, cv, spaces, _ = fx
+
+    class QualificationChanged:
+        def __init__(self):
+            self.reads = 0
+
+        def profile(self):
+            self.reads += 1
+            if self.reads == 2:
+                for fact in profile.list_facts():
+                    if fact.value != "Python":
+                        profile.upsert_fact(replace(fact, approved=False))
+            return profile.profile()
+
+    changing = QualificationChanged()
+    outcome = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=changing, cv_repository=cv,
+        workspace_repository=spaces,
+    )
+    assert changing.reads == 2
+    assert outcome.created == 0
+    assert spaces.list(pid) == []
+
+
+def test_replaced_cv_after_ranking_uses_new_version_not_private_old_document():
+    """Only the current owner-scoped StoredCV may reach a draft's documents."""
+    fx = fixture()
+    pid, prefs, jobs, profile, _, spaces, _ = fx
+
+    class ChangedCV(MemoryCVRepository):
+        def __init__(self):
+            super().__init__()
+            self.put(pid, "OLD-PRIVATE-CV.pdf", "application/pdf",
+                     b"private old content", "PRIVATE OLD CV CONTENT")
+            self.reads = 0
+
+        def get(self, profile_id):
+            self.reads += 1
+            if self.reads == 1:
+                self.put(pid, "NEW-APPROVED-CV.pdf", "application/pdf",
+                         b"newer cv contents", "NEW REVIEWED CV CONTENT")
+            return super().get(profile_id)
+
+    updated = ChangedCV()
+    outcome = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=profile, cv_repository=updated,
+        workspace_repository=spaces,
+    )
+    assert updated.reads == 1
+    assert outcome.created == 1
+    document = spaces.list(pid)[0]
+    assert document.cv_text == "NEW REVIEWED CV CONTENT"
+    assert document.source_cv_sha256 == updated.get(pid).digest
+    assert "PRIVATE OLD CV CONTENT" not in str(document.to_dict())
+    assert outcome.public_counts()["provider_calls"] == 0
+
+
+def test_deleted_cv_after_ranking_uses_only_current_approved_profile():
+    """Deleting the CV must not resurrect its earlier private text/digest."""
+    fx = fixture()
+    pid, prefs, jobs, profile, _, spaces, _ = fx
+
+    class DeletedCV(MemoryCVRepository):
+        def __init__(self):
+            super().__init__()
+            self.put(pid, "OLD-PRIVATE-CV.pdf", "application/pdf",
+                     b"old secrets", "REVOKED-PRIVATE-CV-CONTENT")
+            self.reads = 0
+
+        def get(self, profile_id):
+            self.reads += 1
+            if self.reads == 1:
+                self.delete(profile_id)
+            return super().get(profile_id)
+
+    deleted = DeletedCV()
+    outcome = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=profile, cv_repository=deleted,
+        workspace_repository=spaces,
+    )
+    assert deleted.reads == 1
+    assert outcome.created == 1
+    document = spaces.list(pid)[0]
+    assert document.source_cv_sha256 == ""
+    assert "REVOKED-PRIVATE-CV-CONTENT" not in str(document.to_dict())
+    assert "Python" in document.cv_text
+    assert document.to_dict()["authority"]["may_submit_to_employer"] is False
+
+
+def test_cross_account_cv_and_profile_mismatch_are_refused_at_final_save():
+    """Storage identity is validated again after search matching."""
+    fx = fixture()
+    pid, prefs, jobs, profile, _, spaces, _ = fx
+    other = MemoryCVRepository()
+    other.put("another-person", "private.pdf", "application/pdf", b"bad", "SECRET")
+    wrong = other.get("another-person")
+    assert wrong is not None
+
+    class CrossAccountCV:
+        def get(self, _profile_id):
+            return wrong
+
+    outcome = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=profile, cv_repository=CrossAccountCV(),
+        workspace_repository=spaces,
+    )
+    assert outcome.created == 0
+    assert spaces.list(pid) == []
+
+    from smartploy.profile import CandidateProfile
+
+    class ChangedOwnerProfile:
+        def __init__(self):
+            self.reads = 0
+
+        def profile(self):
+            self.reads += 1
+            if self.reads == 1:
+                return profile.profile()
+            return CandidateProfile(profile_id="another-person", facts=profile.profile().facts)
+
+    changing = ChangedOwnerProfile()
+    result = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=changing, cv_repository=MemoryCVRepository(),
+        workspace_repository=spaces,
+    )
+    assert changing.reads == 2
+    assert result.created == 0
+    assert spaces.list(pid) == []
