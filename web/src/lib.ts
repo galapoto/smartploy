@@ -73,7 +73,8 @@ export interface ListingObservationLabels {
   caution: string | null;
 }
 
-const SOURCE_AGE_CAUTION_MS = 72 * 60 * 60 * 1000;
+// Match the original source timestamp gate used by the private draft worker.
+const SOURCE_AGE_CAUTION_MS = 48 * 60 * 60 * 1000;
 const ALLOWED_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 function observationAgeMs(value: string, now: Date): number | null {
@@ -116,7 +117,7 @@ export function listingObservationLabels(
     origin,
     observation: "Last observed " + ageWords(observedAge),
     caution: observedAge >= SOURCE_AGE_CAUTION_MS
-      ? "Source was last observed at least 72h ago — confirm on employer site."
+      ? "Source was last observed at least 48h ago — automatic drafts require a fresh source poll. Confirm on employer site."
       : null
   };
 }
