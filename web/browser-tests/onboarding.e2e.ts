@@ -20,7 +20,8 @@ const analyst: SearchJobCard = {
   job: {
     company: "Example Oy", role_title: "Junior Data Analyst",
     location: "Helsinki", language: "English", work_mode: "remote",
-    employer_sector: "private", source_current: true,
+    employer_sector: "private", career_area: "it_data", title_experience: "entry",
+    source_current: true,
     application_url: "https://jobs.example.invalid/analyst",
     source_ids: ["synthetic-lever"], source_attribution: "Synthetic ATS",
     posted_at: "2026-10-10T10:00:00Z",
