@@ -34,6 +34,7 @@ const listing = {
   job: {
     company: "Example Oy", role_title: "Junior Data Analyst", location: "Helsinki",
     language: "English", work_mode: "remote", employer_sector: "private" as const,
+    career_area: "it_data" as const, title_experience: "entry" as const,
     source_current: true, application_url: "https://jobs.example.fi/analyst",
     source_ids: ["test-ats"], source_attribution: "Public ATS",
     posted_at: "2026-10-11T10:00:00Z", first_seen_at: "2026-10-11T10:00:00Z",
