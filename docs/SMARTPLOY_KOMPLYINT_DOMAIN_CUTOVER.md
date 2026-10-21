@@ -61,10 +61,14 @@ This is a safe, opt-in rollout plan, **not proof of a public deployment**.
    without an approved change window. The old-host redirect is NOT
    included in this file.
    verify certificate, HTTPS, a public static shell, private API
-   unauthenticated 401. Configure Cloudflare edge/WAF so
-   `smartploy.komplyint.fi` **bypasses Cloudflare Access login** but
-   keeps TLS/WAF, and retain first-party OIDC authentication. Cloudflare
-   Access must not intercept `/auth/login` or `/auth/callback`.
+   unauthenticated 401. With the currently documented direct DNS A
+   record to OVH, verify the existing Caddy HTTPS/TLS ingress: no
+   `cf-ray` or `server: cloudflare` header is expected or required.
+   If traffic is subsequently routed through the Cloudflare proxy,
+   configure its **Access bypass for this application hostname** and
+   preserve HTTPS/WAF as applicable. In either topology the actual
+   authentication is first-party ZITADEL. Cloudflare Access must never
+   intercept `/auth/login` or `/auth/callback`.
 4. **Identity:** register **exactly** the new login callback
    `https://smartploy.komplyint.fi/auth/callback` and signed-out
    redirect `https://smartploy.komplyint.fi/auth/logged-out` for the
@@ -128,3 +132,28 @@ The sample Caddy new-host site and optional legacy redirect are now
 separate files, so a well-intended initial install cannot silently
 redirect users away from the existing hostname. These code changes
 are NOT proof that the OVH proxy was installed or that the app runs.
+
+## SP17 — 21 October deployment gate correction (source only)
+
+The operator's next OVH run successfully fetched and checked out the integrated
+`7178e31` release, passed private OIDC preflight, built both images, backed up
+PostgreSQL, applied migrations, connected local Ollama and brought the Postgres,
+API, worker and web services healthy. **The post-deploy gate failed** before
+recording `deployed-sha`, with `production response lacks Cloudflare edge
+evidence`. The running containers and the deployment receipt are therefore
+not the same thing. Do not claim public login or AutoApply acceptance.
+
+The previous `smartploy/live_acceptance.py` OIDC validator incorrectly demanded
+Cloudflare response headers even though the operator's approved production DNS
+points directly to an OVH Caddy HTTPS ingress. SP17 reuses that exact TLS probe
+and the original origin-health, 401 private API and trusted issuer redirect
+gates, but no longer treats an optional reverse-proxy brand header as user
+authentication. Cloudflare **Access** challenges, private API `200`, unrelated
+login redirects, invalid issuer and non-`200` public root still fail closed.
+Legacy Cloudflare Access acceptance is unchanged.
+
+The original shell now reports only the public root/API/login numeric HTTP
+statuses and ingress classification to assist nonsecret follow-up diagnostics.
+Release success still requires a fresh SHA-matched CI run, the OVH read-only
+public OIDC acceptance, a real ZITADEL account login and an account-owned draft.
+Employer submissions remain separately authorization gated.
