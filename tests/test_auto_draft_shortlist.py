@@ -529,7 +529,7 @@ def test_both_existing_finnish_public_feed_policy_types_remain_usable_for_drafts
         ("public_sector_jobs", "feed", "kuntarekry"),
     )
     for source_class, mode, sid in choices:
-        job = replace(original.job, raw={
+        job = replace(original.job, source=sid, raw={
             **original.job.raw, "source_class": source_class, "source_mode": mode,
         })
         record = replace(original, job=job, source_ids=(sid,), metadata={
