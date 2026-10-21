@@ -87,7 +87,7 @@ services:
         - CMD
         - python
         - -c
-        - import urllib.request; r=urllib.request.Request('http://127.0.0.1:8090/healthz', headers={'Host':'smartploy.obumai.com'}); urllib.request.urlopen(r, timeout=4).read(256)
+        - import os, urllib.request; r=urllib.request.Request('http://127.0.0.1:8090/healthz', headers={'Host':os.environ['SMARTPLOY_ALLOWED_HOSTS']}); urllib.request.urlopen(r, timeout=4).read(256)
       interval: 30s
       timeout: 5s
       start_period: 20s
@@ -199,7 +199,10 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - "wget -qO- --header='Host: smartploy.obumai.com' http://127.0.0.1:8080/healthz >/dev/null"
+        # Compose substitutes the exact allowed hostname from the chosen
+        # immutable Cloudflare or ZITADEL identity policy at deploy time.
+        # The web container itself holds no private OIDC/DB environment.
+        - "wget -qO- --header='Host: ${SMARTPLOY_ALLOWED_HOSTS:?select a validated production identity policy}' http://127.0.0.1:8080/healthz >/dev/null"
       interval: 30s
       timeout: 5s
       start_period: 15s
