@@ -11,9 +11,9 @@ _Updated 21 October 2026. A source-code branch is not a production release._
 3. The **existing** source worker retrieves public employer postings from
    operator-configured read-only ATS adapters; source health and freshness
    remain independently auditable. The five-employer Finland pilot is now wired
-   into **new-installation `deploy/personal/env.example`** through the existing
-   immutable image-local source file. Existing operator environments remain
-   unchanged and live production polling is still unverified.
+   into **new-installation `deploy/personal/env.example`** as production-supported
+   inline JSON copied from the existing reviewed registry. Existing operator
+   environments remain unchanged and live production polling is still unverified.
 4. The **existing** matcher compares the chosen titles/locations/languages
    against current jobs and checks qualification gaps using only approved facts.
    Private CV and letter drafts are saved to the original owner-bound
@@ -29,7 +29,7 @@ _Updated 21 October 2026. A source-code branch is not a production release._
 
 | Capability | Original code reused/adapted | New glue and test evidence | Current stage |
 | --- | --- | --- | --- |
-| Public job ingestion | `smartploy/sources/public_ats.py`, `public_ats_polling.py`, `storage.py` and operator-curated `config/finland_public_ats_pilot.json` | Source health / source age policy reuse; new-install env points to reviewed pilot | Worker configured for new installs; OVH polling **not verified** |
+| Public job ingestion | `smartploy/sources/public_ats.py`, `public_ats_polling.py`, `storage.py` and operator-curated `config/finland_public_ats_pilot.json` | Source health / age reuse; approved inline JSON activates five tasks on new installs | Worker configured for new installs; OVH polling **not verified** |
 | Search and matching | `search_preferences.py`, `scoring.py`, owner preferences storage | Conservative per-owner shortlist | Implemented in stacked review branch |
 | Approved career evidence | `profile_storage.py`, `cv_storage.py` | Required approved facts; no invented credentials | Implemented in review branch |
 | Private application documents | `application_workspace.py`, `application_workspace_storage.py` | Immediate first opt-in scan and account-safe navigation | Implemented in review branch |
@@ -52,9 +52,11 @@ provider, model service or employer submitter.
   timestamp for any automatically created draft; show explicit source
   refresh guidance; validate keyword-only roles on the original settings
   UI. Code implemented on PR #173, pending final exact-head CI.
-- **P0 — real employer listings:** The new-install example uses the
-  existing reviewed `config/finland_public_ats_pilot.json` as the
-  worker's immutable source file. On **existing** installations, use
+- **P0 — real employer listings:** The new-install example embeds the
+  five entries from the reviewed `config/finland_public_ats_pilot.json`
+  through the existing `SMARTPLOY_PUBLIC_ATS_SOURCES_JSON` variable.
+  Preflight correctly refuses file-based configuration for production.
+  On **existing** installations, use
   existing `scripts/configure_finland_ats_pilot.py` to stage reviewed
   sources without overwriting operator env, let the existing worker poll, then
   run **existing** `scripts/check_ats_readiness.py --require-healthy
