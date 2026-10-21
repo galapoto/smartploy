@@ -115,7 +115,7 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
         raise ValueError("SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED must be true or false")
     if draft_flag == "true":
         draft_cadence = _positive_int(
-            "SMARTPLOY_WORKER_AUTO_DRAFT_CADENCE_SECONDS", 600, maximum=86400
+            "SMARTPLOY_WORKER_AUTO_DRAFT_CADENCE_SECONDS", 120, maximum=86400
         )
 
         def run_auto_draft() -> WorkerTaskResult:

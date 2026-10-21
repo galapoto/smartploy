@@ -192,7 +192,7 @@ def test_scoped_local_draft_worker_runs_without_remote_ai_or_global_submit(monke
     specs = build_worker_task_specs("postgresql://fixture")
     assert {s.task_id for s in specs} == {"application:auto-draft-shortlist"}
     one=specs[0]
-    assert one.cadence_seconds == 600
+    assert one.cadence_seconds == 120
     assert one.metadata["private_opt_in_required"] is True
     assert one.metadata["processing"] == "local_only"
     assert one.metadata["external_actions_authorized"] is False
