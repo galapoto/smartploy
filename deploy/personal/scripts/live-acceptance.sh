@@ -8,8 +8,9 @@ ENV_FILE="${COMPOSE_DIR}/env"
 POLICY_FILE="$(bash "${SCRIPT_DIR}/select-runtime-policy.sh")"
 PROFILE="${SMARTPLOY_PRODUCTION_IDENTITY_MODE:-cloudflare}"
 
-PRODUCTION_HOST="smartploy.obumai.com"
-PRODUCTION_ORIGIN="https://smartploy.obumai.com"
+# Origin and host come ONLY from the immutable, exact allowlisted policy
+# after validate-runtime-policy.sh succeeds. Never trust external redirect
+# headers or a caller-provided host for post-deploy acceptance.
 
 fail() {
   echo "SmartPloy live acceptance: $1" >&2
@@ -36,6 +37,8 @@ WEB_PORT="$(read_env_value SMARTPLOY_WEB_HOST_PORT)"
 WEB_PORT="${WEB_PORT:-8091}"
 OIDC_ISSUER="$(read_env_value SMARTPLOY_OIDC_ISSUER)"
 bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "${POLICY_FILE}" >/dev/null
+PRODUCTION_ORIGIN="$(sed -n 's/^SMARTPLOY_PUBLIC_ORIGIN=//p' "${POLICY_FILE}")"
+PRODUCTION_HOST="${PRODUCTION_ORIGIN#https://}"
 [[ "${WEB_PORT}" =~ ^[0-9]+$ ]] \
   || fail "SMARTPLOY_WEB_HOST_PORT must be numeric"
 if (( WEB_PORT < 1024 || WEB_PORT > 65535 )); then

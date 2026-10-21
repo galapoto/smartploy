@@ -11,7 +11,9 @@
     @backend path /api/* /auth/* /healthz
     handle @backend {
         reverse_proxy api:8090 {
-            header_up Host smartploy.obumai.com
+            # Preserve the original Host header for TrustedHostMiddleware:
+            # Cloudflare legacy and Komplyint first-party OIDC have separate
+            # exact-host policies. Never force the legacy host on the new app.
             header_up X-Forwarded-Proto https
             header_up Cf-Access-Jwt-Assertion {http.request.header.Cf-Access-Jwt-Assertion}
         }
