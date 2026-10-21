@@ -355,7 +355,11 @@ if "${ONLINE}"; then
   HTTP_STATUS="$(curl --silent --show-error --output /dev/null --max-time 10 --write-out '%{http_code}' "${POLICY_ORIGIN}/" || true)"
   [[ "${HTTP_STATUS}" =~ ^[0-9]{3}$ && "${HTTP_STATUS}" != "000" ]] ||
     fail "selected production origin is not reachable over HTTPS"
-  if (( HTTP_STATUS >= 500 )); then
+  # On a FIRST new-host rollout, TLS may already work but the reverse
+  # proxy can return 502 until this release installs the app containers.
+  # This is *only* a pre-deploy exception for OIDC; post-deploy acceptance
+  # still rejects any 5xx before writing the verified running SHA.
+  if [[ "${PROFILE}" != "oidc" ]] && (( HTTP_STATUS >= 500 )); then
     fail "selected production origin returned server error HTTP ${HTTP_STATUS}"
   fi
   if [[ "${PROFILE}" == "oidc" ]]; then
