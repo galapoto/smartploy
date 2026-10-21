@@ -317,3 +317,67 @@ integration test proving the sample profile registers **five existing
 Finland sources plus only the local per-account draft task** without
 OBUMAI/partner submission. Test runs are synthetic, not claims that
 the five employer feeds were confirmed live on OVH.
+
+
+## SP15q — immediate AutoApply after approved evidence and role changes
+
+**Missing core behavior found first:** Earlier SP15l ran the original signed-in
+`POST /api/v1/auto-draft/prepare` only when an opt-in setting changed
+from OFF to ON. The first scan could legitimately return
+`needs_approved_profile`; after the user added/approved facts, or
+changed desired job titles with AutoApply still ON, no immediate scan
+ran. The user either had to know to click the separate retry button or
+wait up to the configured local draft worker cadence. This impeded
+the first working IT application flow.
+
+**Reused, not rewritten:**
+- Existing `web/src/App.tsx` guarded `runPrivateMutation` checks
+  verified account identity **before and after** the existing backend
+  `prepareMyMatchingDrafts` request, and clears old-account state on
+  session changes. Same method powers the original retry button.
+- Existing server `prepare_profile_shortlist` handles verified ATS
+  provenance, 48-hour source freshness, target roles, qualification
+  gaps, role-match threshold, approved facts, per-account revocable
+  opt-in lock and idempotent owner workspace save.
+- Existing `SearchSetup` saves user-editable target titles and consents;
+  original `onAddFact`, `onFactApproval`, `onCVUpload` save user
+  reviewed evidence without forwarding private data to ObumAI.
+- Original `worker_runtime.build_worker_task_specs` and isolated
+  per-account `application:auto-draft-shortlist` task run headlessly
+  with NO employer POST or external AI. Worker is already opt-in and
+  processes a bounded number of accounts and new drafts per cycle.
+
+**Truly new (small application glue, no third-party code):**
+1. Reuse the original signed-in draft preparation call after *every*
+   saved personalized configuration while `auto_draft_enabled=true`
+   and at least one explicit role is present; not only on first opt-in.
+2. Reuse the same private call immediately after user confirmation/
+   approval of a career fact. Saving unapproved facts, revoking fact
+   approval, general search, and keyword-only search remain ineligible.
+3. Reuse the same private call after a CV upload **only if** the user
+   had independently approved career facts; uploading a CV alone
+   never implies qualifications have been verified.
+4. A synchronous, owner-identity-keyed `autoDraftInFlight` guard
+   prevents rapid UI events triggering two concurrent private scans.
+   Server persistence already has the original idempotency and
+   account revocation locks.
+5. Bounded local-only draft worker default shortened to
+   **120 seconds**, vs **600 seconds** before; source polling retains
+   its existing separate default cadence of 600 seconds and
+   configured rate limits. This is not a promise of job ingestion
+   or immediate actual employer submission.
+
+**Regression tests:** Existing React/Vitest suite extended for
+re-scan on already-opted-in changes, no scan without opt-in,
+newly approved fact, previously unapproved fact, CV upload with and
+without independently approved evidence. Existing Python worker test
+verifies the faster local task cadence and that it never authorizes
+external action. CI must be checked at the *exact* final source commit.
+
+**Provenance and speed accounting:** No external repository was copied,
+no new dependency was introduced, and no additional queue, scraper,
+worker scheduler, app-account system or submission adapter was built.
+The benefit is eliminating one user click or up to one background
+draft interval after an otherwise eligible change, without weakening
+approval controls. This is a behavioral improvement, not a measured
+multiplier of engineering productivity.
