@@ -9,7 +9,10 @@ This does NOT enable OIDC, merge code or submit employer applications.
 from __future__ import annotations
 
 import argparse
+import base64
 import fcntl
+import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -60,8 +63,20 @@ def replace_password(text: str, value: str) -> str:
 def sql_change(role: str, password: str) -> str:
     if not ROLE.fullmatch(role) or not PASSWORD.fullmatch(password):
         raise RotationError("invalid_database_role_or_password")
-    # The password travels ONLY through psql stdin, not shell argv or env.
-    return f'ALTER ROLE "{role}" WITH LOGIN PASSWORD \'{password}\';\n'
+    # Reuse the PostgreSQL 17 SCRAM-SHA-256 verifier protocol rather than
+    # sending the plaintext credential in an ALTER ROLE statement.
+    # PostgreSQL accepts this pre-encoded verifier as-is. Even if a database
+    # administrator enabled log_statement=ddl, the SQL never reveals the
+    # newly generated plain password. 4096 PBKDF2 iterations match the
+    # standard SCRAM server implementation, with a fresh 128-bit salt.
+    salt = secrets.token_bytes(16)
+    salted = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 4096)
+    stored_key = hashlib.sha256(hmac.digest(salted, b"Client Key", "sha256")).digest()
+    server_key = hmac.digest(salted, b"Server Key", "sha256")
+    b64 = lambda data: base64.b64encode(data).decode("ascii")
+    verifier = f"SCRAM-SHA-256$4096:{b64(salt)}${b64(stored_key)}:{b64(server_key)}"
+    # Only this SCRAM verifier goes into psql stdin; never any cleartext.
+    return f'ALTER ROLE "{role}" WITH LOGIN PASSWORD \'{verifier}\';\n'
 
 
 def atomic_private_write(path: Path, text: str) -> None:
@@ -251,8 +266,8 @@ def main(argv: list[str]) -> int:
         staged = replace_password(original, new)
         changed = False
         try:
-            # stdin, not an argv argument, shell history, environment,
-            # database URL, SQL file or user-visible log.
+            # Pre-encoded SCRAM verifier through stdin, never the plain
+            # password in argv, shell history, a SQL log or stdout.
             sql = sql_change(username, new)
             changed = True   # Also attempt rollback if ALTER might have committed.
             dc("exec", "-T", "postgres", "sh", "-ec",
