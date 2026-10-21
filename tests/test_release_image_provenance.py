@@ -16,11 +16,13 @@ def _sandbox(tmp_path):
     root = tmp_path / "smartploy"
     scripts = root / "deploy/personal/scripts"
     scripts.mkdir(parents=True)
+    # Reuse the real immutable policy selector/validator, not a stub.
     shutil.copyfile(SCRIPT, scripts / SCRIPT.name)
-    (root / "deploy/personal/env").write_text("SMARTPLOY_PROFILE_ID=default\n")
-    (root / "deploy/personal/runtime.production.env").write_text(
-        "SMARTPLOY_AUTH_MODE=cloudflare\n"
-    )
+    for name in ("select-runtime-policy.sh", "validate-runtime-policy.sh"):
+        shutil.copyfile(SCRIPT.parent / name, scripts / name)
+    (root / "deploy/personal/env").write_text("SMARTPLOY_PROFILE_ID=default\\n")
+    for name in ("runtime.production.env", "runtime.oidc.production.env"):
+        shutil.copyfile(ROOT / "deploy/personal" / name, root / "deploy/personal" / name)
     (root / "deploy/personal/docker-compose.yml").write_text(
         "name: smartploy\nservices:\n  api:\n    image: image\n"
     )
@@ -71,6 +73,7 @@ sys.exit(2)
     fake_docker.chmod(0o755)
     env = dict(os.environ)
     env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+    env.pop("SMARTPLOY_PRODUCTION_IDENTITY_MODE", None)
     return root, env
 
 
@@ -113,3 +116,26 @@ def test_image_provenance_rejects_wrong_revision(tmp_path):
 
 def test_provenance_script_passes_bash_syntax():
     subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
+
+
+def test_image_provenance_can_verify_exact_komplyint_oidc_images(tmp_path):
+    root, env = _sandbox(tmp_path)
+    env["SMARTPLOY_PRODUCTION_IDENTITY_MODE"] = "oidc"
+    result = _run(root, env)
+    assert result.returncode == 0, result.stderr
+    assert "SmartPloy image provenance: PASS" in result.stdout
+
+
+def test_image_provenance_refuses_mutated_oidc_policy_before_docker(tmp_path):
+    root, env = _sandbox(tmp_path)
+    env["SMARTPLOY_PRODUCTION_IDENTITY_MODE"] = "oidc"
+    policy = root / "deploy/personal/runtime.oidc.production.env"
+    policy.write_text(
+        policy.read_text(encoding="utf-8").replace(
+            "SMARTPLOY_ACCESS_ENABLED=false", "SMARTPLOY_ACCESS_ENABLED=true"
+        ), encoding="utf-8"
+    )
+    result = _run(root, env)
+    assert result.returncode != 0
+    assert "does not match the approved allowlist" in result.stderr
+    assert "image provenance: PASS" not in result.stdout
