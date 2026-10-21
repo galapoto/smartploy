@@ -20,6 +20,16 @@ This is a safe, opt-in rollout plan, **not proof of a public deployment**.
 - Existing `web.Caddyfile` now forwards the incoming exact Host to
   the API instead of rewriting it to the old domain. `TrustedHostMiddleware`
   still rejects incorrect hosts; no CORS wildcard or login bypass.
+- The live discovery document at `https://auth.komplyint.fi/.well-known/openid-configuration`
+  advertises issuer `https://auth.komplyint.fi`, public-client
+  `none` token authentication and PKCE S256. Update the private
+  OVH issuer setting; the previous `auth.obumai.com` example was wrong
+  for this identity instance.
+- The pre-deploy online check now probes the canonical hostname from
+  the immutable selected policy, not the legacy ObumAI hostname.
+  It verifies DNS, HTTPS and matching issuer PKCE metadata but cannot
+  require the new SPA to be live **before deployment**. The strict
+  post-deploy acceptance remains the gate for actual public login.
 - Original read-only live acceptance derives DNS, public HTTPS and
   origin-health host from the selected policy, then requires a public
   SPA shell, unauthenticated private API 401 and a redirect to the

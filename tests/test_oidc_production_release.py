@@ -94,7 +94,12 @@ def test_partner_credentials_are_in_api_only_and_strictly_preflight_checked():
     assert "Unused partner API credential must not be present" in preflight
     assert "Partner API configuration lacks reviewed form, consent" in preflight
     assert "OIDC-only profile must NOT enable Cloudflare assertion authentication" in preflight
-    assert "Cloudflare Access challenge" in preflight
+    assert "check_oidc_metadata.py" in preflight
+    assert "POLICY_HOST" in preflight
+    assert 'getent ahosts "${POLICY_HOST}"' in preflight
+    assert '"${POLICY_ORIGIN}/"' in preflight
+    assert "getent ahosts smartploy.obumai.com" not in preflight
+    assert "the actual public root (200)" in preflight
 
 
 def test_oidc_rollout_requires_explicit_approved_sha_and_verified_public_login():
@@ -137,7 +142,7 @@ def _synthetic_compose(*, profile: str, partner: bool = False) -> dict:
         "SMARTPLOY_ACCESS_ISSUER": "https://team.cloudflareaccess.com",
         "SMARTPLOY_ACCESS_AUDIENCE": "synthetic-test-audience",
         "SMARTPLOY_ACCESS_ALLOWED_EMAIL": "synthetic@example.invalid",
-        "SMARTPLOY_OIDC_ISSUER": "https://auth.obumai.com",
+        "SMARTPLOY_OIDC_ISSUER": "https://auth.komplyint.fi",
         "SMARTPLOY_OIDC_CLIENT_ID": "synthetic-public-client",
         "SMARTPLOY_OIDC_REDIRECT_URI": "https://smartploy.komplyint.fi/auth/callback",
         "SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI": "https://smartploy.komplyint.fi/auth/logged-out",
@@ -239,3 +244,48 @@ def test_real_preflight_python_blocks_invalid_partner_or_credential_scope(tmp_pa
         result = _run_compose_preflight(tmp_path, candidate, "oidc")
         assert result.returncode != 0
         assert "synthetic-employer-issued" not in result.stdout + result.stderr
+
+
+def test_zitadel_discovery_metadata_requires_real_issuer_and_public_pkce(tmp_path):
+    import json
+    import sys
+    from copy import deepcopy
+
+    checker = ROOT / "scripts/check_oidc_metadata.py"
+    sample = {
+        "issuer": "https://auth.komplyint.fi",
+        "authorization_endpoint": "https://auth.komplyint.fi/oauth/v2/authorize",
+        "token_endpoint": "https://auth.komplyint.fi/oauth/v2/token",
+        "jwks_uri": "https://auth.komplyint.fi/oauth/v2/keys",
+        "grant_types_supported": ["authorization_code"],
+        "response_types_supported": ["code"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": ["none"],
+    }
+
+    def verify(payload):
+        return subprocess.run(
+            [sys.executable, str(checker), "https://auth.komplyint.fi"],
+            input=json.dumps(payload), text=True, capture_output=True,
+            check=False, timeout=4,
+        )
+
+    assert verify(sample).returncode == 0
+    for field, value in (
+        ("issuer", "https://auth.obumai.com"),
+        ("authorization_endpoint", "https://evil.example/oauth"),
+        ("token_endpoint", "http://auth.komplyint.fi/oauth/v2/token"),
+        ("jwks_uri", "https://auth.komplyint.fi.evil.example/keys"),
+        ("code_challenge_methods_supported", ["plain"]),
+        ("grant_types_supported", ["client_credentials"]),
+        ("response_types_supported", ["id_token"]),
+        ("token_endpoint_auth_methods_supported", ["client_secret_basic"]),
+    ):
+        changed = deepcopy(sample)
+        changed[field] = value
+        result = verify(changed)
+        assert result.returncode != 0
+        assert "OIDC_METADATA_INVALID" in result.stderr
+        assert "evil.example" not in result.stderr
+
+    assert verify({"issuer": sample["issuer"]}).returncode != 0

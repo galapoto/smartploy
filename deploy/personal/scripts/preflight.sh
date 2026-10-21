@@ -56,6 +56,10 @@ docker info >/dev/null 2>&1 || fail "Docker Engine is unavailable to the current
 docker compose version >/dev/null 2>&1 || fail "Docker Compose plugin is unavailable"
 
 bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "${POLICY_FILE}" >/dev/null
+# The selected, validated committed policy determines the ONLY public hostname.
+# Never check the legacy hostname when a Komplyint OIDC cutover is requested.
+POLICY_ORIGIN="$(sed -n 's/^SMARTPLOY_PUBLIC_ORIGIN=//p' "${POLICY_FILE}")"
+POLICY_HOST="${POLICY_ORIGIN#https://}"
 
 POSTGRES_DB="$(read_env_value POSTGRES_DB)"
 POSTGRES_USER="$(read_env_value POSTGRES_USER)"
@@ -109,9 +113,7 @@ else
   if is_placeholder "${OIDC_CLIENT_ID}" || [[ -z "${OIDC_CLIENT_ID}" || "${#OIDC_CLIENT_ID}" -gt 2048 ]]; then
     fail "SMARTPLOY_OIDC_CLIENT_ID must be a real registered public-client identifier"
   fi
-  # The immutable committed policy was verified above. Resolve its
-  # exact canonical origin instead of accepting an arbitrary callback host.
-  POLICY_ORIGIN="$(sed -n 's/^SMARTPLOY_PUBLIC_ORIGIN=//p' "${POLICY_FILE}")"
+  # Never trust a callback from an operator-controlled alternative hostname.
   [[ "${OIDC_REDIRECT_URI}" == "${POLICY_ORIGIN}/auth/callback" ]] ||
     fail "OIDC redirect must exactly match SmartPloy signed-in callback"
   [[ "${OIDC_LOGOUT_URI}" == "${POLICY_ORIGIN}/auth/logged-out" ]] ||
@@ -348,14 +350,28 @@ PY
 
 if "${ONLINE}"; then
   require_command getent
-  getent ahosts smartploy.obumai.com >/dev/null 2>&1     || fail "smartploy.obumai.com does not resolve"
-  HTTP_STATUS="$(curl --silent --show-error --output /dev/null --max-time 10 --write-out '%{http_code}' https://smartploy.obumai.com/ || true)"
-  [[ "${HTTP_STATUS}" =~ ^[0-9]{3}$ && "${HTTP_STATUS}" != "000" ]]     || fail "smartploy.obumai.com is not reachable over HTTPS"
+  getent ahosts "${POLICY_HOST}" >/dev/null 2>&1 ||
+    fail "selected production hostname does not resolve"
+  HTTP_STATUS="$(curl --silent --show-error --output /dev/null --max-time 10 --write-out '%{http_code}' "${POLICY_ORIGIN}/" || true)"
+  [[ "${HTTP_STATUS}" =~ ^[0-9]{3}$ && "${HTTP_STATUS}" != "000" ]] ||
+    fail "selected production origin is not reachable over HTTPS"
   if (( HTTP_STATUS >= 500 )); then
-    fail "smartploy.obumai.com returned server error HTTP ${HTTP_STATUS}"
+    fail "selected production origin returned server error HTTP ${HTTP_STATUS}"
   fi
-  if [[ "${PROFILE}" == "oidc" && "${HTTP_STATUS}" != "200" ]]; then
-    fail "OIDC release requires public static login shell; remove the Cloudflare Access challenge at the EDGE only after ZITADEL is ready"
+  if [[ "${PROFILE}" == "oidc" ]]; then
+    # Pre-deploy cannot require a working new login shell: that shell is
+    # installed by THIS release. The post-deploy live-acceptance gate checks
+    # the actual public root (200), signed-out API (401), trusted ZITADEL
+    # redirect, and absence of a Cloudflare Access challenge BEFORE writing
+    # the deployed SHA. Here verify TLS/DNS and issuer metadata only.
+    OIDC_DISCOVERY="$(curl --fail --silent --show-error --max-time 10 \
+      --max-filesize 65536 "${OIDC_ISSUER}/.well-known/openid-configuration")" ||
+      fail "configured OIDC issuer discovery is unavailable over HTTPS"
+    if ! printf '%s' "${OIDC_DISCOVERY}" | \
+      python3 "${SCRIPT_DIR}/../../../scripts/check_oidc_metadata.py" "${OIDC_ISSUER}" >/dev/null; then
+      fail "OIDC discovery issuer or public PKCE metadata does not match configuration"
+    fi
+    unset OIDC_DISCOVERY
   fi
 fi
 

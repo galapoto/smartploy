@@ -24,11 +24,18 @@ frontend client secret). Production OIDC profile strictly requires:
 | Post-logout redirect URI | `https://smartploy.komplyint.fi/auth/logged-out` |
 | Redirect scheme | HTTPS only; production/dev mode OFF |
 | Requested scopes | `openid profile email` |
-| Issuer URL | The **actual** organization's ZITADEL origin (copy from its discovery configuration, not from a guess) |
+| Issuer URL | `https://auth.komplyint.fi` — confirmed from the live public OIDC discovery document on 21 October 2026 |
 | Client ID | Copy the application's public Client ID into the **private OVH env**, not the repo |
 
-A valid ZITADEL issuer's `/.well-known/openid-configuration`
-must be reachable from SmartPloy's API container.
+The public discovery document at
+`https://auth.komplyint.fi/.well-known/openid-configuration`
+advertises issuer `https://auth.komplyint.fi`, Authorization Code,
+public token-endpoint authentication (`none`), and PKCE S256.
+It was checked over HTTPS externally, **not** from the OVH container.
+The new ZITADEL application wizard must still be completed with the
+**Create** action before the Client ID can be used.
+The preflight now validates issuer metadata over HTTPS; the actual
+provider must also be reachable from SmartPloy's API container.
 Do not send an administrator PAT, client secret, user password or
 provider cookie in chat.
 
@@ -62,7 +69,7 @@ Use the original private `/srv/obum/stacks/smartploy/deploy/personal/env`
 file, never commit it. Its relevant keys for this target are:
 
 ```text
-SMARTPLOY_OIDC_ISSUER=<verified existing ZITADEL issuer HTTPS origin>
+SMARTPLOY_OIDC_ISSUER=https://auth.komplyint.fi
 SMARTPLOY_OIDC_CLIENT_ID=<registered public client ID>
 SMARTPLOY_OIDC_REDIRECT_URI=https://smartploy.komplyint.fi/auth/callback
 SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI=https://smartploy.komplyint.fi/auth/logged-out

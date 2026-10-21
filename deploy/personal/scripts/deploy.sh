@@ -56,9 +56,11 @@ DEPLOY_SHA="$(git rev-parse HEAD)"
 export SMARTPLOY_IMAGE_TAG="${DEPLOY_SHA:0:12}"
 
 bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "${POLICY_FILE}"
-# The existing preflight is shared with backups/restore and now knows both
-# immutable production profiles. Refuse a public first-party OIDC rollout if
-# Cloudflare Access still challenges the static login shell.
+# Before deploying, verify selected-host DNS/TLS and exact issuer PKCE
+# metadata. Do NOT require the new web shell to be served before it exists.
+# After deploying, the original live-acceptance.sh rejects Cloudflare
+# Access challenges, unsafe login redirects and inaccessible private APIs
+# before recording a successful release SHA.
 if [[ "${IDENTITY_PROFILE}" == "oidc" ]]; then
   [[ "${SMARTPLOY_RELEASE_APPROVED_SHA:-}" == "${DEPLOY_SHA}" ]] || {
     echo "OIDC rollout requires a separately approved EXACT release commit SHA" >&2
