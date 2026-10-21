@@ -404,6 +404,9 @@ export default function App() {
       } else if (newlyOptedIn && firstScan?.status === "needs_source_refresh") {
         setPage("jobs");
         setNotice("Automatic IT search is enabled, but some matching employer listings have not been checked recently. No drafts were created from stale postings. Check the job-feed status and retry after a source refresh.");
+      } else if (newlyOptedIn && firstScan?.status === "needs_trusted_source") {
+        setPage("jobs");
+        setNotice("Automatic IT search is enabled, but matching jobs came from manual or unverified sources. Set up a reviewed public employer feed for automatic drafts. You can still review those listings yourself.");
       } else if (newlyOptedIn && firstScan?.status === "prepared" && firstScan.created > 0) {
         setPage("applications");
         setNotice(firstScan.created + " matched IT application draft(s) prepared privately. Review each CV and letter before any employer submission.");
@@ -652,6 +655,9 @@ export default function App() {
       } else if (result.status === "needs_source_refresh") {
         navigate("jobs");
         setNotice("No new drafts: matching employer listings were not verified recently. The source worker must refresh those postings before safe automatic drafting.");
+      } else if (result.status === "needs_trusted_source") {
+        navigate("jobs");
+        setNotice("No new drafts: matching jobs are manual or unverified imports. Automatic drafts require a recently refreshed, reviewed employer or official job feed.");
       } else if (result.status !== "prepared") {
         setNotice("Automatic drafts are not available for these account settings.");
       } else if (result.created) {
