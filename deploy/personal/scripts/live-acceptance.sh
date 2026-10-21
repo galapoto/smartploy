@@ -86,6 +86,10 @@ ROOT_PROBE="${TMP_DIR}/root.probe"
 if ! probe_public "${PRODUCTION_ORIGIN}/" "${ROOT_PROBE}"; then
   fail "public HTTPS/TLS probe failed"
 fi
+# The public response classification must not require Cloudflare headers in
+# OIDC mode: Komplyint can route by direct trusted TLS to its OVH Caddy host.
+# Show numeric status only; never print redirect URLs, cookies or OAuth state.
+echo "public_root_http=$(sed -n '1p' "${ROOT_PROBE}")"
 if [[ "${PROFILE}" == "oidc" ]]; then
   ROOT_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
     oidc-root "${ROOT_PROBE}" "${OIDC_ISSUER}")" \
@@ -97,13 +101,26 @@ else
 fi
 
 echo "tls=pass"
-echo "cloudflare_edge=pass"
+if [[ "${PROFILE}" == "oidc" ]]; then
+  # Ingress topology is informative, not an authentication decision. Curl
+  # already verified the exact public HTTPS hostname and server certificate.
+  ROOT_CF_RAY="$(sed -n '2p' "${ROOT_PROBE}")"
+  ROOT_SERVER="$(sed -n '3p' "${ROOT_PROBE}")"
+  if [[ -n "${ROOT_CF_RAY}" || "${ROOT_SERVER,,}" == "cloudflare" ]]; then
+    echo "public_ingress=cloudflare_edge"
+  else
+    echo "public_ingress=direct_https_or_other_proxy"
+  fi
+else
+  echo "cloudflare_edge=pass"
+fi
 echo "access_root=${ROOT_CLASS}"
 
 API_PROBE="${TMP_DIR}/api.probe"
 if ! probe_public "${PRODUCTION_ORIGIN}/api/v1/dashboard" "${API_PROBE}"; then
   fail "public protected API probe failed"
 fi
+echo "public_api_http=$(sed -n '1p' "${API_PROBE}")"
 if [[ "${PROFILE}" == "oidc" ]]; then
   API_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
     oidc-api "${API_PROBE}" "${OIDC_ISSUER}")" \
@@ -112,6 +129,7 @@ if [[ "${PROFILE}" == "oidc" ]]; then
   if ! probe_public "${PRODUCTION_ORIGIN}/auth/login" "${LOGIN_PROBE}"; then
     fail "OIDC login initiation probe failed"
   fi
+  echo "public_login_http=$(sed -n '1p' "${LOGIN_PROBE}")"
   LOGIN_CLASS="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
     oidc-login "${LOGIN_PROBE}" "${OIDC_ISSUER}")" \
     || fail "OIDC issuer redirect verification failed"
