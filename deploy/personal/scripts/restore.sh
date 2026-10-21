@@ -117,6 +117,10 @@ if [[ -f "${META_FILE}" && ! -L "${META_FILE}" ]]; then
 fi
 
 bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "${POLICY_FILE}"
+# Reuse the immutable, validated identity policy as the ONLY allowed Host,
+# for both legacy rollback and the Komplyint first-party OIDC release.
+PRODUCTION_ORIGIN="$(sed -n 's/^SMARTPLOY_PUBLIC_ORIGIN=//p' "${POLICY_FILE}")"
+PRODUCTION_HOST="${PRODUCTION_ORIGIN#https://}"
 
 COMPOSE=(
   docker compose
@@ -157,8 +161,8 @@ trap cleanup EXIT
 
 HEALTH_OK=false
 for _ in $(seq 1 45); do
-  if curl --fail --silent --show-error     -H 'Host: smartploy.obumai.com'     "http://127.0.0.1:${WEB_PORT}/healthz" > "${HEALTH_FILE}"; then
-    if python3 - "${HEALTH_FILE}" "${IDENTITY_PROFILE}" <<'PY'
+  if curl --fail --silent --show-error     -H "Host: ${PRODUCTION_HOST}"     "http://127.0.0.1:${WEB_PORT}/healthz" > "${HEALTH_FILE}"; then
+    if python3 - "${HEALTH_FILE}" "${IDENTITY_PROFILE}" "${PRODUCTION_ORIGIN}" <<'PY'
 import json
 import sys
 
@@ -167,7 +171,7 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 
 assert health["ok"] is True
 assert health["service"] == "smartploy"
-assert health["public_origin"] == "https://smartploy.obumai.com"
+assert health["public_origin"] == sys.argv[3]
 assert health["storage"]["ready"] is True
 assert health["access"]["environment"] == "production"
 if sys.argv[2] == "oidc":
