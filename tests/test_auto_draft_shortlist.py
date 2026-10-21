@@ -6,6 +6,7 @@ No network, ObumAI or employer final-submit engine is mocked in or invoked.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 import os
 from uuid import uuid4
 
@@ -32,7 +33,7 @@ def candidate(title: str, *, url: str = "", requirements: list[str] | None = Non
         SourceObservation(
             source_id="manual-import", source_mode="manual",
             source_url=href, raw_text=title + " vacancy",
-            observed_at="2026-10-20T11:00:00+00:00",
+            observed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
             payload={
                 "company":"Synthetic Employer", "role_title":title,
                 "description":"Python data analysis and SQL business reporting",
@@ -391,4 +392,82 @@ def test_auto_draft_rechecks_employer_url_role_requirements_after_source_race():
             profile_repository=profile, cv_repository=cv,
             workspace_repository=spaces,
         ).created == 0
+    assert spaces.list(pid) == []
+
+
+def test_recently_verified_source_uses_observation_not_posting_date():
+    from smartploy.auto_draft_shortlist import MAX_VERIFIED_AGE, _recently_verified
+    fixed_now = datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)
+    job = candidate("Junior Data Analyst")
+    fresh = replace(job, posted_at="2023-01-01T00:00:00Z",
+                    last_verified_at="2026-10-21T11:59:00Z",
+                    last_seen_at="2026-10-21T11:59:00Z")
+    assert _recently_verified(fresh, now=fixed_now)
+    at_boundary = replace(fresh, last_verified_at=(fixed_now - MAX_VERIFIED_AGE).isoformat())
+    assert _recently_verified(at_boundary, now=fixed_now)
+    assert not _recently_verified(
+        replace(fresh, last_verified_at=(fixed_now - MAX_VERIFIED_AGE - timedelta(seconds=1)).isoformat()),
+        now=fixed_now
+    )
+    for stamp in ("2026-10-21T12:00:01Z", "bad clock", "2026-10-21T11:00:00"):
+        assert not _recently_verified(replace(fresh, last_verified_at=stamp), now=fixed_now)
+    assert not _recently_verified(
+        replace(fresh, last_verified_at="", last_seen_at=""), now=fixed_now
+    )
+    assert _recently_verified(replace(fresh, last_verified_at=""), now=fixed_now)
+
+
+def test_source_current_flag_alone_cannot_create_from_expired_cache():
+    fx = fixture()
+    pid, prefs, jobs, profile, cv, spaces, _ = fx
+    base = candidate("Junior Data Analyst")
+    old = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    stale = replace(base, last_verified_at=old, last_seen_at=old, first_seen_at=old)
+    assert stale.source_current  # Exactly the failure mode after a stuck poller.
+    result = prepare_profile_shortlist(
+        pid, preferences_repository=prefs,
+        job_repository=MemoryJobRepositoryWith(stale),
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces,
+    )
+    assert result.status == "needs_source_refresh"
+    assert result.stale_skipped == 1
+    assert result.public_counts()["stale_skipped"] == 1
+    assert result.public_counts()["employer_actions_performed"] is False
+    assert result.created == 0
+    assert spaces.list(pid) == []
+    ready = prepare_profile_shortlist(
+        pid, preferences_repository=prefs,
+        job_repository=MemoryJobRepositoryWith(base),
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces,
+    )
+    assert ready.status == "prepared"
+    assert ready.created == 1
+
+
+def test_source_refresh_race_is_rechecked_inside_user_optin_guard():
+    fx = fixture()
+    pid, prefs, jobs, profile, cv, spaces, _ = fx
+    base = candidate("Junior Data Analyst")
+    old = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    stale = replace(base, last_verified_at=old, last_seen_at=old, first_seen_at=old)
+
+    class StaleAfterScoring(MemoryJobRepository):
+        def __init__(self):
+            super().__init__()
+            self.upsert(base)
+
+        def get(self, canonical_key):
+            return stale
+
+    result = prepare_profile_shortlist(
+        pid, preferences_repository=prefs,
+        job_repository=StaleAfterScoring(),
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces,
+    )
+    assert result.status == "needs_source_refresh"
+    assert result.created == 0
+    assert result.stale_skipped == 1
     assert spaces.list(pid) == []
