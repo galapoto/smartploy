@@ -10,8 +10,10 @@ _Updated 21 October 2026. A source-code branch is not a production release._
    at any time without giving employer-submit permission.
 3. The **existing** source worker retrieves public employer postings from
    operator-configured read-only ATS adapters; source health and freshness
-   remain independently auditable. The five-employer Finland pilot exists as
-   an explicit opt-in configuration, not a falsely claimed production feed.
+   remain independently auditable. The five-employer Finland pilot is now wired
+   into **new-installation `deploy/personal/env.example`** through the existing
+   immutable image-local source file. Existing operator environments remain
+   unchanged and live production polling is still unverified.
 4. The **existing** matcher compares the chosen titles/locations/languages
    against current jobs and checks qualification gaps using only approved facts.
    Private CV and letter drafts are saved to the original owner-bound
@@ -27,12 +29,12 @@ _Updated 21 October 2026. A source-code branch is not a production release._
 
 | Capability | Original code reused/adapted | New glue and test evidence | Current stage |
 | --- | --- | --- | --- |
-| Public job ingestion | `smartploy/sources/public_ats.py`, `public_ats_polling.py`, `storage.py` and operator-curated `config/finland_public_ats_pilot.json` | Source health / source age policy reuse | Exists; current OVH polling **not verified** |
+| Public job ingestion | `smartploy/sources/public_ats.py`, `public_ats_polling.py`, `storage.py` and operator-curated `config/finland_public_ats_pilot.json` | Source health / source age policy reuse; new-install env points to reviewed pilot | Worker configured for new installs; OVH polling **not verified** |
 | Search and matching | `search_preferences.py`, `scoring.py`, owner preferences storage | Conservative per-owner shortlist | Implemented in stacked review branch |
 | Approved career evidence | `profile_storage.py`, `cv_storage.py` | Required approved facts; no invented credentials | Implemented in review branch |
 | Private application documents | `application_workspace.py`, `application_workspace_storage.py` | Immediate first opt-in scan and account-safe navigation | Implemented in review branch |
 | Continuous worker | `worker_runtime.py`, `worker_schedule.py` | Fair per-account scans, revoked-account guard | Implemented; production scheduler not verified |
-| Source failover/currentness | Existing `last_verified_at`, `last_seen_at`, polling failure retention | 48-hour fail-closed auto-draft gate plus re-read/recheck, aggregate freshness status and warning | Implemented; exact-head CI required |
+| Source failover/currentness | Existing `last_verified_at`, `last_seen_at`, polling failure retention, source policy provenance and merge deduplication | 48-hour auto-draft freshness gate plus reviewed-source-only provenance gate and owner-bound rechecks | Implemented in review branch; current CI required |
 | Employer final submission | Existing SP15e–h durable reviewed Lever partner path | No additional generic ATS auto-clicker | Employer rights/live acknowledgment **not verified** |
 | Identity / user privacy | Existing first-party ZITADEL OIDC + same-account/CSRF guarded API | Use original strict `runPrivateMutation`, no second auth | Live production sign-in **not verified** |
 
@@ -50,9 +52,11 @@ provider, model service or employer submitter.
   timestamp for any automatically created draft; show explicit source
   refresh guidance; validate keyword-only roles on the original settings
   UI. Code implemented on PR #173, pending final exact-head CI.
-- **P0 — real employer listings:** Use existing
-  `scripts/configure_finland_ats_pilot.py` to review/stage sources
-  without overwriting operator env, let the existing worker poll, then
+- **P0 — real employer listings:** The new-install example uses the
+  existing reviewed `config/finland_public_ats_pilot.json` as the
+  worker's immutable source file. On **existing** installations, use
+  existing `scripts/configure_finland_ats_pilot.py` to stage reviewed
+  sources without overwriting operator env, let the existing worker poll, then
   run **existing** `scripts/check_ats_readiness.py --require-healthy
   --require-jobs --require-fresh-hours 48` on the actual worker. Capture
   aggregate source/job counts, timestamps, and exact deployment SHA,
