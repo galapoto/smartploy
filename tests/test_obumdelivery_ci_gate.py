@@ -135,3 +135,19 @@ def test_deliberate_negative_probe_still_fails_before_manual_pin(monkeypatch):
     monkeypatch.setenv("CI_NEGATIVE_PROBE", "1")
     with pytest.raises(AdmissionDenied, match="EXPECTED_RED_NEGATIVE_PROBE"):
         gate.current()
+
+
+def test_native_woodpecker_pipeline_executes_exact_negative_control_before_tests():
+    """The real isolated CI job MUST demonstrate denied source admission."""
+    pipeline = (Path(__file__).resolve().parents[1] / ".woodpecker/smartploy.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "CI_NEGATIVE_PROBE=1 python3 -B scripts/obumdelivery_ci_gate.py validate" in pipeline
+    assert 'test "$negative_status" -eq 41' in pipeline
+    assert "EXPECTED_RED_NEGATIVE_PROBE" in pipeline
+    assert "OBUMDELIVERY_EXPECTED_RED_NEGATIVE_CONTROL_VERIFIED" in pipeline
+    assert pipeline.index("OBUMDELIVERY_EXPECTED_RED_NEGATIVE_CONTROL_VERIFIED") < pipeline.index(
+        'python3 -m pip install --no-cache-dir -e ".[dev]"'
+    )
+    assert "PRODUCTION_RELEASE_GATE_HOLD" in pipeline
+    assert "docker compose up" not in pipeline
