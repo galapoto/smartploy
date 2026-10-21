@@ -332,3 +332,78 @@ def test_oidc_discovery_duplicate_json_and_nonfinite_metadata_never_pass():
         assert b"OIDC_METADATA_INVALID" in result.stderr
         assert b"wrong.invalid" not in result.stdout + result.stderr
         assert b"admin" not in result.stdout + result.stderr
+
+
+def test_healthchecks_follow_exact_selected_runtime_identity():
+    """Block the original fatal OIDC cutover regression: hard-coded old Host.
+
+    Both API and web health probes must agree with the selected immutable
+    production allowed hostname. A healthy cloudflare old image must not
+    count as a healthy Komplyint OIDC deployment.
+    """
+    compose = (PROD / "docker-compose.yml").read_text(encoding="utf-8")
+    api = compose.split("\n  api:\n", 1)[1].split("\n  worker:\n", 1)[0]
+    web = compose.split("\n  web:\n", 1)[1].split("\nnetworks:\n", 1)[0]
+    assert 'SMARTPLOY_ALLOWED_HOSTS: ${SMARTPLOY_ALLOWED_HOSTS:-smartploy.obumai.com}' in api
+    assert 'os.environ[\'SMARTPLOY_ALLOWED_HOSTS\']' in api
+    assert 'headers={\'Host\':\'smartploy.obumai.com\'}' not in api
+    assert 'Host: ${SMARTPLOY_ALLOWED_HOSTS:?select a validated production identity policy}' in web
+    assert "--header='Host: smartploy.obumai.com'" not in web
+
+    expected = (
+        ("runtime.production.env", "cloudflare", "smartploy.obumai.com"),
+        ("runtime.oidc.production.env", "oidc", "smartploy.komplyint.fi"),
+    )
+    for filename, mode, hostname in expected:
+        verified = _run("validate-runtime-policy.sh", str(PROD / filename))
+        assert verified.returncode == 0, verified.stderr
+        assert f"({mode})" in verified.stdout
+        policy = (PROD / filename).read_text(encoding="utf-8")
+        assert f"SMARTPLOY_ALLOWED_HOSTS={hostname}" in policy
+        assert f"SMARTPLOY_PUBLIC_ORIGIN=https://{hostname}" in policy
+
+
+def test_real_compose_interpolation_resolves_healthcheck_for_both_profiles(tmp_path):
+    """Use existing Docker Compose, not a second YAML parser or fake policy."""
+    import json
+    import shutil
+
+    if shutil.which("docker") is None:
+        import pytest
+        pytest.skip("Docker Compose CLI unavailable")
+
+    available = subprocess.run(
+        ["docker", "compose", "version"], capture_output=True,
+        text=True, check=False, timeout=5,
+    )
+    if available.returncode:
+        import pytest
+        pytest.skip("Docker Compose CLI unavailable")
+
+    env = tmp_path / "only-synthetic.env"
+    env.write_text(
+        "POSTGRES_PASSWORD=synthetic-compose-only-password-not-real-123456\\n"
+        "SMARTPLOY_WEB_HOST_PORT=18091\\n",
+        encoding="utf-8",
+    )
+    for mode, expected_host in (
+        ("runtime.production.env", "smartploy.obumai.com"),
+        ("runtime.oidc.production.env", "smartploy.komplyint.fi"),
+    ):
+        result = subprocess.run(
+            ["docker", "compose", "--env-file", str(env), "--env-file",
+             str(PROD / mode), "-f", str(PROD / "docker-compose.yml"),
+             "config", "--format", "json"],
+            capture_output=True, text=True, check=False, timeout=18,
+        )
+        # Avoid dumping the Compose JSON, which includes a synthetic
+        # password in the generated URL. Only print a benign failure reason.
+        assert result.returncode == 0, f"compose_config_failed:{mode}"
+        doc = json.loads(result.stdout)
+        api = doc["services"]["api"]
+        web = doc["services"]["web"]
+        assert api["environment"]["SMARTPLOY_ALLOWED_HOSTS"] == expected_host
+        assert api["environment"]["SMARTPLOY_PUBLIC_ORIGIN"] == "https://" + expected_host
+        assert api["healthcheck"]["test"][-1].count("os.environ['SMARTPLOY_ALLOWED_HOSTS']") == 1
+        assert f"Host: {expected_host}" in " ".join(web["healthcheck"]["test"])
+        assert "smartploy.obumai.com" not in " ".join(web["healthcheck"]["test"]) if mode == "runtime.oidc.production.env" else True
