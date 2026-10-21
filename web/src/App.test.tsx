@@ -996,6 +996,43 @@ describe("first opt-in creates private IT applications immediately", () => {
     expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1);
   });
 
+  it("never presents manual or unknown-source jobs as automatically prepared", async () => {
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "needs_trusted_source", checked: 1, eligible: 0,
+      created: 0, already_prepared: 0, stale_skipped: 0,
+      unverified_source_skipped: 1,
+      stopped_on_opt_out: false, provider_calls: 0,
+      employer_actions_performed: false, automatic_submission_authorized: false,
+    });
+    await openOptIn();
+    expect(await screen.findByText(/manual or unverified sources/i)).toBeTruthy();
+    expect(currentPrefs.auto_draft_enabled).toBe(true);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("gives specific source-approval guidance on manual rescan", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "needs_trusted_source", checked: 1, eligible: 0,
+      created: 0, already_prepared: 0, stale_skipped: 0,
+      unverified_source_skipped: 1,
+      stopped_on_opt_out: false, provider_calls: 0,
+      employer_actions_performed: false, automatic_submission_authorized: false,
+    });
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {
+      name: /Find and prepare matching drafts now/i,
+    }));
+    expect(await screen.findByText(/Automatic drafts require a recently refreshed, reviewed employer/i)).toBeTruthy();
+    expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+
   it("discards an old account's in-flight first scan after session switch", async () => {
     const switchToB = switchableSession();
     let finish: (value: Awaited<ReturnType<typeof api.prepareMyMatchingDrafts>>) => void =
