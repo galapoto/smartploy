@@ -11,10 +11,14 @@ case "$(basename "${POLICY_FILE}")" in
   runtime.production.env)
     EXPECTED_AUTH_MODE=cloudflare
     EXPECTED_ACCESS_ENABLED=true
+    EXPECTED_ORIGIN=https://smartploy.obumai.com
+    EXPECTED_HOST=smartploy.obumai.com
     ;;
   runtime.oidc.production.env)
     EXPECTED_AUTH_MODE=oidc
     EXPECTED_ACCESS_ENABLED=false
+    EXPECTED_ORIGIN=https://smartploy.komplyint.fi
+    EXPECTED_HOST=smartploy.komplyint.fi
     ;;
   *) echo "SmartPloy runtime policy must be one of the two committed identity profiles" >&2; exit 1 ;;
 esac
@@ -22,8 +26,8 @@ EXPECTED="$(cat <<EOF
 SMARTPLOY_ENVIRONMENT=production
 SMARTPLOY_HOST=0.0.0.0
 SMARTPLOY_PORT=8090
-SMARTPLOY_PUBLIC_ORIGIN=https://smartploy.obumai.com
-SMARTPLOY_ALLOWED_HOSTS=smartploy.obumai.com
+SMARTPLOY_PUBLIC_ORIGIN=${EXPECTED_ORIGIN}
+SMARTPLOY_ALLOWED_HOSTS=${EXPECTED_HOST}
 SMARTPLOY_AUTH_MODE=${EXPECTED_AUTH_MODE}
 SMARTPLOY_ACCESS_ENABLED=${EXPECTED_ACCESS_ENABLED}
 EOF

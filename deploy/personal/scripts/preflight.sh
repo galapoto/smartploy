@@ -109,9 +109,12 @@ else
   if is_placeholder "${OIDC_CLIENT_ID}" || [[ -z "${OIDC_CLIENT_ID}" || "${#OIDC_CLIENT_ID}" -gt 2048 ]]; then
     fail "SMARTPLOY_OIDC_CLIENT_ID must be a real registered public-client identifier"
   fi
-  [[ "${OIDC_REDIRECT_URI}" == "https://smartploy.obumai.com/auth/callback" ]] ||
+  # The immutable committed policy was verified above. Resolve its
+  # exact canonical origin instead of accepting an arbitrary callback host.
+  POLICY_ORIGIN="$(sed -n 's/^SMARTPLOY_PUBLIC_ORIGIN=//p' "${POLICY_FILE}")"
+  [[ "${OIDC_REDIRECT_URI}" == "${POLICY_ORIGIN}/auth/callback" ]] ||
     fail "OIDC redirect must exactly match SmartPloy signed-in callback"
-  [[ "${OIDC_LOGOUT_URI}" == "https://smartploy.obumai.com/auth/logged-out" ]] ||
+  [[ "${OIDC_LOGOUT_URI}" == "${POLICY_ORIGIN}/auth/logged-out" ]] ||
     fail "OIDC logout must exactly match SmartPloy signed-out callback"
   [[ " ${OIDC_SCOPE:-openid profile email} " == *" openid "* ]] ||
     fail "OIDC scope must include openid"

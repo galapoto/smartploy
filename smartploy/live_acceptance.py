@@ -9,8 +9,11 @@ from urllib.parse import urlsplit
 import sys
 
 
+# Legacy Cloudflare-Access origin remains safe for rollback.
 PRODUCTION_ORIGIN = "https://smartploy.obumai.com"
 PRODUCTION_HOST = "smartploy.obumai.com"
+# The new first-party OIDC policy has its own exact canonical origin.
+OIDC_PRODUCTION_ORIGIN = "https://smartploy.komplyint.fi"
 ACCEPTED_DENIAL_STATUSES = frozenset({401, 403})
 ACCEPTED_REDIRECT_STATUSES = frozenset({302, 303, 307, 308})
 
@@ -36,7 +39,8 @@ def validate_origin_health(payload: dict[str, object], identity_profile: str = "
         raise LiveAcceptanceError("origin health is not ready")
     if payload.get("service") != "smartploy":
         raise LiveAcceptanceError("origin service identity is invalid")
-    if payload.get("public_origin") != PRODUCTION_ORIGIN:
+    expected = OIDC_PRODUCTION_ORIGIN if identity_profile == "oidc" else PRODUCTION_ORIGIN
+    if payload.get("public_origin") != expected:
         raise LiveAcceptanceError("origin public URL does not match production")
 
     storage = payload.get("storage")
