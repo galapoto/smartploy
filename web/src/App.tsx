@@ -401,6 +401,9 @@ export default function App() {
       if (newlyOptedIn && firstScan?.status === "needs_approved_profile") {
         setPage("profile");
         setNotice("Automatic IT search is enabled. Approve your career facts to prepare your first applications; nothing has been sent.");
+      } else if (newlyOptedIn && firstScan?.status === "needs_source_refresh") {
+        setPage("jobs");
+        setNotice("Automatic IT search is enabled, but some matching employer listings have not been checked recently. No drafts were created from stale postings. Check the job-feed status and retry after a source refresh.");
       } else if (newlyOptedIn && firstScan?.status === "prepared" && firstScan.created > 0) {
         setPage("applications");
         setNotice(firstScan.created + " matched IT application draft(s) prepared privately. Review each CV and letter before any employer submission.");
@@ -646,13 +649,17 @@ export default function App() {
       if (result.status === "needs_approved_profile") {
         navigate("profile");
         setNotice("Approve your career facts before SmartPloy prepares matched IT applications.");
+      } else if (result.status === "needs_source_refresh") {
+        navigate("jobs");
+        setNotice("No new drafts: matching employer listings were not verified recently. The source worker must refresh those postings before safe automatic drafting.");
       } else if (result.status !== "prepared") {
         setNotice("Automatic drafts are not available for these account settings.");
-      } else {
+      } else if (result.created) {
         navigate("applications");
-        setNotice(result.created
-          ? result.created + " new matched IT application draft(s) saved privately. Review each CV and letter before submitting."
-          : "No new safe matches this time. Existing drafts are preserved, and the background search continues.");
+        setNotice(result.created + " new matched IT application draft(s) saved privately. Review each CV and letter before submitting.");
+      } else {
+        navigate("jobs");
+        setNotice("No new safe matches this time. Existing private drafts are preserved. Check the source and background-worker status before trying again.");
       }
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged) &&
