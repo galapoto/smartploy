@@ -203,3 +203,37 @@ def test_scoped_local_draft_worker_runs_without_remote_ai_or_global_submit(monke
         import pytest
         with pytest.raises(ValueError, match="must be true or false"):
             build_worker_task_specs("postgresql://fixture")
+
+
+def test_new_install_profile_starts_existing_five_finland_sources_without_ai(monkeypatch):
+    """The sample env wires the proven pilot to the existing worker, not to ObumAI."""
+    from scripts.configure_finland_ats_pilot import reviewed_sources
+    clear_worker_sources(monkeypatch)
+    sample = Path("deploy/personal/env.example").read_text(encoding="utf-8")
+    paths = [
+        line.partition("=")[2]
+        for line in sample.splitlines()
+        if line.startswith("SMARTPLOY_PUBLIC_ATS_SOURCES_FILE=")
+    ]
+    assert paths == ["/workspace/config/finland_public_ats_pilot.json"]
+    image_file = Path(paths[0].removeprefix("/workspace/"))
+    assert image_file.is_file()
+    monkeypatch.setenv("SMARTPLOY_PUBLIC_ATS_SOURCES_FILE", str(image_file))
+    monkeypatch.setenv("SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED", "true")
+    monkeypatch.setenv("SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED", "false")
+    specs = build_worker_task_specs("postgresql://fixture")
+    expected = {
+        "source:lever-global-" + item["tenant"]
+        for item in reviewed_sources()
+    }
+    assert len(expected) == 5
+    assert {s.task_id for s in specs} == expected | {"application:auto-draft-shortlist"}
+    sources = [s for s in specs if s.task_id.startswith("source:")]
+    assert len(sources) == 5
+    assert all(s.cadence_seconds == 600 for s in sources)
+    assert all(s.metadata["external_ai_forwarding_allowed"] is False for s in sources)
+    assert all(s.metadata["location_terms"] for s in sources)
+    drafts = next(s for s in specs if s.task_id == "application:auto-draft-shortlist")
+    assert drafts.metadata["private_opt_in_required"] is True
+    assert drafts.metadata["external_actions_authorized"] is False
+    assert not any(s.task_kind == "application_prepare" for s in specs)
