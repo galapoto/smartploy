@@ -4,13 +4,14 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import json
+from hashlib import sha256
 
 import pytest
 from fastapi.testclient import TestClient
 
 from smartploy.api import create_app
-from smartploy.application_workspace import new_workspace
-from smartploy.browser_handoff import HandoffError, make_browser_packet, review_handoff
+from smartploy.application_workspace import new_workspace, render_document
+from smartploy.browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
 from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
 from smartploy.profile import CandidateProfile, ProfileFact
 from smartploy.service import SmartployService
@@ -87,6 +88,13 @@ def test_review_ready_packet_is_bounded_and_never_contains_original_cv():
     assert review["files_attached"] is False
     packet = make_browser_packet(item, candidate(), p, now=now)
     assert packet["application_url"] == APPLICATION_URL
+    assert packet["schema"] == "smartploy.browser_handoff.v2"
+    first_pdf, mime, filename = render_document(item, kind="cv", file_format="pdf")
+    second_pdf, _, _ = render_document(item, kind="cv", file_format="pdf")
+    assert mime == "application/pdf" and filename.endswith(".pdf")
+    assert first_pdf == second_pdf  # export is byte-for-byte deterministic
+    assert packet["cv_pdf_sha256"] == sha256(first_pdf).hexdigest()
+    assert packet["cv_pdf_size"] == len(first_pdf) and packet["cv_pdf_size"] > 100
     assert packet["revision"] == item.revision
     assert packet["expires_at"] == (now + timedelta(minutes=15)).isoformat()
     assert packet["fields"]["email"] == "test.candidate@example.com"
@@ -211,3 +219,21 @@ def test_api_missing_contact_remains_blocked():
         "expected_revision": 2, "confirm_private_data_transfer": True
     })
     assert res.status_code == 409
+
+
+
+def test_cross_language_approved_field_fingerprint_is_stable_and_tamper_evident():
+    """Reference independently computed using browser-companion review-bridge.mjs."""
+    values = {
+        "full_name": "Synthetic Applicant",
+        "first_name": "Synthetic",
+        "last_name": "Applicant",
+        "email": "test@example.invalid",
+        "phone": "", "location": "", "linkedin": "", "github": "",
+        "cover_letter": "I have reviewed every statement in this synthetic cover letter.",
+    }
+    expected = "135df071b9de4a37fd07681b9a61b09c8e2bfe6bbba4df84108c69168176403c"
+    assert approved_fields_sha256(values) == expected
+    assert approved_fields_sha256({**values,"email":"other@example.invalid"}) != expected
+    with pytest.raises(HandoffError,match="expected approved"):
+        approved_fields_sha256({**values,"secret":"do not export"})

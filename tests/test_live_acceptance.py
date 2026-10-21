@@ -7,6 +7,7 @@ from smartploy.live_acceptance import (
     parse_probe_lines,
     validate_origin_health,
     validate_public_probe,
+    validate_oidc_public_probe,
 )
 
 
@@ -124,3 +125,82 @@ def test_probe_parser_uses_selected_headers_only():
     assert probe.status_code == 302
     assert probe.cf_ray == "abc-HEL"
     assert probe.server == "cloudflare"
+
+
+
+def oidc_healthy_origin():
+    payload = healthy_origin()
+    payload["public_origin"] = "https://smartploy.komplyint.fi"
+    payload["access"]["enabled"] = False
+    payload["access"]["owner_restricted"] = False
+    return payload
+
+
+def test_production_oidc_origin_requires_no_access_assertion_and_expected_profile():
+    payload = oidc_healthy_origin()
+    assert "authentication" not in payload
+    validate_origin_health(payload, "oidc")
+    with pytest.raises(LiveAcceptanceError):
+        validate_origin_health(payload, "cloudflare")
+    with pytest.raises(LiveAcceptanceError):
+        validate_origin_health(payload, "disabled")
+    payload["access"]["enabled"] = True
+    with pytest.raises(LiveAcceptanceError):
+        validate_origin_health(payload, "oidc")
+
+
+def test_new_oidc_origin_refuses_legacy_host_and_cross_origin_health():
+    payload = oidc_healthy_origin()
+    validate_origin_health(payload, "oidc")
+    payload["public_origin"] = "https://smartploy.obumai.com"
+    with pytest.raises(LiveAcceptanceError, match="public URL"):
+        validate_origin_health(payload, "oidc")
+    legacy = healthy_origin()
+    validate_origin_health(legacy, "cloudflare")
+    legacy["public_origin"] = "https://smartploy.komplyint.fi"
+    with pytest.raises(LiveAcceptanceError, match="public URL"):
+        validate_origin_health(legacy, "cloudflare")
+
+
+def test_oidc_public_static_shell_private_api_and_trusted_login_redirect():
+    edge = {"server": "cloudflare", "cf_ray": "test-HEL"}
+    assert validate_oidc_public_probe(
+        PublicProbe(status_code=200, **edge), "root", "https://auth.obumai.com"
+    ) == "public_login_shell"
+    assert validate_oidc_public_probe(
+        PublicProbe(status_code=401, **edge), "api", "https://auth.obumai.com"
+    ) == "protected_by_app_session"
+    assert validate_oidc_public_probe(
+        PublicProbe(
+            status_code=302, location="https://auth.obumai.com/oauth/v2/authorize?state=opaque",
+            **edge
+        ), "login", "https://auth.obumai.com"
+    ) == "redirect_to_trusted_oidc"
+
+
+@pytest.mark.parametrize(("surface", "status", "location"), [
+    ("root", 302, "https://team.cloudflareaccess.com/cdn-cgi/access/login"),
+    ("root", 403, ""),
+    ("api", 200, ""),
+    ("api", 500, ""),
+    ("api", 302, "https://team.cloudflareaccess.com/cdn-cgi/access/login"),
+    ("login", 200, ""),
+    ("login", 302, "https://evil.invalid/login"),
+    ("login", 302, "http://auth.obumai.com/oauth/v2/authorize"),
+    ("login", 302, "https://auth.obumai.com.evil.invalid/oauth"),
+    ("login", 302, "https://attacker@auth.obumai.com/oauth"),
+    ("login", 302, "/cdn-cgi/access/login"),
+])
+def test_oidc_public_acceptance_rejects_bad_signin_or_unprotected_api(surface, status, location):
+    with pytest.raises(LiveAcceptanceError):
+        validate_oidc_public_probe(
+            PublicProbe(status_code=status, location=location, server="cloudflare"),
+            surface, "https://auth.obumai.com"
+        )
+
+
+def test_oidc_public_acceptance_requires_cloudflare_tls_edge():
+    with pytest.raises(LiveAcceptanceError, match="Cloudflare"):
+        validate_oidc_public_probe(
+            PublicProbe(status_code=200), "root", "https://auth.obumai.com"
+        )

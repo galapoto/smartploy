@@ -270,7 +270,16 @@ class PostgresWorkerTaskRepository:
                         WHERE enabled = true
                           AND next_run_at <= %s
                           AND (lease_until IS NULL OR lease_until <= %s)
-                        ORDER BY next_run_at, task_id
+                        -- The first AutoApply boot previously ran the
+                        -- alphabetically earlier application:draft task
+                        -- BEFORE source:* pollers. No fresh jobs existed,
+                        -- and the next scan could wait a full 10 minutes.
+                        -- Reuse the same durable lease/claim loop but
+                        -- ingest due job sources before preparing drafts.
+                        -- Within each kind, preserve oldest-due fairness.
+                        ORDER BY
+                            CASE WHEN task_kind = 'source' THEN 0 ELSE 1 END,
+                            next_run_at, task_id
                         FOR UPDATE SKIP LOCKED
                         LIMIT %s
                     )

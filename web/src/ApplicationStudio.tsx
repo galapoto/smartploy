@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, Clock3,
   Download, FileCheck2, FileText, LockKeyhole, RefreshCw, Save, ShieldCheck,
@@ -9,21 +9,44 @@ import {
   getApplicationWorkspaces, markApplicationManuallySent,
   getLocalAIStatus, requestLocalAISuggestions,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
-  getBrowserReceipt, importBrowserReceipt
+  getEmployerAttemptStatus, getEmployerReviewIntent, getEmployerFinalActionReadiness,
+  getLeverPartnerReadiness, getLeverPartnerReceipt, sendLeverPartnerApplication,
+  recordEmployerReviewIntent, cancelEmployerReviewIntent,
+  getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
 import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
+import { safeExternalJobUrl } from "./lib";
+import type { EmployerAttemptState, EmployerReviewIntentState, EmployerFinalActionReadiness, LeverPartnerReadiness, LeverProviderAcknowledgment, LeverPartnerReviewEvidence } from "./api";
 
-function safePostingLink(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : "";
-  } catch {
-    return "";
-  }
+const ACCOUNT_CHANGED_NOTICE =
+  "Your signed-in SmartPloy account changed or could not be verified. Reload SmartPloy to continue safely.";
+
+class StudioAccountChanged extends Error {}
+class StudioSelectionChanged extends Error {}
+
+// A draft's identity is its workspace ID, revision, AND the viewer's
+// selection epoch. Switching away and back must not resurrect late results.
+type DraftTicket = { key: string; epoch: number };
+
+const safePostingLink = safeExternalJobUrl;
+
+// Reuse the existing review / packet hashes, never a browser clipboard token.
+// The server rechecks all these fields in a new signed-in transaction.
+function freshPartnerEvidence(
+  evidence: LeverPartnerReviewEvidence | null | undefined,
+  selected: ApplicationWorkspace
+): evidence is LeverPartnerReviewEvidence {
+  return !!evidence && evidence.workspace_id === selected.workspace_id &&
+    evidence.revision === selected.revision && Date.parse(evidence.expires_at) > Date.now() &&
+    /^[a-f0-9]{64}$/.test(evidence.document_sha256) &&
+    /^[a-f0-9]{64}$/.test(evidence.cv_pdf_sha256) &&
+    /^[a-f0-9]{64}$/.test(evidence.approved_fields_sha256) &&
+    Number.isSafeInteger(evidence.cv_pdf_size) &&
+    evidence.cv_pdf_size >= 12 && evidence.cv_pdf_size <= 2 * 1024 * 1024;
 }
 
 export default function ApplicationStudio(props: {
-  focusId: string; onFindJobs: () => void;
+  focusId: string; expectedUserId: string; expectedAuthSource: string; onFindJobs: () => void;
 }) {
   const [workspaces, setWorkspaces] = useState<ApplicationWorkspace[]>([]);
   const [selectedId, setSelectedId] = useState(props.focusId);
@@ -35,6 +58,14 @@ export default function ApplicationStudio(props: {
   const [aiStatus, setAIStatus] = useState<LocalAIStatus | null>(null);
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
   const [handoff, setHandoff] = useState<BrowserHandoffReadiness | null>(null);
+  const [employerAttempt, setEmployerAttempt] = useState<EmployerAttemptState | null>(null);
+  const [finalReview, setFinalReview] = useState<EmployerReviewIntentState | null>(null);
+  const [finalAction, setFinalAction] = useState<EmployerFinalActionReadiness | null>(null);
+  const [partnerReadiness, setPartnerReadiness] = useState<LeverPartnerReadiness | null>(null);
+  const [partnerReceipt, setPartnerReceipt] = useState<LeverProviderAcknowledgment | null>(null);
+  const [partnerBusy, setPartnerBusy] = useState(false);
+  const partnerSendingRef = useRef(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [handoffPacketText, setHandoffPacketText] = useState("");
   const [browserReceipt, setBrowserReceipt] = useState<BrowserObservedReceipt | null>(null);
@@ -43,10 +74,102 @@ export default function ApplicationStudio(props: {
   const [receiptBusy, setReceiptBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [accountBlocked, setAccountBlocked] = useState(false);
+  const mountedRef = useRef(false);
+  const accountBlockedRef = useRef(false);
+  const reloadGenerationRef = useRef(0);
+  const selectedDraftRef = useRef<DraftTicket>({ key: "", epoch: 0 });
+
+  const isCurrentDraft = useCallback((ticket: DraftTicket) =>
+    mountedRef.current && !accountBlockedRef.current &&
+    selectedDraftRef.current.key === ticket.key &&
+    selectedDraftRef.current.epoch === ticket.epoch, []);
+
+  const captureDraft = (item: ApplicationWorkspace): DraftTicket => ({
+    key: JSON.stringify([item.workspace_id, item.revision]),
+    epoch: selectedDraftRef.current.epoch,
+  });
+
+  // The parent page normally remounts this component on an account switch.
+  // Local refreshes and delayed responses still need their own boundary:
+  // an unchanged email is not proof of an unchanged server-side account.
+  const blockAccount = useCallback(() => {
+    if (!mountedRef.current || accountBlockedRef.current) return;
+    accountBlockedRef.current = true;
+    ++reloadGenerationRef.current;
+    ++selectedDraftRef.current.epoch;
+    setWorkspaces([]); setSelectedId("");
+    setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
+    setHandoff(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
+    setPartnerReadiness(null); setPartnerReceipt(null); setPartnerBusy(false); setHandoffPacketText("");
+    setBrowserReceipt(null); setReceiptOpen(false); setReceiptInput("");
+    setMessage(""); setError(ACCOUNT_CHANGED_NOTICE);
+    setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
+    setAccountBlocked(true); setLoading(false);
+  }, []);
+
+  const verifyAccount = useCallback(async () => {
+    if (!mountedRef.current || accountBlockedRef.current) throw new StudioAccountChanged();
+    let who;
+    try {
+      who = await getSession();
+    } catch {
+      blockAccount();
+      throw new StudioAccountChanged();
+    }
+    if (!mountedRef.current || accountBlockedRef.current) throw new StudioAccountChanged();
+    if (!props.expectedUserId.trim() || !who.authenticated ||
+        who.user_id?.trim() !== props.expectedUserId.trim() ||
+        (who.auth_source || "") !== props.expectedAuthSource) {
+      blockAccount();
+      throw new StudioAccountChanged();
+    }
+  }, [blockAccount, props.expectedAuthSource, props.expectedUserId]);
+
+  // A private mutation is scoped to the identity that initiated it.
+  // Backend expected-user headers still enforce ownership before writes;
+  // these checks prevent publishing an old request's result into a new
+  // browser account. A successful backend write is NOT rolled back.
+  const runPrivateAction = useCallback(async <T,>(
+    action: () => Promise<T>, ticket: DraftTicket
+  ): Promise<T> => {
+    await verifyAccount();
+    if (!isCurrentDraft(ticket)) throw new StudioSelectionChanged();
+    try {
+      const result = await action();
+      await verifyAccount();
+      if (!isCurrentDraft(ticket)) throw new StudioSelectionChanged();
+      return result;
+    } catch (exc) {
+      if (exc instanceof StudioAccountChanged || exc instanceof StudioSelectionChanged) throw exc;
+      // A network failure may hide an account switch; verify before showing
+      // an error, and never publish the former draft's error in the new one.
+      await verifyAccount();
+      if (!isCurrentDraft(ticket)) throw new StudioSelectionChanged();
+      throw exc;
+    }
+  }, [isCurrentDraft, verifyAccount]);
+
+  function reportActionError(exc: unknown, fallback: string) {
+    if (exc instanceof StudioAccountChanged || exc instanceof StudioSelectionChanged ||
+        !mountedRef.current || accountBlockedRef.current) return;
+    setError(exc instanceof Error ? exc.message : fallback);
+  }
 
   const reload = useCallback(async () => {
+    if (accountBlockedRef.current) return;
+    const generation = ++reloadGenerationRef.current;
+    const active = () => mountedRef.current && !accountBlockedRef.current &&
+      generation === reloadGenerationRef.current;
     try {
+      // Verify BEFORE the private GET, and again BEFORE publishing it.
+      // The latter covers cookie changes while the request is in flight.
+      await verifyAccount();
+      if (!active()) return;
       const result = await getApplicationWorkspaces();
+      if (!active()) return;
+      await verifyAccount();
+      if (!active()) return;
       setWorkspaces(result.workspaces);
       setSelectedId((current) => {
         const wanted = props.focusId || current;
@@ -55,51 +178,97 @@ export default function ApplicationStudio(props: {
       });
       setError("");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to load your application drafts.");
-    } finally { setLoading(false); }
-  }, [props.focusId]);
+      if (!active()) return;
+      // Even an HTTP/network error may conceal a cookie switch.
+      // Preserve existing same-account edits only after re-verification.
+      try { await verifyAccount(); } catch { return; }
+      if (active()) {
+        setError(exc instanceof Error ? exc.message : "Unable to load your application drafts.");
+      }
+    } finally {
+      if (active()) setLoading(false);
+    }
+  }, [props.focusId, verifyAccount]);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; ++reloadGenerationRef.current; };
+  }, []);
   useEffect(() => { void reload(); }, [reload]);
   useEffect(() => {
-    void getLocalAIStatus().then(setAIStatus).catch(() => setAIStatus(null));
+    let alive = true;
+    void getLocalAIStatus().then((status) => {
+      if (alive && !accountBlockedRef.current) setAIStatus(status);
+    }).catch(() => {
+      if (alive && !accountBlockedRef.current) setAIStatus(null);
+    });
+    return () => { alive = false; };
   }, []);
 
   const selected = useMemo(
     () => workspaces.find((item) => item.workspace_id === selectedId) || null,
     [workspaces, selectedId]
   );
-  useEffect(() => {
-    setAISuggestion(null);
-    setCvText(selected?.cv_text || "");
-    setLetterText(selected?.cover_letter_text || "");
+  // Clear draft-local editor content, receipt/packet previews AND pending
+  // indicators before a different draft can paint. The old draft's promise
+  // may still finish; its completion must never unlock the new draft.
+  useLayoutEffect(() => {
+    const key = selected ? JSON.stringify([selected.workspace_id, selected.revision]) : "";
+    if (selectedDraftRef.current.key !== key) {
+      selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
+      setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
+      setAISuggestion(null);
+      setCvText(selected?.cv_text || "");
+      setLetterText(selected?.cover_letter_text || "");
+      setHandoffPacketText(""); setFinalReview(null); setFinalAction(null);
+      setPartnerReadiness(null); setPartnerReceipt(null);
+      setReceiptOpen(false); setReceiptInput("");
+      setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
+          setPartnerReadiness(null); setPartnerReceipt(null);
+    }
   }, [selected?.workspace_id, selected?.revision]);
 
   useEffect(() => {
-    setHandoffPacketText("");
-    if (!selected) { setHandoff(null); return; }
+    if (!selected?.workspace_id || accountBlockedRef.current) return;
     let alive = true;
-    setHandoff(null);
-    void getBrowserHandoffReadiness(selected.workspace_id).then((result) => {
-      if (alive) setHandoff(result);
-    }).catch(() => {
-      if (alive) setHandoff(null);
-    });
+    const workspaceId = selected.workspace_id;
+    void (async () => {
+      try {
+        await verifyAccount();
+        if (!alive || accountBlockedRef.current) return;
+        // Private owner reads revalidate identity both before and after.
+        // Policy posture is NOT a browser grant or a submission instruction.
+        const [handoffResult, receiptResult, attemptResult, reviewResult, finalActionResult,
+          partnerReadyResult, partnerReceiptResult] = await Promise.allSettled([
+          getBrowserHandoffReadiness(workspaceId),
+          getBrowserReceipt(workspaceId),
+          getEmployerAttemptStatus(workspaceId),
+          getEmployerReviewIntent(workspaceId),
+          getEmployerFinalActionReadiness(workspaceId),
+          getLeverPartnerReadiness(workspaceId),
+          getLeverPartnerReceipt(workspaceId),
+        ]);
+        if (!alive || accountBlockedRef.current) return;
+        await verifyAccount();
+        if (!alive || accountBlockedRef.current) return;
+        setHandoff(handoffResult.status === "fulfilled" ? handoffResult.value : null);
+        setBrowserReceipt(receiptResult.status === "fulfilled" ? receiptResult.value.receipt : null);
+        setEmployerAttempt(attemptResult.status === "fulfilled" ? attemptResult.value : null);
+        setFinalReview(reviewResult.status === "fulfilled" ? reviewResult.value : null);
+        setFinalAction(finalActionResult.status === "fulfilled" ? finalActionResult.value : null);
+        setPartnerReadiness(partnerReadyResult.status === "fulfilled" ? partnerReadyResult.value : null);
+        setPartnerReceipt(partnerReceiptResult.status === "fulfilled" ? partnerReceiptResult.value.receipt : null);
+      } catch {
+        // verifyAccount clears private state and blocks the editor on any
+        // missing or different session. Ordinary API failures show no data.
+        if (alive && !accountBlockedRef.current) {
+          setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
+          setPartnerReadiness(null); setPartnerReceipt(null);
+        }
+      }
+    })();
     return () => { alive = false; };
-  }, [selected?.workspace_id, selected?.revision]);
-
-  useEffect(() => {
-    setReceiptOpen(false);
-    setReceiptInput("");
-    setBrowserReceipt(null);
-    if (!selected?.workspace_id) return;
-    let alive = true;
-    void getBrowserReceipt(selected.workspace_id).then((state) => {
-      if (alive) setBrowserReceipt(state.receipt);
-    }).catch(() => {
-      if (alive) setBrowserReceipt(null);
-    });
-    return () => { alive = false; };
-  }, [selected?.workspace_id]);
+  }, [selected?.workspace_id, selected?.revision, verifyAccount]);
 
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
@@ -107,6 +276,7 @@ export default function ApplicationStudio(props: {
 
   function pick(id: string) {
     if (dirty && !window.confirm("Discard unsaved changes and open another draft?")) return;
+    if (id !== selectedId) ++selectedDraftRef.current.epoch;
     setSelectedId(id);
     setMessage("");
     setError("");
@@ -118,17 +288,20 @@ export default function ApplicationStudio(props: {
   }
 
   async function save() {
-    if (!selected || selected.status !== "draft" || browserReceipt) return;
+    if (!selected || selected.status !== "draft" || browserReceipt ||
+        partnerReceipt || employerAttempt?.previous_attempt_reserved) return;
+    const ticket = captureDraft(selected);
     setBusy(true); setMessage(""); setError("");
     try {
-      const result = await editApplicationWorkspace(
-        selected.workspace_id, selected.revision, cvText, letterText
-      );
+      const result = await runPrivateAction(() => editApplicationWorkspace(
+        selected.workspace_id, selected.revision, cvText, letterText, props.expectedUserId
+      ), ticket);
+      if (!isCurrentDraft(ticket)) return;
       updateItem(result.workspace);
       setMessage("Your edits were saved. Downloaded documents will contain this version.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Draft could not be saved.");
-    } finally { setBusy(false); }
+      reportActionError(exc, "Draft could not be saved.");
+    } finally { if (isCurrentDraft(ticket)) setBusy(false); }
   }
 
   async function askLocalAI() {
@@ -140,23 +313,31 @@ export default function ApplicationStudio(props: {
       "proposal only and must be reviewed before saving."
     );
     if (!ok) return;
+    const ticket = captureDraft(selected);
     setAIBusy(true); setError(""); setMessage(""); setAISuggestion(null);
     try {
-      const response = await requestLocalAISuggestions(selected.workspace_id, selected.revision);
+      const response = await runPrivateAction(() =>
+        requestLocalAISuggestions(selected.workspace_id, selected.revision, props.expectedUserId),
+        ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
       setAISuggestion(response.suggestion);
       setMessage("Local AI returned draft suggestions. Review them and choose whether to insert them.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Local AI is currently unavailable.");
-    } finally { setAIBusy(false); }
+      reportActionError(exc, "Local AI is currently unavailable.");
+    } finally { if (isCurrentDraft(ticket)) setAIBusy(false); }
   }
 
-  function insertAISuggestion() {
+  async function insertAISuggestion() {
     if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt) return;
     const draft = aiSuggestion.proposal;
+    const ticket = captureDraft(selected);
     if (!window.confirm(
       "Insert these AI suggestions into your editable CV and cover letter? " +
       "They may contain mistakes. Nothing is saved or sent until you review and click Save changes."
     )) return;
+    try { await verifyAccount(); } catch { return; }
+    if (!isCurrentDraft(ticket)) return;
     setCvText((old) =>
       "TARGET ROLE: " + selected.role_title + " — " + selected.company +
       "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
@@ -168,7 +349,8 @@ export default function ApplicationStudio(props: {
   }
 
   async function copyBrowserPacket() {
-    if (!selected || dirty || !handoff?.ready || selected.status !== "draft" || browserReceipt) return;
+    if (!selected || dirty || !handoff?.ready || selected.status !== "draft" || browserReceipt ||
+        employerAttempt?.previous_attempt_reserved) return;
     let origin = "the employer website";
     try { origin = new URL(selected.application_url).origin; } catch { /* disabled by API validation */ }
     if (!window.confirm(
@@ -177,28 +359,223 @@ export default function ApplicationStudio(props: {
       "to your computer clipboard. Keep it private; you will paste it into the " +
       "optional SmartPloy browser companion. No form is filled or submitted by this action."
     )) return;
+    const ticket = captureDraft(selected);
     setHandoffBusy(true); setError(""); setMessage("");
     try {
-      const response = await createBrowserHandoffPacket(selected.workspace_id, selected.revision);
+      const response = await runPrivateAction(() =>
+        createBrowserHandoffPacket(selected.workspace_id, selected.revision, props.expectedUserId),
+        ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
       const json = JSON.stringify(response.packet);
-      setHandoffPacketText(json);
       if (navigator.clipboard?.writeText) {
+        let copied = false;
         try {
           await navigator.clipboard.writeText(json);
-          setMessage("Private packet copied. Open the employer posting and use the browser companion within 15 minutes. Review and attach CV before submitting.");
+          copied = true;
         } catch {
-          setMessage("Your private packet is ready below. Select and copy it manually, then open the employer posting and browser companion.");
+          // Clipboard permissions may be denied; allow deliberate manual copy.
         }
+        // A browser sign-in can change while the clipboard API is pending.
+        // Do not show a former user's packet or a success notice afterwards.
+        await verifyAccount();
+        if (!isCurrentDraft(ticket)) return;
+        setHandoffPacketText(json);
+        setMessage(copied
+          ? "Private packet copied. Open the employer posting and use the browser companion within 15 minutes. Review and attach CV before submitting manually on the employer website."
+          : "Your private packet is ready below. Select and copy it manually, then open the employer posting and browser companion.");
       } else {
+        await verifyAccount();
+        if (!isCurrentDraft(ticket)) return;
+        setHandoffPacketText(json);
         setMessage("Your private packet is ready below. Select and copy it manually into the browser companion.");
       }
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to copy the application packet.");
-    } finally { setHandoffBusy(false); }
+      reportActionError(exc, "Unable to copy the application packet.");
+    } finally { if (isCurrentDraft(ticket)) setHandoffBusy(false); }
+  }
+
+  /** Reuse the exact existing 10-minute reviewed-intent route for both
+   * manual browser handoff and official partner API. A success is NOT submit.
+   */
+  async function storeReviewedEvidence(
+    ticket: DraftTicket, evidence: {document_sha256:string;cv_pdf_sha256:string}
+  ) {
+    if (!selected) return;
+    const item = await runPrivateAction(() => recordEmployerReviewIntent(
+      selected.workspace_id,selected.revision,
+      evidence.document_sha256,evidence.cv_pdf_sha256,props.expectedUserId
+    ),ticket);
+    if (!isCurrentDraft(ticket)) return;
+    setFinalReview(item);
+    setMessage("Review recorded temporarily. No employer application was sent.");
+    setPartnerReadiness(null);
+    // Never infer partner eligibility from a successful review write. The
+    // original signed-in private GET rechecks separate employer rights.
+    try {
+      const refreshed = await runPrivateAction(
+        () => getLeverPartnerReadiness(selected.workspace_id),ticket
+      );
+      if (isCurrentDraft(ticket)) setPartnerReadiness(refreshed);
+    } catch {
+      if (isCurrentDraft(ticket)) setPartnerReadiness(null);
+    }
+  }
+
+  /** One click to review a partner job, with no clipboard/extension dependency. */
+  async function recordPartnerReview() {
+    if (!selected || dirty || !handoff?.ready || !finalReview || reviewBusy ||
+        partnerBusy || browserReceipt || partnerReceipt ||
+        employerAttempt?.previous_attempt_reserved ||
+        !partnerReadiness?.partner_api_configured ||
+        !partnerReadiness.independent_partner_rights_reviewed ||
+        partnerReadiness.prior_employer_attempt ||
+        !freshPartnerEvidence(partnerReadiness.review_evidence,selected)) return;
+    const evidence=partnerReadiness.review_evidence;
+    if (!window.confirm(
+      "REVIEW EXACT CV, COVER LETTER AND JOB FOR " + selected.company + "?\n\n" +
+      "I have checked the displayed CV, letter, name, approved contact details, " +
+      "this vacancy and employer form. Save my review for ten minutes. " +
+      "This step DOES NOT submit to Lever, share personal data externally, " +
+      "or authorize a future automatic application."
+    )) return;
+    const ticket=captureDraft(selected);
+    setReviewBusy(true);setError("");setMessage("");
+    try {
+      await storeReviewedEvidence(ticket,evidence);
+    } catch (exc) {
+      reportActionError(exc,"The reviewed partner application could not be recorded.");
+    } finally {
+      if (isCurrentDraft(ticket)) setReviewBusy(false);
+    }
+  }
+
+  /** Records exact reviewed CV/letter, but never authorizes an employer submission. */
+  async function recordFinalReview() {
+    if (!selected || !handoffPacketText || dirty || !handoff?.ready ||
+        !finalReview || employerAttempt?.previous_attempt_reserved ||
+        reviewBusy || browserReceipt) return;
+    let packet;
+    try {
+      packet = JSON.parse(handoffPacketText) as {
+        workspace_id: string; revision: number; expires_at: string;
+        document_sha256: string; cv_pdf_sha256: string;
+      };
+      if (packet.workspace_id !== selected.workspace_id ||
+          packet.revision !== selected.revision ||
+          Date.parse(packet.expires_at) <= Date.now() ||
+          !/^[a-f0-9]{64}$/.test(packet.document_sha256) ||
+          !/^[a-f0-9]{64}$/.test(packet.cv_pdf_sha256)) {
+        throw new Error("Your reviewed application packet changed or expired. Generate a new packet.");
+      }
+    } catch (exc) {
+      reportActionError(exc, "Review packet is invalid.");
+      return;
+    }
+    if (!window.confirm(
+      "RECORD A 10-MINUTE REVIEW FOR " + selected.role_title + " AT " + selected.company + "?\n\n" +
+      "I have reviewed the exact CV PDF, letter and job. This only records my review; " +
+      "it DOES NOT submit the application or authorize SmartPloy to click the employer's Submit button."
+    )) return;
+    const ticket = captureDraft(selected);
+    setReviewBusy(true); setError(""); setMessage("");
+    try {
+      await storeReviewedEvidence(ticket,packet);
+    } catch (exc) {
+      reportActionError(exc, "Review was not recorded.");
+    } finally { if (isCurrentDraft(ticket)) setReviewBusy(false); }
+  }
+
+  async function cancelFinalReview() {
+    if (!selected || !finalReview?.review_recorded || reviewBusy) return;
+    const ticket = captureDraft(selected);
+    setReviewBusy(true); setError(""); setMessage("");
+    try {
+      const result = await runPrivateAction(
+        () => cancelEmployerReviewIntent(selected.workspace_id, props.expectedUserId), ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
+      setFinalReview(result);
+      setPartnerReadiness(null);
+      setMessage("Review cancelled. No employer application was submitted.");
+      try {
+        const refreshed = await runPrivateAction(
+          () => getLeverPartnerReadiness(selected.workspace_id),ticket
+        );
+        if (isCurrentDraft(ticket)) setPartnerReadiness(refreshed);
+      } catch {
+        if (isCurrentDraft(ticket)) setPartnerReadiness(null);
+      }
+    } catch (exc) {
+      reportActionError(exc, "Unable to cancel the review.");
+    } finally { if (isCurrentDraft(ticket)) setReviewBusy(false); }
+  }
+
+  /** A real employer API POST: no clipboard, only signed-in server preview. */
+  async function sendPartnerApplication() {
+    if (!selected || dirty || !handoff?.ready ||
+        !finalReview?.review_recorded ||
+        Date.parse(finalReview.expires_at) <= Date.now() ||
+        !partnerReadiness?.eligible_for_explicit_partner_submit ||
+        employerAttempt?.previous_attempt_reserved || browserReceipt ||
+        partnerReceipt || partnerBusy || partnerSendingRef.current ||
+        !freshPartnerEvidence(partnerReadiness.review_evidence,selected)) return;
+    const evidence=partnerReadiness.review_evidence;
+    if (!window.confirm(
+      "SEND THIS APPLICATION TO THE AUTHORIZED LEVER EMPLOYER?\n\n" +
+      selected.role_title + " · " + selected.company + "\n\n" +
+      "I have reviewed the exact CV PDF, cover letter, contact details, employer form " +
+      "and employer data-processing terms. I approve transferring them to the employer " +
+      "now. This can create a real job application. If the outcome is uncertain, " +
+      "SmartPloy will NOT retry automatically."
+    )) return;
+    const ticket = captureDraft(selected);
+    partnerSendingRef.current = true;
+    setPartnerBusy(true); setError(""); setMessage("");
+    try {
+      const result = await runPrivateAction(
+        () => sendLeverPartnerApplication(
+          selected.workspace_id,selected.revision,
+          evidence.document_sha256,evidence.cv_pdf_sha256,
+          evidence.approved_fields_sha256,evidence.cv_pdf_size,
+          props.expectedUserId
+        ),ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
+      setPartnerReadiness(previous => previous
+        ? {...previous,prior_employer_attempt:true,eligible_for_explicit_partner_submit:false,
+           review_evidence:null,provider_acknowledged:result.state==="provider_acknowledged"} : null);
+      if (result.state==="provider_acknowledged") {
+        // The receipt repository already committed provider acknowledgement
+        // and workspace status together. Do not invent self-reported status.
+        setWorkspaces(items => items.map(item =>
+          item.workspace_id === selected.workspace_id
+            ? {...item,status:"provider_acknowledged"} : item
+        ));
+        setPartnerReceipt(result);
+        setMessage("Lever confirmed creation of this job application. Reference: " +
+          result.provider_application_id + ". This is not a hiring decision.");
+      } else {
+        setMessage("Employer response is uncertain. Do not retry; check the employer portal or contact support.");
+      }
+    } catch (exc) {
+      // The HTTP response may have been lost after the employer accepted
+      // an application. Fail closed; never send twice on a transient error.
+      if (isCurrentDraft(ticket)) {
+        setPartnerReadiness(previous => previous
+          ? {...previous,eligible_for_explicit_partner_submit:false,
+             review_evidence:null} : null);
+      }
+      reportActionError(exc,"The partner outcome is unknown. Do not retry automatically.");
+    } finally {
+      partnerSendingRef.current = false;
+      if (isCurrentDraft(ticket)) setPartnerBusy(false);
+    }
   }
 
   async function onImportObservedReceipt() {
-    if (!selected || selected.status !== "draft" || browserReceipt) return;
+    if (!selected || selected.status !== "draft" || browserReceipt ||
+        partnerReceipt || employerAttempt?.previous_attempt_reserved) return;
     let parsed: BrowserReceiptImport;
     try {
       if (receiptInput.length < 30 || receiptInput.length > 5000) {
@@ -218,19 +595,25 @@ export default function ApplicationStudio(props: {
       "Store this browser-observed employer confirmation? The employer has NOT independently "
       + "verified it through SmartPloy. This action does not count as a verified submission."
     )) return;
+    const ticket = captureDraft(selected);
     setReceiptBusy(true); setError(""); setMessage("");
     try {
-      const response = await importBrowserReceipt(selected.workspace_id, parsed);
+      const response = await runPrivateAction(() =>
+        importBrowserReceipt(selected.workspace_id, parsed, props.expectedUserId),
+        ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
       setBrowserReceipt(response.receipt);
       setReceiptOpen(false); setReceiptInput("");
       setMessage("Employer confirmation was recorded as browser-observed, not independently verified.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to store this browser receipt.");
-    } finally { setReceiptBusy(false); }
+      reportActionError(exc, "Unable to store this browser receipt.");
+    } finally { if (isCurrentDraft(ticket)) setReceiptBusy(false); }
   }
 
   async function markApplied() {
-    if (!selected || selected.status !== "draft") return;
+    if (!selected || selected.status !== "draft" || partnerReceipt ||
+        employerAttempt?.previous_attempt_reserved) return;
     if (dirty) { setError("Save the document changes before updating its application status."); return; }
     if (!window.confirm(
       "Confirm that you personally submitted this application on the employer's website. " +
@@ -238,32 +621,52 @@ export default function ApplicationStudio(props: {
     )) return;
     const reference = window.prompt("Optional employer confirmation/reference (leave blank if unavailable):", "");
     if (reference === null) return;
+    const ticket = captureDraft(selected);
     setBusy(true); setError(""); setMessage("");
     try {
-      const result = await markApplicationManuallySent(
-        selected.workspace_id, selected.revision, reference
+      const result = await runPrivateAction(() =>
+        markApplicationManuallySent(
+          selected.workspace_id, selected.revision, reference, props.expectedUserId
+        ), ticket
       );
+      if (!isCurrentDraft(ticket)) return;
       updateItem(result.workspace);
       setMessage("Recorded as personally reported applied, not independently verified by the employer.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to record this application.");
-    } finally { setBusy(false); }
+      reportActionError(exc, "Unable to record this application.");
+    } finally { if (isCurrentDraft(ticket)) setBusy(false); }
   }
 
   async function remove() {
     if (!selected || !window.confirm(
-      "Permanently delete this application workspace and its document text? Original CV and profile facts remain."
+      "Permanently delete this application workspace and its document text? " +
+      "Previously delivered applications are NOT withdrawn, and the durable anti-duplicate " +
+      "record and provider acknowledgment are preserved for reconciliation. " +
+      "Original CV and approved profile facts remain."
     )) return;
+    const ticket = captureDraft(selected);
     setBusy(true); setError(""); setMessage("");
     try {
-      await deleteApplicationWorkspace(selected.workspace_id);
+      await runPrivateAction(() =>
+        deleteApplicationWorkspace(selected.workspace_id, props.expectedUserId),
+        ticket
+      );
+      if (!isCurrentDraft(ticket)) return;
       const remaining = workspaces.filter((item) => item.workspace_id !== selected.workspace_id);
       setWorkspaces(remaining);
       setSelectedId(remaining[0]?.workspace_id || "");
       setMessage("Draft removed from SmartPloy.");
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Unable to delete this draft.");
-    } finally { setBusy(false); }
+      reportActionError(exc, "Unable to delete this draft.");
+    } finally { if (isCurrentDraft(ticket)) setBusy(false); }
+  }
+
+  if (accountBlocked) {
+    return <section className="panel studio-loading" role="alert">
+      <LockKeyhole size={23}/>
+      <h3>Account verification required</h3>
+      <p>{ACCOUNT_CHANGED_NOTICE}</p>
+    </section>;
   }
 
   if (loading) {
@@ -293,7 +696,7 @@ export default function ApplicationStudio(props: {
       </div>
     ) : <div className="studio-layout">
       <aside className="studio-list" aria-label="Your application drafts">
-        <div className="studio-list-heading"><strong>My drafts</strong><span>{workspaces.length}</span></div>
+        <div className="studio-list-heading"><strong>My applications</strong><span>{workspaces.length}</span></div>
         {workspaces.map((item) => <button
           key={item.workspace_id} type="button"
           className={"studio-list-item" + (selectedId === item.workspace_id ? " selected" : "")}
@@ -302,7 +705,9 @@ export default function ApplicationStudio(props: {
         >
           <span className="studio-list-icon"><BriefcaseBusiness size={17}/></span>
           <span className="studio-list-copy"><strong>{item.role_title}</strong><small>{item.company}</small>
-            <em>{item.status === "self_reported_applied" ? "Applied · self-reported" : "Draft · not submitted"}</em>
+            <em>{item.status === "provider_acknowledged" ? "Sent · Lever acknowledged" :
+              item.status === "self_reported_applied" ? "Applied · self-reported" :
+              "Draft · not submitted"}</em>
           </span>
         </button>)}
         <button type="button" className="secondary-btn studio-new" onClick={props.onFindJobs}>
@@ -314,8 +719,12 @@ export default function ApplicationStudio(props: {
           <div>
             <span className="section-kicker">APPLICATION FOR</span>
             <h3>{selected.role_title}</h3><p>{selected.company}</p>
-            {selected.status === "self_reported_applied" ?
-              <span className="state-pill waiting"><Clock3 size={13}/> User-reported applied · not employer-verified</span> :
+            {selected.status === "provider_acknowledged" ?
+              <span className="state-pill good"><CheckCircle2 size={13}/>
+                Employer system acknowledged your application</span> :
+              selected.status === "self_reported_applied" ?
+              <span className="state-pill waiting"><Clock3 size={13}/>
+                User-reported applied · not employer-verified</span> :
               <span className="state-pill good">{browserReceipt ?
                 "Confirmation observed · employer verification pending" :
                 "Editable draft · not submitted"}</span>}
@@ -328,7 +737,9 @@ export default function ApplicationStudio(props: {
         <div className="studio-info">
           <ShieldCheck size={18}/>
           <div><strong>Your content, your decision.</strong>
-            <p>SmartPloy has not sent this application to anyone. The starter cover letter contains prompts that you must replace with accurate, personal details.</p></div>
+            <p>{selected.status === "provider_acknowledged"
+                  ? "Lever confirmed creation of this application. Your approved CV/letter were sent. This is not a hiring decision."
+                  : "SmartPloy has not independently verified submission of this draft. Review every CV and cover-letter claim before sending."}</p></div>
         </div>
         <section className="studio-ai-card" aria-label="Optional local AI writing support">
           <div className="studio-ai-heading">
@@ -356,7 +767,7 @@ export default function ApplicationStudio(props: {
             <div className="studio-ai-preview-title">
               <strong>Unverified AI proposal · {aiSuggestion.model}</strong>
               <button className="navy-btn compact" type="button"
-                onClick={insertAISuggestion}>Insert into editor <ArrowRight size={14}/></button>
+                onClick={() => void insertAISuggestion()}>Insert into editor <ArrowRight size={14}/></button>
             </div>
             <h4>{aiSuggestion.proposal.cv_headline}</h4>
             <p>{aiSuggestion.proposal.cv_summary}</p>
@@ -410,13 +821,28 @@ export default function ApplicationStudio(props: {
               <p>Use the optional SmartPloy browser companion to fill approved contact fields on this specific job's website.</p></div>
             <ExternalLink size={18} />
           </div>
+          {employerAttempt?.previous_attempt_reserved ? (
+            <p role="alert" className="studio-handoff-blockers">
+              An attempt for this employer job is already reserved across devices. Its outcome is
+              {employerAttempt.state === "uncertain" ? " uncertain" : " unverified"}.
+              Do not start another application; reconcile the employer result first.
+            </p>
+          ) : (
+            <p className="muted">
+              Automatic final submission is disabled until the companion can consume an
+              authenticated one-time cross-device server claim. You can still prepare a reviewed
+              form and submit manually on the employer website.
+              {!employerAttempt ? " The server attempt status is currently unavailable." : ""}
+            </p>
+          )}
           {handoff?.blockers.length ? <div className="studio-handoff-blockers">
             <strong>Before applying, complete:</strong>
             <ul>{handoff.blockers.map((item) => <li key={item}>{item}</li>)}</ul>
           </div> : null}
           <div className="studio-handoff-actions">
             <button type="button" className="navy-btn"
-              disabled={!handoff?.ready || dirty || busy || handoffBusy || !!browserReceipt}
+              disabled={!handoff?.ready || dirty || busy || handoffBusy || !!browserReceipt ||
+                employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void copyBrowserPacket()}>
               <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" : "Copy approved autofill packet"}
             </button>
@@ -432,13 +858,109 @@ export default function ApplicationStudio(props: {
               aria-label="Select and copy the private short-lived browser packet" />
             <p>Copied packets contain approved contact information. Never share them in chat or public issues.</p>
           </div> : null}
+          {handoffPacketText ? <div className="studio-packet-fallback" aria-label="Exact application final review">
+            <strong>Final review record · no application submitted</strong>
+            <p className="muted">This records only your review of the exact CV PDF and letter for 10 minutes.
+              It is not a browser permission, job application or employer receipt.</p>
+            {finalReview?.review_recorded ? <>
+              <p role="status">Review recorded until {new Date(finalReview.expires_at).toLocaleTimeString()}.
+                Automatic employer submission remains unavailable.</p>
+              <button type="button" className="outline-btn compact"
+                disabled={reviewBusy} onClick={() => void cancelFinalReview()}>
+                Cancel recorded review
+              </button>
+            </> : <button type="button" className="secondary-btn"
+              disabled={reviewBusy || !finalReview || !handoff?.ready || dirty ||
+                employerAttempt?.previous_attempt_reserved === true}
+              onClick={() => void recordFinalReview()}>
+              {reviewBusy ? "Recording…" : "Record exact CV and job review (no submit)"}
+            </button>}
+            {!finalReview ? <p role="status">Durable review service unavailable. No authorization can be recorded.</p> : null}
+          </div> : null}
+          <div className="studio-packet-fallback" aria-label="Employer final-action permission">
+            <strong>Automatic employer website click · currently unavailable</strong>
+            {finalAction ? <>
+              <p role="status">
+                Independent employer automation rights: {finalAction.operator_permission_reviewed
+                  ? "record reviewed" : "not attested"}.
+                Current applicant review: {(finalReview?.review_recorded ??
+                  finalAction.current_applicant_review_recorded) ? "recorded" : "pending"}.
+              </p>
+              <p className="muted">
+                {finalAction.previous_employer_attempt_reserved
+                  ? "A previous employer attempt exists and must be reconciled."
+                  : "Final employer click requires a separate user authorization and a trusted one-use server redemption."}
+              </p>
+            </> : <p role="status">Policy verification unavailable. Automated final submission remains blocked.</p>}
+            <p className="muted">This indicator is informational and never permits an automatic employer submission.</p>
+          </div>
+          <div className="studio-packet-fallback" aria-label="Official Lever partner submission">
+            <strong>Complete your reviewed job application through Lever</strong>
+            {partnerReceipt ? <>
+              <p role="status">Lever acknowledged the application. Reference:
+                <strong> {partnerReceipt.provider_application_id}</strong>.</p>
+              <p className="muted">The employer's system confirmed creation of the application.
+                This is not a hiring decision; do not submit the same job again.</p>
+            </> : partnerReadiness?.partner_api_configured &&
+                partnerReadiness.independent_partner_rights_reviewed &&
+                selected && freshPartnerEvidence(partnerReadiness.review_evidence,selected) ? <>
+              <p className="muted">This exact employer job has separately reviewed Lever API
+                permission. Review your CV and letter above, then record your review here.
+                No extension, copied personal-data packet or clipboard is needed.</p>
+              {!finalReview?.review_recorded ||
+                  Date.parse(finalReview.expires_at) <= Date.now() ? <>
+                <button type="button" className="secondary-btn"
+                  disabled={reviewBusy || partnerBusy || !handoff?.ready || dirty ||
+                    !finalReview || employerAttempt?.previous_attempt_reserved === true ||
+                    !!browserReceipt}
+                  onClick={() => void recordPartnerReview()}>
+                  {reviewBusy ? "Recording review…" : "Record reviewed CV, letter and job (no submit)"}
+                </button>
+              </> : <>
+                <p role="status">Your review was recorded; it does not send the application.
+                  A separate final confirmation is required.</p>
+                <button type="button" className="outline-btn compact"
+                  disabled={reviewBusy || partnerBusy} onClick={() => void cancelFinalReview()}>
+                  Cancel recorded review
+                </button>
+                {partnerReadiness.eligible_for_explicit_partner_submit ? <button
+                  className="navy-btn" type="button"
+                  disabled={partnerBusy || reviewBusy || !handoff?.ready || dirty ||
+                    employerAttempt?.previous_attempt_reserved === true || !!browserReceipt}
+                  onClick={() => void sendPartnerApplication()}>
+                  {partnerBusy ? "Submitting once…" : "Submit reviewed application to authorized Lever employer"}
+                </button> : <p role="status">
+                  Partner eligibility is not verified after review. No application may be sent.
+                </p>}
+              </>}
+            </> : <p className="muted">
+              {partnerReadiness?.prior_employer_attempt
+                ? "An employer attempt already exists; contact support to reconcile. Do not retry."
+                : "No authorized direct Lever submission is available for this job. " +
+                  "Use the browser companion and submit manually on the employer website."}
+            </p>}
+            {!partnerReadiness ? <p role="status">Partner readiness unavailable. No employer transfer is permitted.</p> : null}
+          </div>
           <p className="studio-handoff-disclaimer">
             Browser-only, 15-minute packet. Upload your CV on the employer's page and answer
             any employer-specific questions. Final submission needs a separate approval and
             must be verified from the employer's confirmation; preparing the packet is not applying.
           </p>
         </section> : null}
-        <section className="studio-receipt" aria-label="Browser-observed employer confirmation">
+        {selected.status === "provider_acknowledged" ? <section
+          className="studio-receipt" aria-label="Official Lever provider acknowledgement">
+          <div className="studio-receipt-header">
+            <strong><CheckCircle2 size={16}/> Lever received this application</strong>
+            <span className="state-pill good">Provider acknowledged</span>
+          </div>
+          {partnerReceipt ? <p role="status">
+            Employer application reference: <strong>{partnerReceipt.provider_application_id}</strong>
+          </p> : <p>Provider reference is stored in your private SmartPloy account. Refresh to retrieve it.</p>}
+          <p className="muted">Your application was created at the employer's ATS.
+            This confirms submission, not acceptance for the position or a hiring decision.</p>
+        </section> : null}
+        {selected.status !== "provider_acknowledged" ? <section
+          className="studio-receipt" aria-label="Browser-observed employer confirmation">
           <div className="studio-receipt-header">
             <strong><CheckCircle2 size={16}/> Employer confirmation evidence</strong>
             <span className="state-pill waiting">Not independently verified</span>
@@ -453,7 +975,7 @@ export default function ApplicationStudio(props: {
               copy the private receipt packet and import it here. An attempt alone is not success.</p>
             <button className="outline-btn compact" type="button"
               onClick={() => setReceiptOpen((current) => !current)}
-              disabled={selected.status !== "draft"}>
+              disabled={selected.status !== "draft" || !!partnerReceipt}>
               {receiptOpen ? "Hide receipt import" : "Import observed receipt"}
             </button>
             {receiptOpen ? <div className="studio-receipt-import">
@@ -468,19 +990,25 @@ export default function ApplicationStudio(props: {
               </button>
             </div> : null}
           </>}
-        </section>
+        </section> : null}
         <div className="studio-footer">
           <span><LockKeyhole size={14}/> Private workspace · revision {selected.revision}</span>
           {selected.status === "draft" ? <div className="studio-actions">
-            <button type="button" className="primary-btn" disabled={busy || !dirty || !!browserReceipt}
+            <button type="button" className="primary-btn" disabled={busy || !dirty || !!browserReceipt ||
+                !!partnerReceipt || employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void save()}><Save size={16}/>{busy ? "Working…" : "Save changes"}</button>
-            <button type="button" className="navy-btn" disabled={busy}
+            <button type="button" className="navy-btn" disabled={busy ||
+                !!partnerReceipt || employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void markApplied()}>I applied on employer site <CheckCircle2 size={16}/></button>
-          </div> : <p>Self-reported applied {selected.self_reported_applied_at ? new Date(selected.self_reported_applied_at).toLocaleDateString() : ""}{selected.self_reported_reference ? " · " + selected.self_reported_reference : ""}</p>}
+          </div> : selected.status === "provider_acknowledged" ?
+            <p>Lever acknowledged your application{partnerReceipt ?
+              " · Reference " + partnerReceipt.provider_application_id : ""}.
+              Documents are locked to preserve the submitted version.</p> :
+            <p>Self-reported applied {selected.self_reported_applied_at ? new Date(selected.self_reported_applied_at).toLocaleDateString() : ""}{selected.self_reported_reference ? " · " + selected.self_reported_reference : ""}</p>}
         </div>
         <div className="studio-delete-row">
           <button type="button" className="text-btn studio-delete" disabled={busy} onClick={() => void remove()}>
-            <Trash2 size={14}/> Delete this private draft
+            <Trash2 size={14}/> Delete this application workspace
           </button>
         </div>
       </div> : null}

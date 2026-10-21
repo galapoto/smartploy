@@ -6,7 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${COMPOSE_DIR}/../.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/env"
-POLICY_FILE="${COMPOSE_DIR}/runtime.production.env"
+POLICY_FILE="$(bash "${SCRIPT_DIR}/select-runtime-policy.sh")"
+IDENTITY_PROFILE="${SMARTPLOY_PRODUCTION_IDENTITY_MODE:-cloudflare}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Missing ${ENV_FILE}. Copy env.example to env and add production values." >&2
@@ -55,6 +56,24 @@ DEPLOY_SHA="$(git rev-parse HEAD)"
 export SMARTPLOY_IMAGE_TAG="${DEPLOY_SHA:0:12}"
 
 bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "${POLICY_FILE}"
+# Reuse the immutable, validated identity policy as the ONLY allowed Host,
+# for both legacy rollback and the Komplyint first-party OIDC release.
+PRODUCTION_ORIGIN="$(sed -n 's/^SMARTPLOY_PUBLIC_ORIGIN=//p' "${POLICY_FILE}")"
+PRODUCTION_HOST="${PRODUCTION_ORIGIN#https://}"
+# Before deploying, verify selected-host DNS/TLS and exact issuer PKCE
+# metadata. Do NOT require the new web shell to be served before it exists.
+# After deploying, the original live-acceptance.sh rejects Cloudflare
+# Access challenges, unsafe login redirects and inaccessible private APIs
+# before recording a successful release SHA.
+if [[ "${IDENTITY_PROFILE}" == "oidc" ]]; then
+  [[ "${SMARTPLOY_RELEASE_APPROVED_SHA:-}" == "${DEPLOY_SHA}" ]] || {
+    echo "OIDC rollout requires a separately approved EXACT release commit SHA" >&2
+    exit 1
+  }
+  bash "${SCRIPT_DIR}/preflight.sh" --online >/dev/null
+else
+  bash "${SCRIPT_DIR}/preflight.sh" >/dev/null
+fi
 
 COMPOSE=(
   docker compose
@@ -99,8 +118,8 @@ fi
 HEALTH_FILE="$(mktemp)"
 HEALTH_OK=false
 for _ in $(seq 1 45); do
-  if curl --fail --silent --show-error     -H 'Host: smartploy.obumai.com'     "http://127.0.0.1:${WEB_PORT}/healthz" > "${HEALTH_FILE}"; then
-    if python3 - "${HEALTH_FILE}" <<'PY'
+  if curl --fail --silent --show-error     -H "Host: ${PRODUCTION_HOST}"     "http://127.0.0.1:${WEB_PORT}/healthz" > "${HEALTH_FILE}"; then
+    if python3 - "${HEALTH_FILE}" "${IDENTITY_PROFILE}" "${PRODUCTION_ORIGIN}" <<'PY'
 import json
 import sys
 
@@ -109,11 +128,15 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 
 assert health["ok"] is True
 assert health["service"] == "smartploy"
-assert health["public_origin"] == "https://smartploy.obumai.com"
+assert health["public_origin"] == sys.argv[3]
 assert health["storage"]["ready"] is True
-assert health["access"]["enabled"] is True
 assert health["access"]["environment"] == "production"
-assert health["access"]["owner_restricted"] is True
+if sys.argv[2] == "oidc":
+    assert health["access"]["enabled"] is False
+else:
+    assert sys.argv[2] == "cloudflare"
+    assert health["access"]["enabled"] is True
+    assert health["access"]["owner_restricted"] is True
 assert health["external_actions_authorized"] is False
 PY
     then
@@ -145,6 +168,13 @@ done
 bash "${SCRIPT_DIR}/assert-healthy-stack.sh"
 bash "${SCRIPT_DIR}/assert-running-images.sh" "${DEPLOY_SHA}"
 
+# OIDC release must prove the ACTUAL public login -> trusted issuer, public
+# static shell, and signed-out private API before recording the release SHA.
+# The original Cloudflare profile remains subject to its existing probes.
+if [[ "${IDENTITY_PROFILE}" == "oidc" ]]; then
+  bash "${SCRIPT_DIR}/live-acceptance.sh" >/dev/null
+fi
+
 if [[ -f "${STATE_DIR}/deployed-sha" ]]; then
   PREVIOUS="$(tr -d '[:space:]' < "${STATE_DIR}/deployed-sha")"
   if [[ "${PREVIOUS}" =~ ^[0-9a-f]{40}$ && "${PREVIOUS}" != "${DEPLOY_SHA}" ]]; then
@@ -155,6 +185,7 @@ fi
 
 printf '%s
 ' "${DEPLOY_SHA}" > "${STATE_DIR}/deployed-sha"
+printf '%s\n' "${IDENTITY_PROFILE}" > "${STATE_DIR}/deployed-auth-profile"
 date -u +'%Y-%m-%dT%H:%M:%SZ' > "${STATE_DIR}/deployed-at"
 "${COMPOSE[@]}" ps
 echo "SmartPloy deployed successfully at ${DEPLOY_SHA}."

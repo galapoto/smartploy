@@ -6,6 +6,7 @@ import {
   relativeFreshness,
   listingObservationLabels,
   relativeSchedule,
+  safeExternalJobUrl,
   scoreBand
 } from "./lib";
 import type { RankingCard } from "./types";
@@ -127,14 +128,30 @@ describe("job source observation truth", () => {
     expect(labels.caution).toBeNull();
   });
 
-  it("cautions rather than claiming still open when source observation is older than 72h", () => {
+  it("cautions at the same 48-hour point that background auto drafting stops", () => {
+    const fortyNineHoursAgo = "2026-10-18T23:00:00Z";
+    const labels = listingObservationLabels(
+      "2026-09-01T00:00:00Z",
+      "2026-09-01T00:00:00Z",
+      fortyNineHoursAgo,
+      new Date("2026-10-21T00:00:00Z")
+    );
+    expect(labels.caution).toMatch(/at least 48h ago/);
+    const stillFresh = listingObservationLabels(
+      "", "", "2026-10-19T23:00:00Z",
+      new Date("2026-10-21T00:00:00Z")
+    );
+    expect(stillFresh.caution).toBeNull();
+  });
+
+  it("cautions rather than claiming still open when source observation is older than 48h", () => {
     const labels = listingObservationLabels(
       "2026-10-11T12:00:00Z", "2026-10-11T12:00:00Z",
       "2026-10-09T12:00:00Z", now
     );
     expect(labels.origin).toBe("Posted 1d ago");
     expect(labels.observation).toBe("Last observed 3d ago");
-    expect(labels.caution).toMatch(/at least 72h ago/);
+    expect(labels.caution).toMatch(/at least 48h ago/);
   });
 
   it("handles invalid, missing and future source timestamps conservatively", () => {
@@ -149,5 +166,28 @@ describe("job source observation truth", () => {
     expect(future.origin).toBe("First discovered 1h ago");
     expect(future.observation).toBe("Last source observation unknown");
     expect(future.caution).not.toBeNull();
+  });
+});
+
+describe("safe external employer posting links", () => {
+  it("keeps legitimate absolute HTTP(S) employer links navigable", () => {
+    expect(safeExternalJobUrl("https://jobs.example.fi/jobs/analyst?ref=smartploy"))
+      .toBe("https://jobs.example.fi/jobs/analyst?ref=smartploy");
+    expect(safeExternalJobUrl("http://legacy.example.fi/role"))
+      .toBe("http://legacy.example.fi/role");
+  });
+
+  it("refuses scripts, data URLs, relative redirects, embedded credentials and malformed links", () => {
+    for (const candidate of [
+      "", "javascript:alert(1)", "JaVaScRiPt:alert(1)", "data:text/html,hello",
+      "file:///etc/hosts", "/redirect?url=https://evil.invalid",
+      "//evil.invalid/page", "https://user:pass@jobs.example.fi/",
+      "https://jobs.example.fi/\nother", "https://example.fi\\@evil.invalid",
+      "https://", "https://\u0000evil.invalid",
+    ]) {
+      expect(safeExternalJobUrl(candidate), candidate).toBe("");
+    }
+    expect(safeExternalJobUrl(null)).toBe("");
+    expect(safeExternalJobUrl(undefined)).toBe("");
   });
 });

@@ -43,14 +43,23 @@ services:
       SMARTPLOY_ALLOWED_HOSTS: ${SMARTPLOY_ALLOWED_HOSTS:-smartploy.obumai.com}
       SMARTPLOY_AUTH_MODE: ${SMARTPLOY_AUTH_MODE:-cloudflare}
       SMARTPLOY_ACCESS_ENABLED: ${SMARTPLOY_ACCESS_ENABLED:-true}
-      SMARTPLOY_ACCESS_ISSUER: ${SMARTPLOY_ACCESS_ISSUER:?set SMARTPLOY_ACCESS_ISSUER in deploy/personal/env}
-      SMARTPLOY_ACCESS_AUDIENCE: ${SMARTPLOY_ACCESS_AUDIENCE:?set SMARTPLOY_ACCESS_AUDIENCE in deploy/personal/env}
-      SMARTPLOY_ACCESS_ALLOWED_EMAIL: ${SMARTPLOY_ACCESS_ALLOWED_EMAIL:?set SMARTPLOY_ACCESS_ALLOWED_EMAIL in deploy/personal/env}
+      SMARTPLOY_ACCESS_ISSUER: ${SMARTPLOY_ACCESS_ISSUER:-}
+      SMARTPLOY_ACCESS_AUDIENCE: ${SMARTPLOY_ACCESS_AUDIENCE:-}
+      SMARTPLOY_ACCESS_ALLOWED_EMAIL: ${SMARTPLOY_ACCESS_ALLOWED_EMAIL:-}
+      # Stable server-issued usr-ID allowlist for shared source-write APIs only.
+      SMARTPLOY_OPERATOR_USER_IDS: ${SMARTPLOY_OPERATOR_USER_IDS:-}
       SMARTPLOY_OIDC_ISSUER: ${SMARTPLOY_OIDC_ISSUER:-}
       SMARTPLOY_OIDC_CLIENT_ID: ${SMARTPLOY_OIDC_CLIENT_ID:-}
       SMARTPLOY_OIDC_REDIRECT_URI: ${SMARTPLOY_OIDC_REDIRECT_URI:-}
       SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI: ${SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI:-}
       SMARTPLOY_OIDC_SCOPE: ${SMARTPLOY_OIDC_SCOPE:-openid profile email}
+      # Per-POSTING official partner API configuration and employer-admin keys.
+      # API container only. Never inject into web, worker or postgres.
+      # Unset by default; code always denies automated external transfer.
+      SMARTPLOY_LEVER_PARTNER_JOBS_JSON: ${SMARTPLOY_LEVER_PARTNER_JOBS_JSON:-}
+      SMARTPLOY_LEVER_PARTNER_KEY_PRIMARY: ${SMARTPLOY_LEVER_PARTNER_KEY_PRIMARY:-}
+      SMARTPLOY_LEVER_PARTNER_KEY_SECONDARY: ${SMARTPLOY_LEVER_PARTNER_KEY_SECONDARY:-}
+      SMARTPLOY_LEVER_PARTNER_KEY_TERTIARY: ${SMARTPLOY_LEVER_PARTNER_KEY_TERTIARY:-}
       SMARTPLOY_SESSION_TTL_SECONDS: ${SMARTPLOY_SESSION_TTL_SECONDS:-43200}
       SMARTPLOY_OIDC_STATE_TTL_SECONDS: ${SMARTPLOY_OIDC_STATE_TTL_SECONDS:-600}
       OBUMAI_BASE_URL: ${OBUMAI_BASE_URL:-}
@@ -78,7 +87,7 @@ services:
         - CMD
         - python
         - -c
-        - import urllib.request; r=urllib.request.Request('http://127.0.0.1:8090/healthz', headers={'Host':'smartploy.obumai.com'}); urllib.request.urlopen(r, timeout=4).read(256)
+        - import os, urllib.request; r=urllib.request.Request('http://127.0.0.1:8090/healthz', headers={'Host':os.environ['SMARTPLOY_ALLOWED_HOSTS']}); urllib.request.urlopen(r, timeout=4).read(256)
       interval: 30s
       timeout: 5s
       start_period: 20s
@@ -98,6 +107,9 @@ services:
     environment:
       SMARTPLOY_DATABASE_URL: postgresql://${POSTGRES_USER:-smartploy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-smartploy}
       SMARTPLOY_PROFILE_ID: ${SMARTPLOY_PROFILE_ID:-default}
+      # Explicit runtime classification; production refuses global unattended
+      # candidate-data forwarding even if the operator flag is accidentally true.
+      SMARTPLOY_ENVIRONMENT: ${SMARTPLOY_ENVIRONMENT:-production}
 
       OBUMAI_BASE_URL: ${OBUMAI_BASE_URL:-}
       OBUMAI_AGENT_ID: ${OBUMAI_AGENT_ID:-obum-assistant}
@@ -137,6 +149,11 @@ services:
       SMARTPLOY_WORKER_JOBMARKET_CADENCE_SECONDS: ${SMARTPLOY_WORKER_JOBMARKET_CADENCE_SECONDS:-300}
       SMARTPLOY_WORKER_KUNTAREKRY_CADENCE_SECONDS: ${SMARTPLOY_WORKER_KUNTAREKRY_CADENCE_SECONDS:-600}
       SMARTPLOY_WORKER_PUBLIC_ATS_CADENCE_SECONDS: ${SMARTPLOY_WORKER_PUBLIC_ATS_CADENCE_SECONDS:-600}
+      # Safe opt-in local job match -> private drafts, no remote AI/employer.
+      SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED: ${SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED:-true}
+      SMARTPLOY_WORKER_AUTO_DRAFT_CADENCE_SECONDS: ${SMARTPLOY_WORKER_AUTO_DRAFT_CADENCE_SECONDS:-600}
+      # Defaults OFF; enabling can forward approved profile evidence to ObumAI.
+      SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED: ${SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED:-false}
       SMARTPLOY_WORKER_PREPARE_CADENCE_SECONDS: ${SMARTPLOY_WORKER_PREPARE_CADENCE_SECONDS:-120}
       SMARTPLOY_WORKER_REFRESH_CADENCE_SECONDS: ${SMARTPLOY_WORKER_REFRESH_CADENCE_SECONDS:-60}
       SMARTPLOY_PREPARE_BATCH_LIMIT: ${SMARTPLOY_PREPARE_BATCH_LIMIT:-20}
@@ -182,7 +199,10 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - "wget -qO- --header='Host: smartploy.obumai.com' http://127.0.0.1:8080/healthz >/dev/null"
+        # Compose substitutes the exact allowed hostname from the chosen
+        # immutable Cloudflare or ZITADEL identity policy at deploy time.
+        # The web container itself holds no private OIDC/DB environment.
+        - "wget -qO- --header='Host: ${SMARTPLOY_ALLOWED_HOSTS:?select a validated production identity policy}' http://127.0.0.1:8080/healthz >/dev/null"
       interval: 30s
       timeout: 5s
       start_period: 15s

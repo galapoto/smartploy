@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
+from hashlib import sha256
 import os
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
@@ -13,14 +14,32 @@ from authlib.integrations.base_client import OAuthError
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response, JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 import uvicorn
 
 from .access import AccessPrincipal, AccessSettings, CloudflareAccessVerifier
+from .ai_processing_consent import (
+    ConsentIdentityError, JobAIConsentRepository, MemoryJobAIConsentRepository,
+    PostgresJobAIConsentRepository,
+)
+from .auto_draft_shortlist import prepare_profile_shortlist
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
-from .browser_handoff import HandoffError, make_browser_packet, review_handoff
+from .browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
+from .employer_submit_claim_storage import EmployerSubmitClaimDenied, PostgresEmployerSubmitClaimRepository
+from .employer_review_intent_storage import (
+    EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
+)
+from .employer_automation_rights import (
+    LEVER_API_ACTION, PostgresEmployerAutomationRightsRepository,
+)
+from .lever_partner_submit import (
+    LeverPartnerRegistry, LeverPartnerTransport, LeverPartnerUnavailable,
+    LeverPartnerUncertain, PostgresPartnerApplicationReceipts,
+)
+from .employer_final_action_gate import EmployerFinalActionDenied
+from .employer_final_action_gate import PostgresEmployerFinalActionGate
 from .browser_receipt import ReceiptError, validate_browser_receipt
 from .browser_receipt_storage import (
     ReceiptConflict, MemoryBrowserReceiptRepository, PostgresBrowserReceiptRepository,
@@ -36,8 +55,9 @@ from .identity import (
     PostgresIdentityRepository,
     UserProfileBinding,
 )
-from .domain import JobSearchFilters, SourceObservation, SourcePolicy
+from .domain import JobSearchFilters, SourceObservation, SourcePolicy, canonical_json
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
+from .operator_access import OperatorAccessPolicy
 from .oidc import (
     AuthenticationSettings,
     MemoryOIDCStateCache,
@@ -51,8 +71,16 @@ from .oidc import (
     clear_session_cookie,
     set_session_cookie,
 )
+from .private_saved_jobs import (
+    MemoryPrivateSavedJobRepository,
+    PostgresPrivateSavedJobRepository,
+    PrivateSavedJobError,
+)
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
-from .preparations import PreparationNotEligible
+from .preparations import (
+    PREPARATION_ACTION, PreparationNotEligible,
+    approved_evidence_snapshot, preparation_job_snapshot,
+)
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
 from .search_preferences import SearchPreferenceConflict, SearchPreferenceError, search_jobs
 from .search_preference_storage import MemorySearchPreferenceRepository, PostgresSearchPreferenceRepository
@@ -140,6 +168,15 @@ class CVUploadPayload(BaseModel):
     content_base64: str = Field(min_length=24, max_length=7_000_000)
 
 
+class PrivateSavedJobPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    company: str = Field(min_length=1, max_length=160)
+    role_title: str = Field(min_length=1, max_length=160)
+    description: str = Field(min_length=1, max_length=12000)
+    location: str = Field(default="", max_length=160)
+    application_url: str = Field(default="", max_length=2048)
+
+
 class ProfileFactPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     fact_type: str = Field(min_length=1, max_length=40)
@@ -162,6 +199,7 @@ class SearchPreferencesPayload(BaseModel):
     keywords: list[str] = Field(default_factory=list, max_length=12)
     skills: list[str] = Field(default_factory=list, max_length=16)
     seniority: str = "any"
+    auto_draft_enabled: StrictBool = False
     expected_revision: int = Field(ge=0)
 
 
@@ -184,6 +222,39 @@ class BrowserHandoffPayload(BaseModel):
     confirm_private_data_transfer: bool
 
 
+class EmployerReviewIntentPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    expected_document_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    confirm_reviewed_application: StrictBool
+    acknowledge_manual_only: StrictBool
+
+
+class LeverPartnerApplicationPayload(BaseModel):
+    """Real provider transfer only after exact signed-in applicant click."""
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    expected_document_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_fields_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_size: int = Field(ge=12, le=2 * 1024 * 1024)
+    explicit_final_user_approval: StrictBool
+    approve_employer_data_transfer: StrictBool
+    affirm_reviewed_employer_form: StrictBool
+
+
+class BrowserReviewVerificationPayload(BaseModel):
+    """Secret-free, exact packet fingerprints; NO browser execution grant."""
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    expected_document_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_fields_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_application_url_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_size: int = Field(ge=12, le=2 * 1024 * 1024)
+
+
 class BrowserReceiptImportPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirm_user_observed: bool
@@ -197,10 +268,27 @@ class WorkspaceAppliedPayload(BaseModel):
     reference: str = Field(default="", max_length=250)
 
 
-class ObumAITaskPayload(BaseModel):
+class AIProcessingConsentPayload(BaseModel):
+    """A per-job, literal-true opt-in for legacy durable ObumAI processing."""
     model_config = ConfigDict(extra="forbid")
+    acknowledge_obumai_processing: StrictBool
+
+
+class ObumAITaskPayload(AIProcessingConsentPayload):
     action: str = Field(min_length=1, max_length=64)
     instructions: str = Field(default="", max_length=20_000)
+
+
+class GrantUnattendedAIConsentPayload(BaseModel):
+    """Grant one future-draft permission for today's job + approved facts."""
+    model_config = ConfigDict(extra="forbid")
+    canonical_key: str = Field(min_length=1, max_length=256)
+    acknowledge_obumai_processing: StrictBool
+
+
+# These are reasoning/draft tasks; an arbitrary action string must never be
+# interpreted by a downstream agent as permission for external side effects.
+SELF_SERVICE_OBUMAI_ACTIONS = frozenset({"fit_analysis", PREPARATION_ACTION})
 
 
 def _sanitize_worker_metadata(value: Any) -> Any:
@@ -346,6 +434,7 @@ def create_app(
     oidc_client: Any | None = None,
     session_repository: Any | None = None,
     oidc_state_cache: Any | None = None,
+    processing_consent_repository: JobAIConsentRepository | None = None,
 ) -> FastAPI:
     active = service or _build_service()
     authentication = AuthenticationSettings.from_env()
@@ -353,6 +442,7 @@ def create_app(
         require_enabled_in_production=authentication.cloudflare_enabled
     )
     oidc_settings = OIDCSettings.from_env(authentication)
+    public_origin = _public_origin()
     dsn = os.getenv("SMARTPLOY_DATABASE_URL", "").strip()
 
     sessions = session_repository
@@ -369,6 +459,7 @@ def create_app(
         oidc_registry = build_oidc_registry(oidc_settings, state_cache)
         oidc_remote = oidc_registry.create_client("obum_identity")
 
+    resolved_identities = identity_repository or _build_identity_repository()
     app = FastAPI(title="Smartploy API", version="0.5.0")
     allowed_hosts = _allowed_hosts()
     if allowed_hosts:
@@ -378,24 +469,47 @@ def create_app(
         authentication=authentication,
         sessions=sessions,
         access_settings=access_settings,
+        identity_repository=resolved_identities,
+        oidc_public_origin=oidc_settings.public_origin if oidc_settings else public_origin,
         access_verifier=access_verifier,
     )
     app.state.smartploy = active
-    app.state.public_origin = _public_origin()
+    app.state.public_origin = public_origin
     app.state.authentication = authentication
     app.state.access_settings = access_settings
     app.state.oidc_settings = oidc_settings
     app.state.oidc_registry = oidc_registry
     app.state.oidc_client = oidc_remote
     app.state.session_repository = sessions
-    app.state.identity_repository = identity_repository or _build_identity_repository()
+    app.state.identity_repository = resolved_identities
+    # Empty allowlist denies every authenticated browser user shared writes.
+    # Production operators must be granted an explicit stable server user ID.
+    app.state.operator_access = OperatorAccessPolicy.from_env()
     app.state.tenant_services = {}
     app.state.cv_repository = PostgresCVRepository(dsn) if dsn else MemoryCVRepository()
     app.state.workspace_repository = PostgresWorkspaceRepository(dsn) if dsn else MemoryWorkspaceRepository()
     app.state.browser_receipts = PostgresBrowserReceiptRepository(dsn) if dsn else MemoryBrowserReceiptRepository()
+    # SP15b: read-only employer claim posture. No memory fallback, issuer or final-click API.
+    app.state.employer_claims = PostgresEmployerSubmitClaimRepository(dsn) if dsn else None
+    app.state.employer_review_intents = PostgresEmployerReviewIntentRepository(dsn) if dsn else None
+    # Independent reviewed employer terms are NOT job-discovery SourcePolicy.
+    # SP15e: read-only posture. No web issuer/redeemer or browser final click.
+    app.state.employer_rights = PostgresEmployerAutomationRightsRepository(dsn) if dsn else None
+    app.state.employer_final_actions = PostgresEmployerFinalActionGate(dsn) if dsn else None
+    app.state.partner_lever_registry = LeverPartnerRegistry.from_env()
+    app.state.partner_lever_transport = LeverPartnerTransport()
+    app.state.partner_lever_receipts = PostgresPartnerApplicationReceipts(dsn) if dsn else None
     app.state.local_ai = LocalDraftClient(LocalDraftSettings.from_env())
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
+    )
+    app.state.private_saved_jobs = (
+        PostgresPrivateSavedJobRepository(dsn) if dsn
+        else MemoryPrivateSavedJobRepository()
+    )
+    app.state.processing_consents = processing_consent_repository or (
+        PostgresJobAIConsentRepository(dsn) if dsn
+        else MemoryJobAIConsentRepository()
     )
 
     def tenant_context(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
@@ -403,7 +517,15 @@ def create_app(
         if principal is None:
             return active, None
 
-        binding = app.state.identity_repository.resolve_or_create(principal)
+        binding = getattr(request.state, "smartploy_binding", None)
+        if not isinstance(binding, UserProfileBinding):
+            # Auth-disabled fixtures have no verified principal; otherwise
+            # request middleware must have validated and bound this account.
+            if authentication.mode != "disabled":
+                raise HTTPException(status_code=503, detail="Verified account binding is unavailable")
+            binding = app.state.identity_repository.resolve_or_create(principal)
+        if binding.status != "active":
+            raise HTTPException(status_code=403, detail="SmartPloy account access is disabled")
         request.state.smartploy_binding = binding
 
         cached = app.state.tenant_services.get(binding.profile_id)
@@ -435,34 +557,45 @@ def create_app(
         return tenant, binding
 
     @app.get("/healthz")
-    def health() -> dict[str, Any]:
+    def health() -> JSONResponse:
+        """Public liveness/provenance contract; never return account metadata.
+
+        The existing guarded release script consumes storage readiness,
+        Access posture, worker readiness/count and external-action status.
+        Keep those machine-readable *safe* fields, but not default profile
+        counts/types, tenant IDs, raw worker errors or authentication config.
+        More detailed worker and profile views require authenticated APIs.
+        """
         storage = active.storage_status()
         worker = _worker_snapshot()
-        return {
+        safe = {
             "ok": bool(storage.get("ready")),
             "service": "smartploy",
             "public_origin": app.state.public_origin,
-            "storage": storage,
-            "profile": active.profile_summary(),
-            "obumai_configured": active.obumai is not None,
-            "authentication": {
-                "mode": authentication.mode,
-                "oidc_enabled": authentication.oidc_enabled,
-                "cloudflare_fallback_enabled": authentication.cloudflare_enabled,
+            "storage": {
+                "mode": str(storage.get("mode") or "unknown"),
+                "ready": bool(storage.get("ready")),
             },
+            "obumai_configured": active.obumai is not None,
             "access": {
                 "enabled": access_settings.enabled,
                 "environment": access_settings.environment,
                 "owner_restricted": bool(access_settings.allowed_email),
             },
             "worker": {
-                "configured": worker["configured"],
-                "ready": worker["ready"],
-                "count": worker["count"],
-                "error": worker["error"],
+                "configured": bool(worker.get("configured")),
+                "ready": bool(worker.get("ready")),
+                "count": int(worker.get("count") or 0),
             },
             "external_actions_authorized": False,
         }
+        return JSONResponse(
+            content=safe,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @app.get("/auth/login")
     async def auth_login(request: Request):
@@ -499,7 +632,14 @@ def create_app(
             auth_source="oidc",
             claims={},
         ).normalized()
-        binding = app.state.identity_repository.resolve_or_create(principal)
+        binding = await asyncio.to_thread(
+            app.state.identity_repository.resolve_or_create, principal
+        )
+        if binding.status != "active":
+            raise HTTPException(
+                status_code=403, detail="SmartPloy account access is disabled",
+                headers={"Cache-Control": "no-store"},
+            )
         issued = await asyncio.to_thread(
             sessions.create,
             user_id=binding.user_id,
@@ -512,13 +652,93 @@ def create_app(
         set_session_cookie(response, issued.token, oidc_settings.session_ttl_seconds)
         return response
 
-    @app.api_route("/auth/logout", methods=["GET", "POST"])
-    async def auth_logout(request: Request):
+    # These pages contain no account-specific values, cookies or identity
+    # details. A cross-site GET navigation must never revoke a session.
+    def logout_page(content: str, *, status_code: int = 200) -> Response:
+        return Response(
+            content=content,
+            status_code=status_code,
+            media_type="text/html",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+                "X-Frame-Options": "DENY",
+                "Content-Security-Policy": (
+                    "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
+                    "form-action 'self'; style-src 'unsafe-inline'"
+                ),
+            },
+        )
+
+    @app.get("/auth/logout")
+    async def auth_logout_confirmation() -> Response:
+        if oidc_settings is None:
+            raise HTTPException(status_code=404, detail="OIDC logout is not enabled")
+        return logout_page(
+            """<!doctype html><html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Sign out | SmartPloy</title><style>
+            body{background:#f5f7f8;color:#18343c;font:16px/1.6 system-ui,sans-serif;
+                 min-height:100vh;display:grid;place-items:center;margin:0;padding:1rem}
+            main{max-width:450px;background:white;padding:2rem;border-radius:20px;
+                 box-shadow:0 12px 38px #18343c12}
+            h1{font-size:1.7rem;line-height:1.25}
+            button{background:#175b62;color:white;border:0;border-radius:10px;
+                   padding:0.85rem 1.4rem;font:inherit;font-weight:650;cursor:pointer}
+            a{color:#175b62;margin-left:1rem}
+            small{display:block;margin-top:1.5rem;color:#50676b}
+            </style></head><body><main><strong>SmartPloy</strong>
+            <h1>Sign out of SmartPloy?</h1>
+            <p>Confirm to end this browser's SmartPloy session.
+            This will not submit a job application or change your profile.</p>
+            <form method="post" action="/auth/logout">
+              <button type="submit">Confirm sign out</button>
+              <a href="/">Cancel</a>
+            </form><small>Your identity provider may have its own session.</small>
+            </main></body></html>"""
+        )
+
+    @app.post("/auth/logout")
+    async def auth_logout(request: Request) -> Response:
+        if oidc_settings is None:
+            raise HTTPException(status_code=404, detail="OIDC logout is not enabled")
+
+        # A browser form POST supplies Origin. SameSite=Lax alone does not
+        # stop requests from another same-site subdomain. Do not rely on
+        # caller-controlled Host or reverse-proxy forwarding headers.
+        if (
+            request.headers.get("origin", "") != oidc_settings.public_origin
+            or request.headers.get("sec-fetch-site", "").strip().casefold()
+            not in {"", "same-origin", "none"}
+        ):
+            return SmartployAuthenticationMiddleware._deny(
+                403, "csrf_origin_denied",
+                "Confirm sign-out from the SmartPloy website.",
+            )
+
         raw_session = request.cookies.get(SESSION_COOKIE_NAME, "")
         if raw_session:
-            await __import__("asyncio").to_thread(sessions.revoke, raw_session)
+            try:
+                await asyncio.to_thread(sessions.revoke, raw_session)
+            except Exception:
+                # Clearing a browser cookie does NOT prove that the backing
+                # database session was revoked. Do not claim full sign-out or
+                # redirect to the identity provider in this failure mode.
+                response = logout_page(
+                    """<!doctype html><html lang="en"><head><meta charset="utf-8">
+                    <title>Sign-out incomplete | SmartPloy</title></head>
+                    <body><main><h1>Sign-out could not be completed</h1>
+                    <p>Your browser cookie has been cleared, but the server
+                    could not confirm session revocation. Close this browser
+                    on a shared device and contact support if necessary.</p>
+                    <a href="/auth/login">Sign in again</a></main></body></html>""",
+                    status_code=503,
+                )
+                clear_session_cookie(response)
+                return response
 
-        if oidc_settings is not None and oidc_remote is not None:
+        if oidc_remote is not None:
             request.scope.setdefault("session", {})
             try:
                 response = await oidc_remote.logout_redirect(
@@ -527,17 +747,28 @@ def create_app(
                     client_id=oidc_settings.client_id,
                 )
             except Exception:
+                # Local session is revoked; provider logout is not confirmed.
                 response = RedirectResponse(url="/auth/logged-out", status_code=303)
         else:
-            response = RedirectResponse(url="/", status_code=303)
+            response = RedirectResponse(url="/auth/logged-out", status_code=303)
         clear_session_cookie(response)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
     @app.get("/auth/logged-out")
-    async def auth_logged_out():
-        response = RedirectResponse(url="/", status_code=303)
-        clear_session_cookie(response)
-        return response
+    async def auth_logged_out() -> Response:
+        # A direct external GET must be inert: do not revoke or even clear an
+        # existing cookie here. The protected POST already did both.
+        return logout_page(
+            """<!doctype html><html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>SmartPloy sign-out</title></head><body>
+            <main><h1>SmartPloy sign-out</h1>
+            <p>If you confirmed sign-out, your local SmartPloy session has ended.
+            Signing out of your identity provider may require a separate step.</p>
+            <a href="/auth/login">Sign in</a></main></body></html>"""
+        )
 
     @app.get("/api/v1/session")
     def session(request: Request) -> dict[str, Any]:
@@ -653,8 +884,26 @@ def create_app(
             raise HTTPException(status_code=404, detail="No CV uploaded")
         return {"deleted": True}
 
+    def require_shared_ingestion_operator(request: Request) -> None:
+        # Unauthenticated local test/development APIs preserve the legacy
+        # manual-ingest fixtures. Production disallows disabled auth entirely.
+        if authentication.mode == "disabled":
+            return
+
+        # The auth middleware supplies the verified principal; resolve its
+        # canonical user ID (including explicitly linked provider identities).
+        # Do not inspect email, headers, or client-provided role claims.
+        _, binding = tenant_context(request)
+        if not app.state.operator_access.allows(binding):
+            raise HTTPException(
+                status_code=403,
+                detail="Operator authorization required for shared job sources",
+                headers={"Cache-Control": "no-store"},
+            )
+
     @app.post("/api/v1/sources")
-    def register_source(payload: SourcePolicyPayload) -> dict[str, Any]:
+    def register_source(payload: SourcePolicyPayload, request: Request) -> dict[str, Any]:
+        require_shared_ingestion_operator(request)
         try:
             policy = active.register_source(
                 SourcePolicy(
@@ -684,7 +933,8 @@ def create_app(
         return item.to_dict()
 
     @app.post("/api/v1/jobs/ingest")
-    def ingest(payload: IngestPayload) -> dict[str, Any]:
+    def ingest(payload: IngestPayload, request: Request) -> dict[str, Any]:
+        require_shared_ingestion_operator(request)
         obs = payload.observation
         filters = payload.filters
         observation = SourceObservation(
@@ -711,6 +961,138 @@ def create_app(
                 include_unknown=filters.include_unknown,
             )
         return active.ingest(observation, filters=cfg).to_dict()
+
+    def private_saved_jobs_profile(request: Request) -> str:
+        # Authenticated requests resolve their own stable profile. The legacy
+        # unprotected development fixture remains usable only in disabled mode.
+        tenant, binding = tenant_context(request)
+        if binding is None and authentication.mode != "disabled":
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return tenant.profile_repository.profile_id
+
+    @app.get("/api/v1/private-jobs")
+    def list_private_saved_jobs(request: Request, limit: int = 100) -> JSONResponse:
+        if not 1 <= limit <= 100:
+            raise HTTPException(status_code=422, detail="limit must be 1 to 100")
+        profile_id = private_saved_jobs_profile(request)
+        records = app.state.private_saved_jobs.list(profile_id, limit=limit)
+        return JSONResponse(
+            content={
+                "jobs": [item.to_dict() for item in records],
+                "count": len(records),
+                "private": True,
+            },
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.post("/api/v1/private-jobs", status_code=201)
+    def create_private_saved_job(
+        payload: PrivateSavedJobPayload, request: Request
+    ) -> JSONResponse:
+        profile_id = private_saved_jobs_profile(request)
+        try:
+            item = app.state.private_saved_jobs.save(profile_id, payload.model_dump())
+        except PrivateSavedJobError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return JSONResponse(
+            status_code=201,
+            content={"status": "saved_private", "job": item.to_dict()},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.delete("/api/v1/private-jobs/{saved_job_id}")
+    def remove_private_saved_job(saved_job_id: str, request: Request) -> JSONResponse:
+        profile_id = private_saved_jobs_profile(request)
+        if not app.state.private_saved_jobs.delete(profile_id, saved_job_id):
+            raise HTTPException(status_code=404, detail="Private saved job not found")
+        return JSONResponse(
+            content={"deleted": True},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    # This is a permission ledger, not an automatic AI scheduler or a consent
+    # inferred from configuring ObumAI. All operations need verified identity.
+    def consent_context(request: Request) -> tuple[SmartployService, UserProfileBinding]:
+        tenant, binding = tenant_context(request)
+        if binding is None:
+            raise HTTPException(status_code=401, detail="Verified sign-in is required for AI processing consent")
+        return tenant, binding
+
+    @app.get("/api/v1/ai-processing-consents")
+    def ai_processing_consents(request: Request, limit: int = 100) -> dict[str, Any]:
+        if not 1 <= limit <= 100:
+            raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
+        _, binding = consent_context(request)
+        items = app.state.processing_consents.list(binding, limit=limit)
+        return {
+            "consents": [item.to_dict() for item in items],
+            "count": len(items),
+            "private": True,
+            "unattended_processing_enabled": False,
+        }
+
+    @app.get("/api/v1/ai-processing-consents/events")
+    def ai_processing_consent_events(request: Request, limit: int = 100) -> dict[str, Any]:
+        if not 1 <= limit <= 100:
+            raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
+        _, binding = consent_context(request)
+        events = app.state.processing_consents.events(binding, limit=limit)
+        return {
+            "events": [event.to_dict() for event in events],
+            "count": len(events),
+            "private": True,
+            "history_type": "consent_grant_and_withdrawal_only",
+        }
+
+    @app.post("/api/v1/ai-processing-consents")
+    def grant_ai_processing_consent(
+        payload: GrantUnattendedAIConsentPayload, request: Request,
+    ) -> dict[str, Any]:
+        if payload.acknowledge_obumai_processing is not True:
+            raise HTTPException(status_code=422, detail="Explicit ObumAI consent is required")
+        tenant, binding = consent_context(request)
+        candidate = tenant.get_job(payload.canonical_key)
+        if candidate is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if not candidate.source_current:
+            raise HTTPException(status_code=409, detail="This job is no longer current")
+        # A source without an explicitly affirmative forwarding decision
+        # cannot be turned into a third-party AI permission by the user.
+        if candidate.job.raw.get("external_ai_forwarding_allowed") is not True:
+            raise HTTPException(status_code=409, detail="Job source does not authorize AI forwarding")
+        evidence = approved_evidence_snapshot(tenant.profile())
+        if not evidence.get("approved_fact_count"):
+            raise HTTPException(status_code=409, detail="Approve profile evidence before consenting")
+        job_snapshot = preparation_job_snapshot(candidate)
+        job_hash = sha256(canonical_json(job_snapshot).encode("utf-8")).hexdigest()
+        evidence_hash = sha256(canonical_json(evidence).encode("utf-8")).hexdigest()
+        try:
+            item, changed = app.state.processing_consents.grant(
+                binding, candidate.canonical_key, job_hash, evidence_hash,
+            )
+        except ConsentIdentityError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        # No AI request, automatic preparation registration, or employer action.
+        return {
+            "consent": item.to_dict(),
+            "created_or_updated": changed,
+            "processing_started": False,
+            "external_actions_authorized": False,
+        }
+
+    @app.delete("/api/v1/ai-processing-consents/{consent_id}")
+    def revoke_ai_processing_consent(consent_id: str, request: Request) -> dict[str, Any]:
+        _, binding = consent_context(request)
+        item = app.state.processing_consents.revoke(binding, consent_id)
+        if item is None:
+            # Another user's consent ID is indistinguishable from a missing ID.
+            raise HTTPException(status_code=404, detail="consent not found")
+        return {
+            "consent": item.to_dict(),
+            "revoked": True,
+            "future_processing_authorized": False,
+            "external_actions_authorized": False,
+        }
 
     @app.get("/api/v1/search-preferences")
     def get_search_preferences(request: Request) -> dict[str, Any]:
@@ -743,6 +1125,44 @@ def create_app(
         result = search_jobs(tenant.list_jobs(), preferences)
         return {**result, "external_actions_authorized": False}
 
+    @app.post("/api/v1/auto-draft/prepare")
+    def prepare_automatic_application_drafts(request: Request) -> JSONResponse:
+        """Opted-in user prepares their own exact matching IT job drafts NOW.
+
+        No ObumAI calls, ATS submits, browser clicks or provider consent
+        inference. The original middleware authenticates & checks CSRF;
+        expected-user-ID must match the verified account before writes.
+        """
+        tenant, binding = tenant_context(request)
+        if (
+            binding is None
+            or request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Sec-Fetch-Site", "").casefold() not in
+                {"", "same-origin", "none"}
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin user required")
+        pref = app.state.search_preferences.get(binding.profile_id)
+        if not pref.auto_draft_enabled or pref.mode != "personalized":
+            raise HTTPException(status_code=409, detail="Enable automatic draft preparation in your private job settings")
+        cv_repo = app.state.cv_repository
+        try:
+            summary = prepare_profile_shortlist(
+                binding.profile_id,
+                preferences_repository=app.state.search_preferences,
+                job_repository=tenant.repository,
+                profile_repository=tenant.profile_repository,
+                cv_repository=cv_repo,
+                workspace_repository=app.state.workspace_repository,
+            )
+        except Exception:
+            # Do not leak candidate CV, source URLs, DB secrets or private IDs.
+            raise HTTPException(status_code=503, detail="Automatic draft preparation unavailable") from None
+        return JSONResponse(
+            summary.public_counts(),
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     @app.get("/api/v1/jobs")
     def list_jobs() -> dict[str, Any]:
         items = [item.to_dict() for item in active.list_jobs()]
@@ -763,7 +1183,16 @@ def create_app(
             raise HTTPException(status_code=404, detail="job not found") from exc
 
     @app.post("/api/v1/jobs/{canonical_key}/prepare")
-    def prepare_job(canonical_key: str, request: Request) -> dict[str, Any]:
+    def prepare_job(
+        canonical_key: str, payload: AIProcessingConsentPayload, request: Request
+    ) -> dict[str, Any]:
+        # Legacy /prepare submits approved profile evidence and job text to
+        # ObumAI. Unlike /application-workspace, this is NOT local-only editing.
+        if payload.acknowledge_obumai_processing is not True:
+            raise HTTPException(
+                status_code=422,
+                detail="Explicit per-job consent for ObumAI processing is required",
+            )
         tenant, _ = tenant_context(request)
         try:
             return tenant.prepare_job(canonical_key).to_dict()
@@ -835,14 +1264,580 @@ def create_app(
             raise HTTPException(status_code=409, detail="Draft changed during AI generation; reload and retry")
         return {"suggestion": suggestion, "workspace_revision": latest.revision}
 
+    def existing_employer_claim(binding: UserProfileBinding, workspace: Any) -> Any:
+        """Read the immutable cross-source/owner claim before offering another packet.
+
+        Called only after the request middleware bound a verified user. An
+        unavailable database is not permission to assume no previous attempt.
+        """
+        ledger = app.state.employer_claims
+        if ledger is None:
+            raise HTTPException(
+                status_code=503, detail="Durable employer attempt ledger is unavailable"
+            )
+        try:
+            try:
+                found = ledger.get_for_employer_url(binding, workspace.application_url)
+            except EmployerSubmitClaimDenied:
+                found = None  # Unsupported ATS: owner/canonical-key lookup only.
+            return found or ledger.get(binding, workspace.canonical_key)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503, detail="Employer attempt status cannot be verified"
+            ) from exc
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/employer-attempt")
+    def employer_attempt_status(workspace_id: str, request: Request) -> JSONResponse:
+        """Read-only, signed-in OIDC posture. No browser-submit authority.
+
+        Never serve this endpoint to anonymous/disabled-auth fixtures,
+        unbound Access-only principals or an extension origin. No tokens,
+        applicant documents, account IDs or employer URLs are returned.
+        """
+        tenant, binding = tenant_context(request)
+        if (
+            binding is None or not authentication.oidc_enabled
+            or not request.cookies.get(SESSION_COOKIE_NAME)
+        ):
+            raise HTTPException(status_code=403, detail="Signed-in SmartPloy account required")
+        if request.headers.get("Sec-Fetch-Site", "").casefold() not in {"", "same-origin", "none"}:
+            raise HTTPException(status_code=403, detail="Use the SmartPloy website")
+        origin = request.headers.get("Origin", "")
+        if origin and origin != public_origin:
+            raise HTTPException(status_code=403, detail="Use the SmartPloy website")
+        if app.state.employer_claims is None:
+            raise HTTPException(status_code=503, detail="Durable employer attempt ledger unavailable")
+        workspace = app.state.workspace_repository.get(binding.profile_id, workspace_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        claim = existing_employer_claim(binding, workspace)
+        return JSONResponse(
+            {
+                "previous_attempt_reserved": claim is not None,
+                "state": claim.state if claim is not None else "not_reserved",
+                "requires_human_reconciliation": claim is not None,
+                "automatic_employer_submit_authorized": False,
+                "external_confirmation_verified": False,
+                "cross_device_server_claim_required": True,
+            },
+            headers={
+                "Cache-Control": "private, no-store",
+                "Pragma": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
+
+    def signed_in_employer_review(request: Request) -> UserProfileBinding:
+        """Reuse verified OIDC identity and same-origin middleware, no CF fallback.
+
+        A content-script or a different-origin page never receives a new
+        browser authorization by presenting an arbitrary account header.
+        """
+        _, binding = tenant_context(request)
+        if (
+            binding is None or not authentication.oidc_enabled
+            or not request.cookies.get(SESSION_COOKIE_NAME)
+        ):
+            raise HTTPException(status_code=403, detail="Signed-in SmartPloy session required")
+        fetch_site = request.headers.get("Sec-Fetch-Site", "").casefold()
+        if fetch_site not in {"", "same-origin", "none"}:
+            raise HTTPException(status_code=403, detail="Use SmartPloy on the same origin")
+        supplied_origin = request.headers.get("Origin", "")
+        if supplied_origin and supplied_origin != public_origin:
+            raise HTTPException(status_code=403, detail="Use SmartPloy on the same origin")
+        return binding
+
+    def _review_intent_repository() -> PostgresEmployerReviewIntentRepository:
+        repo = app.state.employer_review_intents
+        if repo is None:
+            raise HTTPException(status_code=503, detail="Durable review state unavailable")
+        return repo
+
+    def _review_workspace(
+        workspace_id: str, binding: UserProfileBinding,
+    ) -> Any:
+        workspace = app.state.workspace_repository.get(binding.profile_id, workspace_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        return workspace
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/submit-review-intent")
+    def read_employer_review_intent(workspace_id: str, request: Request) -> JSONResponse:
+        binding = signed_in_employer_review(request)
+        repo = _review_intent_repository()
+        workspace = _review_workspace(workspace_id, binding)
+        try:
+            item = repo.get(binding, workspace.application_url)
+        except EmployerReviewIntentDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Review state unavailable") from exc
+        status = item.public_status(
+            workspace_id=workspace_id, revision=workspace.revision
+        ) if item else {
+            "review_recorded": False, "review_state": "not_recorded",
+            "expires_at": "", "automatic_employer_submit_authorized": False,
+            "external_actions_performed": False, "browser_grant_issued": False,
+        }
+        return JSONResponse(
+            status, headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"},
+        )
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/submit-review-intent")
+    def record_employer_review_intent(
+        workspace_id: str, payload: EmployerReviewIntentPayload, request: Request,
+    ) -> JSONResponse:
+        binding = signed_in_employer_review(request)
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin account review required")
+        if (
+            payload.confirm_reviewed_application is not True
+            or payload.acknowledge_manual_only is not True
+        ):
+            raise HTTPException(status_code=422, detail="Explicit final-review acknowledgement required")
+        repo = _review_intent_repository()
+        workspace = _review_workspace(workspace_id, binding)
+        tenant, _ = tenant_context(request)
+        if app.state.employer_claims is None:
+            raise HTTPException(status_code=503, detail="Employer attempt ledger unavailable")
+        if existing_employer_claim(binding, workspace) is not None:
+            raise HTTPException(status_code=409, detail="A prior employer attempt requires reconciliation")
+        if workspace.revision != payload.expected_revision:
+            raise HTTPException(status_code=409, detail="Application revision changed")
+        try:
+            packet = make_browser_packet(workspace, tenant.get_job(workspace.canonical_key), tenant.profile())
+        except HandoffError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if (
+            packet["document_sha256"] != payload.expected_document_sha256
+            or packet["cv_pdf_sha256"] != payload.expected_cv_pdf_sha256
+        ):
+            raise HTTPException(status_code=409, detail="Reviewed CV/document hashes changed")
+        try:
+            item, fresh = repo.prepare(
+                binding, workspace_id=workspace_id,
+                expected_revision=workspace.revision,
+                expected_application_url=workspace.application_url,
+                expected_job_fingerprint=workspace.job_fingerprint,
+                expected_document_sha256=packet["document_sha256"],
+                expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                explicit_user_review=True, acknowledge_no_automatic_submit=True,
+            )
+        except EmployerReviewIntentDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Review persistence unavailable") from exc
+        return JSONResponse(
+            {
+                **item.public_status(workspace_id=workspace_id, revision=workspace.revision),
+                "new_review_recorded": fresh,
+            },
+            headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"},
+        )
+
+    @app.delete("/api/v1/application-workspaces/{workspace_id}/submit-review-intent")
+    def cancel_employer_review_intent(workspace_id: str, request: Request) -> JSONResponse:
+        binding = signed_in_employer_review(request)
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin cancellation required")
+        repo = _review_intent_repository()
+        workspace = _review_workspace(workspace_id, binding)
+        try:
+            item = repo.cancel(binding, application_url=workspace.application_url)
+        except EmployerReviewIntentDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Review cancellation unavailable") from exc
+        return JSONResponse(
+            {
+                "review_recorded": False, "review_state": "cancelled" if item else "not_recorded",
+                "expires_at": "", "automatic_employer_submit_authorized": False,
+                "external_actions_performed": False, "browser_grant_issued": False,
+            },
+            headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"},
+        )
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/final-action-readiness")
+    def final_action_readiness(workspace_id: str, request: Request) -> JSONResponse:
+        """Private READ-ONLY source/rights posture. NEVER a browser click grant."""
+        binding = signed_in_employer_review(request)
+        workspace = _review_workspace(workspace_id, binding)
+        rights_repo = app.state.employer_rights
+        final_repo = app.state.employer_final_actions
+        review_repo = app.state.employer_review_intents
+        if (
+            rights_repo is None or final_repo is None or review_repo is None
+            or app.state.employer_claims is None
+        ):
+            raise HTTPException(
+                status_code=503, detail="Durable employer-action policy unavailable"
+            )
+        try:
+            policy = rights_repo.inspect(workspace.application_url)
+            review = review_repo.get(binding, workspace.application_url)
+            approval = final_repo.get(binding, workspace.application_url)
+            claim = existing_employer_claim(binding, workspace)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503, detail="Employer action readiness unavailable"
+            ) from exc
+        reviewed = bool(
+            review and review.public_status(
+                workspace_id=workspace_id, revision=workspace.revision
+            )["review_recorded"]
+        )
+        final_approved = bool(
+            approval and approval.public_status(
+                workspace_id=workspace_id, revision=workspace.revision
+            )["approval_recorded"]
+        )
+        reasons: list[str] = []
+        if not policy["operator_permission_reviewed"]:
+            reasons.append("independent_employer_permission_missing")
+        if not reviewed:
+            reasons.append("current_applicant_review_missing")
+        if not final_approved:
+            reasons.append("separate_final_user_approval_missing")
+        if claim is not None:
+            reasons.append("previous_employer_attempt_requires_reconciliation")
+        # The trusted origin-to-extension FINAL action transport and actuation
+        # adapter DO NOT EXIST here, regardless of all policy flags.
+        reasons.append("trusted_one_use_browser_redemption_unavailable")
+        return JSONResponse(
+            {
+                "operator_permission_reviewed": policy["operator_permission_reviewed"],
+                "current_applicant_review_recorded": reviewed,
+                "separate_final_user_approval_recorded": final_approved,
+                "previous_employer_attempt_reserved": claim is not None,
+                "trusted_one_use_browser_redemption_available": False,
+                "final_browser_click_authorized": False,
+                "employer_submission_performed": False,
+                "employer_receipt_verified": False,
+                "blockers": reasons,
+            },
+            headers={
+                "Cache-Control": "private, no-store",
+                "Pragma": "no-cache",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
+
+    def _partner_lever_ready(
+        workspace_id: str, request: Request,
+    ) -> tuple[UserProfileBinding, Any, Any, dict[str, object]]:
+        binding = signed_in_employer_review(request)
+        workspace = _review_workspace(workspace_id, binding)
+        if (
+            app.state.employer_final_actions is None
+            or app.state.employer_review_intents is None
+            or app.state.employer_rights is None
+            or app.state.employer_claims is None
+            or app.state.partner_lever_receipts is None
+        ):
+            raise HTTPException(status_code=503, detail="Durable partner submission unavailable")
+        tenant, _ = tenant_context(request)
+        registry = app.state.partner_lever_registry
+        config = registry.public_readiness(workspace.application_url)
+        try:
+            rights = app.state.employer_rights.inspect(
+                workspace.application_url, action_scope=LEVER_API_ACTION
+            )
+            review = app.state.employer_review_intents.get(binding, workspace.application_url)
+            receipt = app.state.partner_lever_receipts.get(binding, workspace.application_url)
+            prior = existing_employer_claim(binding, workspace)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Partner-readiness lookup unavailable") from exc
+        reviewed = bool(
+            review and review.public_status(
+                workspace_id=workspace_id, revision=workspace.revision
+            )["review_recorded"]
+        )
+        # Reuse the EXISTING exact CV PDF, contact and letter fingerprint
+        # computation. Official provider applications do NOT need a copied
+        # extension packet or private contact data sent to the clipboard.
+        # These hashes are strictly NON-BEARER review evidence.
+        packet = None
+        try:
+            packet = make_browser_packet(
+                workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+            )
+        except HandoffError:
+            pass
+        current = packet is not None
+        authorized = bool(
+            config["partner_api_configured"] and rights["operator_permission_reviewed"]
+            and current and receipt is None and prior is None
+        )
+        review_evidence = {
+            "workspace_id": packet["workspace_id"],
+            "revision": packet["revision"],
+            "document_sha256": packet["document_sha256"],
+            "cv_pdf_sha256": packet["cv_pdf_sha256"],
+            "approved_fields_sha256": packet["approved_fields_sha256"],
+            "cv_pdf_size": packet["cv_pdf_size"],
+            "expires_at": packet["expires_at"],
+        } if authorized and packet is not None else None
+        eligible = bool(authorized and reviewed)
+        return binding, workspace, tenant, {
+            "partner_provider": "lever",
+            "partner_api_configured": config["partner_api_configured"],
+            "independent_partner_rights_reviewed": rights["operator_permission_reviewed"],
+            "current_applicant_review_recorded": reviewed,
+            "current_document_and_posting_ready": current,
+            "prior_employer_attempt": prior is not None,
+            "provider_acknowledged": receipt is not None,
+            "eligible_for_explicit_partner_submit": eligible,
+            "review_evidence": review_evidence,
+            "review_evidence_is_authorization": False,
+            "unattended_auto_apply_enabled": False,
+            "automatic_retry_authorized": False,
+        }
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/partner-lever-readiness")
+    def partner_lever_readiness(workspace_id: str, request: Request) -> JSONResponse:
+        _, _, _, readiness = _partner_lever_ready(workspace_id, request)
+        return JSONResponse(
+            readiness,
+            headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},
+        )
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/partner-lever-receipt")
+    def partner_lever_receipt(workspace_id: str, request: Request) -> JSONResponse:
+        binding = signed_in_employer_review(request)
+        workspace = _review_workspace(workspace_id, binding)
+        if app.state.partner_lever_receipts is None:
+            raise HTTPException(status_code=503, detail="Provider receipt storage unavailable")
+        try:
+            receipt = app.state.partner_lever_receipts.get(binding, workspace.application_url)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Provider receipt unavailable") from exc
+        return JSONResponse(
+            {"present": receipt is not None,
+             "receipt": receipt.public_status() if receipt else None},
+            headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},
+        )
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/partner-lever-apply")
+    def submit_to_authorized_lever_partner(
+        workspace_id: str, payload: LeverPartnerApplicationPayload, request: Request,
+    ) -> JSONResponse:
+        """The only supported REAL submission endpoint, gated by partner key.
+
+        Never invokes this endpoint from background jobs or the Chrome
+        companion. The actual user must deliberately click and confirm a
+        reviewed application on the signed-in SmartPloy first-party origin.
+        """
+        binding = signed_in_employer_review(request)
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Same-origin verified applicant required")
+        if (
+            payload.explicit_final_user_approval is not True
+            or payload.approve_employer_data_transfer is not True
+            or payload.affirm_reviewed_employer_form is not True
+        ):
+            raise HTTPException(status_code=422, detail="Fresh explicit user review and transfer consent required")
+        binding, workspace, tenant, readiness = _partner_lever_ready(workspace_id, request)
+        if not readiness["eligible_for_explicit_partner_submit"]:
+            raise HTTPException(
+                status_code=409,
+                detail="The employer lacks reviewed partner rights, current CV review or has an existing attempt",
+            )
+        if payload.expected_revision != workspace.revision:
+            raise HTTPException(status_code=409, detail="Saved application revision changed")
+        try:
+            posting = app.state.partner_lever_registry.match(workspace.application_url)
+            packet = make_browser_packet(
+                workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+            )
+            cv_pdf, _, _ = render_document(workspace, kind="cv", file_format="pdf")
+        except (LeverPartnerUnavailable, HandoffError, WorkspaceError) as exc:
+            raise HTTPException(status_code=409, detail="Approved partner packet unavailable") from exc
+        if (
+            packet["document_sha256"] != payload.expected_document_sha256
+            or packet["cv_pdf_sha256"] != payload.expected_cv_pdf_sha256
+            or packet["cv_pdf_size"] != payload.expected_cv_pdf_size
+            or approved_fields_sha256(packet["fields"]) != payload.expected_fields_sha256
+            or sha256(cv_pdf).hexdigest() != payload.expected_cv_pdf_sha256
+        ):
+            raise HTTPException(status_code=409, detail="Approved PDF, contact or job snapshot drifted")
+        try:
+            approval, _ = app.state.employer_final_actions.approve(
+                binding,workspace_id=workspace_id,
+                expected_revision=workspace.revision,
+                expected_application_url=workspace.application_url,
+                expected_job_fingerprint=workspace.job_fingerprint,
+                expected_document_sha256=packet["document_sha256"],
+                expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                expected_fields_sha256=payload.expected_fields_sha256,
+                explicit_final_user_approval=True,
+                acknowledge_external_employer_transfer=True,
+                action_scope=LEVER_API_ACTION,
+            )
+            reserved = app.state.employer_final_actions.consume_once_for_trusted_adapter(
+                binding,approval_id=approval.approval_id,workspace_id=workspace_id,
+                expected_revision=workspace.revision,
+                expected_application_url=workspace.application_url,
+                expected_job_fingerprint=workspace.job_fingerprint,
+                expected_document_sha256=packet["document_sha256"],
+                expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                expected_fields_sha256=payload.expected_fields_sha256,
+                action_scope=LEVER_API_ACTION,
+            )
+        except EmployerFinalActionDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Final submission reservation unavailable") from exc
+        # Sticky attempt COMMITTED before any external request; another device
+        # can never POST the same employer job, even on timeout or crash.
+        try:
+            ack = app.state.partner_lever_transport.send(
+                posting,application_url=workspace.application_url,
+                fields=packet["fields"],pdf=cv_pdf,
+            )
+        except LeverPartnerUncertain as exc:
+            try:
+                app.state.employer_claims.mark_uncertain(
+                    binding,reserved.claim.claim_id,code=exc.code
+                )
+            except Exception:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Employer outcome uncertain and claim retained; operator review required",
+                ) from None
+            return JSONResponse(
+                {
+                    "state":"outcome_uncertain","provider_acknowledged":False,
+                    "automatic_retry_authorized":False,
+                    "employer_hiring_decision_verified":False,
+                    "requires_human_reconciliation":True,
+                },status_code=202,headers={"Cache-Control":"private, no-store"},
+            )
+        except Exception:
+            # Unanticipated transport error after the durable reservation:
+            # NEVER try the external call again. No secrets in client detail.
+            raise HTTPException(
+                status_code=503,
+                detail="Employer outcome cannot be confirmed; reserved attempt requires reconciliation",
+            ) from None
+        try:
+            confirmed = app.state.partner_lever_receipts.record(
+                binding,reserved.claim,ack
+            )
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail="Lever may have acknowledged the application but local receipt is unavailable",
+            ) from None
+        return JSONResponse(
+            {
+                "state":"provider_acknowledged",
+                **confirmed.public_status(),
+                "external_actions_performed":True,
+            },
+            headers={"Cache-Control":"private, no-store", "Referrer-Policy":"no-referrer"},
+        )
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/verify-reviewed-packet")
+    def verify_reviewed_packet_for_companion(
+        workspace_id: str, payload: BrowserReviewVerificationPayload, request: Request,
+    ) -> JSONResponse:
+        """Signed-in SmartPloy origin checks approved document before assisted fill.
+
+        This response is NON-BEARER, non-transferrable and never a grant to
+        submit to an employer. Site cookie and account ID stay within SmartPloy.
+        There is no CORS/extension endpoint or final browser action.
+        """
+        binding = signed_in_employer_review(request)
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Signed-in same-origin review required")
+        repo = _review_intent_repository()
+        workspace = _review_workspace(workspace_id, binding)
+        if app.state.employer_claims is None:
+            raise HTTPException(status_code=503, detail="Employer attempt ledger unavailable")
+        if workspace.revision != payload.expected_revision:
+            raise HTTPException(status_code=409, detail="Application revision changed")
+        if existing_employer_claim(binding, workspace) is not None:
+            raise HTTPException(status_code=409, detail="Prior attempt requires reconciliation")
+        tenant, _ = tenant_context(request)
+        try:
+            packet = make_browser_packet(
+                workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+            )
+        except HandoffError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if (
+            packet["document_sha256"] != payload.expected_document_sha256
+            or packet["cv_pdf_sha256"] != payload.expected_cv_pdf_sha256
+            or packet["cv_pdf_size"] != payload.expected_cv_pdf_size
+            or approved_fields_sha256(packet["fields"]) != payload.expected_fields_sha256
+            or sha256(packet["application_url"].encode("utf-8")).hexdigest()
+               != payload.expected_application_url_sha256
+        ):
+            raise HTTPException(status_code=409, detail="Reviewed packet fields, job or PDF changed")
+        try:
+            item = repo.verify_for_companion(
+                binding, workspace_id=workspace_id,
+                expected_revision=payload.expected_revision,
+                expected_application_url=workspace.application_url,
+                expected_job_fingerprint=workspace.job_fingerprint,
+                expected_document_sha256=packet["document_sha256"],
+                expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+            )
+        except EmployerReviewIntentDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Review verification unavailable") from exc
+        return JSONResponse(
+            {
+                "review_verified": True,
+                "review_state": "pending",
+                "expires_at": item.expires_at.isoformat(),
+                "automatic_employer_submit_authorized": False,
+                "external_actions_performed": False,
+                "browser_grant_issued": False,
+            },
+            headers={
+                "Cache-Control": "private, no-store",
+                "Pragma": "no-cache",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     @app.get("/api/v1/application-workspaces/{workspace_id}/handoff-readiness")
     def browser_handoff_readiness(workspace_id: str, request: Request) -> dict[str, Any]:
-        tenant, _ = tenant_context(request)
+        tenant, binding = tenant_context(request)
         item = app.state.workspace_repository.get(tenant.profile_repository.profile_id, workspace_id)
         if item is None:
             raise HTTPException(status_code=404, detail="Application workspace not found")
+        # Keep human-reviewed autofill but never issue a fresh packet once
+        # this signed-in account's employer job has a durable attempt.
+        claim = existing_employer_claim(binding, item) if binding else None
         job = tenant.get_job(item.canonical_key)
         result = review_handoff(item, job, tenant.profile())
+        if claim is not None:
+            result["ready"] = False
+            result["blockers"].append(
+                "This employer job already has an attempt reserved across devices. "
+                "Reconcile its outcome before any new application."
+            )
         if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:
             result["ready"] = False
             result["blockers"].append("An employer confirmation is already recorded for this application")
@@ -854,10 +1849,15 @@ def create_app(
     ) -> JSONResponse:
         if payload.confirm_private_data_transfer is not True:
             raise HTTPException(status_code=422, detail="Confirm the per-job personal-data transfer")
-        tenant, _ = tenant_context(request)
+        tenant, binding = tenant_context(request)
         item = app.state.workspace_repository.get(tenant.profile_repository.profile_id, workspace_id)
         if item is None:
             raise HTTPException(status_code=404, detail="Application workspace not found")
+        if binding and existing_employer_claim(binding, item) is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This employer job already has a reserved attempt. Do not retry.",
+            )
         if item.revision != payload.expected_revision:
             raise HTTPException(status_code=409, detail="Document revision changed; review and retry")
         if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:
@@ -1077,6 +2077,16 @@ def create_app(
         payload: ObumAITaskPayload,
         request: Request,
     ) -> dict[str, Any]:
+        if payload.acknowledge_obumai_processing is not True:
+            raise HTTPException(
+                status_code=422,
+                detail="Explicit per-job consent for ObumAI processing is required",
+            )
+        if payload.action not in SELF_SERVICE_OBUMAI_ACTIONS:
+            raise HTTPException(
+                status_code=422,
+                detail="Only approved SmartPloy reasoning or document-draft actions are allowed",
+            )
         tenant, _ = tenant_context(request)
         try:
             return tenant.submit_obumai(

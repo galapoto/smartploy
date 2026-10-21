@@ -42,6 +42,7 @@ export default function SearchSetup(props: {
   const [languages, setLanguages] = useState(props.initial.languages);
   const [workModes, setWorkModes] = useState(props.initial.work_modes);
   const [seniority, setSeniority] = useState(props.initial.seniority);
+  const [autoDraft, setAutoDraft] = useState(props.initial.auto_draft_enabled === true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   // The initial form state was already hydrated by useState. A redundant
@@ -61,6 +62,7 @@ export default function SearchSetup(props: {
     setLanguages(props.initial.languages);
     setWorkModes(props.initial.work_modes);
     setSeniority(props.initial.seniority);
+    setAutoDraft(props.initial.auto_draft_enabled === true);
   }, [props.initial.revision]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -71,6 +73,13 @@ export default function SearchSetup(props: {
       setError("Enter at least one job title or search keyword, or choose general search.");
       return;
     }
+    if (mode === "personalized" && autoDraft && !chosenRoles.length) {
+      // Reuse the server's exact role-target opt-in rule. A keyword-only
+      // search is valid, but unattended application drafting isn't: it
+      // needs explicit target job titles for conservative matching.
+      setError("Automatic application drafts need a target job title. Add at least one role, or turn off automatic drafts to search by keyword only.");
+      return;
+    }
     setError("");
     setWorking(true);
     try {
@@ -78,6 +87,7 @@ export default function SearchSetup(props: {
         mode, roles: chosenRoles, locations: list(locations),
         keywords: chosenKeywords, skills: list(skills),
         languages, work_modes: workModes, seniority,
+        auto_draft_enabled: mode === "personalized" && autoDraft,
         expected_revision: props.initial.revision
       });
     } catch (exc) {
@@ -110,7 +120,7 @@ export default function SearchSetup(props: {
         </label>
         <label className={"setup-choice" + (mode === "general" ? " chosen" : "")}>
           <input type="radio" name="job-mode" checked={mode === "general"}
-            onChange={() => setMode("general")} />
+            onChange={() => { setMode("general"); setAutoDraft(false); }} />
           <span className="setup-choice-icon"><Globe2 size={21} /></span>
           <strong>General job search</strong>
           <small>Explore every current job. No profile, CV, or search preferences required.</small>
@@ -119,7 +129,16 @@ export default function SearchSetup(props: {
       </div>
 
       {mode === "personalized" ? <div className="setup-fields">
-        <div className="setup-fields-heading"><BriefcaseBusiness size={18}/><strong>Your ideal opportunities</strong><small>Only job titles or keywords are required.</small></div>
+        <div className="setup-fields-heading"><BriefcaseBusiness size={18}/><strong>Your ideal opportunities</strong><small>Only job titles or keywords are required.</small>
+          <button type="button" className="text-link" onClick={() => {
+            // The old starter preset restricted search to the Helsinki
+            // region and omitted data engineering and Finnish planning.
+            // Blank locations intentionally mean ALL Finland.
+            setRoles("Junior Data Analyst, Data Engineer, Junior Software Tester, Junior Business Analyst, IT Support Specialist, Suunnittelija, Projektikoordinaattori");
+            setLocations("");
+            setSeniority("entry");
+          }}>Use nationwide junior IT & planning targets</button>
+        </div>
         <div className="setup-field-grid">
           <label className="setup-field">
             <span>Target roles <em>Recommended</em></span>
@@ -168,6 +187,17 @@ export default function SearchSetup(props: {
               onChange={() => setLanguages(toggle(languages, choice.value))}/>{choice.label}
           </label>)}</div>
           <small>Languages are used only where the employer has provided enough information to assess them.</small>
+        </fieldset>
+        <fieldset className="setup-check-options">
+          <legend><BriefcaseBusiness size={15}/> Automatic IT application drafts</legend>
+          <label><input type="checkbox" checked={autoDraft}
+            onChange={(event) => setAutoDraft(event.target.checked)}/>
+            Automatically prepare suitable job drafts from my saved target roles
+          </label>
+          <small>Opt-in, reversible. SmartPloy checks current jobs against your approved career evidence and
+            saves up to three private drafts per background run. It does not contact employers,
+            send your CV to an AI service, submit applications or imply you qualify.
+            Review and approve every application before sending.</small>
         </fieldset>
         <p className="setup-fineprint">The results are ranked by your stated search preferences, not a guarantee that you meet every employer requirement. You can upload a CV and approve career evidence separately for stronger qualification checks.</p>
       </div> : <div className="setup-general-note">

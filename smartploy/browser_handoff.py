@@ -11,12 +11,13 @@ from hashlib import sha256
 import ipaddress
 import re
 from urllib.parse import urlsplit
+from typing import Mapping
 
-from .application_workspace import ApplicationWorkspace
+from .application_workspace import ApplicationWorkspace, render_document
 from .domain import JobCandidate
 from .profile import CandidateProfile
 
-SCHEMA = "smartploy.browser_handoff.v1"
+SCHEMA = "smartploy.browser_handoff.v2"
 LIFETIME_SECONDS = 15 * 60
 PLACEHOLDERS = re.compile(
     r"\[(?:explain|your name|insert|add|describe|fill in|why|placeholder)\b[^]]*]",
@@ -131,6 +132,30 @@ def review_handoff(
     }
 
 
+APPROVED_FIELD_NAMES = (
+    "full_name", "first_name", "last_name", "email", "phone",
+    "location", "linkedin", "github", "cover_letter",
+)
+
+
+def approved_fields_sha256(fields: Mapping[str, str]) -> str:
+    """Fingerprint the exact approved private fields without exposing them.
+
+    Reused by the browser handoff and first-party extension verification.
+    Length-prefix UTF-8 to avoid ambiguous concatenation and Python/JS JSON
+    serializer differences. The digest is a fingerprint, NOT an authorization.
+    """
+    if set(fields) != set(APPROVED_FIELD_NAMES):
+        raise HandoffError("The packet must contain the expected approved fields only")
+    parts: list[str] = []
+    for name in APPROVED_FIELD_NAMES:
+        value = fields[name]
+        if not isinstance(value, str):
+            raise HandoffError("Reviewed field values must be text")
+        parts.append(str(len(value.encode("utf-8"))) + ":" + value)
+    return sha256(("smartploy.fields.v1\0" + "\0".join(parts)).encode("utf-8")).hexdigest()
+
+
 def make_browser_packet(
     workspace: ApplicationWorkspace, candidate: JobCandidate | None,
     profile: CandidateProfile, *, now: datetime | None = None,
@@ -143,6 +168,11 @@ def make_browser_packet(
         stamp = stamp.replace(tzinfo=timezone.utc)
     stamp = stamp.astimezone(timezone.utc)
     contact = _approved_contact(profile)
+    # Deterministic PDF rendering binds the handoff to the exact exported CV.
+    # The file itself is never placed in the packet, only its size/digest.
+    cv_pdf, _, _ = render_document(workspace, kind="cv", file_format="pdf")
+    if len(cv_pdf) > 2 * 1024 * 1024:
+        raise HandoffError("The reviewed PDF exceeds the companion attachment limit")
     packet = {
         "schema": SCHEMA,
         "issued_at": stamp.isoformat(),
@@ -155,6 +185,8 @@ def make_browser_packet(
         "document_sha256": sha256(
             (workspace.cv_text + "\0" + workspace.cover_letter_text).encode("utf-8")
         ).hexdigest(),
+        "cv_pdf_sha256": sha256(cv_pdf).hexdigest(),
+        "cv_pdf_size": len(cv_pdf),
         "fields": {
             **contact,
             "cover_letter": workspace.cover_letter_text[:10000],
@@ -166,4 +198,7 @@ def make_browser_packet(
             "employer_submit_allowed_without_new_approval": False,
         },
     }
+    # Server-owned exact contact/letter fingerprint for partner submissions.
+    # Contains no new private data and is never a browser submit grant.
+    packet["approved_fields_sha256"] = approved_fields_sha256(packet["fields"])
     return packet

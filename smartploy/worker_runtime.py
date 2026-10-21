@@ -6,9 +6,10 @@ from collections import Counter
 from datetime import datetime, timezone
 import os
 
+from .auto_draft_shortlist import prepare_worker_shortlists
 from .application_storage import PostgresApplicationRepository
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
-from .preparation_storage import PostgresPreparationRepository
+from .preparation_storage import PostgresPreparationRepository, REFRESHABLE_PREPARATION_STATES
 from .profile_storage import PostgresProfileRepository
 from .service import SmartployService
 from .sources.jobmarket_finland import (
@@ -29,7 +30,7 @@ from .storage import PostgresJobRepository
 from .worker_schedule import WorkerTaskResult, WorkerTaskSpec
 
 
-ACTIVE_PREPARATION_STATES = {"queued", "running", "blocked"}
+ACTIVE_PREPARATION_STATES = REFRESHABLE_PREPARATION_STATES
 
 
 def _positive_int(name: str, default: int, *, maximum: int | None = None) -> int:
@@ -45,19 +46,58 @@ def _positive_int(name: str, default: int, *, maximum: int | None = None) -> int
     return value
 
 
+def _auto_prepare_opt_in() -> bool:
+    """Never infer user permission from ObumAI service configuration.
+
+    A worker capable of polling existing preparation statuses is not
+    automatically authorized to forward profile data to ObumAI. Only the
+    literal operator opt-in "true" registers an unattended submitter.
+    This operator switch is NOT per-user consent; multi-user operators
+    must keep the flag off until a scoped consent record is implemented.
+    """
+    raw = os.getenv("SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED", "false").strip().casefold()
+    if raw not in {"true", "false"}:
+        raise ValueError(
+            "SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED must be literal true or false"
+        )
+    if raw == "true":
+        # A global operator switch cannot establish revocable consent from
+        # individual account holders. Legacy auto-prep is restricted to
+        # explicitly configured nonproduction fixtures until a tenant-scoped,
+        # per-job consent ledger is enforced at every dispatch/retry.
+        environment = os.getenv("SMARTPLOY_ENVIRONMENT", "production").strip().casefold()
+        if environment not in {"development", "test"}:
+            raise ValueError(
+                "Unattended ObumAI preparation is unavailable in production "
+                "without per-account processing consent"
+            )
+    return raw == "true"
+
+
 def _job_service(dsn: str) -> SmartployService:
     return SmartployService(repository=PostgresJobRepository(dsn))
 
 
-def _application_service(dsn: str, settings: ObumAISettings) -> SmartployService:
-    profile_id = os.getenv("SMARTPLOY_PROFILE_ID", "default").strip() or "default"
+def _scoped_application_service(
+    dsn: str, obumai: ObumAIClient, profile_id: str,
+) -> SmartployService:
+    """Always scope ALL private preparation/application repositories together."""
+    owner = str(profile_id or "").strip()
+    if not owner:
+        raise ValueError("An explicit preparation owner profile is required")
     return SmartployService(
         repository=PostgresJobRepository(dsn),
-        profile_repository=PostgresProfileRepository(dsn, profile_id=profile_id),
-        preparation_repository=PostgresPreparationRepository(dsn),
-        application_repository=PostgresApplicationRepository(dsn),
-        obumai=ObumAIClient(settings),
+        profile_repository=PostgresProfileRepository(dsn, profile_id=owner),
+        preparation_repository=PostgresPreparationRepository(dsn, profile_id=owner),
+        application_repository=PostgresApplicationRepository(dsn, profile_id=owner),
+        obumai=obumai,
     )
+
+
+def _application_service(dsn: str, settings: ObumAISettings) -> SmartployService:
+    """Legacy single-profile submitter, allowed only in synthetic test/dev."""
+    profile_id = os.getenv("SMARTPLOY_PROFILE_ID", "default").strip() or "default"
+    return _scoped_application_service(dsn, ObumAIClient(settings), profile_id)
 
 
 def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
@@ -66,6 +106,34 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
         raise ValueError("SMARTPLOY_DATABASE_URL is required for continuous worker tasks")
 
     specs: list[WorkerTaskSpec] = []
+
+    # The original per-source pollers run independently of this LOCAL-ONLY,
+    # revocable per-account draft shortlister. No CV is sent to ObumAI and
+    # no ATS receives an application without a separate final user gesture.
+    draft_flag = os.getenv("SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED", "false").strip().casefold()
+    if draft_flag not in {"true", "false"}:
+        raise ValueError("SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED must be true or false")
+    if draft_flag == "true":
+        draft_cadence = _positive_int(
+            "SMARTPLOY_WORKER_AUTO_DRAFT_CADENCE_SECONDS", 120, maximum=86400
+        )
+
+        def run_auto_draft() -> WorkerTaskResult:
+            stats = prepare_worker_shortlists(dsn)
+            status = "degraded" if stats["profiles_failed"] else "healthy"
+            return WorkerTaskResult(status=status, details=stats)
+
+        specs.append(WorkerTaskSpec(
+            task_id="application:auto-draft-shortlist",
+            task_kind="application_draft",
+            cadence_seconds=draft_cadence,
+            runner=run_auto_draft,
+            metadata={
+                "private_opt_in_required": True,
+                "processing": "local_only",
+                "external_actions_authorized": False,
+            },
+        ))
 
     kuntarekry = KuntarekryFeedSettings.from_env()
     if kuntarekry is not None:
@@ -173,79 +241,108 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
             )
         )
 
+    auto_prepare_enabled = _auto_prepare_opt_in()
     obum_settings = ObumAISettings.from_env()
+    if auto_prepare_enabled and obum_settings is None:
+        raise ValueError(
+            "Unattended ObumAI preparation cannot be enabled without ObumAI configuration"
+        )
     if obum_settings is not None:
-        prepare_cadence = _positive_int("SMARTPLOY_WORKER_PREPARE_CADENCE_SECONDS", 120)
         refresh_cadence = _positive_int("SMARTPLOY_WORKER_REFRESH_CADENCE_SECONDS", 60)
 
         def run_prepare(settings=obum_settings) -> WorkerTaskResult:
             service = _application_service(dsn, settings)
-            limit = _positive_int("SMARTPLOY_PREPARE_BATCH_LIMIT", 20, maximum=100)
-            packages = service.prepare_eligible(limit=limit)
-            counts = Counter(item.status for item in packages)
-            return WorkerTaskResult(
-                status="healthy",
-                details={
-                    "eligible_processed": len(packages),
-                    "package_status_counts": dict(counts),
-                    "external_actions_authorized": False,
-                },
-            )
+            try:
+                limit = _positive_int("SMARTPLOY_PREPARE_BATCH_LIMIT", 20, maximum=100)
+                packages = service.prepare_eligible(limit=limit)
+                counts = Counter(item.status for item in packages)
+                return WorkerTaskResult(
+                    status="healthy",
+                    details={
+                        "eligible_processed": len(packages),
+                        "package_status_counts": dict(counts),
+                        "external_actions_authorized": False,
+                    },
+                )
+            finally:
+                if service.obumai is not None:
+                    service.obumai.close()
 
         def run_refresh(settings=obum_settings) -> WorkerTaskResult:
             preparations = PostgresPreparationRepository(dsn)
-            service = _application_service(dsn, settings)
-            limit = _positive_int("SMARTPLOY_REFRESH_BATCH_LIMIT", 50, maximum=500)
-            updated = 0
-            failures = 0
-            states: Counter[str] = Counter()
+            client = ObumAIClient(settings)
+            try:
+                limit = _positive_int("SMARTPLOY_REFRESH_BATCH_LIMIT", 50, maximum=500)
+                updated = 0
+                failures = 0
+                states: Counter[str] = Counter()
 
-            for item in preparations.list(limit=limit):
-                if item.status not in ACTIVE_PREPARATION_STATES:
-                    continue
-                try:
-                    current = service.refresh_preparation(item.package_id)
-                except ObumAIError:
-                    failures += 1
-                    continue
-                updated += 1
-                states[current.status] += 1
+                # The shared query selects only remote status checks. Each
+                # selected item's owning profile gets a fresh tenant-scoped
+                # preparation AND application repository for read/write.
+                # Never use the legacy SMARTPLOY_PROFILE_ID in this path.
+                for item in preparations.list_refresh_candidates(limit=limit):
+                    if item.status not in ACTIVE_PREPARATION_STATES or not item.obum_job_id:
+                        continue
+                    service = _scoped_application_service(dsn, client, item.profile_id)
+                    try:
+                        current = service.refresh_preparation(item.package_id)
+                    except (ObumAIError, KeyError):
+                        # Rotate only within this preparation's owner scope.
+                        service.preparation_repository.defer_failed_refresh(
+                            item.package_id, item.obum_job_id
+                        )
+                        failures += 1
+                        continue
+                    updated += 1
+                    states[current.status] += 1
 
-            if failures and not updated:
-                status = "failed"
-            elif failures:
-                status = "degraded"
-            else:
-                status = "healthy"
-            error = f"{failures} preparation refreshes failed" if failures else ""
-            return WorkerTaskResult(
-                status=status,
-                error=error,
-                details={
-                    "updated_count": updated,
-                    "failure_count": failures,
-                    "status_counts": dict(states),
-                    "external_actions_authorized": False,
-                },
+                if failures and not updated:
+                    status = "failed"
+                elif failures:
+                    status = "degraded"
+                else:
+                    status = "healthy"
+                error = f"{failures} preparation refreshes failed" if failures else ""
+                return WorkerTaskResult(
+                    status=status,
+                    error=error,
+                    details={
+                        "updated_count": updated,
+                        "failure_count": failures,
+                        "status_counts": dict(states),
+                        "external_actions_authorized": False,
+                    },
+                )
+            finally:
+                client.close()
+
+        # Status refreshes can observe already-submitted preparation jobs;
+        # they do not originate new AI forwarding requests.
+        specs.append(
+            WorkerTaskSpec(
+                task_id="application:refresh-preparations",
+                task_kind="application_refresh",
+                cadence_seconds=refresh_cadence,
+                runner=run_refresh,
+                metadata={"external_actions_authorized": False},
             )
-
-        specs.extend(
-            [
+        )
+        # This is deliberately opt-in. The scheduler's disable_absent()
+        # disables any previously persisted prepare-eligible task on restart.
+        if auto_prepare_enabled:
+            prepare_cadence = _positive_int("SMARTPLOY_WORKER_PREPARE_CADENCE_SECONDS", 120)
+            specs.append(
                 WorkerTaskSpec(
                     task_id="application:prepare-eligible",
                     task_kind="application_prepare",
                     cadence_seconds=prepare_cadence,
                     runner=run_prepare,
-                    metadata={"external_actions_authorized": False},
-                ),
-                WorkerTaskSpec(
-                    task_id="application:refresh-preparations",
-                    task_kind="application_refresh",
-                    cadence_seconds=refresh_cadence,
-                    runner=run_refresh,
-                    metadata={"external_actions_authorized": False},
-                ),
-            ]
-        )
+                    metadata={
+                        "external_actions_authorized": False,
+                        "unattended_model_processing_opt_in": True,
+                    },
+                )
+            )
 
     return specs

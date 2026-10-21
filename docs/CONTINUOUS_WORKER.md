@@ -40,10 +40,25 @@ Source tasks:
 - source:job-market-finland only when JOBMARKET_FINLAND_API_ENABLED=true and its settings validate;
 - one source task for every configured SmartRecruiters/Lever tenant.
 
-Application tasks exist only when OBUMAI_BASE_URL is configured:
+When OBUMAI_BASE_URL is configured, status refreshes are registered for existing
+remote preparation jobs. The legacy application:prepare-eligible task is OFF by
+default and is rejected at startup in production, even if the operator turns on
+SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED. It is available only in explicit test and
+development fixtures; this global switch is **not per-user consent**.
 
-- application:prepare-eligible;
-- application:refresh-preparations.
+Refresh selection filters to queued, running or blocked records with an assigned
+ObumAI job ID *before* applying the batch limit. The least recently updated
+records go first; this avoids completed history crowding out unfinished work and
+rotates polling across active jobs. A failed lookup also advances its refresh
+position (without changing the remote job state), preventing persistent errors
+from hogging the batch. Migration 015 provides a partial index.
+It never starts a new ObumAI inference request. Existing status checks may
+span multiple profiles, so the refresh runner builds fresh **profile-scoped
+preparation and application repositories** from each in-flight package's
+actual owner, never from the global SMARTPLOY_PROFILE_ID environment variable.
+The shared ObumAI HTTP client is closed after each worker cycle; failures
+rotate only the affected owner's package. No new profile evidence is forwarded
+by this refresh task.
 
 Tasks that were previously registered but are no longer configured are disabled.
 
@@ -140,8 +155,10 @@ It can:
 - run configured read-only source retrieval;
 - normalize/deduplicate/rank jobs;
 - retire jobs according to each adapter's verified lifecycle rules;
-- queue evidence-backed draft application packages through ObumAI;
-- refresh those draft jobs.
+- refresh already-submitted draft jobs;
+- queue evidence-backed drafts only in explicit synthetic test/development
+  environments with the legacy opt-in flag. Production unattended preparation
+  remains disabled until user-scoped, revocable consent is enforced.
 
 It cannot:
 

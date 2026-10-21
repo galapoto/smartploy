@@ -3,6 +3,23 @@ import type { EmployerSector, RankingCard } from "./types";
 export type DisplayMode = "heatmap" | "percentage";
 export type SectorFilter = "all" | EmployerSector;
 
+/** Only absolute HTTP(S) URLs without credentials or control characters
+ * can become navigable browser links. Job-feed URLs are untrusted data.
+ */
+export function safeExternalJobUrl(raw: string | null | undefined): string {
+  if (typeof raw !== "string" || !raw || raw !== raw.trim() ||
+      /[\u0000-\u001f\u007f\\]/.test(raw) ||
+      !/^https?:\/\//i.test(raw)) return "";
+  try {
+    const parsed = new URL(raw);
+    if (!["http:", "https:"].includes(parsed.protocol) ||
+        !parsed.hostname || parsed.username || parsed.password) return "";
+    return parsed.href;
+  } catch {
+    return "";
+  }
+}
+
 export function scoreBand(score: number): string {
   if (score >= 90) return "exceptional";
   if (score >= 80) return "strong";
@@ -56,7 +73,8 @@ export interface ListingObservationLabels {
   caution: string | null;
 }
 
-const SOURCE_AGE_CAUTION_MS = 72 * 60 * 60 * 1000;
+// Match the original source timestamp gate used by the private draft worker.
+const SOURCE_AGE_CAUTION_MS = 48 * 60 * 60 * 1000;
 const ALLOWED_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 function observationAgeMs(value: string, now: Date): number | null {
@@ -99,7 +117,7 @@ export function listingObservationLabels(
     origin,
     observation: "Last observed " + ageWords(observedAge),
     caution: observedAge >= SOURCE_AGE_CAUTION_MS
-      ? "Source was last observed at least 72h ago — confirm on employer site."
+      ? "Source was last observed at least 48h ago — automatic drafts require a fresh source poll; confirm on employer site."
       : null
   };
 }

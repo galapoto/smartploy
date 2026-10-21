@@ -15,7 +15,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${COMPOSE_DIR}/../.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/env"
-POLICY_FILE="${COMPOSE_DIR}/runtime.production.env"
+POLICY_FILE="$(bash "${SCRIPT_DIR}/select-runtime-policy.sh")"
+IDENTITY_PROFILE="${SMARTPLOY_PRODUCTION_IDENTITY_MODE:-cloudflare}"
 COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
 
 fail() {
@@ -38,6 +39,9 @@ done
 
 [[ -f "${ENV_FILE}" && ! -L "${ENV_FILE}" ]] \
   || fail "deploy/personal/env must exist as a regular non-symlink file"
+bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "${POLICY_FILE}" >/dev/null
+PRODUCTION_ORIGIN="$(sed -n 's/^SMARTPLOY_PUBLIC_ORIGIN=//p' "${POLICY_FILE}")"
+PRODUCTION_HOST="${PRODUCTION_ORIGIN#https://}"
 
 STATE_DIR="$(read_env_value SMARTPLOY_DEPLOY_STATE_DIR)"
 STATE_DIR="${STATE_DIR:-/srv/obum/data/smartploy/deploy-state}"
@@ -46,6 +50,13 @@ BACKUP_DIR="${BACKUP_DIR:-/srv/obum/backups/smartploy}"
 WEB_PORT="$(read_env_value SMARTPLOY_WEB_HOST_PORT)"
 WEB_PORT="${WEB_PORT:-8091}"
 
+if [[ -f "${STATE_DIR}/deployed-auth-profile" ]]; then
+  DEPLOYED_IDENTITY_PROFILE="$(tr -d '[:space:]' < "${STATE_DIR}/deployed-auth-profile")"
+  if [[ "${DEPLOYED_IDENTITY_PROFILE}" != "${IDENTITY_PROFILE}" ]]; then
+    echo "Deployed identity profile differs from selected rollback/release profile" >&2
+    exit 1
+  fi
+fi
 [[ "${STATE_DIR}" == /* ]] || fail "SMARTPLOY_DEPLOY_STATE_DIR must be absolute"
 [[ "${BACKUP_DIR}" == /* ]] || fail "SMARTPLOY_BACKUP_DIR must be absolute"
 [[ "${WEB_PORT}" =~ ^[0-9]+$ ]] || fail "SMARTPLOY_WEB_HOST_PORT must be numeric"
@@ -111,13 +122,13 @@ chmod 700 "${TMP_DIR}"
 
 HEALTH_FILE="${TMP_DIR}/health.json"
 if ! curl --fail --silent --show-error --max-time 10 \
-  -H 'Host: smartploy.obumai.com' \
+  -H "Host: ${PRODUCTION_HOST}" \
   "http://127.0.0.1:${WEB_PORT}/healthz" > "${HEALTH_FILE}"; then
   fail "local SmartPloy health request failed"
 fi
 
 if ! PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
-  origin-health "${HEALTH_FILE}" >/dev/null; then
+  origin-health "${HEALTH_FILE}" "${IDENTITY_PROFILE}" >/dev/null; then
   fail "local SmartPloy health contract failed"
 fi
 
@@ -206,6 +217,7 @@ LIVE_TLS="skipped"
 LIVE_CLOUDFLARE_EDGE="skipped"
 LIVE_ACCESS_ROOT="skipped"
 LIVE_ACCESS_API="skipped"
+LIVE_OIDC_LOGIN="skipped"
 
 if "${ONLINE}"; then
   LIVE_FILE="${TMP_DIR}/live.txt"
@@ -226,6 +238,10 @@ if "${ONLINE}"; then
   LIVE_CLOUDFLARE_EDGE="$(live_value cloudflare_edge)"
   LIVE_ACCESS_ROOT="$(live_value access_root)"
   LIVE_ACCESS_API="$(live_value access_api)"
+  LIVE_OIDC_LOGIN="$(live_value oidc_login)"
+  if [[ "${IDENTITY_PROFILE}" == "oidc" && "${LIVE_OIDC_LOGIN}" != "redirect_to_trusted_oidc" ]]; then
+    fail "Live ZITADEL login redirect proof is missing"
+  fi
 fi
 
 GENERATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -257,6 +273,8 @@ live_tls=${LIVE_TLS}
 live_cloudflare_edge=${LIVE_CLOUDFLARE_EDGE}
 live_access_root=${LIVE_ACCESS_ROOT}
 live_access_api=${LIVE_ACCESS_API}
+live_oidc_login=${LIVE_OIDC_LOGIN}
+identity_profile=${IDENTITY_PROFILE}
 EOF
 
 chmod 600 "${EVIDENCE_TMP}"

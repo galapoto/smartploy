@@ -8,6 +8,9 @@ export interface JobCardData {
   deadline: string;
   application_url: string;
   employer_sector: EmployerSector;
+  /** Title-derived browse label, never a qualification or eligibility claim. */
+  career_area?: "it_data" | "planning" | "other";
+  title_experience?: "entry" | "senior" | "unspecified";
   source_ids: string[];
   posted_at: string;
   first_seen_at: string;
@@ -124,13 +127,12 @@ export interface HealthResponse {
   ok: boolean;
   service: string;
   storage: { mode: string; ready: boolean; error?: string };
-  profile: ProfileStatus;
+  /** Public health intentionally contains no private profile metadata. */
   obumai_configured: boolean;
   worker: {
     configured: boolean;
     ready: boolean;
     count: number;
-    error: string;
   };
   external_actions_authorized: boolean;
 }
@@ -181,6 +183,46 @@ export interface SessionInfo {
   subject_fingerprint?: string;
 }
 
+export interface JobAIProcessingConsent {
+  consent_id: string;
+  canonical_key: string;
+  processor: "obumai";
+  purpose: "application_draft";
+  mode: "unattended";
+  job_snapshot_sha256: string;
+  evidence_sha256: string;
+  revision: number;
+  granted_at: string;
+  revoked_at: string;
+  active: boolean;
+  processing_started: false;
+  employer_actions_authorized: false;
+}
+
+export interface JobAIProcessingConsentEvent {
+  event_id: string;
+  consent_id: string;
+  event_type: "granted" | "revoked";
+  revision: number;
+  job_snapshot_sha256: string;
+  evidence_sha256: string;
+  occurred_at: string;
+}
+
+export interface JobAIConsentsResponse {
+  consents: JobAIProcessingConsent[];
+  count: number;
+  private: true;
+  unattended_processing_enabled: false;
+}
+
+export interface JobAIConsentEventsResponse {
+  events: JobAIProcessingConsentEvent[];
+  count: number;
+  private: true;
+  history_type: "consent_grant_and_withdrawal_only";
+}
+
 export interface SavedJob {
   canonical_key: string;
   source_current: boolean;
@@ -193,6 +235,26 @@ export interface SavedJob {
 export interface JobsResponse {
   jobs: SavedJob[];
   count: number;
+}
+
+/** User-owned bookmark, never an employer-verified ATS vacancy. */
+export interface PrivateSavedJob {
+  saved_job_id: string;
+  company: string;
+  role_title: string;
+  location: string;
+  description: string;
+  application_url: string;
+  created_at: string;
+  private: true;
+  employer_availability_verified: false;
+  external_actions_authorized: false;
+}
+
+export interface PrivateSavedJobsResponse {
+  jobs: PrivateSavedJob[];
+  count: number;
+  private: true;
 }
 
 export interface ManualJobPayload {
@@ -215,7 +277,7 @@ export interface ApplicationWorkspace {
   source_cv_sha256: string;
   approved_evidence_ids: string[];
   revision: number;
-  status: "draft" | "self_reported_applied";
+  status: "draft" | "self_reported_applied" | "provider_acknowledged";
   self_reported_applied_at: string;
   self_reported_reference: string;
   created_at: string;
@@ -276,7 +338,7 @@ export interface BrowserHandoffReadiness {
 }
 
 export interface BrowserHandoffPacket {
-  schema: "smartploy.browser_handoff.v1";
+  schema: "smartploy.browser_handoff.v2";
   issued_at: string;
   expires_at: string;
   application_url: string;
@@ -285,6 +347,10 @@ export interface BrowserHandoffPacket {
   workspace_id: string;
   revision: number;
   document_sha256: string;
+  cv_pdf_sha256: string;
+  cv_pdf_size: number;
+  /** Server-owned SHA fingerprint for the EXACT approved employer transfer. */
+  approved_fields_sha256?: string;
   fields: {
     full_name: string;
     first_name: string;
@@ -343,6 +409,9 @@ export interface SearchPreferences {
   keywords: string[];
   skills: string[];
   seniority: string;
+  /** Must be explicitly enabled for per-account local automatic draft preparation. */
+  auto_draft_enabled?: boolean;
+  auto_draft_external_actions_authorized?: false;
   revision: number;
   updated_at: string;
   verified_qualification_fit: false;

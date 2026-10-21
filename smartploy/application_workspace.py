@@ -134,10 +134,12 @@ class ApplicationWorkspace:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "authority": {
-                "may_edit": True,
+                "may_edit": self.status == "draft",
                 "may_download": True,
                 "may_submit_to_employer": False,
-                "has_external_submission_proof": False,
+                # Official provider application ID is stored in a separate
+                # owner-scoped receipt ledger, never in self-report fields.
+                "has_external_submission_proof": self.status == "provider_acknowledged",
             },
         }
 
@@ -192,6 +194,8 @@ def update_documents(workspace: ApplicationWorkspace, *, cv_text: str,
 def mark_applied(workspace: ApplicationWorkspace, *, reference: str = "") -> ApplicationWorkspace:
     if workspace.status == "self_reported_applied":
         return workspace
+    if workspace.status != "draft":
+        raise WorkspaceError("A provider-acknowledged application cannot be downgraded to self-reported")
     ref = str(reference or "").strip()
     if len(ref) > 250 or any(ord(char) < 32 for char in ref):
         raise WorkspaceError("Application reference must be 250 printable characters or fewer")
@@ -261,7 +265,7 @@ def render_document(
         pdf = SimpleDocTemplate(
             output, pagesize=A4, topMargin=21*mm, bottomMargin=21*mm,
             leftMargin=23*mm, rightMargin=23*mm,
-            title=heading, author="SmartPloy user-reviewed application",
+            title=heading, author="SmartPloy user-reviewed application", invariant=1,
         )
         pdf.build(story)
         mime = "application/pdf"

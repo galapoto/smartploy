@@ -1,0 +1,440 @@
+# SP15j — IT job discovery to private application drafts: reuse-first delivery proof
+
+**Goal:** SmartPloy finds suitable IT jobs on its existing source polling
+schedule and creates a small number of **local, account-owned** reviewed
+application drafts, without needing a user to paste vacancy links. It does
+NOT pretend to have sent these drafts to employers.
+
+## Verified ORIGINAL code reused before adding orchestration
+
+- `smartploy/worker_runtime.py` blob
+  `8e2abf5da04cde58588d9e7506908b4fa5553596`: existing public
+  source pollers (Job Market Finland, Kuntarekry and verified public ATS
+  tenants), persistent `WorkerTaskSpec` registered into the existing
+  lease-based `ContinuousWorker` scheduler. Kept source fetching intact.
+- `smartploy/search_preferences.py` blob
+  `dd5a1ab3e32452c2ca5e8c57820fd2e2b4173c42`: existing
+  Finnish/English title equivalents, location, job-language, seniority,
+  keyword scoring and current-posting filter; `search_jobs` reused
+  unchanged for recommendations. A title-only overlap or keyword-only
+  match is NOT automatically drafted.
+- `smartploy/scoring.py` original deterministic
+  `score_candidate` and APPROVED evidence fit scoring: not the
+  self-declared search skills and not an LLM's guessed qualification.
+  Explicit unmet mandatory requirements block automatic drafts.
+- `smartploy/application_workspace.py` original blob
+  `049b4b82afef494ea650dd710c01a7467ddb601c`, method
+  `new_workspace`, original private CV repository and tenant-scoped
+  original `PostgresWorkspaceRepository.create_or_get` blob
+  `804e736a0662760fb1a77eb4856e6aef0b25f264`: current vacancy,
+  original uploaded CV / approved profile facts, editable cover letter,
+  stable per-owner canonical-job key and PostgreSQL ON CONFLICT duplicate
+  protection. **No second CV composer, new ORM or parallel draft table**.
+- Existing owner-specific `search_preference_storage.py` blob
+  `61c50a5cbd315c5065e4f5bf8bad9239874bddad` persisted criteria
+  in JSONB with revisions. Reused that table and strict session-scoped
+  `tenant_context` and original React `runPrivateMutation` before/after
+  account verification. No new permissions service or access token.
+- Existing vetted `SearchSetup.tsx`, `SearchResultsPanel.tsx` and
+  `App.tsx` used in place; continued general search without a CV.
+- ObumAI per-job processing consent and SP15a-15i eventual employer
+  submission are **left untouched**: automatically creating a draft is
+  not consent for model processing or employer communication.
+
+## New code only for the previously missing gap
+
+- `smartploy/auto_draft_shortlist.py`: small deterministic orchestration.
+  It requires explicit per-user opt-in, personalized target roles, approved
+  career facts, title relevance, no explicit location/seniority mismatch,
+  preference alignment >=70, approved factual fit >=60 with no known
+  mandatory qualification gaps, and a current HTTPS employer link.
+  It rechecks the original job record and original saved criteria
+  immediately before using `new_workspace` and original idempotent
+  `create_or_get`, with <=3 drafts/user/cycle. No calls to external AI,
+  browser, ATS APIs or employers.
+- Adapted original existing `SearchPreferences` and JSONB repository:
+  `auto_draft_enabled` defaults FALSE, explicitly chosen by the user,
+  cannot be set in General search or without targeted job titles.
+  For production the worker queries only ACTIVE, non-quarantined,
+  opted-in owner IDs (no emails) and uses PostgreSQL
+  `SELECT ... FOR SHARE OF p,u` around each draft insert.
+  A completed revision-based opt-out blocks later draft creation after
+  the update commits, including an overlapping worker operation.
+  The initial SP15j required no migration. SP15k adds only a non-PII
+  last-scan timestamp to this existing table for fair scheduling.
+- Adapted existing worker scheduler with
+  `application:auto-draft-shortlist` task, 600-second default; the
+  task is local-only and respects individual user opt-in.
+  The operator toggle is independent of the old unsafe global
+  `SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED` remote ObumAI flag,
+  which remains OFF in production. Compose enables only the safe
+  local task after this source is approved for deployment.
+- Adapted original same-origin private API with
+  `POST /api/v1/auto-draft/prepare`: requires the actual verified
+  account, expected-user precondition and origin/CSRF, returns only
+  bounded counts and clearly states no employer or model actions.
+- Adapted original Job Setup (one-click IT starter roles, optional
+  checkbox), Search Results (prepare-now CTA) and existing application
+  workspace tab. Existing React before/after account switch defense
+  and general search remain intact.
+
+## Safety and customer truth
+
+This is local application PREPARATION, not end-to-end unattended
+submission. No provider sends/CV transmission/captcha bypass/no
+interview answers are authorized merely from search settings.
+The configured sources must already work and show current valid jobs;
+the user must sign in, approve career facts, opt in and inspect
+CV/letter prior to any eligible employer's separate final consent.
+A submitted application is recognized only via a genuine provider ACK,
+as handled by existing SP15f–h partner workflow.
+
+**Required release acceptance:** exact-head source CI with real
+PostgreSQL and React plus original Chromium/Node/Compose run; native
+ObumDelivery exact-SHA and deliberate negative run; release gates and
+signed-in live domain; actual source feed and user opt-in test;
+explicit employer rights on any real provider call. Do not report
+production readiness from a GitHub PR.
+
+## SP15k continuation — fair account scanning and failure isolation
+
+**Observed core flaw:** Sorting enabled profiles by `updated_at` reselected
+the same first 100 accounts each cycle, starving newer opted-in owners.
+One invalid CV/profile also aborted the remaining scheduled accounts.
+
+**REUSE FIRST:** Adapted SP16 draft PR #172's already-implemented
+`last_run_at ASC NULLS FIRST` scheduling idea from its
+`migrations/024_auto_shortlist.sql` (blob
+`5bd86db2ba4bc7719780cb9d2d3cf9bc0dbf0e66`).
+Did NOT copy its redundant opt-in settings table or rival matcher.
+Kept existing SP15j JSONB opt-in/revision guard, PostgreSQL owner/erasure
+filter, actual source pollers, `search_jobs`, `new_workspace`,
+unique account+job workspace insertion, and original leased worker task.
+
+**NEW GLUE:** Migration 024 adds one non-PII last-checked timestamp/index
+to the existing preferences table. The queue sorts least recently checked
+first, resets on every user criteria change and only marks a matching
+opt-in revision (never a replaced/disabled revision). A failing user
+scan is contained, subsequent users are attempted, and the scheduler
+reports `degraded` with aggregate counts, no user IDs or CV details.
+Added real PostgreSQL rotation/revocation and synthetic worker-failure
+regressions. No new scraping, model, browser or employer submission engine.
+No new external dependencies.
+
+**Still blocked from production:** original signed-in/OIDC, native
+ObumDelivery exact-SHA/negative test, external source readiness and
+reviewed OVH deploy; final employer submissions remain independent.
+
+## SP15k UI truth: app opt-in is not operator deployment
+
+**REUSE FIRST:** The original `dashboard.worker.tasks` already exposes
+the durable registered task ID, enablement and last_status; no new
+status API or monitoring service was built. Added a derived status prop
+to the existing `App` / `SearchResultsPanel`. Before this correction,
+the form checkbox alone caused the UI to claim the app was checking
+jobs in the background even when the independently-controlled worker
+flag remained disabled.
+
+**NEW GLUE:** Three honest user states: background task registered
+(not a proof of completed runs), task degraded, or background not
+confirmed. The existing explicit user-run button remains available.
+Three Vitest cases cover all states and direct action wiring.
+No user/job data sent outside SmartPloy and no invented employer receipts.
+
+## SP15l — truly immediate first-run IT application preparation
+
+**Observed UX/core gap:** Previous SP15j required a user to save their
+opt-in setting and then separately discover/click "Find and prepare".
+Unattended scheduling might be disabled for safety, so users could
+enable automation without a single application draft being created.
+
+**REUSE FIRST:** Reuses original `POST /api/v1/auto-draft/prepare`
+and `prepareMyMatchingDrafts`, original `App.tsx`
+`saveSearchPreferences` session/expected-account checks, original
+`ApplicationStudio` for saved document review, and the original
+opt-in revision. No new endpoint, worker, employer submitter, browser,
+credential, model, or permission. This first scan is only triggered
+after the server confirms the user's new explicit opted-in preference.
+
+**NEW GLUE:** The existing Settings/first-use flow immediately runs
+one consented private scan on the first transition OFF -> ON.
+If drafts were saved, it opens the existing My Applications editor;
+if approved facts are missing, it routes to the existing profile editor;
+if no current safe matches exist, the Jobs panel remains available;
+if the optional scan fails, the saved search preference is retained
+and the user gets a retry direction, without exposing backend errors.
+Before publishing any private counts or navigating, the existing
+verified account is checked again. No browser-closed processing or
+external submission is falsely implied.
+
+**Tests:** Four React/Vitest first-use/account-switch/failed-scan
+regressions on the actual App integration, not a stub duplicate UI.
+Full exact-HEAD CI and live authenticated OVH acceptance still required.
+
+## SP15m — avoid wasted drafts for expired or retargeted employer jobs
+
+**Exact underlying code inspected before writing:** Original
+`domain.JobRecord.deadline`, original `search_preferences._published_order`
+ISO date handling, existing `browser_handoff._posting_url` HTTPS /
+no-IP / credential policy, original `description_fingerprint`,
+`PostgresJobRepository.get`, `auto_draft_guard`, `new_workspace`,
+and the existing private job/workspace storage. These components remain
+the engine; no duplicate scrapers, CV composers or submitters.
+
+**Core defect fixed in product code:** An active source row may advertise
+an expired deadline, and its apply URL, job title, location, or mandatory
+requirements could change between initial candidate ranking and durable
+workspace creation without changing the description fingerprint.
+
+**New narrow glue:** `_deadline_open` keeps an absent deadline valid,
+accepts an unexpired ISO/Finnish calendar date or timezone-explicit
+ISO timestamp, and excludes malformed/ambiguous deadlines from *automatic*
+drafts (still available for manual review). The existing URL safety check
+now also rejects raw IPv4/IPv6 and local pseudo-hosts.
+`_same_reviewable_posting` rechecks role, employer, job link, deadline,
+location, languages, work mode, requirements, question/documents,
+and fingerprint inside the original owner opt-out guard immediately
+before the existing `create_or_get` write. A changed listing waits for
+a later matching cycle rather than using stale eligibility.
+
+**Scratch vs reused:** Three tiny first-party validators and local checks
+are new; job ingestion, ranking, eligibility engine, persistence, native
+PostgreSQL tests and browser handoff policy are reused. Added deterministic
+Finnish/ISO date and current-deadline tests, private-IP link rejects, and
+six post-ranking employer mutation regression cases. **Never claims a
+provider application was submitted.** Release still requires ObumDelivery,
+signed-in user acceptance and independent OVH deployment proof.
+
+
+## SP15n — reject stale source snapshots before creating real-user drafts
+
+**Problem proven from existing source code:** Original
+`smartploy/storage.py` deliberately preserves `JobCandidate.source_current=True`
+during public ATS polling failures. The original `poll_public_ats`
+records a failing source in source health, but does *not* retire jobs
+from the last successful snapshot. This is correct for general browsing
+and recovery, yet unsafe as evidence that an employer is still
+accepting applications. The last cache may be many days old.
+
+**Reuse before writing:** Directly reused existing
+`JobCandidate.last_verified_at` and `last_seen_at` source observation
+timestamps (never `posted_at`), `merge_candidates`/
+`PostgresJobRepository.upsert` refresh behavior, original same-account
+`auto_draft_guard`, original Postgres `get` re-fetch and workspace
+`create_or_get`. Reused `SourceHealth` and the five reviewed Finland
+public ATS pilot as operator-controlled ingestion; **no new scraper**,
+credential, provider adapter, LLM model, or source-access right.
+Reused the existing `prepareMyMatchingDrafts` API, React
+`SearchSetup` and signed-in `App` identity guard.
+
+**New first-party glue:** Small `_recently_verified` validator rejects
+missing, timezone-naive, invalid, future, and over-48-hour verification
+timestamps. On initial ranking **and again inside the existing
+revocable account guard after a database re-read**, stale candidates
+cannot create private documents, even while `source_current=True`.
+Response has only aggregate `stale_skipped` and
+`needs_source_refresh`; no applicant identities or employer URLs.
+UI now explains a source freshness blocker instead of claiming
+a background scheduler definitely continues. If the user chooses
+keyword-only personalization but enables auto drafting, the original
+backend requires explicit target roles: UI now explains this **before**
+the server save. Keyword-only search without drafting still works.
+
+**New tests:** Original Python synthetic candidate timestamps now derive
+from UTC current time to avoid a timebomb after 48 hours. Added fixed
+clock validator boundaries, old-cache exclusion + successful fresh
+poll recovery, and a changed-cache race inside the per-account
+guard. Added one frontend test for keyword-only consent validation
+and two actual App tests for stale-source first scan and direct
+manual rescan.
+
+**Security and release:** No employer POST, credential, browser action,
+external AI call, CV forwarding, or claim that an application was
+submitted. Deployment remains blocked pending live source ingestion,
+OIDC, native ObumDelivery proof and OVH exact SHA validation.
+The operator-controlled `config/finland_public_ats_pilot.json` and
+`scripts/configure_finland_ats_pilot.py` existed already; this change
+does **not** silently enable those source hosts.
+
+
+## SP15o — reviewed-source-only AutoApply and reusable Finland feed activation
+
+**Concrete core issue:** Before this change the auto-draft engine could draft
+applications from an imported `manual-import` listing merely because its
+`source_current` flag was true and its observation timestamp was recent.
+That timestamp verifies only when SmartPloy saw *some input*, not that
+the employer itself still advertised the vacancy. User-added job links
+and unreviewed search/browser outputs may not be promoted into
+unattended job preparation.
+
+**Reused from original product, checked first:**
+- `domain.SourcePolicy.normalized/allows` and
+  `normalize_observation` attach independently stored
+  `job.raw.source_class/source_mode`,
+  `candidate.metadata.source_class/source_mode` and source IDs.
+  The built-in eligible policies are those issued by
+  `PublicATSAdapter.policy` (`direct_employer_ats/api`),
+  `JobMarketFinlandAdapter.policy` (`national_job_market/api`)
+  and `KuntarekryFeedAdapter.policy` (`public_sector_jobs/feed`).
+- `domain.merge_candidates` deduplicates sources. Its merged metadata
+  may come from the newer source while its longer job body comes from
+  the older source. The auto-draft guard therefore requires both
+  provenance copies to agree, the source ID set to match `job.source`,
+  and *all* constituent source IDs to be approved provider families.
+  A manual/unknown source merged with a valid ATS cannot borrow the
+  ATS authority.
+- Existing `job_repository.get`, exact role/requirements checks,
+  recent-source verification and `auto_draft_guard` are still run
+  **after ranking and inside the owner-scoped write guard**.
+  The same original `new_workspace/create_or_get` generates documents.
+- Existing five reviewed boards in
+  `config/finland_public_ats_pilot.json`, the original
+  `PublicATSAdapter/poll_public_ats`, Docker `COPY . /workspace`,
+  and the existing worker `SMARTPLOY_PUBLIC_ATS_SOURCES_JSON`
+  configuration. The production preflight *rejects file paths*;
+  CI caught this during initial integration. The corrected new-install
+  example contains the **same five reviewed boards serialized to
+  inline JSON** (the previously supported operator staging format).
+  Existing private environment files are untouched, and no employer
+  submission or external CV forwarding is enabled.
+
+**New scratch code strictly limited to missing glue:**
+`_approved_source_for_auto_draft`, the aggregate
+`needs_trusted_source/unverified_source_skipped` result, frontend
+first-use and manual-retry guidance, and the approved inline JSON copy
+of the existing reviewed registry in `deploy/personal/env.example`. No copied/unlicensed third-party
+code, new SaaS dependencies, worker algorithm or employer POST.
+This gate is stricter than accepting every manually discovered vacancy;
+manually saved jobs remain available for user review and direct
+human-selected document preparation.
+
+**Tests added:** Known official/ATS provenance allowed; recent manual
+and unreviewed sources rejected; merge of good+manual sources in both
+orders rejected; mismatch between body/source metadata or source IDs
+rejected; provenance changed between scoring and the final database
+read rejected; frontend no-false-success messages; and a worker
+integration test proving the sample profile registers **five existing
+Finland sources plus only the local per-account draft task** without
+OBUMAI/partner submission. Test runs are synthetic, not claims that
+the five employer feeds were confirmed live on OVH.
+
+
+## SP15q — immediate AutoApply after approved evidence and role changes
+
+**Missing core behavior found first:** Earlier SP15l ran the original signed-in
+`POST /api/v1/auto-draft/prepare` only when an opt-in setting changed
+from OFF to ON. The first scan could legitimately return
+`needs_approved_profile`; after the user added/approved facts, or
+changed desired job titles with AutoApply still ON, no immediate scan
+ran. The user either had to know to click the separate retry button or
+wait up to the configured local draft worker cadence. This impeded
+the first working IT application flow.
+
+**Reused, not rewritten:**
+- Existing `web/src/App.tsx` guarded `runPrivateMutation` checks
+  verified account identity **before and after** the existing backend
+  `prepareMyMatchingDrafts` request, and clears old-account state on
+  session changes. Same method powers the original retry button.
+- Existing server `prepare_profile_shortlist` handles verified ATS
+  provenance, 48-hour source freshness, target roles, qualification
+  gaps, role-match threshold, approved facts, per-account revocable
+  opt-in lock and idempotent owner workspace save.
+- Existing `SearchSetup` saves user-editable target titles and consents;
+  original `onAddFact`, `onFactApproval`, `onCVUpload` save user
+  reviewed evidence without forwarding private data to ObumAI.
+- Original `worker_runtime.build_worker_task_specs` and isolated
+  per-account `application:auto-draft-shortlist` task run headlessly
+  with NO employer POST or external AI. Worker is already opt-in and
+  processes a bounded number of accounts and new drafts per cycle.
+
+**Truly new (small application glue, no third-party code):**
+1. Reuse the original signed-in draft preparation call after *every*
+   saved personalized configuration while `auto_draft_enabled=true`
+   and at least one explicit role is present; not only on first opt-in.
+2. Reuse the same private call immediately after user confirmation/
+   approval of a career fact. Saving unapproved facts, revoking fact
+   approval, general search, and keyword-only search remain ineligible.
+3. Reuse the same private call after a CV upload **only if** the user
+   had independently approved career facts; uploading a CV alone
+   never implies qualifications have been verified.
+4. A synchronous, owner-identity-keyed `autoDraftInFlight` guard
+   prevents rapid UI events triggering two concurrent private scans.
+   Server persistence already has the original idempotency and
+   account revocation locks.
+5. Bounded local-only draft worker default shortened to
+   **120 seconds**, vs **600 seconds** before; source polling retains
+   its existing separate default cadence of 600 seconds and
+   configured rate limits. This is not a promise of job ingestion
+   or immediate actual employer submission.
+
+**Regression tests:** Existing React/Vitest suite extended for
+re-scan on already-opted-in changes, no scan without opt-in,
+newly approved fact, previously unapproved fact, CV upload with and
+without independently approved evidence. Existing Python worker test
+verifies the faster local task cadence and that it never authorizes
+external action. CI must be checked at the *exact* final source commit.
+
+**Provenance and speed accounting:** No external repository was copied,
+no new dependency was introduced, and no additional queue, scraper,
+worker scheduler, app-account system or submission adapter was built.
+The benefit is eliminating one user click or up to one background
+draft interval after an otherwise eligible change, without weakening
+approval controls. This is a behavioral improvement, not a measured
+multiplier of engineering productivity.
+
+
+## SP15r — avoid old or foreign private evidence during AutoApply draft saves
+
+**Core gap detected by inspecting the real private draft writer:** The
+original SP15j `prepare_profile_shortlist` loaded a user's approved
+`CandidateProfile` and `StoredCV` once before matching and kept those
+objects while source-race and owner-consent checks ran. If a user deleted
+their CV, withdrew qualification approval, replaced their CV or changed
+accounts while matching, the worker could create a *new* reviewable draft
+using an earlier private evidence snapshot. This is separate from the
+existing ATS freshness/consent safeguards and needs its own check.
+
+**Prebuilt code specifically reused before scratch work:**
+`PostgresProfileRepository.profile`, `PostgresCVRepository.get`,
+`score_candidate`, the exact `ProfileFact.approved` model and
+`CandidateProfile.approved_facts`, original
+`PostgresSearchPreferenceRepository.auto_draft_guard`, original
+`new_workspace` and `WorkspaceRepository.create_or_get` (idempotent
+per owner/job). No new profile table, data schema, AI service, external
+submission adapter or dependency was created.
+
+**New source glue:** Inside that existing owner-scoped draft guard
+*after* the posting is re-read, fetch the current profile and CV
+from their existing stores. Reject a changed account ID or a CV with a
+different owner. Require at least one currently approved fact and
+re-score the job against the current approved qualifications before
+calling original `new_workspace`. If the user has deleted the CV, only
+the latest separately approved facts can form a new draft. If the CV
+was replaced, only the current document text/hash may be used. This
+reduces the stale-evidence window, but is not a claim that independent
+fact/CV changes and the draft transaction are globally serialized.
+
+**Five new synthetic regression tests:** profile approval revoked after
+initial matching, required skill evidence downgraded after ranking,
+CV replaced after ranking but before guarded source re-fetch, CV
+deleted after ranking, and wrong-owner profile/CV injected at final
+save. The CV tests mutate the original stored document during the
+existing `job_repository.get` source recheck, so the previous code
+would demonstrably use the earlier CV whereas the new code uses only
+the current one.
+
+**Direct CI evidence:** At exact application-code/test commit
+[`0529ae90c9a9`](https://github.com/galapoto/smartploy/commit/0529ae90c9a97897a363f3a6cba4b2b6ed83fb7a),
+[GitHub Actions #39571707787](https://github.com/galapoto/smartploy/actions/runs/39571707787)
+reported **744 Python/PostgreSQL, 116 React/Vitest, 32 Chromium**
+passing, Ruff and the production-configuration fixture passing, all
+five CI jobs green. This is source-level evidence; still no claim that
+native ObumDelivery, actual OVH first-party login, live job fetch or a
+provider-acknowledged employer submission has passed.
+
+**User-owned settings handoff:** see
+[`docs/OWNER_SETTINGS_ACTIONS_AUTOAPPLY.md`](OWNER_SETTINGS_ACTIONS_AUTOAPPLY.md)
+for exact ZITADEL PKCE public-client callbacks,
+`smartploy.komplyint.fi` authoritative DNS/Cloudflare Access boundary,
+private OVH environment values and real employer rights. Never paste
+secrets into the source tree or chat.

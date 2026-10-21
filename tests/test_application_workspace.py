@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from dataclasses import replace
 import os
 
 from docx import Document
@@ -11,7 +12,7 @@ import pytest
 
 from smartploy.api import create_app
 from smartploy.application_workspace import (
-    WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document,
+    WorkspaceError, WorkspaceRevisionConflict, mark_applied, new_workspace, render_document,
 )
 from smartploy.application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
@@ -112,6 +113,21 @@ def test_memory_isolation_revision_protection_and_no_external_submission():
                   cv_text="later edit", cover_letter_text="later edit")
     assert repo.delete("profile-bob", alice.workspace_id) is False
     assert repo.delete("profile-alice", alice.workspace_id) is True
+
+
+def test_provider_acknowledged_workspace_cannot_be_downgraded_to_self_reported():
+    original=new_workspace(example_candidate(),example_profile())
+    acknowledged=replace(original,status="provider_acknowledged")
+    assert acknowledged.to_dict()["authority"]["has_external_submission_proof"] is True
+    assert acknowledged.to_dict()["authority"]["may_edit"] is False
+    assert acknowledged.to_dict()["authority"]["may_download"] is True
+    with pytest.raises(WorkspaceError,match="downgraded"):
+        mark_applied(acknowledged,reference="invented-user-reference")
+    repo=MemoryWorkspaceRepository()
+    assert repo.create_or_get(acknowledged)[1]
+    with pytest.raises(WorkspaceError,match="downgraded"):
+        repo.report_applied(acknowledged.profile_id,acknowledged.workspace_id,
+                            expected_revision=acknowledged.revision,reference="self-reported")
 
 
 def test_real_pdf_and_docx_outputs_only_user_reviewed_text():

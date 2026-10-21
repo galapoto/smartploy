@@ -9,8 +9,11 @@ from urllib.parse import urlsplit
 import sys
 
 
+# Legacy Cloudflare-Access origin remains safe for rollback.
 PRODUCTION_ORIGIN = "https://smartploy.obumai.com"
 PRODUCTION_HOST = "smartploy.obumai.com"
+# The new first-party OIDC policy has its own exact canonical origin.
+OIDC_PRODUCTION_ORIGIN = "https://smartploy.komplyint.fi"
 ACCEPTED_DENIAL_STATUSES = frozenset({401, 403})
 ACCEPTED_REDIRECT_STATUSES = frozenset({302, 303, 307, 308})
 
@@ -31,12 +34,13 @@ class PublicProbe:
         return bool(self.cf_ray.strip()) or self.server.strip().casefold() == "cloudflare"
 
 
-def validate_origin_health(payload: dict[str, object]) -> None:
+def validate_origin_health(payload: dict[str, object], identity_profile: str = "cloudflare") -> None:
     if payload.get("ok") is not True:
         raise LiveAcceptanceError("origin health is not ready")
     if payload.get("service") != "smartploy":
         raise LiveAcceptanceError("origin service identity is invalid")
-    if payload.get("public_origin") != PRODUCTION_ORIGIN:
+    expected = OIDC_PRODUCTION_ORIGIN if identity_profile == "oidc" else PRODUCTION_ORIGIN
+    if payload.get("public_origin") != expected:
         raise LiveAcceptanceError("origin public URL does not match production")
 
     storage = payload.get("storage")
@@ -46,12 +50,20 @@ def validate_origin_health(payload: dict[str, object]) -> None:
     access = payload.get("access")
     if not isinstance(access, dict):
         raise LiveAcceptanceError("origin Access health is missing")
-    if access.get("enabled") is not True:
-        raise LiveAcceptanceError("origin Access is not enabled")
     if access.get("environment") != "production":
-        raise LiveAcceptanceError("origin Access environment is not production")
-    if access.get("owner_restricted") is not True:
-        raise LiveAcceptanceError("origin Access is not owner restricted")
+        raise LiveAcceptanceError("origin environment is not production")
+    # Reuse the private operator-selected immutable policy, NOT a public
+    # disclosure of OIDC issuer/mode/session internals via /healthz.
+    if identity_profile == "oidc":
+        if access.get("enabled") is not False:
+            raise LiveAcceptanceError("first-party OIDC must disable Access assertions")
+    elif identity_profile == "cloudflare":
+        if access.get("enabled") is not True:
+            raise LiveAcceptanceError("origin Access is not enabled")
+        if access.get("owner_restricted") is not True:
+            raise LiveAcceptanceError("origin Access is not owner restricted")
+    else:
+        raise LiveAcceptanceError("unsupported production identity mode")
 
     if payload.get("external_actions_authorized") is not False:
         raise LiveAcceptanceError("origin external-action authority is unsafe")
@@ -88,6 +100,42 @@ def validate_public_probe(probe: PublicProbe) -> str:
     raise LiveAcceptanceError(f"unexpected protected-surface HTTP status: {status}")
 
 
+def validate_oidc_public_probe(
+    probe: PublicProbe, surface: str, oidc_issuer: str
+) -> str:
+    """Public SPA is allowed; exact private API must still be locked.
+
+    A Cloudflare Access redirect here would break the intended application
+    sign-in. Never accept arbitrary 302 destinations or a public API 200.
+    """
+    if not probe.cloudflare_edge:
+        raise LiveAcceptanceError("production response lacks Cloudflare edge evidence")
+    if surface == "root":
+        if probe.status_code != 200:
+            raise LiveAcceptanceError("OIDC public login shell is not reachable")
+        return "public_login_shell"
+    if surface == "api":
+        if probe.status_code != 401:
+            raise LiveAcceptanceError("OIDC private API is not returning signed-out 401")
+        return "protected_by_app_session"
+    if surface == "login":
+        origin = urlsplit(oidc_issuer)
+        destination = urlsplit(probe.location)
+        if (
+            probe.status_code not in ACCEPTED_REDIRECT_STATUSES
+            or origin.scheme != "https"
+            or not origin.netloc or origin.username or origin.password
+            or origin.query or origin.fragment or origin.path not in {"", "/"}
+            or destination.scheme != "https"
+            or destination.netloc != origin.netloc or destination.hostname != origin.hostname
+            or destination.username or destination.password
+            or not destination.path.startswith("/")
+        ):
+            raise LiveAcceptanceError("OIDC login does not redirect to configured trusted issuer")
+        return "redirect_to_trusted_oidc"
+    raise LiveAcceptanceError("unknown OIDC public probe surface")
+
+
 def parse_probe_lines(text: str) -> PublicProbe:
     lines = text.splitlines()
     if len(lines) < 4:
@@ -105,13 +153,31 @@ def parse_probe_lines(text: str) -> PublicProbe:
 
 
 def _main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[0] not in {"origin-health", "public-probe"}:
+    oidc_commands = {"oidc-root": "root", "oidc-api": "api", "oidc-login": "login"}
+    if len(argv) == 3 and argv[0] in oidc_commands:
+        command, path, issuer = argv
+        try:
+            status = validate_oidc_public_probe(
+                parse_probe_lines(Path(path).read_text(encoding="utf-8")),
+                oidc_commands[command], issuer,
+            )
+        except LiveAcceptanceError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(status)
+        return 0
+
+    if not (
+        (len(argv) in {2, 3} and argv[0] == "origin-health")
+        or (len(argv) == 2 and argv[0] == "public-probe")
+    ):
         raise SystemExit(
             "usage: python -m smartploy.live_acceptance "
-            "(origin-health <json-file> | public-probe <probe-file>)"
+            "(origin-health <json-file> | public-probe <probe-file> | "
+            "oidc-root/oidc-api/oidc-login <probe-file> <issuer-origin>)"
         )
 
-    command, path = argv
+    command, path = argv[:2]
+    identity_profile = argv[2] if len(argv) == 3 else "cloudflare"
     raw = Path(path).read_text(encoding="utf-8")
     if command == "origin-health":
         try:
@@ -121,7 +187,7 @@ def _main(argv: list[str]) -> int:
         if not isinstance(payload, dict):
             raise SystemExit("origin health payload must be an object")
         try:
-            validate_origin_health(payload)
+            validate_origin_health(payload, identity_profile)
         except LiveAcceptanceError as exc:
             raise SystemExit(str(exc)) from exc
         print("pass")
@@ -133,7 +199,6 @@ def _main(argv: list[str]) -> int:
         raise SystemExit(str(exc)) from exc
     print(result)
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(_main(sys.argv[1:]))

@@ -4,16 +4,20 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 
 import * as api from "./api";
 import App from "./App";
-import type { SearchPreferences, SearchResults } from "./types";
+import type { PrivateSavedJob, SearchPreferences, SearchResults } from "./types";
 
 vi.mock("./api", () => ({
   addManualJob: vi.fn(), approveFact: vi.fn(), createFact: vi.fn(),
+  deletePrivateSavedJob: vi.fn(), getPrivateSavedJobs: vi.fn(),
   deleteCV: vi.fn(), deleteFact: vi.fn(), getApplications: vi.fn(),
   getCV: vi.fn(), getDashboard: vi.fn(), getHealth: vi.fn(),
   getJobs: vi.fn(), getProfileFacts: vi.fn(), getSession: vi.fn(),
   startApplicationWorkspace: vi.fn(), uploadCV: vi.fn(),
   getSearchPreferences: vi.fn(), updateSearchPreferences: vi.fn(),
   getSearchResults: vi.fn(), getLocalAIStatus: vi.fn(),
+  prepareMyMatchingDrafts: vi.fn(),
+  getJobAIConsents: vi.fn(), getJobAIConsentEvents: vi.fn(),
+  grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
 vi.mock("./ApplicationStudio", () => ({
   default: ({ focusId }: { focusId: string }) =>
@@ -30,6 +34,7 @@ const listing = {
   job: {
     company: "Example Oy", role_title: "Junior Data Analyst", location: "Helsinki",
     language: "English", work_mode: "remote", employer_sector: "private" as const,
+    career_area: "it_data" as const, title_experience: "entry" as const,
     source_current: true, application_url: "https://jobs.example.fi/analyst",
     source_ids: ["test-ats"], source_attribution: "Public ATS",
     posted_at: "2026-10-11T10:00:00Z", first_seen_at: "2026-10-11T10:00:00Z",
@@ -54,10 +59,12 @@ const tailored: SearchResults = {
   }],
 };
 let currentPrefs: SearchPreferences = initial;
+let personalJobs: PrivateSavedJob[] = [];
 
 beforeEach(() => {
   vi.resetAllMocks();
   currentPrefs = { ...initial };
+  personalJobs = [];
   vi.mocked(api.getDashboard).mockResolvedValue({
     top_matches: [], possible_matches: [],
     source_health: [{
@@ -81,6 +88,29 @@ beforeEach(() => {
   vi.mocked(api.getProfileFacts).mockResolvedValue({ facts: [], count: 0 });
   vi.mocked(api.getApplications).mockResolvedValue({ applications: [], count: 0 });
   vi.mocked(api.getJobs).mockResolvedValue({ jobs: [], count: 0 });
+  vi.mocked(api.getPrivateSavedJobs).mockImplementation(async () => ({
+    jobs: [...personalJobs], count: personalJobs.length, private: true,
+  }));
+  vi.mocked(api.getJobAIConsents).mockResolvedValue({
+    consents: [], count: 0, private: true, unattended_processing_enabled: false,
+  });
+  vi.mocked(api.getJobAIConsentEvents).mockResolvedValue({
+    events: [], count: 0, private: true,
+    history_type: "consent_grant_and_withdrawal_only",
+  });
+  vi.mocked(api.addManualJob).mockImplementation(async (payload) => {
+    const item: PrivateSavedJob = {
+      ...payload, saved_job_id: "saved-synthetic-" + (personalJobs.length + 1),
+      created_at: "2026-10-12T10:00:00Z", private: true,
+      employer_availability_verified: false, external_actions_authorized: false,
+    };
+    personalJobs = [item, ...personalJobs];
+    return { status: "saved_private", job: item };
+  });
+  vi.mocked(api.deletePrivateSavedJob).mockImplementation(async (id) => {
+    personalJobs = personalJobs.filter((item) => item.saved_job_id !== id);
+    return { deleted: true };
+  });
   vi.mocked(api.getLocalAIStatus).mockResolvedValue({
     configured: false, ready: false, provider: "disabled", model: "", external_ai_forwarding: false,
   });
@@ -94,8 +124,24 @@ beforeEach(() => {
   vi.mocked(api.startApplicationWorkspace).mockResolvedValue({
     created: true, workspace: { workspace_id: "kit-" + "a".repeat(30) },
   } as never);
+  vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValue({
+    status: "prepared", checked: 1, eligible: 1, created: 1, already_prepared: 0,
+    stopped_on_opt_out: false, provider_calls: 0,
+    employer_actions_performed: false, automatic_submission_authorized: false,
+  });
 });
 afterEach(() => cleanup());
+
+function switchableSession() {
+  let account = "a";
+  vi.mocked(api.getSession).mockImplementation(async () => ({
+    authenticated: true, email: "shared@smartploy.invalid",
+    user_id: "usr-account-" + account,
+    profile_id: "profile-account-" + account,
+    auth_source: "fixture",
+  }));
+  return () => { account = "b"; };
+}
 
 describe("actual SmartPloy App first-use and application handoff", () => {
   it("renders the first-use chooser even if optional AI status never returns", async () => {
@@ -108,6 +154,36 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(vi.mocked(api.getSearchResults)).toHaveBeenCalled();
   });
 
+  it("offers deliberate sign-out to OIDC users without logging out from navigation", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getSession).mockResolvedValue({
+      authenticated: true, email: "oidc@example.invalid",
+      user_id: "usr-oidc-synthetic", profile_id: "profile-oidc-synthetic",
+      auth_source: "oidc",
+    });
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const signOut = await screen.findByRole("link", { name: /Sign out securely/i });
+    expect(signOut.getAttribute("href")).toBe("/auth/logout");
+    // Navigation to GET only displays a confirmation; no client-side
+    // automatic logout fetch or redirect to an unsafe external origin.
+    expect(vi.mocked(api.getSession)).toHaveBeenCalled();
+  });
+
+  it("does not offer an OIDC logout action for Cloudflare-only sessions", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getSession).mockResolvedValue({
+      authenticated: true, email: "access@example.invalid",
+      user_id: "usr-cf-synthetic", profile_id: "profile-cf-synthetic",
+      auth_source: "cloudflare_access",
+    });
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.queryByRole("link", { name: /Sign out securely/i })).toBeNull();
+  });
+
   it("supports general browsing and opens an application without personalized criteria", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("radio", { name: /general job search/i }));
@@ -117,7 +193,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByText(/90% search match/i)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /prepare documents/i }));
-    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledWith("test-analyst"));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledWith("test-analyst", "usr-synthetic-1"));
     expect(await screen.findByTestId("application-editor")).toBeTruthy();
     expect(screen.getByTestId("application-editor").getAttribute("data-workspace")).toMatch(/^kit-/);
   });
@@ -139,7 +215,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect((screen.getByRole("radio", { name: /general job search/i }) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /browse all jobs/i }));
     await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: "general", expected_revision: 0 })
+      expect.objectContaining({ mode: "general", expected_revision: 0 }), "usr-synthetic-1"
     ));
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     expect(screen.queryByText(/90% search match/i)).toBeNull();
@@ -163,6 +239,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
     fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
     expect(screen.getByRole("button", { name: /saving/i }).hasAttribute("disabled")).toBe(true);
+    await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledTimes(1));
 
     const dashboardReadsBefore = vi.mocked(api.getDashboard).mock.calls.length;
     const preferencesReadsBefore = vi.mocked(api.getSearchPreferences).mock.calls.length;
@@ -246,6 +323,91 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(currentPrefs.mode).toBe("personalized");
   });
 
+  it("does not send preference changes when the current session cannot be verified", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1,
+    };
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
+    vi.mocked(api.getSession).mockRejectedValueOnce(new Error("Synthetic authentication expiry"));
+    fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
+
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.getByText(/signed-in account changed or could not be verified/i)).toBeTruthy();
+    expect(api.updateSearchPreferences).not.toHaveBeenCalled();
+    expect(currentPrefs.mode).toBe("personalized");
+  });
+
+  it("fails closed when a different account takes over during a preference PUT", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1,
+    };
+    let currentUser = "usr-account-a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@smartploy.invalid",
+      user_id: currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture",
+    }));
+    let finishSave: (value: SearchPreferences) => void = () => {
+      throw new Error("Expected pending save");
+    };
+    vi.mocked(api.updateSearchPreferences).mockImplementationOnce(() =>
+      new Promise<SearchPreferences>((resolve) => { finishSave = resolve; })
+    );
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
+    await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledTimes(1));
+    currentUser = "usr-account-b";
+    await act(async () => {
+      finishSave({
+        ...currentPrefs, mode: "general", revision: 2,
+        updated_at: "2026-10-12T08:00:00Z",
+      });
+    });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.getByText(/signed-in account changed or could not be verified/i)).toBeTruthy();
+    expect(screen.queryByText(/90% search match/i)).toBeNull();
+    expect(api.getSearchResults).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+  });
+
+  it("does not publish stale discovery when identity flips after the preference PUT", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1,
+    };
+    let currentUser = "usr-account-a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@smartploy.invalid",
+      user_id: currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture",
+    }));
+    let finishResults: (value: SearchResults) => void = () => {
+      throw new Error("Expected pending results");
+    };
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    vi.mocked(api.getSearchResults).mockImplementationOnce(() =>
+      new Promise<SearchResults>((resolve) => { finishResults = resolve; })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
+    await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledTimes(1));
+    currentUser = "usr-account-b";
+    await act(async () => { finishResults(general); });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByText(/1 current job listings/i)).toBeNull();
+  });
+
   it("saves new personalized settings and transparently changes ranked results", async () => {
     render(<App />);
     fireEvent.change(await screen.findByPlaceholderText(/Data analyst, Junior software tester/), {
@@ -262,6 +424,282 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     await waitFor(() => expect(currentPrefs.mode).toBe("general"));
     expect(await screen.findByText(/1 current job listings/i)).toBeTruthy();
     expect(screen.queryByText(/90% search match/i)).toBeNull();
+  });
+
+  it("discards an old CV upload response after the account changes", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    const switchToB = switchableSession();
+    let complete: (value: Awaited<ReturnType<typeof api.uploadCV>>) => void = () => {
+      throw new Error("Upload did not start");
+    };
+    vi.mocked(api.uploadCV).mockImplementationOnce(() =>
+      new Promise(resolve => { complete = resolve; })
+    );
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), { target: {
+      files: [new File(["synthetic"], "PRIVATE-ACCOUNT-A.pdf", { type: "application/pdf" })],
+    } });
+    await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
+    switchToB();
+    await act(async () => {
+      complete({ present: true, filename: "PRIVATE-ACCOUNT-A.pdf",
+        text_preview: "ACCOUNT-A-PRIVATE-CV-TEXT" });
+    });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByText("PRIVATE-ACCOUNT-A.pdf")).toBeNull();
+    expect(screen.getByText(/could not be verified during a private action/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    expect(screen.queryByText("PRIVATE-ACCOUNT-A.pdf")).toBeNull();
+  });
+
+  it("does not open a delayed account A application workspace for account B", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    const switchToB = switchableSession();
+    let complete: (value: Awaited<ReturnType<typeof api.startApplicationWorkspace>>) => void = () => {
+      throw new Error("Workspace did not start");
+    };
+    vi.mocked(api.startApplicationWorkspace).mockImplementationOnce(() =>
+      new Promise(resolve => { complete = resolve; })
+    );
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /prepare documents/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
+    switchToB();
+    await act(async () => {
+      complete({ workspace: { workspace_id: "PRIVATE-A-DRAFT" }, created: true } as never);
+    });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "My applications" }));
+    expect((await screen.findByTestId("application-editor")).getAttribute("data-workspace")).toBe("");
+  });
+
+  it("clears an old-account fact entry when a save finishes after account switching", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    const switchToB = switchableSession();
+    let complete: (value: Awaited<ReturnType<typeof api.createFact>>) => void = () => {
+      throw new Error("Fact save did not start");
+    };
+    vi.mocked(api.createFact).mockImplementationOnce(() =>
+      new Promise(resolve => { complete = resolve; })
+    );
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    fireEvent.change(screen.getByPlaceholderText(/Python, Finnish B2, data analytics/i), {
+      target: { value: "PRIVATE-ACCOUNT-A-FACT" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save for review" }));
+    await waitFor(() => expect(api.createFact).toHaveBeenCalledTimes(1));
+    switchToB();
+    await act(async () => { complete({ fact: { value: "PRIVATE-ACCOUNT-A-FACT" } } as never); });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByText("PRIVATE-ACCOUNT-A-FACT")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    expect((screen.getByPlaceholderText(/Python, Finnish B2, data analytics/i) as HTMLInputElement).value).toBe("");
+  });
+
+
+  it("shows a CV and private saved job even if the optional local AI endpoint never replies", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getLocalAIStatus).mockImplementation(
+      () => new Promise(() => { /* synthetic non-responding local model */ })
+    );
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "SYNTHETIC-READY-CV.pdf",
+      size_bytes: 1024, text_preview: "Synthetic CV contents",
+    } as never);
+    personalJobs = [{
+      saved_job_id: "fixture-saved-1", created_at: "2026-10-17T08:00:00Z",
+      company: "Fictional Employer Oy", role_title: "Private saved QA opportunity",
+      location: "Helsinki", description: "Testing only",
+      application_url: "https://jobs.example.fi/qa",
+      private: true, employer_availability_verified: false,
+      external_actions_authorized: false,
+    }];
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    expect((await screen.findAllByText("SYNTHETIC-READY-CV.pdf")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(await screen.findByText("Private saved QA opportunity")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Check posting/ }).getAttribute("href"))
+      .toBe("https://jobs.example.fi/qa");
+  });
+
+  it("does not show an executable posting link from untrusted private bookmark data", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    personalJobs = [{
+      saved_job_id: "fixture-unsafe-1", created_at: "2026-10-17T08:00:00Z",
+      company: "Fictional Employer Oy", role_title: "Untrusted saved job",
+      location: "Helsinki", description: "Testing only",
+      application_url: "javascript:alert('synthetic')",
+      private: true, employer_availability_verified: false,
+      external_actions_authorized: false,
+    }];
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(await screen.findByText("Untrusted saved job")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Check posting/ })).toBeNull();
+    expect(screen.getByText("Posting link unavailable")).toBeTruthy();
+  });
+
+  it("discards an old account's delayed optional AI status after a newer workspace refresh", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    const switchToB = switchableSession();
+    let finishOld: (value: Awaited<ReturnType<typeof api.getLocalAIStatus>>) => void = () => {
+      throw new Error("First optional status never started");
+    };
+    vi.mocked(api.getLocalAIStatus).mockImplementationOnce(() =>
+      new Promise(resolve => { finishOld = resolve; })
+    );
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    await waitFor(() => expect(api.getLocalAIStatus).toHaveBeenCalledTimes(1));
+    switchToB();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    await waitFor(() => expect(api.getLocalAIStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh workspace" }).hasAttribute("disabled")).toBe(false)
+    );
+    fireEvent.click(screen.getByRole("button", { name: "AI tools" }));
+    expect(await screen.findByText(/ObumAI service integration is not configured/i)).toBeTruthy();
+    await act(async () => {
+      finishOld({
+        configured: true, ready: true, provider: "local_obumai_ollama",
+        model: "SYNTHETIC-A-ONLY-MODEL", external_ai_forwarding: false,
+      });
+    });
+    expect(screen.getByText(/ObumAI service integration is not configured/i)).toBeTruthy();
+  });
+
+  it("saves a job privately, shows it separately, and removes it without shared ingestion", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(screen.getByRole("heading", { name: "Your saved opportunities" })).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save job" })[0]);
+    fireEvent.change(screen.getByPlaceholderText("e.g. Junior Data Analyst"), {
+      target: { value: "Private UX Researcher" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Employer name"), {
+      target: { value: "Fictional Studio Oy" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Paste the responsibilities and key requirements here."), {
+      target: { value: "Design private research studies" },
+    });
+    const form = screen.getByRole("dialog").querySelector("form");
+    if (!form) throw new Error("Private bookmark form missing");
+    fireEvent.submit(form);
+
+    expect(await screen.findByText("Private UX Researcher")).toBeTruthy();
+    expect(api.addManualJob).toHaveBeenCalledWith(expect.objectContaining({
+      role_title: "Private UX Researcher", company: "Fictional Studio Oy",
+    }), "usr-synthetic-1");
+    expect(personalJobs).toHaveLength(1);
+    expect(personalJobs[0].private).toBe(true);
+    expect(screen.getByText(/Private bookmarks, not employer-verified/i)).toBeTruthy();
+    expect(screen.queryByText(/87% search match/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove saved job Private UX Researcher" }));
+    await waitFor(() => expect(api.deletePrivateSavedJob).toHaveBeenCalledWith(
+      "saved-synthetic-1", "usr-synthetic-1"
+    ));
+    await waitFor(() => expect(screen.queryByText("Private UX Researcher")).toBeNull());
+    expect(personalJobs).toHaveLength(0);
+  });
+
+  it("does not show an old-account saved-job success notice after refresh changes account", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    let currentUser = "a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@example.invalid",
+      user_id: "user-" + currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture",
+    }));
+    vi.mocked(api.getPrivateSavedJobs).mockImplementation(async () => ({
+      jobs: currentUser === "a" ? [...personalJobs] : [],
+      count: currentUser === "a" ? personalJobs.length : 0, private: true,
+    }));
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    const originalReads = vi.mocked(api.getSearchPreferences).mock.calls.length;
+
+    let finishReload: (value: SearchPreferences) => void = () => {
+      throw new Error("Expected pending search-preference read");
+    };
+    vi.mocked(api.getSearchPreferences).mockImplementationOnce(() =>
+      new Promise<SearchPreferences>((resolve) => { finishReload = resolve; })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Save job" })[0]);
+    fireEvent.change(screen.getByPlaceholderText("e.g. Junior Data Analyst"), {
+      target: { value: "PRIVATE-ACCOUNT-A-JOB" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Employer name"), {
+      target: { value: "Synthetic Studio" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Paste the responsibilities and key requirements here."), {
+      target: { value: "Private fictional work only" },
+    });
+    const form = screen.getByRole("dialog").querySelector("form");
+    if (!form) throw new Error("Bookmark modal missing");
+    fireEvent.submit(form);
+    await waitFor(() => expect(api.getSearchPreferences).toHaveBeenCalledTimes(
+      originalReads + 1
+    ));
+    currentUser = "b";
+    await act(async () => { finishReload({ ...currentPrefs }); });
+
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    expect(screen.queryByText(/Job saved privately to your account/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(screen.queryByText("PRIVATE-ACCOUNT-A-JOB")).toBeNull();
+    expect(screen.getByText(/No private saved jobs yet/i)).toBeTruthy();
+  });
+
+  it("clears private saved jobs when same-email account identity changes", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    const accountA: PrivateSavedJob = {
+      saved_job_id: "saved-a", company: "Example A", role_title: "SECRET-A-BOOKMARK",
+      location: "Helsinki", description: "A only", application_url: "",
+      created_at: "2026-10-12T10:00:00Z", private: true,
+      employer_availability_verified: false, external_actions_authorized: false,
+    };
+    let currentUser = "a";
+    vi.mocked(api.getSession).mockImplementation(async () => ({
+      authenticated: true, email: "shared@example.invalid",
+      user_id: "user-" + currentUser, profile_id: "profile-" + currentUser,
+      auth_source: "fixture",
+    }));
+    vi.mocked(api.getPrivateSavedJobs).mockImplementation(async () => ({
+      jobs: currentUser === "a" ? [accountA] : [],
+      count: currentUser === "a" ? 1 : 0, private: true,
+    }));
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(await screen.findByText("SECRET-A-BOOKMARK")).toBeTruthy();
+
+    currentUser = "b";
+    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+    await waitFor(() => expect(screen.queryByText("SECRET-A-BOOKMARK")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(screen.getByText(/No private saved jobs yet/i)).toBeTruthy();
+    expect(screen.queryByText("SECRET-A-BOOKMARK")).toBeNull();
   });
 
   it("clears same-email account A's private CV and facts before showing account B", async () => {
@@ -400,6 +838,75 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.getByText("Session expired")).toBeTruthy();
   });
 
+
+  it("requires explicit per-job consent in Settings and supports account-bound withdrawal", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getJobs).mockResolvedValue({
+      jobs: [{
+        canonical_key: "test-analyst", source_current: true,
+        source_ids: ["test-ats"], posted_at: "2026-10-11T10:00:00Z",
+        first_seen_at: "2026-10-11T10:00:00Z", job: listing.job,
+      }], count: 1,
+    });
+    const consents: Array<import("./types").JobAIProcessingConsent> = [];
+    vi.mocked(api.getJobAIConsents).mockImplementation(async () => ({
+      consents: [...consents], count: consents.length, private: true,
+      unattended_processing_enabled: false,
+    }));
+    vi.mocked(api.grantJobAIConsent).mockImplementation(async (key, userId) => {
+      expect(key).toBe("test-analyst");
+      expect(userId).toBe("usr-synthetic-1");
+      const item: import("./types").JobAIProcessingConsent = {
+        consent_id: "consent-fixture", canonical_key: key, processor: "obumai",
+        purpose: "application_draft", mode: "unattended",
+        job_snapshot_sha256: "a".repeat(64), evidence_sha256: "b".repeat(64),
+        revision: 1, granted_at: "2026-10-17T10:00:00Z", revoked_at: "",
+        active: true, processing_started: false,
+        employer_actions_authorized: false,
+      };
+      consents.push(item);
+      return { consent: item, created_or_updated: true,
+        processing_started: false, external_actions_authorized: false };
+    });
+    vi.mocked(api.revokeJobAIConsent).mockImplementation(async (id, userId) => {
+      expect(id).toBe("consent-fixture");
+      expect(userId).toBe("usr-synthetic-1");
+      const revoked = { ...consents[0], revision: 2, active: false,
+        revoked_at: "2026-10-17T10:05:00Z" };
+      consents[0] = revoked;
+      return { consent: revoked, revoked: true };
+    });
+
+    render(<App />);
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const jobOption = await screen.findByRole("option", {
+      name: /Junior Data Analyst — Example Oy/i,
+    });
+    const jobSelect = screen.getByRole("combobox", {
+      name: /choose a currently approved job/i,
+    });
+    fireEvent.change(jobSelect, { target: { value: (jobOption as HTMLOptionElement).value } });
+    const savePermission = screen.getByRole("button", {
+      name: /save job-specific permission/i,
+    }) as HTMLButtonElement;
+    expect(savePermission.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: /i explicitly allow obumai/i }));
+    fireEvent.click(savePermission);
+    await waitFor(() => expect(api.grantJobAIConsent).toHaveBeenCalledWith(
+      "test-analyst", "usr-synthetic-1",
+    ));
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: /withdraw permission/i,
+    })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /withdraw permission/i }));
+    await waitFor(() => expect(api.revokeJobAIConsent).toHaveBeenCalledWith(
+      "consent-fixture", "usr-synthetic-1",
+    ));
+    await waitFor(() => expect(screen.getByText("Withdrawn")).toBeTruthy());
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
   it("isolates a failed optional profile API without locking out jobs", async () => {
     currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
     vi.mocked(api.getProfileFacts).mockRejectedValue(new Error("profile temporarily unavailable"));
@@ -408,5 +915,303 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /prepare documents/i })).toBeTruthy();
+  });
+});
+
+
+describe("first opt-in creates private IT applications immediately", () => {
+  const openOptIn = async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /Use nationwide junior IT & planning targets/i }));
+    fireEvent.click(screen.getByRole("checkbox", {
+      name: /Automatically prepare suitable job drafts/i,
+    }));
+    fireEvent.click(screen.getByRole("button", { name: /Show my matched jobs/i }));
+  };
+
+
+  it("runs the existing private draft scan immediately when an opted-in role changes", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByPlaceholderText(/Data analyst, Junior software tester/i), {
+      target: { value: "Junior Software Tester" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save search preferences/i }));
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
+    expect(api.prepareMyMatchingDrafts).toHaveBeenCalledWith("usr-synthetic-1");
+    expect(currentPrefs.roles).toEqual(["Junior Software Tester"]);
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("never starts an automatic draft after saving search settings without opt-in", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: false,
+    };
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByPlaceholderText(/Data analyst, Junior software tester/i), {
+      target: { value: "Junior Software Tester" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save search preferences/i }));
+    await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Your search targets were saved/i)).toBeTruthy();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+  });
+
+  it("prepares matched drafts as soon as the user approves an existing career fact", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    const fact = {
+      fact_id: "synthetic-fact-1", fact_type: "skill", value: "SQL",
+      approved: false,
+    };
+    vi.mocked(api.getProfileFacts).mockImplementation(async () => ({
+      facts: [{ ...fact }], count: 1,
+    } as never));
+    vi.mocked(api.approveFact).mockImplementation(async (_id, approved) => {
+      fact.approved = approved;
+      return { ...fact } as never;
+    });
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    expect(await screen.findByText("SQL")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(api.approveFact).toHaveBeenCalledWith(
+      "synthetic-fact-1", true, "usr-synthetic-1"
+    ));
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
+    expect(api.prepareMyMatchingDrafts).toHaveBeenCalledWith("usr-synthetic-1");
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(screen.getByText(/new matched IT application draft/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("prepares on newly approved evidence, never on unapproved evidence", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    const facts: Array<{fact_id:string;fact_type:string;value:string;approved:boolean}> = [];
+    vi.mocked(api.getProfileFacts).mockImplementation(async () => ({
+      facts: [...facts], count: facts.length,
+    } as never));
+    vi.mocked(api.createFact).mockImplementation(async (type, value, approved) => {
+      const item = {
+        fact_id: "fact-" + (facts.length + 1),
+        fact_type: type, value, approved,
+      };
+      facts.push(item);
+      return item as never;
+    });
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\. Python, Finnish B2/i), {
+      target: { value: "SQL" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save for review" }));
+    await waitFor(() => expect(api.createFact).toHaveBeenCalledTimes(1));
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\. Python, Finnish B2/i), {
+      target: { value: "Python" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: /I confirm this information is accurate/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Save approved fact" }));
+    await waitFor(() => expect(api.createFact).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+
+  it("resumes AutoApply after a CV upload only with pre-approved facts", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    vi.mocked(api.getProfileFacts).mockResolvedValue({
+      facts: [{
+        fact_id: "approved-skill-1", fact_type: "skill", value: "Python",
+        approved: true, source: "user-entered", confidence: 1,
+        created_at: "2026-10-20T10:00:00Z",
+      }], count: 1,
+    });
+    const updatedCV = { present: true, filename: "synthetic-CV.pdf",
+      size_bytes: 128, text_preview: "The user's CV for review" };
+    vi.mocked(api.uploadCV).mockResolvedValue(updatedCV);
+    vi.mocked(api.getCV).mockResolvedValue(updatedCV);
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), {
+      target: { files: [new File(["fictional PDF"], "synthetic-CV.pdf", {
+        type: "application/pdf",
+      })] },
+    });
+    await waitFor(() => expect(api.uploadCV).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "synthetic-CV.pdf" }), "usr-synthetic-1"
+    ));
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("never mistakes uploading an unreviewed CV for approval to AutoApply", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    const updatedCV = { present: true, filename: "unreviewed-CV.pdf",
+      size_bytes: 128, text_preview: "Unapproved content only" };
+    vi.mocked(api.uploadCV).mockResolvedValue(updatedCV);
+    vi.mocked(api.getCV).mockResolvedValue(updatedCV);
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), {
+      target: { files: [new File(["fictional PDF"], "unreviewed-CV.pdf", {
+        type: "application/pdf",
+      })] },
+    });
+    await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Your CV was uploaded privately/i)).toBeTruthy();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+
+  it("connects saved opt-in to the existing private draft engine with no second click", async () => {
+    await openOptIn();
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledWith(
+      "usr-synthetic-1"
+    ));
+    expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(screen.getByText(/matched IT application draft\(s\) prepared privately/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.grantJobAIConsent).not.toHaveBeenCalled();
+  });
+
+  it("keeps the saved preference and directs users without approved facts to their profile", async () => {
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "needs_approved_profile", checked: 0, eligible: 0, created: 0,
+      already_prepared: 0, stopped_on_opt_out: false, provider_calls: 0,
+      employer_actions_performed: false, automatic_submission_authorized: false,
+    });
+    await openOptIn();
+    expect(await screen.findByText(/Approve your career facts to prepare your first applications/i)).toBeTruthy();
+    expect(currentPrefs.auto_draft_enabled).toBe(true);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+
+  it("saves opt-in even if the immediate scan fails, without pretending drafts exist", async () => {
+    vi.mocked(api.prepareMyMatchingDrafts).mockRejectedValueOnce(new Error("PRIVATE-DATABASE-ERROR"));
+    await openOptIn();
+    expect(await screen.findByText(/first draft scan could not finish/i)).toBeTruthy();
+    expect(screen.queryByText(/PRIVATE-DATABASE-ERROR/i)).toBeNull();
+    expect(currentPrefs.auto_draft_enabled).toBe(true);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+
+  it("never creates an application from a stale ATS cache on first opt-in", async () => {
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "needs_source_refresh", checked: 1, eligible: 0,
+      created: 0, already_prepared: 0, stale_skipped: 1,
+      stopped_on_opt_out: false, provider_calls: 0,
+      employer_actions_performed: false, automatic_submission_authorized: false,
+    });
+    await openOptIn();
+    expect(await screen.findByText(/have not been checked recently/i)).toBeTruthy();
+    expect(currentPrefs.auto_draft_enabled).toBe(true);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("allows direct rescan only after newly verified source data is available", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "needs_source_refresh", checked: 1, eligible: 0,
+      created: 0, already_prepared: 0, stale_skipped: 1,
+      stopped_on_opt_out: false, provider_calls: 0,
+      employer_actions_performed: false, automatic_submission_authorized: false,
+    });
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {
+      name: /Find and prepare matching drafts now/i,
+    }));
+    expect(await screen.findByText(/source worker must refresh those postings/i)).toBeTruthy();
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1);
+  });
+
+  it("never presents manual or unknown-source jobs as automatically prepared", async () => {
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "needs_trusted_source", checked: 1, eligible: 0,
+      created: 0, already_prepared: 0, stale_skipped: 0,
+      unverified_source_skipped: 1,
+      stopped_on_opt_out: false, provider_calls: 0,
+      employer_actions_performed: false, automatic_submission_authorized: false,
+    });
+    await openOptIn();
+    expect(await screen.findByText(/manual or unverified sources/i)).toBeTruthy();
+    expect(currentPrefs.auto_draft_enabled).toBe(true);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("gives specific source-approval guidance on manual rescan", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "needs_trusted_source", checked: 1, eligible: 0,
+      created: 0, already_prepared: 0, stale_skipped: 0,
+      unverified_source_skipped: 1,
+      stopped_on_opt_out: false, provider_calls: 0,
+      employer_actions_performed: false, automatic_submission_authorized: false,
+    });
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {
+      name: /Find and prepare matching drafts now/i,
+    }));
+    expect(await screen.findByText(/Automatic drafts require a recently refreshed, reviewed employer/i)).toBeTruthy();
+    expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+
+  it("discards an old account's in-flight first scan after session switch", async () => {
+    const switchToB = switchableSession();
+    let finish: (value: Awaited<ReturnType<typeof api.prepareMyMatchingDrafts>>) => void =
+      () => { throw new Error("Expected a pending first scan"); };
+    vi.mocked(api.prepareMyMatchingDrafts).mockImplementationOnce(
+      () => new Promise(resolve => { finish = resolve; })
+    );
+    await openOptIn();
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
+    switchToB();
+    await act(async () => {
+      finish({
+        status: "prepared", checked: 1, eligible: 1, created: 1,
+        already_prepared: 0, stopped_on_opt_out: false, provider_calls: 0,
+        employer_actions_performed: false, automatic_submission_authorized: false,
+      });
+    });
+    expect(await screen.findByRole("heading", { name: /SmartPloy isn't available/i })).toBeTruthy();
+    expect(screen.queryByText(/matched IT application draft\(s\)/i)).toBeNull();
+    expect(screen.queryByTestId("application-editor")).toBeNull();
   });
 });

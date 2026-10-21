@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import re
 from typing import Any, Mapping, Sequence
 
+from .career_scope import career_area, title_experience
 from .domain import JobCandidate, utc_now_iso
 
 SEARCH_MODES = frozenset({"personalized", "general"})
@@ -19,9 +20,14 @@ WORK_MODE_OPTIONS = frozenset({"remote", "hybrid", "onsite"})
 # Conservative bilingual title pairs, not a generic translation or qualification engine.
 ROLE_EQUIVALENTS = (
     ("data analyst", "data-analyytikko"),
+    ("data engineer", "data-insinööri"),
+    ("data engineer", "datainsinööri"),
     ("business analyst", "liiketoiminta-analyytikko"),
     ("software tester", "ohjelmistotestaaja"),
+    ("software developer", "ohjelmistokehittäjä"),
+    ("it support specialist", "it-tukihenkilö"),
     ("project coordinator", "projektikoordinaattori"),
+    ("project planner", "projektisuunnittelija"),
 )
 LANGUAGE_LABELS = {
     "english": frozenset({"english", "englanti", "englanninkielinen", "englanniksi", "en"}),
@@ -82,6 +88,7 @@ class SearchPreferences:
     keywords: tuple[str, ...] = ()
     skills: tuple[str, ...] = ()
     seniority: str = "any"
+    auto_draft_enabled: bool = False
     revision: int = 0
     updated_at: str = ""
 
@@ -92,6 +99,8 @@ class SearchPreferences:
             "languages": list(self.languages), "work_modes": list(self.work_modes),
             "keywords": list(self.keywords), "skills": list(self.skills),
             "seniority": self.seniority,
+            "auto_draft_enabled": self.auto_draft_enabled,
+            "auto_draft_external_actions_authorized": False,
             "revision": self.revision, "updated_at": self.updated_at,
             "verified_qualification_fit": False,
         }
@@ -116,12 +125,20 @@ def revise_preferences(
     skills = _items(data.get("skills", []), field="skills", maximum=16, size=60)
     if mode == "personalized" and not roles and not keywords:
         raise SearchPreferenceError("Personalized search needs at least one job title or keyword")
+    auto_draft = data.get("auto_draft_enabled", False)
+    if type(auto_draft) is not bool:
+        raise SearchPreferenceError("Automatic draft preparation requires an explicit boolean choice")
+    if auto_draft and mode != "personalized":
+        raise SearchPreferenceError("Automatic drafts require personalized role targets")
+    if auto_draft and not roles:
+        raise SearchPreferenceError("Automatic drafts require explicit target job roles")
     if revision < 0:
         raise SearchPreferenceError("Preference revision cannot be negative")
     return SearchPreferences(
         profile_id=profile_id, completed=True, mode=mode, roles=roles,
         locations=locations, languages=languages, work_modes=work_modes,
         keywords=keywords, skills=skills, seniority=seniority,
+        auto_draft_enabled=auto_draft,
         revision=revision + 1, updated_at=utc_now_iso(),
     )
 
@@ -156,7 +173,17 @@ def _role_alignment(title: str, roles: tuple[str, ...]) -> tuple[float, str]:
         overlap = len(title_words & wanted) / len(wanted) if wanted else 0.0
         # A target such as "AI" must not match "Paid". Whole-phrase matching
         # also retains punctuation-only tokens like "C++" and title separators.
-        if _mentions_phrase(title, term) or _translated_role_match(title, term):
+        # The Finnish base profession "suunnittelija" is commonly
+        # published as a compound ("hankesuunnittelija",
+        # "projektisuunnittelija"). The user explicitly selected this
+        # broad title, so accept the complete *title token* only, never
+        # a job-description occurrence or a manager-level inference.
+        planning_compound = (
+            term.strip().casefold() == "suunnittelija"
+            and re.search(r"(?<!\w)[a-zåäö]*suunnittelij[a-zåäö]*(?!\w)", title.casefold())
+            is not None
+        )
+        if _mentions_phrase(title, term) or _translated_role_match(title, term) or planning_compound:
             overlap = 1.0
         if overlap > strongest[0]:
             strongest = overlap, term
@@ -224,6 +251,10 @@ def _job_card(candidate: JobCandidate) -> dict[str, Any]:
     job = candidate.job
     return {
         "company": job.company, "role_title": job.role_title,
+        # Browse categories reflect the published title only. They are
+        # not qualification/experience or employer-permission claims.
+        "career_area": career_area(job.role_title),
+        "title_experience": title_experience(job.role_title),
         "location": job.location, "work_mode": job.work_mode,
         "language": job.language, "deadline": job.deadline,
         "application_url": job.application_url,
@@ -343,6 +374,18 @@ def _alignment(
     # is too weak for the recommendation lane. Show weak overlaps in Explore.
     primary = (role_fraction >= 0.75 if pref.roles else False) or bool(matched_keywords)
     primary = bool(primary and not explicit_seniority_conflict)
+    # An ad for a driver may mention Python, data or apps in its BODY.
+    # Such an incidental keyword must not promote the unrelated title
+    # when the user's explicit role targets are IT / planning roles.
+    # Preserve it in Explore more, and respect searches that explicitly
+    # target careers outside IT / planning.
+    focused_target = any(
+        career_area(role) != "other" for role in pref.roles
+    )
+    if focused_target and career_area(job.role_title) == "other":
+        primary = False
+        if matched_keywords:
+            mismatches.append("Job title is outside your IT or planning career targets")
     return max(0, min(100, score)), reasons, unknown, mismatches, primary
 
 def _published_order(candidate: JobCandidate) -> tuple[float, float, str]:

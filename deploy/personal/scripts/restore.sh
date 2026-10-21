@@ -11,7 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${COMPOSE_DIR}/../.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/env"
-POLICY_FILE="${COMPOSE_DIR}/runtime.production.env"
+POLICY_FILE="$(bash "${SCRIPT_DIR}/select-runtime-policy.sh")"
+IDENTITY_PROFILE="${SMARTPLOY_PRODUCTION_IDENTITY_MODE:-cloudflare}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Missing ${ENV_FILE}. Copy env.example to env and add production values." >&2
@@ -33,6 +34,14 @@ WEB_PORT="${WEB_PORT:-8091}"
 if [[ ! "${WEB_PORT}" =~ ^[0-9]+$ ]] || (( WEB_PORT < 1024 || WEB_PORT > 65535 )); then
   echo "SMARTPLOY_WEB_HOST_PORT must be an integer between 1024 and 65535." >&2
   exit 1
+fi
+
+if [[ -f "${STATE_DIR}/deployed-auth-profile" ]]; then
+  DEPLOYED_IDENTITY_PROFILE="$(tr -d '[:space:]' < "${STATE_DIR}/deployed-auth-profile")"
+  if [[ "${DEPLOYED_IDENTITY_PROFILE}" != "${IDENTITY_PROFILE}" ]]; then
+    echo "Deployed identity profile differs from selected rollback/release profile" >&2
+    exit 1
+  fi
 fi
 
 # A restore must keep the previously deployed application image identity.
@@ -108,6 +117,10 @@ if [[ -f "${META_FILE}" && ! -L "${META_FILE}" ]]; then
 fi
 
 bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "${POLICY_FILE}"
+# Reuse the immutable, validated identity policy as the ONLY allowed Host,
+# for both legacy rollback and the Komplyint first-party OIDC release.
+PRODUCTION_ORIGIN="$(sed -n 's/^SMARTPLOY_PUBLIC_ORIGIN=//p' "${POLICY_FILE}")"
+PRODUCTION_HOST="${PRODUCTION_ORIGIN#https://}"
 
 COMPOSE=(
   docker compose
@@ -148,8 +161,8 @@ trap cleanup EXIT
 
 HEALTH_OK=false
 for _ in $(seq 1 45); do
-  if curl --fail --silent --show-error     -H 'Host: smartploy.obumai.com'     "http://127.0.0.1:${WEB_PORT}/healthz" > "${HEALTH_FILE}"; then
-    if python3 - "${HEALTH_FILE}" <<'PY'
+  if curl --fail --silent --show-error     -H "Host: ${PRODUCTION_HOST}"     "http://127.0.0.1:${WEB_PORT}/healthz" > "${HEALTH_FILE}"; then
+    if python3 - "${HEALTH_FILE}" "${IDENTITY_PROFILE}" "${PRODUCTION_ORIGIN}" <<'PY'
 import json
 import sys
 
@@ -158,11 +171,15 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 
 assert health["ok"] is True
 assert health["service"] == "smartploy"
-assert health["public_origin"] == "https://smartploy.obumai.com"
+assert health["public_origin"] == sys.argv[3]
 assert health["storage"]["ready"] is True
-assert health["access"]["enabled"] is True
 assert health["access"]["environment"] == "production"
-assert health["access"]["owner_restricted"] is True
+if sys.argv[2] == "oidc":
+    assert health["access"]["enabled"] is False
+else:
+    assert sys.argv[2] == "cloudflare"
+    assert health["access"]["enabled"] is True
+    assert health["access"]["owner_restricted"] is True
 assert health["external_actions_authorized"] is False
 PY
     then

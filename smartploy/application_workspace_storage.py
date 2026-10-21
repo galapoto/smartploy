@@ -148,29 +148,72 @@ class PostgresWorkspaceRepository:
             raise RuntimeError("Unable to retrieve application workspace after creation")
         return self._row(row), created
 
+    @staticmethod
+    def _lock_claim_free_draft(
+        cur, profile_id: str, workspace_id: str, expected_revision: int,
+        *, allow_self_reported: bool = False,
+    ) -> bool:
+        """Share the original locked workspace and SP15a sticky claim boundary.
+
+        Perform the claim lookup AFTER the row lock, in a new statement, to
+        prevent a concurrent provider attempt committing between a stale
+        READ COMMITTED statement snapshot and a manual edit/report update.
+        """
+        cur.execute(
+            """SELECT revision,status,canonical_key
+               FROM smartploy_application_workspaces
+               WHERE profile_id=%s AND workspace_id=%s FOR UPDATE""",
+            (profile_id,workspace_id),
+        )
+        row=cur.fetchone()
+        if row is None:
+            return False
+        if allow_self_reported and row[1]=="self_reported_applied":
+            return False
+        if int(row[0])!=expected_revision or row[1]!="draft":
+            raise WorkspaceRevisionConflict(
+                "The application is no longer an editable draft at this revision"
+            )
+        cur.execute(
+            """SELECT 1 FROM smartploy_employer_submit_claims
+               WHERE profile_id=%s AND (workspace_id=%s OR canonical_key=%s)
+               LIMIT 1""",
+            (profile_id,workspace_id,str(row[2])),
+        )
+        if cur.fetchone():
+            raise WorkspaceRevisionConflict(
+                "An employer submission attempt is reserved. Do not edit or re-report."
+            )
+        return True
+
     def edit(self, profile_id: str, workspace_id: str, *,
              expected_revision: int, cv_text: str, cover_letter_text: str) -> ApplicationWorkspace | None:
-        # Validate user text before opening a transaction; revision is checked atomically.
+        # Reuse the original optimistic revision check, now serialized with
+        # the existing employer claim row lock. No duplicate lifecycle.
         from .application_workspace import _clean_text, MAX_CV_CHARACTERS, MAX_LETTER_CHARACTERS
         cv = _clean_text(cv_text, limit=MAX_CV_CHARACTERS, label="CV")
         letter = _clean_text(cover_letter_text, limit=MAX_LETTER_CHARACTERS, label="Cover letter")
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """UPDATE smartploy_application_workspaces
-                       SET cv_text = %s, cover_letter_text = %s,
-                           revision = revision + 1, updated_at = now()
-                       WHERE profile_id = %s AND workspace_id = %s
-                             AND revision = %s AND status = 'draft'
-                       RETURNING workspace_id""",
-                    (cv, letter, profile_id, workspace_id, expected_revision),
-                )
-                ok = cur.fetchone() is not None
-        if ok:
-            return self.get(profile_id, workspace_id)
-        current = self.get(profile_id, workspace_id)
+                editable=self._lock_claim_free_draft(cur,profile_id,workspace_id,expected_revision)
+                if editable:
+                    cur.execute(
+                        """UPDATE smartploy_application_workspaces
+                           SET cv_text=%s,cover_letter_text=%s,
+                               revision=revision+1,updated_at=now()
+                           WHERE profile_id=%s AND workspace_id=%s
+                             AND revision=%s AND status='draft'
+                           RETURNING workspace_id""",
+                        (cv,letter,profile_id,workspace_id,expected_revision),
+                    )
+                    changed=cur.fetchone() is not None
+                else:
+                    changed=False
+        current=self.get(profile_id,workspace_id)
         if current is None:
             return None
+        if changed:
+            return current
         raise WorkspaceRevisionConflict("This draft is no longer editable at the expected revision")
 
     def report_applied(self, profile_id: str, workspace_id: str, *,
@@ -181,20 +224,26 @@ class PostgresWorkspaceRepository:
             raise WorkspaceError("Application reference must be 250 printable characters or fewer")
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """UPDATE smartploy_application_workspaces
-                       SET status = 'self_reported_applied', self_reported_applied_at = now(),
-                           self_reported_reference = %s, revision = revision + 1, updated_at = now()
-                       WHERE profile_id = %s AND workspace_id = %s
-                             AND revision = %s AND status = 'draft'
-                       RETURNING workspace_id""",
-                    (ref, profile_id, workspace_id, expected_revision),
+                editable=self._lock_claim_free_draft(
+                    cur,profile_id,workspace_id,expected_revision,allow_self_reported=True
                 )
-                changed = cur.fetchone() is not None
-        current = self.get(profile_id, workspace_id)
+                if editable:
+                    cur.execute(
+                        """UPDATE smartploy_application_workspaces
+                           SET status='self_reported_applied',self_reported_applied_at=now(),
+                               self_reported_reference=%s,revision=revision+1,updated_at=now()
+                           WHERE profile_id=%s AND workspace_id=%s
+                             AND revision=%s AND status='draft'
+                           RETURNING workspace_id""",
+                        (ref,profile_id,workspace_id,expected_revision),
+                    )
+                    changed=cur.fetchone() is not None
+                else:
+                    changed=False
+        current=self.get(profile_id,workspace_id)
         if current is None:
             return None
-        if changed or current.status == "self_reported_applied":
+        if changed or current.status=="self_reported_applied":
             return current
         raise WorkspaceRevisionConflict("Draft changed since you opened it; reload before updating")
 

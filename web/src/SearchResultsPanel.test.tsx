@@ -8,7 +8,8 @@ import type { SearchResults, SearchJobCard } from "./types";
 const baseJob = {
   company: "Example Oy", role_title: "Junior Data Analyst", location: "Helsinki",
   language: "English", work_mode: "remote",
-  employer_sector: "private" as const, source_current: true, application_url: "https://jobs.example.fi/analyst",
+  employer_sector: "private" as const, career_area: "it_data" as const,
+  title_experience: "entry" as const, source_current: true, application_url: "https://jobs.example.fi/analyst",
   source_ids: ["lever"], source_attribution: "Public ATS", posted_at: "2026-10-11T10:00:00Z",
   first_seen_at: "2026-10-11T10:00:00Z", last_seen_at: "2026-10-11T10:00:00Z",
   deadline: "", ai_preparation_allowed: true,
@@ -153,5 +154,124 @@ describe("job-date and source observation accuracy", () => {
     expect(screen.getByText("Last source observation unknown")).toBeTruthy();
     expect(screen.getByRole("note").textContent).toMatch(/time is unknown/);
     expect(screen.queryByText(/search match/i)).toBeNull();
+  });
+});
+
+describe("job posting link safety", () => {
+  it("keeps real employer links clickable without changing their target", () => {
+    render(<SearchResultsPanel {...common} data={general} />);
+    const anchors = screen.getAllByRole("link", { name: /Job posting/i });
+    expect(anchors).toHaveLength(2);
+    expect(anchors[0].getAttribute("href")).toBe("https://jobs.example.fi/analyst");
+    expect(anchors[0].getAttribute("rel")).toBe("noopener noreferrer");
+    expect(anchors[0].getAttribute("target")).toBe("_blank");
+  });
+
+  it("never creates a clickable executable or credentialed link from untrusted source data", () => {
+    const unsafe = [
+      "javascript:alert('unsafe')", "data:text/html,unsafe",
+      "//untrusted.invalid/redirect", "https://person:secret@jobs.example.fi/posting",
+    ];
+    const records: SearchResults = {
+      ...general, available_count: unsafe.length,
+      all_jobs: unsafe.map((application_url, index) => ({
+        ...job, canonical_key: "unsafe-" + index,
+        job: { ...baseJob, role_title: "Unsafe synthetic " + index, application_url },
+      })),
+    };
+    render(<SearchResultsPanel {...common} data={records} />);
+    expect(screen.queryByRole("link", { name: /Job posting/ })).toBeNull();
+    expect(screen.getAllByText(/Employer link unavailable/)).toHaveLength(unsafe.length);
+    expect(screen.getAllByRole("button", { name: /Prepare documents/ })).toHaveLength(unsafe.length);
+    expect(common.onPrepare).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("automatic draft scheduling truthfulness", () => {
+  it("does not claim a background service merely from the applicant opting in", () => {
+    const onAutoDraft = vi.fn();
+    render(<SearchResultsPanel {...common} data={personalized}
+      autoDraftEnabled={true} autoDraftWorkerStatus="not_configured"
+      onAutoDraft={onAutoDraft} />);
+    expect(screen.getByText(/background scheduling is not confirmed/i)).toBeTruthy();
+    expect(screen.queryByText(/background draft task is registered/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /find and prepare matching drafts now/i }));
+    expect(onAutoDraft).toHaveBeenCalledOnce();
+  });
+
+  it("reports an actually registered background task and never implies employer submission", () => {
+    render(<SearchResultsPanel {...common} data={personalized}
+      autoDraftEnabled={true} autoDraftWorkerStatus="registered" onAutoDraft={vi.fn()} />);
+    expect(screen.getByText(/background draft task is registered/i)).toBeTruthy();
+    expect(screen.getByText(/No employer application is submitted automatically/i)).toBeTruthy();
+  });
+
+  it("shows a degraded worker warning without suppressing the direct prepare action", () => {
+    const onAutoDraft = vi.fn();
+    render(<SearchResultsPanel {...common} data={personalized}
+      autoDraftEnabled={true} autoDraftWorkerStatus="degraded" onAutoDraft={onAutoDraft} />);
+    expect(screen.getByRole("status").textContent).toMatch(/reported failures/i);
+    fireEvent.click(screen.getByRole("button", { name: /find and prepare matching drafts now/i }));
+    expect(onAutoDraft).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe("Finland-first IT, planning, and explicit all-jobs choice", () => {
+  const focused: SearchResults = {
+    ...general, available_count: 4, all_jobs: [
+      {...job, canonical_key: "junior-fi", job: { ...baseJob,
+        role_title: "Junior Data Engineer", location: "Rovaniemi",
+        career_area: "it_data", title_experience: "entry" }},
+      {...job, canonical_key: "planner-fi", job: { ...baseJob,
+        role_title: "Suunnittelija", location: "Kuopio",
+        career_area: "planning", title_experience: "unspecified" }},
+      {...job, canonical_key: "driver-fi", job: { ...baseJob,
+        role_title: "Delivery Driver", location: "Jyväskylä",
+        career_area: "other", title_experience: "unspecified" }},
+      {...job, canonical_key: "senior-fi", job: { ...baseJob,
+        role_title: "Senior Software Engineer", location: "Oulu",
+        career_area: "it_data", title_experience: "senior" }},
+    ],
+  };
+
+  it("shows only IT/planning and junior-or-unknown titles by default", () => {
+    render(<SearchResultsPanel {...common} data={focused} />);
+    expect(screen.getByText("Junior Data Engineer")).toBeTruthy();
+    expect(screen.getByText("Suunnittelija")).toBeTruthy();
+    expect(screen.queryByText("Delivery Driver")).toBeNull();
+    expect(screen.queryByText("Senior Software Engineer")).toBeNull();
+    expect(screen.getByText(/Showing 2 of 4 current listings/i)).toBeTruthy();
+    expect(screen.getByText(/missing experience labels are not treated as verified junior jobs/i)).toBeTruthy();
+  });
+
+  it("one explicit filter reveals other occupations and senior-labelled roles", () => {
+    render(<SearchResultsPanel {...common} data={focused} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Career focus" }), {
+      target: { value: "all" },
+    });
+    expect(screen.getByText("Delivery Driver")).toBeTruthy();
+    expect(screen.queryByText("Senior Software Engineer")).toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: "Experience focus" }), {
+      target: { value: "all" },
+    });
+    expect(screen.getByText("Senior Software Engineer")).toBeTruthy();
+    expect(screen.getByText(/Showing 4 of 4 current listings/i)).toBeTruthy();
+    expect(common.onChangeCriteria).not.toHaveBeenCalled();
+    expect(common.onPrepare).not.toHaveBeenCalled();
+  });
+
+  it("links external Finnish boards without implying indexed or auto-applied postings", () => {
+    render(<SearchResultsPanel {...common} data={focused} />);
+    expect(screen.getByRole("region", { name: "Additional Finland job sources" }).textContent)
+      .toMatch(/doesn't yet ingest/i);
+    for (const label of ["Duunitori", "Työmarkkinatori", "LinkedIn"]) {
+      const a = screen.getByRole("link", { name: new RegExp(label) });
+      expect(a.getAttribute("href")).toMatch(/^https:\/\//);
+      expect(a.getAttribute("target")).toBe("_blank");
+      expect(a.getAttribute("rel")).toContain("noopener");
+    }
+    expect(screen.getByText(/not counted above or used for unattended applications/i)).toBeTruthy();
   });
 });

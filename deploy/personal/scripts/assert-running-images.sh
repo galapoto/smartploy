@@ -12,7 +12,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${COMPOSE_DIR}/env"
-POLICY_FILE="${COMPOSE_DIR}/runtime.production.env"
+POLICY_FILE="$(bash "${SCRIPT_DIR}/select-runtime-policy.sh")"
 COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
 [[ -f "$ENV_FILE" && ! -L "$ENV_FILE" ]] || {
   echo "SmartPloy image provenance: private production env missing" >&2
@@ -23,6 +23,7 @@ COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
   exit 1
 }
 
+bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "$POLICY_FILE" >/dev/null
 export SMARTPLOY_IMAGE_TAG="${EXPECTED_SHA:0:12}"
 COMPOSE=(
   docker compose
