@@ -928,6 +928,111 @@ describe("first opt-in creates private IT applications immediately", () => {
     fireEvent.click(screen.getByRole("button", { name: /Show my matched jobs/i }));
   };
 
+
+  it("runs the existing private draft scan immediately when an opted-in role changes", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByPlaceholderText(/Data analyst, Junior software tester/i), {
+      target: { value: "Junior Software Tester" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save search preferences/i }));
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
+    expect(api.prepareMyMatchingDrafts).toHaveBeenCalledWith("usr-synthetic-1");
+    expect(currentPrefs.roles).toEqual(["Junior Software Tester"]);
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("never starts an automatic draft after saving search settings without opt-in", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: false,
+    };
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByPlaceholderText(/Data analyst, Junior software tester/i), {
+      target: { value: "Junior Software Tester" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save search preferences/i }));
+    await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Your search targets were saved/i)).toBeTruthy();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+  });
+
+  it("prepares matched drafts as soon as the user approves an existing career fact", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    const fact = {
+      fact_id: "synthetic-fact-1", fact_type: "skill", value: "SQL",
+      approved: false,
+    };
+    vi.mocked(api.getProfileFacts).mockImplementation(async () => ({
+      facts: [{ ...fact }], count: 1,
+    } as never));
+    vi.mocked(api.approveFact).mockImplementation(async (_id, approved) => {
+      fact.approved = approved;
+      return { ...fact } as never;
+    });
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    expect(await screen.findByText("SQL")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(api.approveFact).toHaveBeenCalledWith(
+      "synthetic-fact-1", true, "usr-synthetic-1"
+    ));
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
+    expect(api.prepareMyMatchingDrafts).toHaveBeenCalledWith("usr-synthetic-1");
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(screen.getByText(/new matched IT application draft/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("prepares on newly approved evidence, never on unapproved evidence", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    const facts: Array<{fact_id:string;fact_type:string;value:string;approved:boolean}> = [];
+    vi.mocked(api.getProfileFacts).mockImplementation(async () => ({
+      facts: [...facts], count: facts.length,
+    } as never));
+    vi.mocked(api.createFact).mockImplementation(async (type, value, approved) => {
+      const item = {
+        fact_id: "fact-" + (facts.length + 1),
+        fact_type: type, value, approved,
+      };
+      facts.push(item);
+      return item as never;
+    });
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\. Python, Finnish B2/i), {
+      target: { value: "SQL" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save for review" }));
+    await waitFor(() => expect(api.createFact).toHaveBeenCalledTimes(1));
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\. Python, Finnish B2/i), {
+      target: { value: "Python" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: /I confirm this information is accurate/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Save approved fact" }));
+    await waitFor(() => expect(api.createFact).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
   it("connects saved opt-in to the existing private draft engine with no second click", async () => {
     await openOptIn();
     await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledWith(
