@@ -581,7 +581,7 @@ def test_mixed_or_conflicting_provenance_does_not_inherit_ats_draft_authority():
         replace(original, metadata={**original.metadata, "source_class": "manual"})
     )
     assert not _approved_source_for_auto_draft(
-        replace(original, job=replace(original.job, raw={})))
+        replace(original, job=replace(original.job, raw={}))
     )
 
 
