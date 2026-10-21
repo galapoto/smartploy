@@ -131,10 +131,13 @@ export default function SearchSetup(props: {
       {mode === "personalized" ? <div className="setup-fields">
         <div className="setup-fields-heading"><BriefcaseBusiness size={18}/><strong>Your ideal opportunities</strong><small>Only job titles or keywords are required.</small>
           <button type="button" className="text-link" onClick={() => {
-            setRoles("Data Analyst, Junior Software Tester, Junior Business Analyst, IT Support Specialist, Junior Python Developer");
-            setLocations("Helsinki, Espoo, Vantaa");
+            // The old starter preset restricted search to the Helsinki
+            // region and omitted data engineering and Finnish planning.
+            // Blank locations intentionally mean ALL Finland.
+            setRoles("Junior Data Analyst, Data Engineer, Junior Software Tester, Junior Business Analyst, IT Support Specialist, Suunnittelija, Projektikoordinaattori");
+            setLocations("");
             setSeniority("entry");
-          }}>Use IT job starter targets</button>
+          }}>Use nationwide junior IT & planning targets</button>
         </div>
         <div className="setup-field-grid">
           <label className="setup-field">
