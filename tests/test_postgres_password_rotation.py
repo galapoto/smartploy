@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import stat
 import sys
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -110,6 +111,60 @@ def test_subprocess_failures_do_not_echo_secret_output():
         rotation.call([sys.executable, "-c",
                        f"import sys; print({synthetic!r}); sys.exit(2)"])
     assert synthetic not in str(caught.value)
+
+
+
+def test_application_auth_probe_uses_api_network_not_trusted_postgres_loopback():
+    """No password or SQL in argv; authenticate through the real API connection."""
+    probe = rotation.APP_DATABASE_AUTH_PROBE
+    compile(probe, "<smartploy-app-db-auth>", "exec")
+    assert 'config.get("host") != "postgres"' in probe
+    assert 'config["password"] = password' in probe
+    assert "inet_client_addr() IS NOT NULL" in probe
+    assert 'os.environ["SMARTPLOY_DATABASE_URL"]' in probe
+    assert "print(\"1\")" in probe
+    assert "except Exception" in probe
+
+    calls = []
+    secret = "synthetic-rotation-secret-no-history-0123456789"
+
+    def accepted(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout="1\n")
+
+    assert rotation.application_password_valid(accepted, secret)
+    assert len(calls) == 1
+    argv, opts = calls[0]
+    assert argv[:5] == ("exec", "-T", "api", "python", "-c")
+    assert argv[5] == probe
+    assert secret not in repr(argv)
+    assert opts == {"data": secret + "\n", "check": False, "timeout": 45}
+
+    def rejected(*args, **kwargs):
+        assert args[:3] == ("exec", "-T", "api")
+        assert kwargs["data"] == secret + "\n"
+        return SimpleNamespace(returncode=1, stdout="")
+
+    assert not rotation.application_password_valid(rejected, secret)
+    assert not rotation.application_password_valid(
+        lambda *args, **kw: SimpleNamespace(returncode=0, stdout="not-verified"), secret
+    )
+
+
+def test_rotation_rejects_app_network_trust_not_just_local_loopback():
+    source = SCRIPT.read_text(encoding="utf-8")
+    # This original diagnostic falsely called psql -h 127.0.0.1 inside
+    # Postgres; official PG containers may intentionally trust loopback.
+    assert "psql -h 127.0.0.1" not in source
+    assert "existing_password_failed_app_network_auth" in source
+    assert "postgres_app_network_accepts_wrong_password" in source
+    assert "postgres_tcp_auth_accepts_wrong_password" not in source
+    assert source.index("postgres_app_network_accepts_wrong_password") < source.index(
+        'receipt = call(["bash", str(REPO / "deploy/personal/scripts/backup.sh")'
+    )
+    assert source.index("postgres_app_network_accepts_wrong_password") < source.index(
+        "changed = True"
+    )
 
 
 def test_rotation_is_explicitly_old_release_only_no_oidc_change_or_build():
