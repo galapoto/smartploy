@@ -205,9 +205,9 @@ def test_scoped_local_draft_worker_runs_without_remote_ai_or_global_submit(monke
             build_worker_task_specs("postgresql://fixture")
 
 
-def test_new_install_profile_starts_existing_five_finland_sources_without_ai(monkeypatch):
-    """The sample env wires the proven pilot to the existing worker, not to ObumAI."""
-    from scripts.configure_finland_ats_pilot import reviewed_sources
+def test_new_install_profile_starts_existing_seven_finland_it_sources_without_ai(monkeypatch):
+    """The sample uses the reused employer ATS worker, not unproven ObumBrowse."""
+    from scripts.configure_finland_ats_pilot import reviewed_it_portfolio
     clear_worker_sources(monkeypatch)
     sample = Path("deploy/personal/env.example").read_text(encoding="utf-8")
     configured = {
@@ -219,7 +219,7 @@ def test_new_install_profile_starts_existing_five_finland_sources_without_ai(mon
     # Production preflight supports inline JSON; its security gate
     # explicitly rejects a file path, including the image-local path.
     assert configured["SMARTPLOY_PUBLIC_ATS_SOURCES_FILE"] == ""
-    approved = reviewed_sources()
+    approved = reviewed_it_portfolio()
     assert json.loads(configured["SMARTPLOY_PUBLIC_ATS_SOURCES_JSON"]) == approved
     monkeypatch.setenv(
         "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON",
@@ -229,13 +229,14 @@ def test_new_install_profile_starts_existing_five_finland_sources_without_ai(mon
     monkeypatch.setenv("SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED", "false")
     specs = build_worker_task_specs("postgresql://fixture")
     expected = {
-        "source:lever-global-" + item["tenant"]
-        for item in reviewed_sources()
+        ("source:lever-global-" if item["provider"] == "lever" else "source:greenhouse-") + item["tenant"]
+        for item in approved
     }
-    assert len(expected) == 5
+    assert len(expected) == 7
+    assert "source:lever-global-tsmg" not in expected
     assert {s.task_id for s in specs} == expected | {"application:auto-draft-shortlist"}
     sources = [s for s in specs if s.task_id.startswith("source:")]
-    assert len(sources) == 5
+    assert len(sources) == 7
     assert all(s.cadence_seconds == 600 for s in sources)
     assert all(s.metadata["external_ai_forwarding_allowed"] is False for s in sources)
     assert all(s.metadata["location_terms"] for s in sources)
