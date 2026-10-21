@@ -1033,6 +1033,60 @@ describe("first opt-in creates private IT applications immediately", () => {
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
+
+  it("resumes AutoApply after a CV upload only with pre-approved facts", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    vi.mocked(api.getProfileFacts).mockResolvedValue({
+      facts: [{
+        fact_id: "approved-skill-1", fact_type: "skill", value: "Python",
+        approved: true, source: "user-entered", confidence: 1,
+        created_at: "2026-10-20T10:00:00Z",
+      }], count: 1,
+    });
+    const updatedCV = { present: true, filename: "synthetic-CV.pdf",
+      size_bytes: 128, text_preview: "The user's CV for review" };
+    vi.mocked(api.uploadCV).mockResolvedValue(updatedCV);
+    vi.mocked(api.getCV).mockResolvedValue(updatedCV);
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), {
+      target: { files: [new File(["fictional PDF"], "synthetic-CV.pdf", {
+        type: "application/pdf",
+      })] },
+    });
+    await waitFor(() => expect(api.uploadCV).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "synthetic-CV.pdf" }), "usr-synthetic-1"
+    ));
+    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("never mistakes uploading an unreviewed CV for approval to AutoApply", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    const updatedCV = { present: true, filename: "unreviewed-CV.pdf",
+      size_bytes: 128, text_preview: "Unapproved content only" };
+    vi.mocked(api.uploadCV).mockResolvedValue(updatedCV);
+    vi.mocked(api.getCV).mockResolvedValue(updatedCV);
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), {
+      target: { files: [new File(["fictional PDF"], "unreviewed-CV.pdf", {
+        type: "application/pdf",
+      })] },
+    });
+    await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Your CV was uploaded privately/i)).toBeTruthy();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+
   it("connects saved opt-in to the existing private draft engine with no second click", async () => {
     await openOptIn();
     await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledWith(
