@@ -204,3 +204,54 @@ Finnish/ISO date and current-deadline tests, private-IP link rejects, and
 six post-ranking employer mutation regression cases. **Never claims a
 provider application was submitted.** Release still requires ObumDelivery,
 signed-in user acceptance and independent OVH deployment proof.
+
+
+## SP15n — reject stale source snapshots before creating real-user drafts
+
+**Problem proven from existing source code:** Original
+`smartploy/storage.py` deliberately preserves `JobCandidate.source_current=True`
+during public ATS polling failures. The original `poll_public_ats`
+records a failing source in source health, but does *not* retire jobs
+from the last successful snapshot. This is correct for general browsing
+and recovery, yet unsafe as evidence that an employer is still
+accepting applications. The last cache may be many days old.
+
+**Reuse before writing:** Directly reused existing
+`JobCandidate.last_verified_at` and `last_seen_at` source observation
+timestamps (never `posted_at`), `merge_candidates`/
+`PostgresJobRepository.upsert` refresh behavior, original same-account
+`auto_draft_guard`, original Postgres `get` re-fetch and workspace
+`create_or_get`. Reused `SourceHealth` and the five reviewed Finland
+public ATS pilot as operator-controlled ingestion; **no new scraper**,
+credential, provider adapter, LLM model, or source-access right.
+Reused the existing `prepareMyMatchingDrafts` API, React
+`SearchSetup` and signed-in `App` identity guard.
+
+**New first-party glue:** Small `_recently_verified` validator rejects
+missing, timezone-naive, invalid, future, and over-48-hour verification
+timestamps. On initial ranking **and again inside the existing
+revocable account guard after a database re-read**, stale candidates
+cannot create private documents, even while `source_current=True`.
+Response has only aggregate `stale_skipped` and
+`needs_source_refresh`; no applicant identities or employer URLs.
+UI now explains a source freshness blocker instead of claiming
+a background scheduler definitely continues. If the user chooses
+keyword-only personalization but enables auto drafting, the original
+backend requires explicit target roles: UI now explains this **before**
+the server save. Keyword-only search without drafting still works.
+
+**New tests:** Original Python synthetic candidate timestamps now derive
+from UTC current time to avoid a timebomb after 48 hours. Added fixed
+clock validator boundaries, old-cache exclusion + successful fresh
+poll recovery, and a changed-cache race inside the per-account
+guard. Added one frontend test for keyword-only consent validation
+and two actual App tests for stale-source first scan and direct
+manual rescan.
+
+**Security and release:** No employer POST, credential, browser action,
+external AI call, CV forwarding, or claim that an application was
+submitted. Deployment remains blocked pending live source ingestion,
+OIDC, native ObumDelivery proof and OVH exact SHA validation.
+The operator-controlled `config/finland_public_ats_pilot.json` and
+`scripts/configure_finland_ats_pilot.py` existed already; this change
+does **not** silently enable those source hosts.
