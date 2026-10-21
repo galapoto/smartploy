@@ -17,6 +17,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "config" / "finland_public_ats_pilot.json"
+IT_PORTFOLIO = ROOT / "config" / "finland_it_public_ats_portfolio.json"
 ENV = ROOT / "deploy" / "personal" / "env"
 KEY = "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON"
 FILE_KEY = "SMARTPLOY_PUBLIC_ATS_SOURCES_FILE"
@@ -123,6 +124,80 @@ def plan_tsmg_transport_upgrade(
     return "".join(lines), True
 
 
+
+
+def reviewed_it_portfolio(registry: Path = IT_PORTFOLIO) -> list[dict]:
+    """Review the exact seven read-only ATS boards, not arbitrary web URLs.
+
+    The official published Greenhouse GET APIs for Oura, Wolt and Smartly
+    were checked; adding a new employer requires explicit code review.
+    The previous TSMG driving-heavy source is retired from this
+    IT-first portfolio, but the operator can restore the prior five.
+    """
+    from smartploy.sources.public_ats import PublicATSSourceConfig
+
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    expected = {
+        ("lever", "uprightproject"), ("lever", "brightlyworks"),
+        ("lever", "netlight"), ("lever", "rovio-2"),
+        ("greenhouse", "oura"), ("greenhouse", "wolt"),
+        ("greenhouse", "smartlyio"),
+    }
+    if not isinstance(payload, list) or len(payload) != 7:
+        raise PilotConfigurationError("Expected seven reviewed IT-first ATS boards")
+    source_ids: set[tuple[str, str]] = set()
+    for item in payload:
+        if not isinstance(item, dict):
+            raise PilotConfigurationError("Portfolio source must be an object")
+        try:
+            setting = PublicATSSourceConfig.from_dict(item)
+        except (ValueError, TypeError) as exc:
+            raise PilotConfigurationError("Invalid public ATS board configuration") from exc
+        key = (setting.provider, setting.tenant)
+        if key in source_ids:
+            raise PilotConfigurationError("Duplicate IT portfolio employer")
+        source_ids.add(key)
+        if setting.external_ai_forwarding_allowed is not False:
+            raise PilotConfigurationError("Public IT portfolio forbids external AI forwarding")
+        if setting.employer_sector != "private" or not setting.location_terms:
+            raise PilotConfigurationError("IT portfolio requires explicit Finland locations")
+        if "finland" not in setting.location_terms:
+            raise PilotConfigurationError("Country term Finland must be present")
+        if setting.stack != ("global" if setting.provider == "lever" else ""):
+            raise PilotConfigurationError("IT portfolio unexpected provider/stack")
+        if setting.page_size is not None or setting.request_timeout_seconds is not None:
+            raise PilotConfigurationError("IT portfolio cannot override network rate limits")
+    if source_ids != expected:
+        raise PilotConfigurationError("Unreviewed employer in IT portfolio")
+    return payload
+
+
+def plan_it_portfolio_upgrade(
+    env_contents: str, former: list[dict], updated: list[dict], *,
+    rollback: bool = False,
+) -> tuple[str, bool]:
+    """Compare full reviewed old/new sets and refuse unknown operator edits."""
+    lines = env_contents.splitlines(keepends=True)
+    indices = [i for i, row in enumerate(lines) if row.startswith(KEY + "=")]
+    file_values = [row[len(FILE_KEY) + 1:].strip()
+                   for row in lines if row.startswith(FILE_KEY + "=")]
+    if len(indices) != 1 or len(file_values) > 1 or any(file_values):
+        raise PilotConfigurationError("Expected exact inline source configuration and no custom registry file")
+    index = indices[0]
+    try:
+        current = json.loads(lines[index][len(KEY) + 1:].strip())
+    except (ValueError, TypeError) as exc:
+        raise PilotConfigurationError("Existing public ATS settings are invalid JSON") from exc
+    expected, target = (updated, former) if rollback else (former, updated)
+    if current == target:
+        return env_contents, False
+    if current != expected:
+        raise PilotConfigurationError("Refusing to override operator-modified ATS portfolio")
+    ending = "\r\n" if lines[index].endswith("\r\n") else "\n"
+    new_json = json.dumps(target, ensure_ascii=False, separators=(",", ":"))
+    lines[index] = KEY + "=" + new_json + ending
+    return "".join(lines), True
+
 def _validate_private_env(path: Path) -> os.stat_result:
     try:
         details = path.lstat()
@@ -142,18 +217,34 @@ def stage_pilot(
     apply: bool = False,
     upgrade_tsmg_transport: bool = False,
     rollback_tsmg_transport: bool = False,
+    upgrade_it_portfolio: bool = False,
+    rollback_it_portfolio: bool = False,
 ) -> dict:
     if upgrade_tsmg_transport and rollback_tsmg_transport:
         raise PilotConfigurationError("Choose upgrade or rollback, not both")
+    if (upgrade_it_portfolio or rollback_it_portfolio) and (
+        upgrade_tsmg_transport or rollback_tsmg_transport
+    ):
+        raise PilotConfigurationError("Choose only one ATS portfolio operation")
     sources = reviewed_sources(registry)
+    former_sources = sources
+    if upgrade_it_portfolio or rollback_it_portfolio:
+        sources = reviewed_it_portfolio()
+    elif registry != REGISTRY and (upgrade_tsmg_transport or rollback_tsmg_transport):
+        raise PilotConfigurationError("Transport upgrade requires original reviewed pilot")
     env_stat = _validate_private_env(env)
     original = env.read_text(encoding="utf-8")
     pilot_json = json.dumps(sources, ensure_ascii=False, separators=(",", ":"))
-    replacement, changed = (
-        plan_tsmg_transport_upgrade(original, sources, rollback=rollback_tsmg_transport)
-        if upgrade_tsmg_transport or rollback_tsmg_transport
-        else plan_env_update(original, pilot_json)
-    )
+    if upgrade_it_portfolio or rollback_it_portfolio:
+        replacement, changed = plan_it_portfolio_upgrade(
+            original, former_sources, sources, rollback=rollback_it_portfolio,
+        )
+    elif upgrade_tsmg_transport or rollback_tsmg_transport:
+        replacement, changed = plan_tsmg_transport_upgrade(
+            original, sources, rollback=rollback_tsmg_transport,
+        )
+    else:
+        replacement, changed = plan_env_update(original, pilot_json)
     if apply and changed:
         descriptor, candidate = tempfile.mkstemp(prefix=".smartploy-env-", dir=str(env.parent))
         try:
@@ -178,7 +269,11 @@ def stage_pilot(
         "source_count": len(sources),
         "tenant_ids": [item["tenant"] for item in sources],
         "region_policy": "explicit Finland/Finnish locations only",
-        "transport_scope": "TSMG only" if (upgrade_tsmg_transport or rollback_tsmg_transport) else "initial approved pilot",
+        "transport_scope": (
+            "finland_it_public_ats_portfolio_v2" if (upgrade_it_portfolio or rollback_it_portfolio)
+            else "TSMG only" if (upgrade_tsmg_transport or rollback_tsmg_transport)
+            else "initial approved pilot"
+        ),
         "external_ai_forwarding": "disabled",
         "private_env": "updated" if changed and apply else "unchanged" if not changed else "change_ready",
         "next": "run production preflight and guarded deploy" if apply else "review and rerun with --apply",
@@ -201,12 +296,22 @@ def main() -> int:
         action="store_true",
         help="restore only the original TSMG timeout/page-size settings",
     )
+    policy_action.add_argument(
+        "--upgrade-it-portfolio", action="store_true",
+        help="replace exact current 5 ATS boards with 7 reviewed IT-first Lever/Greenhouse boards",
+    )
+    policy_action.add_argument(
+        "--rollback-it-portfolio", action="store_true",
+        help="restore old five-source pilot only if current selection equals reviewed IT portfolio",
+    )
     args = parser.parse_args()
     try:
         result = stage_pilot(
             apply=args.apply,
             upgrade_tsmg_transport=args.upgrade_tsmg_transport,
             rollback_tsmg_transport=args.rollback_tsmg_transport,
+            upgrade_it_portfolio=args.upgrade_it_portfolio,
+            rollback_it_portfolio=args.rollback_it_portfolio,
         )
     except (PilotConfigurationError, OSError, ValueError) as exc:
         raise SystemExit("ATS pilot: " + str(exc)) from exc
