@@ -8,7 +8,8 @@ import type { SearchResults, SearchJobCard } from "./types";
 const baseJob = {
   company: "Example Oy", role_title: "Junior Data Analyst", location: "Helsinki",
   language: "English", work_mode: "remote",
-  employer_sector: "private" as const, source_current: true, application_url: "https://jobs.example.fi/analyst",
+  employer_sector: "private" as const, career_area: "it_data" as const,
+  title_experience: "entry" as const, source_current: true, application_url: "https://jobs.example.fi/analyst",
   source_ids: ["lever"], source_attribution: "Public ATS", posted_at: "2026-10-11T10:00:00Z",
   first_seen_at: "2026-10-11T10:00:00Z", last_seen_at: "2026-10-11T10:00:00Z",
   deadline: "", ai_preparation_allowed: true,
@@ -213,5 +214,64 @@ describe("automatic draft scheduling truthfulness", () => {
     expect(screen.getByRole("status").textContent).toMatch(/reported failures/i);
     fireEvent.click(screen.getByRole("button", { name: /find and prepare matching drafts now/i }));
     expect(onAutoDraft).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe("Finland-first IT, planning, and explicit all-jobs choice", () => {
+  const focused: SearchResults = {
+    ...general, available_count: 4, all_jobs: [
+      {...job, canonical_key: "junior-fi", job: { ...baseJob,
+        role_title: "Junior Data Engineer", location: "Rovaniemi",
+        career_area: "it_data", title_experience: "entry" }},
+      {...job, canonical_key: "planner-fi", job: { ...baseJob,
+        role_title: "Suunnittelija", location: "Kuopio",
+        career_area: "planning", title_experience: "unspecified" }},
+      {...job, canonical_key: "driver-fi", job: { ...baseJob,
+        role_title: "Delivery Driver", location: "Jyväskylä",
+        career_area: "other", title_experience: "unspecified" }},
+      {...job, canonical_key: "senior-fi", job: { ...baseJob,
+        role_title: "Senior Software Engineer", location: "Oulu",
+        career_area: "it_data", title_experience: "senior" }},
+    ],
+  };
+
+  it("shows only IT/planning and junior-or-unknown titles by default", () => {
+    render(<SearchResultsPanel {...common} data={focused} />);
+    expect(screen.getByText("Junior Data Engineer")).toBeTruthy();
+    expect(screen.getByText("Suunnittelija")).toBeTruthy();
+    expect(screen.queryByText("Delivery Driver")).toBeNull();
+    expect(screen.queryByText("Senior Software Engineer")).toBeNull();
+    expect(screen.getByText(/Showing 2 of 4 current listings/i)).toBeTruthy();
+    expect(screen.getByText(/missing experience labels are not treated as verified junior jobs/i)).toBeTruthy();
+  });
+
+  it("one explicit filter reveals other occupations and senior-labelled roles", () => {
+    render(<SearchResultsPanel {...common} data={focused} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Career focus" }), {
+      target: { value: "all" },
+    });
+    expect(screen.getByText("Delivery Driver")).toBeTruthy();
+    expect(screen.queryByText("Senior Software Engineer")).toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: "Experience focus" }), {
+      target: { value: "all" },
+    });
+    expect(screen.getByText("Senior Software Engineer")).toBeTruthy();
+    expect(screen.getByText(/Showing 4 of 4 current listings/i)).toBeTruthy();
+    expect(common.onChangeCriteria).not.toHaveBeenCalled();
+    expect(common.onPrepare).not.toHaveBeenCalled();
+  });
+
+  it("links external Finnish boards without implying indexed or auto-applied postings", () => {
+    render(<SearchResultsPanel {...common} data={focused} />);
+    expect(screen.getByRole("region", { name: "Additional Finland job sources" }).textContent)
+      .toMatch(/doesn't yet ingest/i);
+    for (const label of ["Duunitori", "Työmarkkinatori", "LinkedIn"]) {
+      const a = screen.getByRole("link", { name: new RegExp(label) });
+      expect(a.getAttribute("href")).toMatch(/^https:\/\//);
+      expect(a.getAttribute("target")).toBe("_blank");
+      expect(a.getAttribute("rel")).toContain("noopener");
+    }
+    expect(screen.getByText(/not counted above or used for unattended applications/i)).toBeTruthy();
   });
 });
