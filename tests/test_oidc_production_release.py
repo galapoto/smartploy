@@ -382,8 +382,8 @@ def test_real_compose_interpolation_resolves_healthcheck_for_both_profiles(tmp_p
 
     env = tmp_path / "only-synthetic.env"
     env.write_text(
-        "POSTGRES_PASSWORD=synthetic-compose-only-password-not-real-123456\\n"
-        "SMARTPLOY_WEB_HOST_PORT=18091\\n",
+        "POSTGRES_PASSWORD=synthetic-compose-only-password-not-real-123456\n"
+        "SMARTPLOY_WEB_HOST_PORT=18091\n",
         encoding="utf-8",
     )
     for mode, expected_host in (
@@ -406,4 +406,5 @@ def test_real_compose_interpolation_resolves_healthcheck_for_both_profiles(tmp_p
         assert api["environment"]["SMARTPLOY_PUBLIC_ORIGIN"] == "https://" + expected_host
         assert api["healthcheck"]["test"][-1].count("os.environ['SMARTPLOY_ALLOWED_HOSTS']") == 1
         assert f"Host: {expected_host}" in " ".join(web["healthcheck"]["test"])
-        assert "smartploy.obumai.com" not in " ".join(web["healthcheck"]["test"]) if mode == "runtime.oidc.production.env" else True
+        if mode == "runtime.oidc.production.env":
+            assert "smartploy.obumai.com" not in " ".join(web["healthcheck"]["test"])
