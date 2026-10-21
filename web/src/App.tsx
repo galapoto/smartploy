@@ -155,6 +155,9 @@ export default function App() {
   const lastSessionIdentity = useRef<string | null>(null);
   const savingSearchPreferences = useRef(false);
   const savingAIConsent = useRef(false);
+  // A rerender cannot start two private AutoApply scans for the same account.
+  // Different account identities must never inherit the old in-flight lock.
+  const autoDraftInFlight = useRef<string | null>(null);
   const clearPrivateWorkspace = useCallback(() => {
     setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
     setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
@@ -345,7 +348,6 @@ export default function App() {
 
     const expectedIdentity = lastSessionIdentity.current;
     const expectedUserId = session?.user_id?.trim() || "";
-    const previouslyOptedIn = preferences?.auto_draft_enabled === true;
     let accountUnverified = false;
     const requireSameAccount = async () => {
       let observedIdentity: string | null = null;
@@ -376,14 +378,16 @@ export default function App() {
       const fresh = await getSearchResults();
       await requireSameAccount();
 
-      // Use the ORIGINAL signed-in private POST when auto-drafting is first
-      // enabled. Otherwise the user must discover a separate button or wait
-      // for the background worker, which might not even be installed yet.
-      // This is local draft preparation, never external employer submission.
-      const newlyOptedIn = result.auto_draft_enabled === true && !previouslyOptedIn;
+      // Reuse the ORIGINAL signed-in private POST after *every* saved
+      // opted-in personalized search, including changed target roles.
+      // Previously this ran only on OFF->ON, delaying newly requested
+      // applications until the background worker's next cadence.
+      // This is private draft preparation, NEVER employer submission.
+      const shouldScan = result.auto_draft_enabled === true &&
+        result.mode === "personalized" && result.roles.length > 0;
       let firstScan: Awaited<ReturnType<typeof prepareMyMatchingDrafts>> | null = null;
       let scanUnavailable = false;
-      if (newlyOptedIn) {
+      if (shouldScan) {
         try {
           firstScan = await prepareMyMatchingDrafts(expectedUserId);
         } catch {
@@ -398,22 +402,22 @@ export default function App() {
       setPreferences(result);
       setDiscovery(fresh);
       setView("top");
-      if (newlyOptedIn && firstScan?.status === "needs_approved_profile") {
+      if (shouldScan && firstScan?.status === "needs_approved_profile") {
         setPage("profile");
         setNotice("Automatic IT search is enabled. Approve your career facts to prepare your first applications; nothing has been sent.");
-      } else if (newlyOptedIn && firstScan?.status === "needs_source_refresh") {
+      } else if (shouldScan && firstScan?.status === "needs_source_refresh") {
         setPage("jobs");
         setNotice("Automatic IT search is enabled, but some matching employer listings have not been checked recently. No drafts were created from stale postings. Check the job-feed status and retry after a source refresh.");
-      } else if (newlyOptedIn && firstScan?.status === "needs_trusted_source") {
+      } else if (shouldScan && firstScan?.status === "needs_trusted_source") {
         setPage("jobs");
         setNotice("Automatic IT search is enabled, but matching jobs came from manual or unverified sources. Set up a reviewed public employer feed for automatic drafts. You can still review those listings yourself.");
-      } else if (newlyOptedIn && firstScan?.status === "prepared" && firstScan.created > 0) {
+      } else if (shouldScan && firstScan?.status === "prepared" && firstScan.created > 0) {
         setPage("applications");
         setNotice(firstScan.created + " matched IT application draft(s) prepared privately. Review each CV and letter before any employer submission.");
-      } else if (newlyOptedIn && firstScan?.status === "prepared") {
+      } else if (shouldScan && firstScan?.status === "prepared") {
         setPage("jobs");
         setNotice("Automatic IT search is enabled. No new safe matches were ready; you can review current jobs and prepare drafts again.");
-      } else if (newlyOptedIn && (scanUnavailable || firstScan?.status !== "prepared")) {
+      } else if (shouldScan && (scanUnavailable || firstScan?.status !== "prepared")) {
         setPage("jobs");
         setNotice("Your automatic IT search setting was saved, but the first draft scan could not finish. Use 'Find and prepare matching drafts now' to retry.");
       } else {
@@ -513,6 +517,12 @@ export default function App() {
       setCV(uploaded); setCVPreview(true); navigate("profile");
       setNotice("Your CV was uploaded privately. Review its text and confirm facts before matching.");
       await load(true);
+      // An uploaded CV is not automatically approved as career evidence.
+      // Trigger the already-consented private scan only if the user had
+      // independently approved profile facts beforehand.
+      if (facts.some((fact) => fact.approved)) {
+        await onPrepareMyAutoDrafts();
+      }
     } catch (exc) {
       if (exc instanceof PrivateActionIdentityChanged) return;
       navigate("profile");
@@ -552,6 +562,10 @@ export default function App() {
       setNewFactValue(""); setConfirmFact(false);
       setNotice(approvedByUser ? "Approved profile evidence saved." : "Fact saved for review.");
       await load(true);
+      // The first opt-in often correctly returns needs_approved_profile.
+      // Don't make the user press another button after approving facts:
+      // reuse the existing account-checked private AutoApply scan.
+      if (approvedByUser) await onPrepareMyAutoDrafts();
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged)) {
         setNotice(exc instanceof Error ? exc.message : "Unable to save fact.");
@@ -567,6 +581,7 @@ export default function App() {
     try {
       await runPrivateMutation((userId) => approveFact(fact.fact_id, !fact.approved, userId));
       await load(true);
+      if (!fact.approved) await onPrepareMyAutoDrafts();
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged)) {
         setNotice(exc instanceof Error ? exc.message : "Unable to update fact.");
@@ -641,8 +656,13 @@ export default function App() {
   }
 
   async function onPrepareMyAutoDrafts() {
-    if (!preferences?.auto_draft_enabled || autoDraftBusy) return;
+    if (!preferences?.auto_draft_enabled || preferences.mode !== "personalized" ||
+        !preferences.roles.length || autoDraftBusy) return;
     const actionIdentity = lastSessionIdentity.current;
+    if (!actionIdentity || autoDraftInFlight.current === actionIdentity) return;
+    // Set the lock synchronously before the first await, including uploads,
+    // fact approvals and direct button clicks using this same action.
+    autoDraftInFlight.current = actionIdentity;
     setAutoDraftBusy(true);
     try {
       const result = await runPrivateMutation((userId) => prepareMyMatchingDrafts(userId));
@@ -673,6 +693,7 @@ export default function App() {
         setNotice(exc instanceof Error ? exc.message : "Automatic draft preparation is unavailable.");
       }
     } finally {
+      if (autoDraftInFlight.current === actionIdentity) autoDraftInFlight.current = null;
       if (lastSessionIdentity.current === actionIdentity) setAutoDraftBusy(false);
     }
   }
