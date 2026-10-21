@@ -128,14 +128,30 @@ describe("job source observation truth", () => {
     expect(labels.caution).toBeNull();
   });
 
-  it("cautions rather than claiming still open when source observation is older than 72h", () => {
+  it("cautions at the same 48-hour point that background auto drafting stops", () => {
+    const fortyNineHoursAgo = "2026-10-18T23:00:00Z";
+    const labels = listingObservationLabels(
+      "2026-09-01T00:00:00Z",
+      "2026-09-01T00:00:00Z",
+      fortyNineHoursAgo,
+      new Date("2026-10-21T00:00:00Z")
+    );
+    expect(labels.caution).toMatch(/at least 48h ago/);
+    const stillFresh = listingObservationLabels(
+      "", "", "2026-10-19T23:00:00Z",
+      new Date("2026-10-21T00:00:00Z")
+    );
+    expect(stillFresh.caution).toBeNull();
+  });
+
+  it("cautions rather than claiming still open when source observation is older than 48h", () => {
     const labels = listingObservationLabels(
       "2026-10-11T12:00:00Z", "2026-10-11T12:00:00Z",
       "2026-10-09T12:00:00Z", now
     );
     expect(labels.origin).toBe("Posted 1d ago");
     expect(labels.observation).toBe("Last observed 3d ago");
-    expect(labels.caution).toMatch(/at least 72h ago/);
+    expect(labels.caution).toMatch(/at least 48h ago/);
   });
 
   it("handles invalid, missing and future source timestamps conservatively", () => {
