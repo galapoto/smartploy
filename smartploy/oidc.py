@@ -29,6 +29,8 @@ from .identity import AuthenticatedPrincipal, IdentityRepository
 
 
 SESSION_COOKIE_NAME = "__Host-smartploy_session"
+OIDC_FLOW_COOKIE_NAME = "__Host-smartploy_oidc_flow"
+OIDC_CLIENT_NAME = "obum_identity"
 PUBLIC_AUTH_PATHS = frozenset(
     {
         "/auth/login",
@@ -245,6 +247,77 @@ class SessionIssue:
 
 def _session_hash(token: str) -> str:
     return sha256(str(token or "").encode("utf-8")).hexdigest()
+
+
+def oidc_flow_cache_key(state: str) -> str:
+    """Use a bounded, opaque, non-reversible key for a browser-bound OAuth flow."""
+    if not isinstance(state, str) or not 16 <= len(state) <= 512 or not state.isascii():
+        raise ValueError("Invalid OAuth state")
+    if not all(char.isalnum() or char in "-._~" for char in state):
+        raise ValueError("Invalid OAuth state")
+    return "smartploy_oidc_flow:" + _session_hash(state)
+
+
+async def start_browser_bound_oidc_flow(cache: Any, state: str, ttl_seconds: int) -> str:
+    """Bind Authlib's server-side PKCE/nonce state to a distinct browser cookie.
+
+    Authlib >=1.6.11 also requires a same-browser marker in request.session.
+    We intentionally do not persist PKCE/nonce/token claims in the browser.
+    A random host-only cookie is checked against the separate PostgreSQL cache
+    entry before restoring the short-lived Authlib session marker at callback.
+    """
+    key = oidc_flow_cache_key(state)
+    token = secrets.token_urlsafe(32)
+    await cache.set(key, _session_hash(token), int(ttl_seconds))
+    return token
+
+
+async def consume_browser_bound_oidc_flow(cache: Any, state: str, cookie: str) -> bool:
+    """Consume a valid state-to-browser binding exactly once, fail closed."""
+    if not isinstance(cookie, str) or not 32 <= len(cookie) <= 256:
+        return False
+    try:
+        key = oidc_flow_cache_key(state)
+    except ValueError:
+        return False
+    expected = await cache.get(key)
+    if not isinstance(expected, str) or len(expected) != 64:
+        return False
+    if not secrets.compare_digest(expected, _session_hash(cookie)):
+        return False
+    await cache.delete(key)
+    return True
+
+
+def authlib_oidc_session_marker(state: str, ttl_seconds: int) -> tuple[str, dict[str, float]]:
+    """Marker Authlib requires after the independent browser binding passes."""
+    oidc_flow_cache_key(state)
+    return (
+        f"_state_{OIDC_CLIENT_NAME}_{state}",
+        {"exp": datetime.now(timezone.utc).timestamp() + int(ttl_seconds)},
+    )
+
+
+def set_oidc_flow_cookie(response: Response, token: str, ttl_seconds: int) -> None:
+    response.set_cookie(
+        key=OIDC_FLOW_COOKIE_NAME,
+        value=token,
+        max_age=ttl_seconds,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def clear_oidc_flow_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=OIDC_FLOW_COOKIE_NAME,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
 
 
 def _utc_now() -> datetime:
@@ -561,7 +634,7 @@ class PostgresOIDCStateCache:
 def build_oidc_registry(settings: OIDCSettings, cache: Any) -> OAuth:
     oauth = OAuth(cache=cache)
     oauth.register(
-        "obum_identity",
+        OIDC_CLIENT_NAME,
         client_id=settings.client_id,
         server_metadata_url=settings.metadata_url,
         code_challenge_method="S256",
