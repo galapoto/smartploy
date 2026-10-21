@@ -18,7 +18,11 @@ def test_origin_diagnostic_is_shell_valid_and_read_only():
     source = SCRIPT.read_text(encoding="utf-8")
     assert "read_only=true" in source
     assert "loopback_health_http" in source
-    assert "smartploy.obumai.com" in source
+    assert 'select-runtime-policy.sh' in source
+    assert 'validate-runtime-policy.sh' in source
+    assert 'PRODUCTION_HOST="${PRODUCTION_ORIGIN#https://}"' in source
+    assert 'probe --connect-to "${PRODUCTION_HOST}:443:127.0.0.1:443"' in source
+    assert "smartploy.obumai.com:443" not in source
     for forbidden in (
         "docker compose up",
         "docker compose down",
