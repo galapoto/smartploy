@@ -125,7 +125,7 @@ def test_rotation_is_explicitly_old_release_only_no_oidc_change_or_build():
         assert mandatory in source
     assert 'dc("up", "-d", "--wait"' in source
     assert "--force-recreate" in source
-    assert "docker build" in source and "Do NOT run docker build" in source
+    assert "docker build" in source and "do NOT run docker build" in source
     assert "SMARTPLOY_PRODUCTION_IDENTITY_MODE" not in source
     assert "SMARTPLOY_OIDC_CLIENT_ID=" not in source
 
