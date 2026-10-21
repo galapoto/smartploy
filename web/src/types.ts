@@ -8,6 +8,9 @@ export interface JobCardData {
   deadline: string;
   application_url: string;
   employer_sector: EmployerSector;
+  /** Title-derived browse label, never a qualification or eligibility claim. */
+  career_area?: "it_data" | "planning" | "other";
+  title_experience?: "entry" | "senior" | "unspecified";
   source_ids: string[];
   posted_at: string;
   first_seen_at: string;
