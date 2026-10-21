@@ -961,6 +961,41 @@ describe("first opt-in creates private IT applications immediately", () => {
     expect(screen.queryByTestId("application-editor")).toBeNull();
   });
 
+  it("never creates an application from a stale ATS cache on first opt-in", async () => {
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "needs_source_refresh", checked: 1, eligible: 0,
+      created: 0, already_prepared: 0, stale_skipped: 1,
+      stopped_on_opt_out: false, provider_calls: 0,
+      employer_actions_performed: false, automatic_submission_authorized: false,
+    });
+    await openOptIn();
+    expect(await screen.findByText(/have not been checked recently/i)).toBeTruthy();
+    expect(currentPrefs.auto_draft_enabled).toBe(true);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("allows direct rescan only after newly verified source data is available", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "needs_source_refresh", checked: 1, eligible: 0,
+      created: 0, already_prepared: 0, stale_skipped: 1,
+      stopped_on_opt_out: false, provider_calls: 0,
+      employer_actions_performed: false, automatic_submission_authorized: false,
+    });
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {
+      name: /Find and prepare matching drafts now/i,
+    }));
+    expect(await screen.findByText(/source worker must refresh those postings/i)).toBeTruthy();
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1);
+  });
+
   it("discards an old account's in-flight first scan after session switch", async () => {
     const switchToB = switchableSession();
     let finish: (value: Awaited<ReturnType<typeof api.prepareMyMatchingDrafts>>) => void =
