@@ -1,3 +1,12 @@
-smartploy.obumai.com {
+# SmartPloy production transition to the dedicated Komplyint subdomain.
+# This is an EXAMPLE ONLY: install after new DNS, valid HTTPS/TLS and
+# first-party OIDC callback verification. Existing legacy host is redirected
+# only AFTER the new origin passes the live-acceptance probe.
+smartploy.komplyint.fi {
     reverse_proxy 127.0.0.1:8091
+}
+
+# Temporary redirect during migration; remove this block on rollback.
+smartploy.obumai.com {
+    redir https://smartploy.komplyint.fi{uri} temporary
 }

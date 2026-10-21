@@ -71,6 +71,18 @@ def test_web_gateway_keeps_backend_routes_out_of_spa_fallback():
     assert caddy.index("handle @backend") < caddy.index("try_files {path} /index.html")
 
 
+def test_komplyint_host_cutover_config_keeps_loopback_and_temporary_legacy_redirect():
+    caddy = (ROOT / "deploy/personal/Caddyfile.host.example").read_text(
+        encoding="utf-8"
+    )
+    assert "smartploy.komplyint.fi {" in caddy
+    assert "reverse_proxy 127.0.0.1:8091" in caddy
+    assert "smartploy.obumai.com {" in caddy
+    assert "redir https://smartploy.komplyint.fi{uri} temporary" in caddy
+    assert "0.0.0.0:8091" not in caddy
+    assert "tls internal" not in caddy
+
+
 def test_backup_is_private_checksummed_and_bounded():
     backup = (ROOT / "deploy/personal/scripts/backup.sh").read_text(encoding="utf-8")
 
