@@ -33,7 +33,7 @@ _IT_TITLE = (
 )
 
 _PLANNING_TITLE = (
-    r"(?<!\w)(?:suunnittelij\w*|hankesuunnittelij\w*|suunnitteluinsinöör\w*|"
+    r"(?<!\w)(?:suunnittelij\w*|hankesuunnittelij\w*|projektisuunnittelij\w*|suunnitteluinsinöör\w*|"
     r"projektikoordinaattor\w*|hankekoordinaattor\w*|"
     r"projektiassistent\w*|project[- ]?(?:planner|coordinator|"
     r"assistant)|planning[- ]?(?:officer|specialist|engineer|"
@@ -46,6 +46,10 @@ _REJECT_TRANSPORT_TITLE = (
     r"kuljettaj\w*|taksikuski|autonkuljettaj\w*|"
     r"lähetti|delivery[- ]?rider)(?!\w)"
 )
+# Also catch a compound formed by concatenating words to "kuljettaja".
+# Otherwise "Suunnittelijamyymäläkuljettaja" looks like a planning role
+# despite explicitly being a driver; reject it before the planning check.
+_TRANSPORT_COMPOUND = r"(?<!\w)[a-zåäö]*kuljettaj\w*(?!\w)"
 _SENIOR = r"(?<!\w)(?:senior|principal|lead|staff|head|director|johtava|vanhempi|päällikkö)(?!\w)"
 _ENTRY = r"(?<!\w)(?:junior|entry[- ]?level|graduate|trainee|intern|internship|harjoittelij\w*|juniori|nuorempi|kesätyö|kesäharjoittelij\w*)(?!\w)"
 
@@ -55,7 +59,7 @@ def career_area(title: str) -> str:
     lowered = str(title or "").casefold()
     # Prevent promoted driver titles that also mention app/data tooling
     # in their title. True IT jobs do not generally advertise driving.
-    if re.search(_REJECT_TRANSPORT_TITLE, lowered):
+    if re.search(_REJECT_TRANSPORT_TITLE, lowered) or re.search(_TRANSPORT_COMPOUND, lowered):
         return "other"
     if re.search(_IT_TITLE, lowered):
         return "it_data"
