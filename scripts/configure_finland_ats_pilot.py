@@ -265,9 +265,12 @@ def stage_pilot(
             if os.path.exists(candidate):
                 os.unlink(candidate)
 
+    # Rollback receipts report the actual restored five employers rather
+    # than the seven-source target still loaded for source validation.
+    selected = former_sources if rollback_it_portfolio else sources
     return {
-        "source_count": len(sources),
-        "tenant_ids": [item["tenant"] for item in sources],
+        "source_count": len(selected),
+        "tenant_ids": [item["tenant"] for item in selected],
         "region_policy": "explicit Finland/Finnish locations only",
         "transport_scope": (
             "finland_it_public_ats_portfolio_v2" if (upgrade_it_portfolio or rollback_it_portfolio)
