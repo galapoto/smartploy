@@ -124,7 +124,14 @@ def _approved_source_for_auto_draft(candidate) -> bool:
     check, not as a substitute for the original source policy.
     """
     source_ids = tuple(candidate.source_ids)
-    if not source_ids or candidate.job.raw.get("archived") is True:
+    stored_job_sources = tuple(
+        item.strip() for item in str(candidate.job.source or "").split(",")
+        if item.strip()
+    )
+    if (
+        not source_ids or set(stored_job_sources) != set(source_ids)
+        or candidate.job.raw.get("archived") is True
+    ):
         return False
     job_class = candidate.job.raw.get("source_class")
     job_mode = candidate.job.raw.get("source_mode")
