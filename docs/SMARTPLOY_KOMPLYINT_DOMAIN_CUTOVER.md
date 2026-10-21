@@ -34,9 +34,12 @@ This is a safe, opt-in rollout plan, **not proof of a public deployment**.
   origin-health host from the selected policy, then requires a public
   SPA shell, unauthenticated private API 401 and a redirect to the
   configured trusted OIDC issuer, **not** Cloudflare Access sign-in.
-- `Caddyfile.host.example` provides a staged reverse-proxy route
-  for the new hostname and a *temporary* legacy redirect. Its contents
-  are **not** installed automatically.
+- `Caddyfile.host.example` provides ONLY the new hostname reverse-proxy
+  block; it makes no changes to the existing production hostname.
+  `Caddyfile.legacy-redirect.example` is a separate **optional**
+  redirect and must NOT be installed until the real new-domain login,
+  private API, AutoApply and TLS acceptance have passed.
+  Neither example is automatically installed.
 
 ## Required operational cutover, in order
 
@@ -44,12 +47,19 @@ This is a safe, opt-in rollout plan, **not proof of a public deployment**.
    source-priority worker fix, revocable opt-in, approved career evidence
    and strict final-employer-submit rights. Promote only an audited,
    native ObumDelivery-approved, exact-source build.
-2. **DNS:** set the new `smartploy` host in the `komplyint.fi` DNS zone
-   to the approved OVH/Cloudflare ingress destination already used
-   by the organization. Do not guess an IP, CNAME target or tunnel ID.
-   Confirm public DNS resolution and the absence of a conflicting record.
-3. **TLS/edge:** install `Caddyfile.host.example` or its equivalent
-   on the approved OVH ingress **after** DNS control is confirmed;
+2. **DNS — VERIFIED 21 October 2026:** public authoritative
+   Euronic/Domainkeskus DNS now resolves `smartploy.komplyint.fi`
+   directly to **51.75.61.214**, TTL **600 seconds**. The owner
+   confirmed that this is the intended OVH server. The public HTTPS
+   root and `/healthz` remain unreachable, so server ingress/TLS
+   and production application activation are still outstanding.
+   Do not change any existing `auth`, `proctor` or apex records.
+3. **TLS/edge:** after identifying the OVH ingress actually serving
+   `auth.komplyint.fi`, ADD ONLY the new `Caddyfile.host.example`
+   site block if the existing proxy is Caddy, or its equivalent for
+   the installed proxy, without replacing or restarting other services
+   without an approved change window. The old-host redirect is NOT
+   included in this file.
    verify certificate, HTTPS, a public static shell, private API
    unauthenticated 401. Configure Cloudflare edge/WAF so
    `smartploy.komplyint.fi` **bypasses Cloudflare Access login** but
@@ -74,7 +84,9 @@ This is a safe, opt-in rollout plan, **not proof of a public deployment**.
    require employer-side rights, a real reviewed applicant gesture,
    an exact partner job and a stored provider `applicationId`.
 7. **Redirect:** once the new host is independently verified,
-   enable the optional *temporary* old-domain redirect. When rollback
+   separately enable the optional *temporary* old-domain redirect
+   from `Caddyfile.legacy-redirect.example` if that legacy
+   hostname is actually routed through the same ingress. When rollback
    is needed, revert this redirect, restore the old exact Cloudflare
    identity policy and verified old Caddy origin before accepting traffic.
    Do **not** share cookies between unrelated registered domains.
@@ -91,3 +103,28 @@ This is a safe, opt-in rollout plan, **not proof of a public deployment**.
   Domainkeskus DNS or OVH Caddy; operator-controlled rollout remains
   necessary. The system must not claim the domain has moved until
   the new URL is publicly reachable and first-party sessions pass.
+
+## SP15s — DNS-complete / OVH-host cutover verification
+
+The user confirmed the Domainkeskus A record and independent public
+DNS returned `51.75.61.214`, TTL `600`. External HTTPS fetches of
+`/` and `/healthz` remain unreachable as of this verification.
+
+The original release pipeline had a SECOND hostname bug: although
+the new OIDC preflight chose the correct domain, `deploy.sh`,
+`restore.sh`, `assert-healthy-stack.sh`, `assert-running-images.sh`,
+`release-evidence.sh` and `diagnose-origin-502.sh` still checked
+`smartploy.obumai.com` or hard-coded its Cloudflare policy.
+They now reuse the **exact selected, verified immutable runtime
+identity policy**. New tests execute the original embedded Python
+production health validation with both policy origins and negative
+cross-origin cases. No hostname wildcard or shared domain cookies.
+The OIDC pre-deploy TLS check can tolerate a 502 from an installed
+new-host reverse proxy *before first deployment*, but the original
+post-deploy live-acceptance rejects any 5xx and must pass the
+ZITADEL redirect + private API before recording a deployed SHA.
+
+The sample Caddy new-host site and optional legacy redirect are now
+separate files, so a well-intended initial install cannot silently
+redirect users away from the existing hostname. These code changes
+are NOT proof that the OVH proxy was installed or that the app runs.
