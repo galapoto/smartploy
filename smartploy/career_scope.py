@@ -33,7 +33,7 @@ _IT_TITLE = (
 )
 
 _PLANNING_TITLE = (
-    r"(?<!\w)(?:suunnittelij\w*|suunnitteluinsinöör\w*|"
+    r"(?<!\w)(?:suunnittelij\w*|hankesuunnittelij\w*|suunnitteluinsinöör\w*|"
     r"projektikoordinaattor\w*|hankekoordinaattor\w*|"
     r"projektiassistent\w*|project[- ]?(?:planner|coordinator|"
     r"assistant)|planning[- ]?(?:officer|specialist|engineer|"
