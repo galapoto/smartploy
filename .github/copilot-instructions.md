@@ -1,0 +1,1 @@
+MANDATORY GitHub Copilot instructions: read AGENTS.md GLOBAL-AGENT-RUN-PROOF v1 every run. Cite exact plan subsection, before/after stage, advancing the real core product, searched safe licensed reuse vs adapted vs new code, exact CI and deployed evidence, DONE/IN PROGRESS/NOT STARTED/BLOCKED whole-project progress. More restrictive original governance takes priority.
