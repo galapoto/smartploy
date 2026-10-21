@@ -82,6 +82,31 @@ describe("first-use choice and saved settings", () => {
     });
   });
 
+  it("explains why keyword-only searching cannot also enable unattended role drafting", async () => {
+    const save = vi.fn(async (_value: SearchPreferencesUpdate) => undefined);
+    render(<SearchSetup initial={firstVisit} onSave={save} />);
+    fireEvent.change(screen.getByPlaceholderText(/Python, business analysis, documentation/), {
+      target: { value: "Python" },
+    });
+    const auto = screen.getByRole("checkbox", {
+      name: /Automatically prepare suitable job drafts/i,
+    }) as HTMLInputElement;
+    fireEvent.click(auto);
+    fireEvent.click(screen.getByRole("button", { name: /Show my matched jobs/i }));
+    expect(screen.getByRole("alert").textContent).toMatch(
+      /Automatic application drafts need a target job title/i
+    );
+    expect(save).not.toHaveBeenCalled();
+
+    // The original general/personalized keyword-only search is still valid.
+    fireEvent.click(auto);
+    fireEvent.click(screen.getByRole("button", { name: /Show my matched jobs/i }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][0]).toMatchObject({
+      mode: "personalized", roles: [], keywords: ["Python"], auto_draft_enabled: false,
+    });
+  });
+
   it("keeps automatic IT drafts OFF by default, requires opt-in and revokes in general mode", async () => {
     const save = vi.fn(async (_value: SearchPreferencesUpdate) => undefined);
     render(<SearchSetup initial={firstVisit} onSave={save}/>);
