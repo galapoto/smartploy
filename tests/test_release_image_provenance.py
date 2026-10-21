@@ -20,7 +20,7 @@ def _sandbox(tmp_path):
     shutil.copyfile(SCRIPT, scripts / SCRIPT.name)
     for name in ("select-runtime-policy.sh", "validate-runtime-policy.sh"):
         shutil.copyfile(SCRIPT.parent / name, scripts / name)
-    (root / "deploy/personal/env").write_text("SMARTPLOY_PROFILE_ID=default\\n")
+    (root / "deploy/personal/env").write_text("SMARTPLOY_PROFILE_ID=default\n")
     for name in ("runtime.production.env", "runtime.oidc.production.env"):
         shutil.copyfile(ROOT / "deploy/personal" / name, root / "deploy/personal" / name)
     (root / "deploy/personal/docker-compose.yml").write_text(
