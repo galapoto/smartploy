@@ -8,7 +8,7 @@ reports counts only, without applicant data, job URLs or account identities.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
 import re
 from urllib.parse import urlsplit
@@ -26,6 +26,9 @@ from .storage import PostgresJobRepository
 MAX_DRAFTS_PER_USER = 3
 MIN_PREFERENCE_SCORE = 70
 MIN_APPROVED_FIT_SCORE = 60
+# A source_current flag survives temporary/long-term ATS poll failures.
+# Never silently prepare an unattended draft from an old cached listing.
+MAX_VERIFIED_AGE = timedelta(hours=48)
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,7 @@ class AutoDraftSummary:
     created: int = 0
     already_prepared: int = 0
     stopped_on_opt_out: bool = False
+    stale_skipped: int = 0
 
     def public_counts(self) -> dict[str, object]:
         return {
@@ -43,6 +47,7 @@ class AutoDraftSummary:
             "eligible": self.eligible, "created": self.created,
             "already_prepared": self.already_prepared,
             "stopped_on_opt_out": self.stopped_on_opt_out,
+            "stale_skipped": self.stale_skipped,
             "provider_calls": 0, "employer_actions_performed": False,
             "automatic_submission_authorized": False,
         }
@@ -95,6 +100,28 @@ def _deadline_open(value: str, *, now: datetime | None = None) -> bool:
         return False
 
 
+def _recently_verified(candidate, *, now: datetime | None = None) -> bool:
+    """Use the original source observation timestamps, never the job post date.
+
+    A source_current=True bit only means the last known ATS snapshot listed
+    this job. It does NOT prove the employer still lists it if polling stopped.
+    Repeated successful ATS imports update last_verified_at; legacy records
+    may only have last_seen_at. Ambiguous or future timestamps fail closed.
+    """
+    stamp = str(candidate.last_verified_at or candidate.last_seen_at or "").strip()
+    if not stamp:
+        return False
+    try:
+        verified = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        if verified.tzinfo is None:
+            return False
+        current = now or datetime.now(timezone.utc)
+        age = current.astimezone(timezone.utc) - verified.astimezone(timezone.utc)
+        return timedelta(0) <= age <= MAX_VERIFIED_AGE
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
 def _same_reviewable_posting(original, latest) -> bool:
     """A description hash alone misses changed employer requirements/links."""
     if original.description_fingerprint != latest.description_fingerprint:
@@ -144,7 +171,7 @@ def prepare_profile_shortlist(
     by_key = {item.canonical_key: item for item in current if item.source_current}
     ranked = search_jobs(current, pref)["recommendations"]
     checked = len(ranked)
-    eligible = created = existing = 0
+    eligible = created = existing = stale_skipped = 0
     for match in ranked:
         if created >= bound:
             break
@@ -162,6 +189,9 @@ def prepare_profile_shortlist(
             or not _deadline_open(candidate.job.deadline)
         ):
             continue
+        if not _recently_verified(candidate):
+            stale_skipped += 1
+            continue
         fit = score_candidate(candidate, profile)
         if fit.mandatory_gaps or fit.fit_score < MIN_APPROVED_FIT_SCORE:
             continue
@@ -171,6 +201,7 @@ def prepare_profile_shortlist(
                 return AutoDraftSummary(
                     "disabled_after_revocation", checked, eligible, created,
                     existing, stopped_on_opt_out=True,
+                    stale_skipped=stale_skipped,
                 )
             # Job may have been retired between initial matching and the
             # owner approval guard; re-fetch and enforce exact same content.
@@ -182,6 +213,12 @@ def prepare_profile_shortlist(
                 or not _deadline_open(latest.job.deadline)
             ):
                 continue
+            # The original PostgresJobRepository.get() runs while the
+            # revocable account preference guard is held. Check the live
+            # snapshot age AGAIN before creating an application workspace.
+            if not _recently_verified(latest):
+                stale_skipped += 1
+                continue
             try:
                 proposed = new_workspace(
                     latest, profile, source_cv_text=cv.text if cv else "",
@@ -192,7 +229,12 @@ def prepare_profile_shortlist(
             _, added = workspace_repository.create_or_get(proposed)
             created += int(added)
             existing += int(not added)
-    return AutoDraftSummary("prepared", checked, eligible, created, existing)
+    return AutoDraftSummary(
+        status=("needs_source_refresh" if stale_skipped and not created and not existing
+                else "prepared"),
+        checked=checked, eligible=eligible, created=created,
+        already_prepared=existing, stale_skipped=stale_skipped,
+    )
 
 
 def prepare_worker_shortlists(
