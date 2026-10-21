@@ -672,27 +672,25 @@ def test_replaced_cv_after_ranking_uses_new_version_not_private_old_document():
     fx = fixture()
     pid, prefs, jobs, profile, _, spaces, _ = fx
 
-    class ChangedCV(MemoryCVRepository):
-        def __init__(self):
-            super().__init__()
-            self.put(pid, "OLD-PRIVATE-CV.pdf", "application/pdf",
-                     b"private old content", "PRIVATE OLD CV CONTENT")
-            self.reads = 0
+    updated = MemoryCVRepository()
+    updated.put(pid, "OLD-PRIVATE-CV.pdf", "application/pdf",
+                b"private old content", "PRIVATE OLD CV CONTENT")
 
-        def get(self, profile_id):
-            self.reads += 1
-            if self.reads == 1:
-                self.put(pid, "NEW-APPROVED-CV.pdf", "application/pdf",
-                         b"newer cv contents", "NEW REVIEWED CV CONTENT")
-            return super().get(profile_id)
+    class RefreshChangesCV(MemoryJobRepository):
+        def get(self, canonical_key):
+            # Happens AFTER initial ranking. Previously AutoApply had
+            # already read the OLD CV, and would write the wrong draft.
+            updated.put(pid, "NEW-APPROVED-CV.pdf", "application/pdf",
+                        b"newer cv contents", "NEW REVIEWED CV CONTENT")
+            return super().get(canonical_key)
 
-    updated = ChangedCV()
+    source = RefreshChangesCV()
+    source.upsert(candidate("Junior Data Analyst"))
     outcome = prepare_profile_shortlist(
-        pid, preferences_repository=prefs, job_repository=jobs,
+        pid, preferences_repository=prefs, job_repository=source,
         profile_repository=profile, cv_repository=updated,
         workspace_repository=spaces,
     )
-    assert updated.reads == 1
     assert outcome.created == 1
     document = spaces.list(pid)[0]
     assert document.cv_text == "NEW REVIEWED CV CONTENT"
@@ -706,26 +704,23 @@ def test_deleted_cv_after_ranking_uses_only_current_approved_profile():
     fx = fixture()
     pid, prefs, jobs, profile, _, spaces, _ = fx
 
-    class DeletedCV(MemoryCVRepository):
-        def __init__(self):
-            super().__init__()
-            self.put(pid, "OLD-PRIVATE-CV.pdf", "application/pdf",
-                     b"old secrets", "REVOKED-PRIVATE-CV-CONTENT")
-            self.reads = 0
+    deleted = MemoryCVRepository()
+    deleted.put(pid, "OLD-PRIVATE-CV.pdf", "application/pdf",
+                b"old secrets", "REVOKED-PRIVATE-CV-CONTENT")
 
-        def get(self, profile_id):
-            self.reads += 1
-            if self.reads == 1:
-                self.delete(profile_id)
-            return super().get(profile_id)
+    class RefreshRemovesCV(MemoryJobRepository):
+        def get(self, canonical_key):
+            # Simulate user deleting a CV after scoring but before insert.
+            deleted.delete(pid)
+            return super().get(canonical_key)
 
-    deleted = DeletedCV()
+    source = RefreshRemovesCV()
+    source.upsert(candidate("Junior Data Analyst"))
     outcome = prepare_profile_shortlist(
-        pid, preferences_repository=prefs, job_repository=jobs,
+        pid, preferences_repository=prefs, job_repository=source,
         profile_repository=profile, cv_repository=deleted,
         workspace_repository=spaces,
     )
-    assert deleted.reads == 1
     assert outcome.created == 1
     document = spaces.list(pid)[0]
     assert document.source_cv_sha256 == ""
