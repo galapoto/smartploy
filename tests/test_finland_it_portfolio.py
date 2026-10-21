@@ -98,7 +98,7 @@ def test_portfolio_refuses_modified_previous_sources_instead_of_clobbering(tmp_p
     text = "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON=" + json.dumps(old) + "\n"
     with pytest.raises(PilotConfigurationError, match="registry file"):
         plan_it_portfolio_upgrade(text + "SMARTPLOY_PUBLIC_ATS_SOURCES_FILE=/tmp/override.json\n", old, new)
-    with pytest.raises(PilotConfigurationError, match="inline source"):
+    with pytest.raises(PilotConfigurationError, match="invalid JSON"):
         plan_it_portfolio_upgrade("SMARTPLOY_PUBLIC_ATS_SOURCES_JSON=\n", old, new)
 
 
