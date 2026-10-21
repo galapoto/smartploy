@@ -105,11 +105,14 @@ def validate_oidc_public_probe(
 ) -> str:
     """Public SPA is allowed; exact private API must still be locked.
 
-    A Cloudflare Access redirect here would break the intended application
-    sign-in. Never accept arbitrary 302 destinations or a public API 200.
+    The exact HTTPS public origin and TLS certificate are verified by the
+    calling production shell. The registered Komplyint hostname reaches the
+    OVH Caddy ingress directly, so Cloudflare edge headers are OPTIONAL for
+    OIDC (but still mandatory for the legacy Access profile).
+
+    Reject Cloudflare Access challenges through the exact root/401/login
+    contracts; never accept arbitrary redirects or a public private API.
     """
-    if not probe.cloudflare_edge:
-        raise LiveAcceptanceError("production response lacks Cloudflare edge evidence")
     if surface == "root":
         if probe.status_code != 200:
             raise LiveAcceptanceError("OIDC public login shell is not reachable")
