@@ -302,6 +302,41 @@ def test_explicit_finnish_english_title_equivalents_are_discoverable(
     assert result["score_kind"] == "preference_alignment_not_verified_qualification"
 
 
+@pytest.mark.parametrize(("target", "title"), [
+    ("Data Engineer", "Data-insinööri"),
+    ("Data Engineer", "Datainsinööri"),
+    ("Data-insinööri", "Junior Data Engineer"),
+    ("Software Developer", "Ohjelmistokehittäjä"),
+    ("IT Support Specialist", "IT-tukihenkilö"),
+    ("Project Planner", "Projektisuunnittelija"),
+    ("Suunnittelija", "Hankesuunnittelija"),
+    ("Suunnittelija", "Junior Projektisuunnittelija"),
+    ("Suunnittelija", "Ohjelmistosuunnittelija"),
+])
+def test_finnish_data_engineering_and_compound_suunnittelija_matches(target, title):
+    pref = revise_preferences("fi-nationwide", search_settings(
+        roles=[target], locations=[], languages=[], work_modes=[],
+        skills=[], keywords=[], seniority="any",
+    ), revision=0)
+    result = search_jobs([job(title, location="Rovaniemi")], pref)
+    assert [card["job"]["role_title"] for card in result["recommendations"]] == [title]
+    assert any("Job title matches" in line for line in result["recommendations"][0]["reasons"])
+
+
+@pytest.mark.parametrize("unrelated", [
+    "Kuljettaja", "Driver", "Suunnittelijamyymäläkuljettaja",
+    "Marketing Strategist", "Principal Data Engineer Manager",
+])
+def test_suunnittelija_title_scope_does_not_promote_unrelated_postings(unrelated):
+    pref = revise_preferences("fi-nationwide", search_settings(
+        roles=["Suunnittelija"], locations=[], languages=[], work_modes=[],
+        skills=[], keywords=[], seniority="entry",
+    ), revision=0)
+    result = search_jobs([job(unrelated, location="Rovaniemi")], pref)
+    assert result["recommendations"] == []
+    assert result["broader"]
+
+
 def test_translations_do_not_discard_extra_manager_or_specialist_qualifiers():
     pref = revise_preferences("p", search_settings(
         roles=["Data Analyst Manager"], keywords=[], skills=[], locations=[],
