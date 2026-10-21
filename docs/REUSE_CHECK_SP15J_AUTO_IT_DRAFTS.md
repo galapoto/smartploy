@@ -255,3 +255,64 @@ OIDC, native ObumDelivery proof and OVH exact SHA validation.
 The operator-controlled `config/finland_public_ats_pilot.json` and
 `scripts/configure_finland_ats_pilot.py` existed already; this change
 does **not** silently enable those source hosts.
+
+
+## SP15o — reviewed-source-only AutoApply and reusable Finland feed activation
+
+**Concrete core issue:** Before this change the auto-draft engine could draft
+applications from an imported `manual-import` listing merely because its
+`source_current` flag was true and its observation timestamp was recent.
+That timestamp verifies only when SmartPloy saw *some input*, not that
+the employer itself still advertised the vacancy. User-added job links
+and unreviewed search/browser outputs may not be promoted into
+unattended job preparation.
+
+**Reused from original product, checked first:**
+- `domain.SourcePolicy.normalized/allows` and
+  `normalize_observation` attach independently stored
+  `job.raw.source_class/source_mode`,
+  `candidate.metadata.source_class/source_mode` and source IDs.
+  The built-in eligible policies are those issued by
+  `PublicATSAdapter.policy` (`direct_employer_ats/api`),
+  `JobMarketFinlandAdapter.policy` (`national_job_market/api`)
+  and `KuntarekryFeedAdapter.policy` (`public_sector_jobs/feed`).
+- `domain.merge_candidates` deduplicates sources. Its merged metadata
+  may come from the newer source while its longer job body comes from
+  the older source. The auto-draft guard therefore requires both
+  provenance copies to agree, the source ID set to match `job.source`,
+  and *all* constituent source IDs to be approved provider families.
+  A manual/unknown source merged with a valid ATS cannot borrow the
+  ATS authority.
+- Existing `job_repository.get`, exact role/requirements checks,
+  recent-source verification and `auto_draft_guard` are still run
+  **after ranking and inside the owner-scoped write guard**.
+  The same original `new_workspace/create_or_get` generates documents.
+- Existing five reviewed boards in
+  `config/finland_public_ats_pilot.json`, the original
+  `PublicATSAdapter/poll_public_ats`, Docker `COPY . /workspace`,
+  and existing worker `SMARTPLOY_PUBLIC_ATS_SOURCES_FILE` config.
+  Instead of creating another crawler or a new database table,
+  a **new installation's example environment** sets that file path
+  to `/workspace/config/finland_public_ats_pilot.json`.
+  Existing private environment files are untouched, and no employer
+  submission or external CV forwarding is enabled.
+
+**New scratch code strictly limited to missing glue:**
+`_approved_source_for_auto_draft`, the aggregate
+`needs_trusted_source/unverified_source_skipped` result, frontend
+first-use and manual-retry guidance, and the reviewed file path in
+`deploy/personal/env.example`. No copied/unlicensed third-party
+code, new SaaS dependencies, worker algorithm or employer POST.
+This gate is stricter than accepting every manually discovered vacancy;
+manually saved jobs remain available for user review and direct
+human-selected document preparation.
+
+**Tests added:** Known official/ATS provenance allowed; recent manual
+and unreviewed sources rejected; merge of good+manual sources in both
+orders rejected; mismatch between body/source metadata or source IDs
+rejected; provenance changed between scoring and the final database
+read rejected; frontend no-false-success messages; and a worker
+integration test proving the sample profile registers **five existing
+Finland sources plus only the local per-account draft task** without
+OBUMAI/partner submission. Test runs are synthetic, not claims that
+the five employer feeds were confirmed live on OVH.
