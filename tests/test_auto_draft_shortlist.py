@@ -31,7 +31,7 @@ def candidate(title: str, *, url: str = "", requirements: list[str] | None = Non
     href = url or "https://careers.example.fi/jobs/" + slug
     observed = normalize_observation(
         SourceObservation(
-            source_id="manual-import", source_mode="manual",
+            source_id="lever-global-synthetic-firm", source_mode="api",
             source_url=href, raw_text=title + " vacancy",
             observed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
             payload={
@@ -41,7 +41,8 @@ def candidate(title: str, *, url: str = "", requirements: list[str] | None = Non
                 "requirements":requirements or [],
             },
         ),
-        SourcePolicy("manual-import","Manual","manual",("manual",)),
+        SourcePolicy("lever-global-synthetic-firm", "Synthetic ATS",
+                     "direct_employer_ats", ("api",)),
     )
     assert observed.candidate
     return observed.candidate
@@ -470,4 +471,143 @@ def test_source_refresh_race_is_rechecked_inside_user_optin_guard():
     assert result.status == "needs_source_refresh"
     assert result.created == 0
     assert result.stale_skipped == 1
+    assert spaces.list(pid) == []
+
+
+
+def test_manual_or_unknown_search_feeds_never_create_unattended_private_drafts():
+    """A manual bookmark's recent timestamp is not employer-source verification."""
+    fx = fixture()
+    pid,prefs,_,profile,cv,spaces,_=fx
+    base = candidate("Junior Data Analyst")
+    inputs = (
+        SourcePolicy("manual-import", "Manual", "manual", ("manual",)),
+        SourcePolicy("lever-global-fake", "Unreviewed Search",
+                     "community_search", ("api",)),
+    )
+    for policy in inputs:
+        unsafe = normalize_observation(
+            SourceObservation(
+                source_id=policy.source_id,
+                source_mode=policy.allowed_modes[0],
+                source_url="https://careers.example.fi/jobs/junior-data-analyst",
+                raw_text="Junior Data Analyst vacancy",
+                observed_at=datetime.now(timezone.utc).isoformat(),
+                payload={
+                    "company": "Synthetic Employer",
+                    "role_title": "Junior Data Analyst",
+                    "description": "Python data analysis and SQL business reporting",
+                    "location": "Helsinki",
+                    "application_url": "https://careers.example.fi/jobs/junior-data-analyst",
+                },
+            ),
+            policy,
+        )
+        assert unsafe.candidate is not None
+        result = prepare_profile_shortlist(
+            pid, preferences_repository=prefs,
+            job_repository=MemoryJobRepositoryWith(unsafe.candidate),
+            profile_repository=profile, cv_repository=cv,
+            workspace_repository=spaces,
+        )
+        assert result.status == "needs_trusted_source"
+        assert result.created == 0
+        assert result.unverified_source_skipped == 1
+        assert result.public_counts()["employer_actions_performed"] is False
+        assert "careers.example.fi" not in str(result.public_counts())
+    assert spaces.list(pid) == []
+
+
+def test_both_existing_finnish_public_feed_policy_types_remain_usable_for_drafts():
+    """Reuse real JobMarket Finland/Kuntarekry policy types, not a Lever-only gate."""
+    from smartploy.auto_draft_shortlist import _approved_source_for_auto_draft
+    from smartploy.domain import JobCandidate
+    original = candidate("Junior Data Analyst")
+    assert _approved_source_for_auto_draft(original)
+    choices = (
+        ("national_job_market", "api", "job-market-finland"),
+        ("public_sector_jobs", "feed", "kuntarekry"),
+    )
+    for source_class, mode, sid in choices:
+        job = replace(original.job, raw={
+            **original.job.raw, "source_class": source_class, "source_mode": mode,
+        })
+        record = replace(original, job=job, source_ids=(sid,), metadata={
+            **original.metadata, "source_class": source_class, "source_mode": mode,
+        })
+        assert _approved_source_for_auto_draft(record), (source_class, mode, sid)
+        fx=fixture()
+        pid,prefs,_,profile,cv,spaces,_=fx
+        outcome = prepare_profile_shortlist(
+            pid, preferences_repository=prefs,
+            job_repository=MemoryJobRepositoryWith(record),
+            profile_repository=profile, cv_repository=cv,
+            workspace_repository=spaces,
+        )
+        assert outcome.created == 1 and outcome.status == "prepared"
+        assert len(spaces.list(pid)) == 1
+
+
+def test_mixed_or_conflicting_provenance_does_not_inherit_ats_draft_authority():
+    """Original merge_candidates may keep an older job body but newer source metadata."""
+    from smartploy.auto_draft_shortlist import _approved_source_for_auto_draft
+    from smartploy.domain import merge_candidates
+    original = candidate("Junior Data Analyst")
+    manual = normalize_observation(
+        SourceObservation(
+            source_id="manual-import", source_mode="manual",
+            source_url="https://careers.example.fi/jobs/junior-data-analyst",
+            raw_text="Junior Data Analyst vacancy",
+            observed_at=datetime.now(timezone.utc).isoformat(),
+            payload={
+                "company": "Synthetic Employer",
+                "role_title": "Junior Data Analyst",
+                "description": "Python data analysis and SQL business reporting",
+                "location": "Helsinki",
+                "application_url": "https://careers.example.fi/jobs/junior-data-analyst",
+            },
+        ),
+        SourcePolicy("manual-import", "Manual", "manual", ("manual",)),
+    ).candidate
+    assert manual is not None
+    assert manual.canonical_key == original.canonical_key
+    assert not _approved_source_for_auto_draft(merge_candidates(original, manual))
+    assert not _approved_source_for_auto_draft(merge_candidates(manual, original))
+    # A forged source ID with an inconsistent policy/body never becomes trusted.
+    assert not _approved_source_for_auto_draft(
+        replace(original, source_ids=("lever-global-synthetic-firm", "manual-import"))
+    )
+    assert not _approved_source_for_auto_draft(
+        replace(original, metadata={**original.metadata, "source_class": "manual"})
+    )
+    assert not _approved_source_for_auto_draft(
+        replace(original, job=replace(original.job, raw={})))
+    )
+
+
+def test_source_provenance_rechecked_after_race_but_before_workspace_creation():
+    fx = fixture()
+    pid,prefs,_,profile,cv,spaces,_=fx
+    current = candidate("Junior Data Analyst")
+    compromised = replace(
+        current, metadata={**current.metadata, "source_mode": "manual"},
+    )
+
+    class ChangedSourceAfterRanking(MemoryJobRepository):
+        def __init__(self):
+            super().__init__()
+            self.upsert(current)
+
+        def get(self, canonical_key):
+            return compromised
+
+    result = prepare_profile_shortlist(
+        pid, preferences_repository=prefs,
+        job_repository=ChangedSourceAfterRanking(),
+        profile_repository=profile,
+        cv_repository=cv, workspace_repository=spaces,
+    )
+    assert result.status == "needs_trusted_source"
+    assert result.unverified_source_skipped == 1
+    assert result.created == 0
     assert spaces.list(pid) == []
