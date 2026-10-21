@@ -23,6 +23,20 @@ def test_public_origin_and_allowed_host(monkeypatch):
     assert rejected.status_code == 400
 
 
+def test_new_komplyint_origin_is_exactly_host_bound(monkeypatch):
+    monkeypatch.setenv("SMARTPLOY_PUBLIC_ORIGIN", "https://smartploy.komplyint.fi")
+    monkeypatch.setenv("SMARTPLOY_ALLOWED_HOSTS", "smartploy.komplyint.fi")
+    api = TestClient(
+        create_app(SmartployService()),
+        base_url="https://smartploy.komplyint.fi",
+    )
+    health = api.get("/healthz")
+    assert health.status_code == 200
+    assert health.json()["public_origin"] == "https://smartploy.komplyint.fi"
+    assert api.get("/healthz", headers={"host": "smartploy.obumai.com"}).status_code == 400
+    assert api.get("/healthz", headers={"host": "untrusted.komplyint.fi"}).status_code == 400
+
+
 def test_invalid_public_origin_and_wildcard_host_fail_closed(monkeypatch):
     monkeypatch.setenv("SMARTPLOY_PUBLIC_ORIGIN", "http://smartploy.obumai.com")
     with pytest.raises(ValueError, match="HTTPS"):

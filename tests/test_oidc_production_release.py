@@ -46,6 +46,8 @@ def test_firstparty_oidc_mode_is_opt_in_and_exactly_validated():
     source = (PROD / "runtime.oidc.production.env").read_text(encoding="utf-8")
     assert "SMARTPLOY_AUTH_MODE=oidc" in source
     assert "SMARTPLOY_ACCESS_ENABLED=false" in source
+    assert "SMARTPLOY_PUBLIC_ORIGIN=https://smartploy.komplyint.fi" in source
+    assert "SMARTPLOY_ALLOWED_HOSTS=smartploy.komplyint.fi" in source
     assert "POSTGRES_PASSWORD" not in source
     assert "SMARTPLOY_OIDC_CLIENT_ID" not in source
 
@@ -63,6 +65,7 @@ def test_policy_verifier_rejects_mutated_oidc_profile(tmp_path):
     for modified in (
         original.replace("SMARTPLOY_ACCESS_ENABLED=false", "SMARTPLOY_ACCESS_ENABLED=true"),
         original.replace("SMARTPLOY_AUTH_MODE=oidc", "SMARTPLOY_AUTH_MODE=disabled"),
+        original.replace("smartploy.komplyint.fi", "smartploy.obumai.com"),
         original + "\nSMARTPLOY_DEBUG=true\n",
     ):
         bad.write_text(modified, encoding="utf-8")
@@ -136,8 +139,8 @@ def _synthetic_compose(*, profile: str, partner: bool = False) -> dict:
         "SMARTPLOY_ACCESS_ALLOWED_EMAIL": "synthetic@example.invalid",
         "SMARTPLOY_OIDC_ISSUER": "https://auth.obumai.com",
         "SMARTPLOY_OIDC_CLIENT_ID": "synthetic-public-client",
-        "SMARTPLOY_OIDC_REDIRECT_URI": "https://smartploy.obumai.com/auth/callback",
-        "SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI": "https://smartploy.obumai.com/auth/logged-out",
+        "SMARTPLOY_OIDC_REDIRECT_URI": "https://smartploy.komplyint.fi/auth/callback",
+        "SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI": "https://smartploy.komplyint.fi/auth/logged-out",
         "SMARTPLOY_LEVER_PARTNER_JOBS_JSON": "",
         "SMARTPLOY_LEVER_PARTNER_KEY_PRIMARY": "",
         "SMARTPLOY_LEVER_PARTNER_KEY_SECONDARY": "",

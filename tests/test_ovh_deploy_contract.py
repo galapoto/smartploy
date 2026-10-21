@@ -63,7 +63,9 @@ def test_web_gateway_keeps_backend_routes_out_of_spa_fallback():
     assert "@backend path /api/* /auth/* /healthz" in caddy
     assert "handle @backend" in caddy
     assert "reverse_proxy api:8090" in caddy
-    assert "header_up Host smartploy.obumai.com" in caddy
+    assert "header_up Host smartploy.obumai.com" not in caddy
+    assert "header_up X-Forwarded-Proto https" in caddy
+    assert "Preserve the original Host header" in caddy
     assert "Cf-Access-Jwt-Assertion" in caddy
     assert "try_files {path} /index.html" in caddy
     assert caddy.index("handle @backend") < caddy.index("try_files {path} /index.html")
@@ -238,8 +240,10 @@ def test_live_acceptance_script_is_read_only_and_secret_safe():
 
     subprocess.run(["bash", "-n", str(script)], check=True)
 
-    assert 'PRODUCTION_HOST="smartploy.obumai.com"' in text
-    assert 'PRODUCTION_ORIGIN="https://smartploy.obumai.com"' in text
+    assert 'PRODUCTION_ORIGIN="$(sed -n' in text
+    assert 'PRODUCTION_HOST="${PRODUCTION_ORIGIN#https://}"' in text
+    assert 'validate-runtime-policy.sh' in text
+    assert text.index('validate-runtime-policy.sh" "${POLICY_FILE}" >/dev/null') < text.index('PRODUCTION_ORIGIN="$(sed -n')
     assert "--write-out" in text
     assert "%header{cf-ray}" in text
     assert "%header{server}" in text
