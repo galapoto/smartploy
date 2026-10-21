@@ -25,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 
 REPO = Path("/srv/obum/stacks/smartploy")
 ROLE = re.compile(r"[A-Za-z_][A-Za-z_0-9]{0,62}\Z")
@@ -302,11 +303,37 @@ def main(argv: list[str]) -> int:
                                 "{{.State.Health.Status}}", cid).stdout.strip()
                 if health != "healthy":
                     raise RotationError("unhealthy_app_service_after_rotation")
+            # Existing web must still serve the old-origin public gateway.
+            # Keep live Cloudflare auth unchanged until a separately
+            # approved OIDC release; a 502 from stale Caddy upstream
+            # must make the rotation fail instead of claiming success.
+            webport = values.get("SMARTPLOY_WEB_HOST_PORT") or "8091"
+            if not PORT.fullmatch(webport) or int(webport) > 65535:
+                raise RotationError("invalid_private_gateway_port")
+            verified_web = False
+            for _ in range(12):
+                try:
+                    request = urllib.request.Request(
+                        f"http://127.0.0.1:{webport}/healthz",
+                        headers={"Host": "smartploy.obumai.com"},
+                    )
+                    with urllib.request.urlopen(request, timeout=4) as response:
+                        health = json.loads(response.read(4096))
+                        verified_web = (response.status == 200 and health.get("ok") is True
+                                        and health.get("storage", {}).get("ready") is True)
+                except (OSError, ValueError, KeyError, TypeError):
+                    verified_web = False
+                if verified_web:
+                    break
+                time.sleep(2)
+            if not verified_web:
+                raise RotationError("live_gateway_health_unavailable_after_rotation")
             print("rotation=PASS")
             print("database_backup=verified")
             print("old_password_revoked=true")
             print("private_config_updated=true")
             print("postgres_api_worker_recreated=true")
+            print("live_gateway_health=verified")
             print("exact_running_release_sha=" + recorded)
             print("identity_mode=unchanged_cloudflare")
             print("autoapply_upgrade=not_yet_deployed")
