@@ -113,3 +113,45 @@ registration is not proof of live OVH service or real application submission.
 - No evidence yet of new code on OVH, of native ObumDelivery approval,
   of an active five-source live poll, or of a successful real employer
   acknowledgment. These remain blockers to the requested end-to-end product.
+
+
+## SP15p — fast first-source AutoApply and Komplyint origin cutover
+
+**AutoApply first:** The existing `PostgresWorkerTaskRepository.claim_due`
+formerly sorted due task names alphabetically. The
+`application:auto-draft-shortlist` task therefore ran before
+`source:...` on first worker boot, missing jobs just imported in the
+same cycle and potentially waiting until the next draft interval.
+The original durable `SELECT ... FOR UPDATE SKIP LOCKED` claim still
+handles leases/exclusive owners; only the order now **prioritizes due
+source tasks**, then pending draft tasks, preserving oldest-due order
+within each class. Two real PostgreSQL regression tests prove that five
+existing Finland employer poll tasks run before private draft preparation
+in one 8-task cycle, and that even an older-due draft cannot skip ahead
+of the due source set.
+
+**No duplicate code:** Continued to reuse the already-built source
+pollers, trusted employer-source verification, search preferences,
+per-account CV/fact approvals, `prepare_worker_shortlists`,
+`new_workspace` and `create_or_get`. No extra web scraper, remote model,
+browser extension or employer API sender introduced. These changes
+affect the real `worker_schedule.py` runtime, not only a dashboard.
+
+**Domain secondary:** The existing immutable OIDC profile is now bound
+to `https://smartploy.komplyint.fi` and the original preflight and
+read-only acceptance scripts validate its exact HTTPS Host, sign-in and
+logout callbacks and public shell without Cloudflare Access prompts.
+The former `smartploy.obumai.com` Cloudflare profile remains available
+as rollback. The original inner Caddy proxy now preserves the incoming
+Host so the backend's `TrustedHostMiddleware` can enforce each mode's
+exact allowlist. Added a guarded host Caddy example, regression tests,
+and `docs/SMARTPLOY_KOMPLYINT_DOMAIN_CUTOVER.md` with DNS/TLS/ZITADEL
+and trusted release gates.
+
+**Strict distinction:** GitHub CI pass proves the source/build fixture
+only. This run cannot edit Domainkeskus DNS, issue public TLS
+certificates, bypass Cloudflare Access, register a ZITADEL callback
+or verify a live OVH deployment. Employer applications still require
+genuine employer partner rights, a specific reviewed application, an
+explicit final applicant action and provider-issued acknowledgment.
+A private draft is NEVER represented as an actual submission.
