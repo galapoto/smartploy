@@ -241,7 +241,7 @@ test("general browsing needs no CV; Settings switches into and out of personaliz
   await page.goto("/");
   await page.getByRole("radio", { name: /General job search/i }).check();
   await page.getByRole("button", { name: /Browse all jobs/i }).click();
-  await expect(page.getByRole("heading", { name: "Latest jobs in Finland" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "IT & planning opportunities across Finland" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await expect(page.getByText("Software Tester")).toBeVisible();
   await expect(page.getByText("General listing")).toHaveCount(2);
@@ -306,7 +306,7 @@ test("Settings save is not overwritten by a manual refresh during an in-flight w
   expect(state.preferences.mode).toBe("personalized");
 
   finishSave();
-  await expect(page.getByRole("heading", { name: "Latest jobs in Finland" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "IT & planning opportunities across Finland" })).toBeVisible();
   await expect(page.getByText("General listing")).toHaveCount(2);
   await expect(page.getByText(/search match/i)).toHaveCount(0);
   expect(state.preferences.mode).toBe("general");
