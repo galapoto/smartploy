@@ -381,3 +381,60 @@ The benefit is eliminating one user click or up to one background
 draft interval after an otherwise eligible change, without weakening
 approval controls. This is a behavioral improvement, not a measured
 multiplier of engineering productivity.
+
+
+## SP15r — avoid old or foreign private evidence during AutoApply draft saves
+
+**Core gap detected by inspecting the real private draft writer:** The
+original SP15j `prepare_profile_shortlist` loaded a user's approved
+`CandidateProfile` and `StoredCV` once before matching and kept those
+objects while source-race and owner-consent checks ran. If a user deleted
+their CV, withdrew qualification approval, replaced their CV or changed
+accounts while matching, the worker could create a *new* reviewable draft
+using an earlier private evidence snapshot. This is separate from the
+existing ATS freshness/consent safeguards and needs its own check.
+
+**Prebuilt code specifically reused before scratch work:**
+`PostgresProfileRepository.profile`, `PostgresCVRepository.get`,
+`score_candidate`, the exact `ProfileFact.approved` model and
+`CandidateProfile.approved_facts`, original
+`PostgresSearchPreferenceRepository.auto_draft_guard`, original
+`new_workspace` and `WorkspaceRepository.create_or_get` (idempotent
+per owner/job). No new profile table, data schema, AI service, external
+submission adapter or dependency was created.
+
+**New source glue:** Inside that existing owner-scoped draft guard
+*after* the posting is re-read, fetch the current profile and CV
+from their existing stores. Reject a changed account ID or a CV with a
+different owner. Require at least one currently approved fact and
+re-score the job against the current approved qualifications before
+calling original `new_workspace`. If the user has deleted the CV, only
+the latest separately approved facts can form a new draft. If the CV
+was replaced, only the current document text/hash may be used. This
+reduces the stale-evidence window, but is not a claim that independent
+fact/CV changes and the draft transaction are globally serialized.
+
+**Five new synthetic regression tests:** profile approval revoked after
+initial matching, required skill evidence downgraded after ranking,
+CV replaced after ranking but before guarded source re-fetch, CV
+deleted after ranking, and wrong-owner profile/CV injected at final
+save. The CV tests mutate the original stored document during the
+existing `job_repository.get` source recheck, so the previous code
+would demonstrably use the earlier CV whereas the new code uses only
+the current one.
+
+**Direct CI evidence:** At exact application-code/test commit
+[`0529ae90c9a9`](https://github.com/galapoto/smartploy/commit/0529ae90c9a97897a363f3a6cba4b2b6ed83fb7a),
+[GitHub Actions #39571707787](https://github.com/galapoto/smartploy/actions/runs/39571707787)
+reported **744 Python/PostgreSQL, 116 React/Vitest, 32 Chromium**
+passing, Ruff and the production-configuration fixture passing, all
+five CI jobs green. This is source-level evidence; still no claim that
+native ObumDelivery, actual OVH first-party login, live job fetch or a
+provider-acknowledged employer submission has passed.
+
+**User-owned settings handoff:** see
+[`docs/OWNER_SETTINGS_ACTIONS_AUTOAPPLY.md`](OWNER_SETTINGS_ACTIONS_AUTOAPPLY.md)
+for exact ZITADEL PKCE public-client callbacks,
+`smartploy.komplyint.fi` authoritative DNS/Cloudflare Access boundary,
+private OVH environment values and real employer rights. Never paste
+secrets into the source tree or chat.
