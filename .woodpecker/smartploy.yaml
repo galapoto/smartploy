@@ -6,7 +6,8 @@ labels:
 when:
   - event: manual
   - event: push
-    branch: [main]
+    # Opt in the reviewed SP15j application train, never all draft branches.
+    branch: [main, feature/sp15j-auto-it-discovery-private-drafts-20261020-v1]
 
 services:
   - name: postgres
