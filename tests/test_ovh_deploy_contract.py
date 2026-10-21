@@ -77,8 +77,15 @@ def test_komplyint_host_cutover_config_keeps_loopback_and_temporary_legacy_redir
     )
     assert "smartploy.komplyint.fi {" in caddy
     assert "reverse_proxy 127.0.0.1:8091" in caddy
-    assert "smartploy.obumai.com {" in caddy
-    assert "redir https://smartploy.komplyint.fi{uri} temporary" in caddy
+    # Installing the *new* host must never silently redirect users away
+    # from a still-working legacy site before login has been accepted.
+    assert "smartploy.obumai.com {" not in caddy
+    assert "redir " not in caddy
+    optional = (ROOT / "deploy/personal/Caddyfile.legacy-redirect.example").read_text(
+        encoding="utf-8"
+    )
+    assert "smartploy.obumai.com {" in optional
+    assert "redir https://smartploy.komplyint.fi{uri} temporary" in optional
     assert "0.0.0.0:8091" not in caddy
     assert "tls internal" not in caddy
 
@@ -152,7 +159,8 @@ def test_host_caddy_targets_only_local_smartploy_gateway():
     host_caddy = (ROOT / "deploy/personal/Caddyfile.host.example").read_text(
         encoding="utf-8"
     )
-    assert "smartploy.obumai.com" in host_caddy
+    assert "smartploy.komplyint.fi {" in host_caddy
+    assert "smartploy.obumai.com {" not in host_caddy
     assert "reverse_proxy 127.0.0.1:8091" in host_caddy
 
 
@@ -313,3 +321,77 @@ def test_release_evidence_ci_parses_artifact_path_without_fragile_shell_quoting(
     assert "sed -n 's/^Evidence artifact: //p'" in workflow
     assert "printf '%s\\n'" in workflow
     assert "EVIDENCE_OUTPUT#*" not in workflow
+
+
+def test_both_identity_deploy_and_restore_probes_enforce_selected_host(tmp_path):
+    """Run the original in-script Python health gate, with synthetic data.
+
+    No OVH access, real user data, or network used. The legacy Cloudflare
+    and first-party Komplyint modes must never be interchanged.
+    """
+    import json
+    import sys
+
+    for name in ("deploy.sh", "restore.sh"):
+        script = (PRODUCTION_SCRIPT_DIR / name).read_text(encoding="utf-8")
+        marker = 'python3 - "${HEALTH_FILE}" "${IDENTITY_PROFILE}" "${PRODUCTION_ORIGIN}" <<\'PY\'\n'
+        assert marker in script
+        source = script.split(marker, 1)[1].split("\nPY\n", 1)[0]
+        assert 'PRODUCTION_ORIGIN="$(sed -n' in script
+        assert 'PRODUCTION_HOST="${PRODUCTION_ORIGIN#https://}"' in script
+        assert '-H "Host: ${PRODUCTION_HOST}"' in script
+        assert "-H 'Host: smartploy.obumai.com'" not in script
+
+        for identity, origin in (
+            ("cloudflare", "https://smartploy.obumai.com"),
+            ("oidc", "https://smartploy.komplyint.fi"),
+        ):
+            state = {
+                "ok": True, "service": "smartploy", "public_origin": origin,
+                "storage": {"ready": True},
+                "access": {
+                    "environment": "production",
+                    "enabled": identity == "cloudflare",
+                    "owner_restricted": identity == "cloudflare",
+                },
+                "external_actions_authorized": False,
+            }
+            input_path = tmp_path / f"{name}-{identity}.json"
+            input_path.write_text(json.dumps(state), encoding="utf-8")
+
+            def check(expected_origin, mode=identity):
+                return subprocess.run(
+                    [sys.executable, "-c", source, str(input_path), mode, expected_origin],
+                    capture_output=True, text=True, check=False, timeout=4,
+                )
+
+            assert check(origin).returncode == 0
+            wrong = ("https://smartploy.komplyint.fi" if identity == "cloudflare"
+                     else "https://smartploy.obumai.com")
+            assert check(wrong).returncode != 0
+            assert check(origin, "oidc" if identity == "cloudflare" else "cloudflare").returncode != 0
+
+
+def test_release_image_health_and_evidence_proofs_select_same_identity_policy():
+    for name in ("assert-healthy-stack.sh", "assert-running-images.sh"):
+        script = (PRODUCTION_SCRIPT_DIR / name).read_text(encoding="utf-8")
+        assert 'POLICY_FILE="$(bash "${SCRIPT_DIR}/select-runtime-policy.sh")"' in script
+        assert 'validate-runtime-policy.sh' in script
+        assert 'POLICY_FILE="${COMPOSE_DIR}/runtime.production.env"' not in script
+
+    receipt = (PRODUCTION_SCRIPT_DIR / "release-evidence.sh").read_text(encoding="utf-8")
+    assert 'PRODUCTION_ORIGIN="$(sed -n' in receipt
+    assert '-H "Host: ${PRODUCTION_HOST}"' in receipt
+    assert 'origin-health "${HEALTH_FILE}" "${IDENTITY_PROFILE}"' in receipt
+    assert "-H 'Host: smartploy.obumai.com'" not in receipt
+
+    diagnostic = (PRODUCTION_SCRIPT_DIR / "diagnose-origin-502.sh").read_text(encoding="utf-8")
+    assert 'PRODUCTION_HOST="${PRODUCTION_ORIGIN#https://}"' in diagnostic
+    assert 'probe --connect-to "${PRODUCTION_HOST}:443:127.0.0.1:443"' in diagnostic
+    assert "smartploy.obumai.com:443" not in diagnostic
+
+    preflight = (PRODUCTION_SCRIPT_DIR / "preflight.sh").read_text(encoding="utf-8")
+    assert 'getent ahosts "${POLICY_HOST}"' in preflight
+    assert 'if [[ "${PROFILE}" != "oidc" ]] && (( HTTP_STATUS >= 500 ))' in preflight
+    assert "check_oidc_metadata.py" in preflight
+    assert " --insecure" not in preflight
