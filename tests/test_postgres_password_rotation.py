@@ -146,10 +146,11 @@ def test_postgres_17_accepts_scram_verifier_and_rejects_old_password():
     config = conninfo_to_dict(admin_dsn)
     with connect(admin_dsn, autocommit=True) as admin:
         with admin.cursor() as cur:
-            cur.execute(
-                sql.SQL("CREATE ROLE {} LOGIN PASSWORD %s").format(sql.Identifier(role)),
-                (old,),
-            )
+            # PostgreSQL DDL does not accept a server-side $1 placeholder
+            # for CREATE ROLE PASSWORD. Create the isolated test role first,
+            # then reuse the exact pre-encoded SCRAM verifier writer.
+            cur.execute(sql.SQL("CREATE ROLE {} LOGIN").format(sql.Identifier(role)))
+            cur.execute(rotation.sql_change(role, old))
         try:
             before = dict(config, user=role, password=old, connect_timeout=5)
             after = dict(config, user=role, password=new, connect_timeout=5)
