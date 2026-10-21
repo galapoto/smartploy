@@ -180,7 +180,7 @@ def _role_alignment(title: str, roles: tuple[str, ...]) -> tuple[float, str]:
         # a job-description occurrence or a manager-level inference.
         planning_compound = (
             term.strip().casefold() == "suunnittelija"
-            and re.search(r"(?<!\\w)[a-zåäö]*suunnittelij[a-zåäö]*(?!\\w)", title.casefold())
+            and re.search(r"(?<!\w)[a-zåäö]*suunnittelij[a-zåäö]*(?!\w)", title.casefold())
             is not None
         )
         if _mentions_phrase(title, term) or _translated_role_match(title, term) or planning_compound:
