@@ -39,6 +39,9 @@ done
 
 [[ -f "${ENV_FILE}" && ! -L "${ENV_FILE}" ]] \
   || fail "deploy/personal/env must exist as a regular non-symlink file"
+bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "${POLICY_FILE}" >/dev/null
+PRODUCTION_ORIGIN="$(sed -n 's/^SMARTPLOY_PUBLIC_ORIGIN=//p' "${POLICY_FILE}")"
+PRODUCTION_HOST="${PRODUCTION_ORIGIN#https://}"
 
 STATE_DIR="$(read_env_value SMARTPLOY_DEPLOY_STATE_DIR)"
 STATE_DIR="${STATE_DIR:-/srv/obum/data/smartploy/deploy-state}"
@@ -119,13 +122,13 @@ chmod 700 "${TMP_DIR}"
 
 HEALTH_FILE="${TMP_DIR}/health.json"
 if ! curl --fail --silent --show-error --max-time 10 \
-  -H 'Host: smartploy.obumai.com' \
+  -H "Host: ${PRODUCTION_HOST}" \
   "http://127.0.0.1:${WEB_PORT}/healthz" > "${HEALTH_FILE}"; then
   fail "local SmartPloy health request failed"
 fi
 
 if ! PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
-  origin-health "${HEALTH_FILE}" >/dev/null; then
+  origin-health "${HEALTH_FILE}" "${IDENTITY_PROFILE}" >/dev/null; then
   fail "local SmartPloy health contract failed"
 fi
 
