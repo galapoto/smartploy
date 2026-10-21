@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 import re
 import stat
-import subprocess
 import sys
 from uuid import uuid4
 
