@@ -218,9 +218,9 @@ def prepare_profile_shortlist(
         return AutoDraftSummary("owner_mismatch")
     if not profile.approved_facts:
         return AutoDraftSummary("needs_approved_profile")
-    cv = cv_repository.get(profile_id)
-    # If the uploaded CV has no reliable extract, only approved profile
-    # evidence can populate a draft. Never hallucinate missing credentials.
+    # Do not preload the CV here: the user may replace or delete the file
+    # while job ranking is running. Retrieve it only after the account's
+    # revocable AutoApply approval has been checked for each draft.
     current = list(candidates if candidates is not None else job_repository.values())
     by_key = {item.canonical_key: item for item in current if item.source_current}
     ranked = search_jobs(current, pref)["recommendations"]
@@ -280,10 +280,24 @@ def prepare_profile_shortlist(
             if not _recently_verified(latest):
                 stale_skipped += 1
                 continue
+            # A user can revoke qualifications, replace a CV or delete
+            # private evidence after ranking but before this write. Reuse the
+            # ORIGINAL profile/CV stores at the guarded insert boundary,
+            # never copy a stale in-memory candidate's former approval.
+            latest_profile = profile_repository.profile()
+            if latest_profile.profile_id != profile_id or not latest_profile.approved_facts:
+                continue
+            fresh_fit = score_candidate(latest, latest_profile)
+            if fresh_fit.mandatory_gaps or fresh_fit.fit_score < MIN_APPROVED_FIT_SCORE:
+                continue
+            latest_cv = cv_repository.get(profile_id)
+            if latest_cv is not None and latest_cv.profile_id != profile_id:
+                continue
             try:
                 proposed = new_workspace(
-                    latest, profile, source_cv_text=cv.text if cv else "",
-                    source_cv_sha256=cv.digest if cv else "",
+                    latest, latest_profile,
+                    source_cv_text=latest_cv.text if latest_cv else "",
+                    source_cv_sha256=latest_cv.digest if latest_cv else "",
                 )
             except WorkspaceError:
                 continue
