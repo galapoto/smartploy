@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import re
 from typing import Any, Mapping, Sequence
 
+from .career_scope import career_area, title_experience
 from .domain import JobCandidate, utc_now_iso
 
 SEARCH_MODES = frozenset({"personalized", "general"})
@@ -235,6 +236,10 @@ def _job_card(candidate: JobCandidate) -> dict[str, Any]:
     job = candidate.job
     return {
         "company": job.company, "role_title": job.role_title,
+        # Browse categories reflect the published title only. They are
+        # not qualification/experience or employer-permission claims.
+        "career_area": career_area(job.role_title),
+        "title_experience": title_experience(job.role_title),
         "location": job.location, "work_mode": job.work_mode,
         "language": job.language, "deadline": job.deadline,
         "application_url": job.application_url,
@@ -354,6 +359,18 @@ def _alignment(
     # is too weak for the recommendation lane. Show weak overlaps in Explore.
     primary = (role_fraction >= 0.75 if pref.roles else False) or bool(matched_keywords)
     primary = bool(primary and not explicit_seniority_conflict)
+    # An ad for a driver may mention Python, data or apps in its BODY.
+    # Such an incidental keyword must not promote the unrelated title
+    # when the user's explicit role targets are IT / planning roles.
+    # Preserve it in Explore more, and respect searches that explicitly
+    # target careers outside IT / planning.
+    focused_target = any(
+        career_area(role) != "other" for role in pref.roles
+    )
+    if focused_target and career_area(job.role_title) == "other":
+        primary = False
+        if matched_keywords:
+            mismatches.append("Job title is outside your IT or planning career targets")
     return max(0, min(100, score)), reasons, unknown, mismatches, primary
 
 def _published_order(candidate: JobCandidate) -> tuple[float, float, str]:
