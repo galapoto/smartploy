@@ -41,13 +41,21 @@ provider cookie in chat.
 
 Official reference: https://zitadel.com/docs/guides/manage/console/applications-overview
 
-### 2. Domain DNS and Cloudflare Access policy (owner action)
+### 2. Domain DNS verified — OVH HTTPS ingress is next
 
-Determine which provider is **authoritative for komplyint.fi DNS**.
-If Domainkeskus provides DNS for the domain, edit that DNS zone; if
-Cloudflare nameservers are authoritative, edit Cloudflare DNS instead.
-Add the exact `smartploy.komplyint.fi` host to the **already approved
-OVH/Cloudflare ingress target** used for the SmartPloy deployment.
+**Done:** The owner saved a Domainkeskus/Euronic A record and
+public DNS now resolves `smartploy.komplyint.fi` to **51.75.61.214**
+with a 600-second TTL. The user confirmed that this OVH IP is correct.
+There is no need for another DNS record or a CNAME.
+
+**Next step on OVH:** identify the reverse proxy already serving
+`auth.komplyint.fi`. If it is Caddy, ADD ONLY the new domain block
+from `deploy/personal/Caddyfile.host.example` to the existing Caddy
+configuration, keeping existing auth and other virtual hosts intact.
+That block routes HTTPS requests to SmartPloy's container gateway at
+`127.0.0.1:8091`; the running gateway must be deployed separately.
+The optional old-host redirect lives in a different sample file.
+HTTPS certificate issuance/ingress reachability remains unverified.
 
 Never invent the origin IP, reuse someone else's tunnel, or replace
 `proctor.komplyint.fi` DNS/Access rules. The operator must choose
@@ -121,8 +129,10 @@ a draft as submitted. Candidate review/consent and employer terms apply.
 - [x] First-party OIDC canonical URLs committed in source
 - [x] Reviewed public ATS adapters and opt-in private draft worker built
 - [x] Evidence-change recheck added before guarded draft save
-- [ ] User/operator verified new DNS record and HTTPS certificate
-- [ ] User/operator registered ZITADEL OIDC callback + post-logout URLs
+- [x] User saved and public DNS verified A record 51.75.61.214
+- [ ] OVH hostname reverse proxy and valid HTTPS certificate verified
+- [x] User confirmed ZITADEL SmartPloy application created with exact callbacks
+- [ ] Private OVH ZITADEL Client ID configured and real two-user login verified
 - [ ] New hostname no longer presents Cloudflare Access login
 - [ ] Native ObumDelivery exact SHA + deliberate RED evidence
 - [ ] OVH exact-SHA deployment + live read-only health / ATS / draft checks
