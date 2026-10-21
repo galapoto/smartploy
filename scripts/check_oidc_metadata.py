@@ -7,6 +7,7 @@ prints credentials. JSON enters via stdin, expected issuer via one argv.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from urllib.parse import urlsplit
 
@@ -43,6 +44,27 @@ def validate_metadata(payload: object, expected_issuer: str) -> None:
             raise ValueError("oidc_endpoint_origin_mismatch")
 
 
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Fail closed on duplicate OIDC claims, including nested JSON objects."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("oidc_duplicate_discovery_member")
+        result[key] = value
+    return result
+
+
+def _finite_float(source: str) -> float:
+    value = float(source)
+    if not math.isfinite(value):
+        raise ValueError("oidc_nonfinite_discovery_number")
+    return value
+
+
+def _reject_constant(_source: str) -> object:
+    raise ValueError("oidc_nonfinite_discovery_number")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("OIDC_METADATA_INVALID: expected issuer argument", file=sys.stderr)
@@ -52,7 +74,13 @@ def main() -> int:
         print("OIDC_METADATA_INVALID: discovery size", file=sys.stderr)
         return 2
     try:
-        validate_metadata(json.loads(raw), sys.argv[1])
+        metadata = json.loads(
+            raw,
+            object_pairs_hook=_unique_object,
+            parse_float=_finite_float,
+            parse_constant=_reject_constant,
+        )
+        validate_metadata(metadata, sys.argv[1])
     except (ValueError, TypeError, UnicodeDecodeError):
         print("OIDC_METADATA_INVALID: issuer, endpoints or PKCE support", file=sys.stderr)
         return 2

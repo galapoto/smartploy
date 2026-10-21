@@ -289,3 +289,46 @@ def test_zitadel_discovery_metadata_requires_real_issuer_and_public_pkce(tmp_pat
         assert "evil.example" not in result.stderr
 
     assert verify({"issuer": sample["issuer"]}).returncode != 0
+
+
+def test_oidc_discovery_duplicate_json_and_nonfinite_metadata_never_pass():
+    """Run actual original CLI; no network, real issuer or secrets required."""
+    import json
+    import sys
+
+    checker = ROOT / "scripts/check_oidc_metadata.py"
+    source = {
+        "issuer": "https://auth.komplyint.fi",
+        "authorization_endpoint": "https://auth.komplyint.fi/oauth/v2/authorize",
+        "token_endpoint": "https://auth.komplyint.fi/oauth/v2/token",
+        "jwks_uri": "https://auth.komplyint.fi/oauth/v2/keys",
+        "grant_types_supported": ["authorization_code"],
+        "response_types_supported": ["code"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": ["none"],
+    }
+    valid = json.dumps(source, separators=(",", ":")).encode("utf-8")
+
+    def run(raw: bytes):
+        return subprocess.run(
+            [sys.executable, str(checker), source["issuer"]],
+            input=raw, capture_output=True, check=False, timeout=4,
+        )
+
+    assert run(valid).returncode == 0
+    forged = (
+        b'{"issuer":"https://wrong.invalid",' + valid[1:],
+        b'{"authorization_endpoint":"https://wrong.invalid/authorize",'
+        + valid[1:],
+        b'{"unused":{"role":"viewer","role":"admin"},' + valid[1:],
+        valid[:-1] + b',"unrecognized":NaN}',
+        valid[:-1] + b',"unrecognized":Infinity}',
+        valid[:-1] + b',"unrecognized":-Infinity}',
+        valid[:-1] + b',"unrecognized":1e999}',
+    )
+    for fake in forged:
+        result = run(fake)
+        assert result.returncode == 2
+        assert b"OIDC_METADATA_INVALID" in result.stderr
+        assert b"wrong.invalid" not in result.stdout + result.stderr
+        assert b"admin" not in result.stdout + result.stderr
