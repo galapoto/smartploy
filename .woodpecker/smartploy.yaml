@@ -26,6 +26,18 @@ steps:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     commands:
       - python3 -B scripts/obumdelivery_ci_gate.py validate
+      # Deliberate RED identity probe: it MUST return exactly 41 and
+      # never produce a successful source receipt. Check this on the
+      # native isolated worker, not only in GitHub/Python unit tests.
+      - |
+        set -eu
+        negative_status=0
+        CI_NEGATIVE_PROBE=1 python3 -B scripts/obumdelivery_ci_gate.py validate \
+          > /tmp/smartploy-expected-red.log 2>&1 || negative_status=$?
+        test "$negative_status" -eq 41
+        grep -Fq 'EXPECTED_RED_NEGATIVE_PROBE' /tmp/smartploy-expected-red.log
+        rm -f /tmp/smartploy-expected-red.log
+        echo "OBUMDELIVERY_EXPECTED_RED_NEGATIVE_CONTROL_VERIFIED"
       - python3 -m pip install --no-cache-dir -e ".[dev]"
       - python3 -B -m scripts.ci_wait_postgres
       - python3 -m compileall smartploy scripts tests
