@@ -479,7 +479,6 @@ def test_manual_or_unknown_search_feeds_never_create_unattended_private_drafts()
     """A manual bookmark's recent timestamp is not employer-source verification."""
     fx = fixture()
     pid,prefs,_,profile,cv,spaces,_=fx
-    base = candidate("Junior Data Analyst")
     inputs = (
         SourcePolicy("manual-import", "Manual", "manual", ("manual",)),
         SourcePolicy("lever-global-fake", "Unreviewed Search",
