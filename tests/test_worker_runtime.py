@@ -210,15 +210,21 @@ def test_new_install_profile_starts_existing_five_finland_sources_without_ai(mon
     from scripts.configure_finland_ats_pilot import reviewed_sources
     clear_worker_sources(monkeypatch)
     sample = Path("deploy/personal/env.example").read_text(encoding="utf-8")
-    paths = [
-        line.partition("=")[2]
-        for line in sample.splitlines()
-        if line.startswith("SMARTPLOY_PUBLIC_ATS_SOURCES_FILE=")
-    ]
-    assert paths == ["/workspace/config/finland_public_ats_pilot.json"]
-    image_file = Path(paths[0].removeprefix("/workspace/"))
-    assert image_file.is_file()
-    monkeypatch.setenv("SMARTPLOY_PUBLIC_ATS_SOURCES_FILE", str(image_file))
+    configured = {
+        key: value for line in sample.splitlines()
+        if "=" in line and not line.startswith("#")
+        for key, _, value in [line.partition("=")]
+        if key in {"SMARTPLOY_PUBLIC_ATS_SOURCES_FILE", "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON"}
+    }
+    # Production preflight supports inline JSON; its security gate
+    # explicitly rejects a file path, including the image-local path.
+    assert configured["SMARTPLOY_PUBLIC_ATS_SOURCES_FILE"] == ""
+    approved = reviewed_sources()
+    assert json.loads(configured["SMARTPLOY_PUBLIC_ATS_SOURCES_JSON"]) == approved
+    monkeypatch.setenv(
+        "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON",
+        configured["SMARTPLOY_PUBLIC_ATS_SOURCES_JSON"]
+    )
     monkeypatch.setenv("SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED", "true")
     monkeypatch.setenv("SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED", "false")
     specs = build_worker_task_specs("postgresql://fixture")
