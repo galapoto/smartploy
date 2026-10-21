@@ -1,5 +1,6 @@
 import json
 import time
+from unittest.mock import AsyncMock
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlsplit
 
@@ -14,6 +15,8 @@ from smartploy.identity import MemoryIdentityRepository
 from smartploy.oidc import (
     MemoryOIDCStateCache,
     MemorySessionRepository,
+    OIDC_FLOW_COOKIE_NAME,
+    oidc_flow_cache_key,
     OIDCSettings,
     SESSION_COOKIE_NAME,
     AuthenticationSettings,
@@ -61,7 +64,8 @@ class FakeOIDCClient:
         self.login_redirect_uri = str(redirect_uri)
         return RedirectResponse(
             "https://auth.obumai.com/oauth/v2/authorize"
-            "?response_type=code&code_challenge=fixture&code_challenge_method=S256",
+            "?response_type=code&code_challenge=fixture&code_challenge_method=S256"
+            "&state=fixture-login-state-1234567890",
             status_code=302,
         )
 
@@ -169,6 +173,118 @@ def test_authlib_authorization_request_uses_pkce_nonce_and_server_side_state():
     assert authentication.oidc_enabled is True
 
 
+
+def test_real_authlib_callback_requires_same_browser_flow_cookie(monkeypatch):
+    """Integration: Authlib >=1.8 caches PKCE/nonce AND checks a session marker.
+
+    No real ZITADEL requests or employer actions occur. A different browser
+    with a valid state but no host-only flow cookie must never exchange a code.
+    """
+    import asyncio
+
+    configure_oidc(monkeypatch)
+    cache = MemoryOIDCStateCache()
+    app = create_app(
+        SmartployService(),
+        identity_repository=MemoryIdentityRepository(),
+        session_repository=MemorySessionRepository(),
+        oidc_state_cache=cache,
+    )
+    client = app.state.oidc_client
+    client.server_metadata.update({
+        "issuer": OIDC_ISSUER,
+        "authorization_endpoint": OIDC_ISSUER + "/oauth/v2/authorize",
+        "token_endpoint": OIDC_ISSUER + "/oauth/v2/token",
+        "jwks_uri": OIDC_ISSUER + "/oauth/v2/keys",
+        "_loaded_at": time.time(),
+    })
+    client.fetch_access_token = AsyncMock(return_value={
+        "userinfo": {"sub": "synthetic-user-123", "email": "user@example.invalid"}
+    })
+    owner = TestClient(app, base_url="https://smartploy.obumai.com", follow_redirects=False)
+    stranger = TestClient(app, base_url="https://smartploy.obumai.com", follow_redirects=False)
+
+    login = owner.get("/auth/login")
+    assert login.status_code == 302
+    q = parse_qs(urlsplit(login.headers["location"]).query)
+    state = q["state"][0]
+    assert q["code_challenge_method"] == ["S256"]
+    assert q["code_challenge"][0]
+    assert q["nonce"][0]
+    assert owner.cookies.get(OIDC_FLOW_COOKIE_NAME)
+    assert "HttpOnly" in login.headers["set-cookie"]
+    assert "Secure" in login.headers["set-cookie"]
+    assert "SameSite=lax" in login.headers["set-cookie"]
+    assert "Domain=" not in login.headers["set-cookie"]
+    assert "code_verifier" not in login.headers["set-cookie"]
+    assert asyncio.run(cache.get(oidc_flow_cache_key(state))) is not None
+
+    callback = "/auth/callback?code=synthetic-code&state=" + state
+    denied = stranger.get(callback)
+    assert denied.status_code == 401
+    assert denied.json()["detail"] == "OIDC callback validation failed"
+    client.fetch_access_token.assert_not_called()
+
+    # Copying only the state+code is insufficient; random browser cookie binds
+    # the OAuth flow and is never accepted when it belongs to another browser.
+    stranger.cookies.set(OIDC_FLOW_COOKIE_NAME, "wrong-browser-cookie-" + "a" * 32)
+    denied = stranger.get(callback)
+    assert denied.status_code == 401
+    client.fetch_access_token.assert_not_called()
+    assert asyncio.run(cache.get(oidc_flow_cache_key(state))) is not None
+
+    accepted = owner.get(callback)
+    assert accepted.status_code == 303
+    assert accepted.headers["location"] == "/"
+    assert owner.cookies.get(SESSION_COOKIE_NAME)
+    assert not owner.cookies.get(OIDC_FLOW_COOKIE_NAME)
+    assert asyncio.run(cache.get(oidc_flow_cache_key(state))) is None
+    assert client.fetch_access_token.await_count == 1
+    kwargs = client.fetch_access_token.await_args.kwargs
+    assert kwargs["code"] == "synthetic-code"
+    assert kwargs["code_verifier"]
+    assert owner.get("/api/v1/session").json()["authenticated"] is True
+
+    # Replay cannot mint another session, even from the same client.
+    replay = owner.get(callback)
+    assert replay.status_code == 401
+    assert client.fetch_access_token.await_count == 1
+
+
+def test_real_authlib_one_browser_does_not_authorize_another_tab_flow(monkeypatch):
+    """A new login attempt invalidates the older flow cookie in that browser."""
+    configure_oidc(monkeypatch)
+    cache = MemoryOIDCStateCache()
+    app = create_app(
+        SmartployService(),
+        identity_repository=MemoryIdentityRepository(),
+        session_repository=MemorySessionRepository(),
+        oidc_state_cache=cache,
+    )
+    client = app.state.oidc_client
+    client.server_metadata.update({
+        "issuer": OIDC_ISSUER,
+        "authorization_endpoint": OIDC_ISSUER + "/oauth/v2/authorize",
+        "token_endpoint": OIDC_ISSUER + "/oauth/v2/token",
+        "jwks_uri": OIDC_ISSUER + "/oauth/v2/keys",
+        "_loaded_at": time.time(),
+    })
+    client.fetch_access_token = AsyncMock(return_value={
+        "userinfo": {"sub": "synthetic-user-123", "email": "user@example.invalid"}
+    })
+    browser = TestClient(app, base_url="https://smartploy.obumai.com", follow_redirects=False)
+    first = browser.get("/auth/login")
+    second = browser.get("/auth/login")
+    first_state = parse_qs(urlsplit(first.headers["location"]).query)["state"][0]
+    second_state = parse_qs(urlsplit(second.headers["location"]).query)["state"][0]
+    assert first_state != second_state
+    invalid = browser.get("/auth/callback?code=synthetic&state=" + first_state)
+    assert invalid.status_code == 401
+    client.fetch_access_token.assert_not_called()
+    valid = browser.get("/auth/callback?code=synthetic&state=" + second_state)
+    assert valid.status_code == 303
+    assert client.fetch_access_token.await_count == 1
+
 def test_oidc_mode_denies_api_then_creates_opaque_host_only_session(monkeypatch):
     configure_oidc(monkeypatch)
     sessions = MemorySessionRepository()
@@ -195,7 +311,7 @@ def test_oidc_mode_denies_api_then_creates_opaque_host_only_session(monkeypatch)
     assert provider.login_redirect_uri == "https://smartploy.obumai.com/auth/callback"
     assert "code_challenge_method=S256" in login.headers["location"]
 
-    callback = api.get("/auth/callback?code=fixture&state=fixture")
+    callback = api.get("/auth/callback?code=fixture&state=fixture-login-state-1234567890")
     assert callback.status_code == 303
     cookie = callback.headers["set-cookie"]
     assert SESSION_COOKIE_NAME + "=" in cookie
@@ -236,7 +352,8 @@ def test_logout_revokes_local_session_before_provider_redirect(monkeypatch):
         base_url="https://smartploy.obumai.com",
         follow_redirects=False,
     )
-    api.get("/auth/callback?code=fixture&state=fixture")
+    api.get("/auth/login")
+    api.get("/auth/callback?code=fixture&state=fixture-login-state-1234567890")
     raw = api.cookies.get(SESSION_COOKIE_NAME)
     assert raw and sessions.get(raw) is not None
 
