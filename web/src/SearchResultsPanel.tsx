@@ -184,6 +184,19 @@ export default function SearchResultsPanel(props: {
       {careerFocus === "it_planning" ? " Unrelated driving and other titles are hidden in this view, not deleted." : " All occupations selected."}
       {levelFocus === "junior_unspecified" ? " Senior-labelled titles are hidden; missing experience labels are not treated as verified junior jobs." : ""}
     </p> : null}
+    {general ? <section className="studio-packet-fallback" aria-label="Additional Finland job sources">
+      <strong>Explore more Finland-wide vacancies</strong>
+      <p>SmartPloy doesn't yet ingest Duunitori, Työmarkkinatori or LinkedIn listings automatically.
+        These links open their independent searches; their jobs are not counted above or used for unattended applications.</p>
+      <div className="row-actions">
+        <a href="https://duunitori.fi/tyopaikat?haku=data%20engineer" target="_blank"
+          rel="noopener noreferrer" className="text-link">Duunitori <ArrowUpRight size={15}/></a>
+        <a href="https://tyomarkkinatori.fi/henkiloasiakkaat/avoimet-tyopaikat" target="_blank"
+          rel="noopener noreferrer" className="text-link">Työmarkkinatori <ArrowUpRight size={15}/></a>
+        <a href="https://www.linkedin.com/jobs/search/?keywords=junior%20data%20engineer&location=Finland"
+          target="_blank" rel="noopener noreferrer" className="text-link">LinkedIn <ArrowUpRight size={15}/></a>
+      </div>
+    </section> : null}
     <div className="job-list">
       {shown.map((item) => <JobCard key={item.canonical_key} item={item}
         displayMode={props.displayMode}
