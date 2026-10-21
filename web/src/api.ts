@@ -438,7 +438,8 @@ export function importBrowserReceipt(
  */
 export type AutoDraftResult = {
   status: "disabled" | "needs_approved_profile" | "owner_mismatch" |
-    "disabled_after_revocation" | "needs_source_refresh" | "prepared";
+    "disabled_after_revocation" | "needs_source_refresh" |
+    "needs_trusted_source" | "prepared";
   checked: number;
   eligible: number;
   created: number;
@@ -446,6 +447,8 @@ export type AutoDraftResult = {
   stopped_on_opt_out: boolean;
   /** Older cached ATS jobs excluded from automatic draft preparation. */
   stale_skipped?: number;
+  /** Manually entered/unreviewed job feeds are never used for unattended drafts. */
+  unverified_source_skipped?: number;
   provider_calls: 0;
   employer_actions_performed: false;
   automatic_submission_authorized: false;
