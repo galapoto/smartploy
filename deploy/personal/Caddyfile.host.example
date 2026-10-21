@@ -1,12 +1,9 @@
-# SmartPloy production transition to the dedicated Komplyint subdomain.
-# This is an EXAMPLE ONLY: install after new DNS, valid HTTPS/TLS and
-# first-party OIDC callback verification. Existing legacy host is redirected
-# only AFTER the new origin passes the live-acceptance probe.
+# Add this block to the existing OVH HTTPS ingress ONLY after confirming
+# it uses Caddy. Do not replace other virtual hosts, especially
+# auth.komplyint.fi. This example is not automatically deployed.
+# Public DNS is verified: smartploy.komplyint.fi -> 51.75.61.214.
+# Caddy must obtain a public certificate using its existing 80/443 route.
+# SmartPloy's container web port remains loopback-only on 127.0.0.1:8091.
 smartploy.komplyint.fi {
     reverse_proxy 127.0.0.1:8091
-}
-
-# Temporary redirect during migration; remove this block on rollback.
-smartploy.obumai.com {
-    redir https://smartploy.komplyint.fi{uri} temporary
 }
