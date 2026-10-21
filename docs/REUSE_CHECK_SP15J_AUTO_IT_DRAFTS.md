@@ -290,18 +290,19 @@ unattended job preparation.
 - Existing five reviewed boards in
   `config/finland_public_ats_pilot.json`, the original
   `PublicATSAdapter/poll_public_ats`, Docker `COPY . /workspace`,
-  and existing worker `SMARTPLOY_PUBLIC_ATS_SOURCES_FILE` config.
-  Instead of creating another crawler or a new database table,
-  a **new installation's example environment** sets that file path
-  to `/workspace/config/finland_public_ats_pilot.json`.
+  and the existing worker `SMARTPLOY_PUBLIC_ATS_SOURCES_JSON`
+  configuration. The production preflight *rejects file paths*;
+  CI caught this during initial integration. The corrected new-install
+  example contains the **same five reviewed boards serialized to
+  inline JSON** (the previously supported operator staging format).
   Existing private environment files are untouched, and no employer
   submission or external CV forwarding is enabled.
 
 **New scratch code strictly limited to missing glue:**
 `_approved_source_for_auto_draft`, the aggregate
 `needs_trusted_source/unverified_source_skipped` result, frontend
-first-use and manual-retry guidance, and the reviewed file path in
-`deploy/personal/env.example`. No copied/unlicensed third-party
+first-use and manual-retry guidance, and the approved inline JSON copy
+of the existing reviewed registry in `deploy/personal/env.example`. No copied/unlicensed third-party
 code, new SaaS dependencies, worker algorithm or employer POST.
 This gate is stricter than accepting every manually discovered vacancy;
 manually saved jobs remain available for user review and direct
