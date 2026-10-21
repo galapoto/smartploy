@@ -142,6 +142,50 @@ def make_snapshot(path: Path, backup_dir: Path) -> Path:
     return target
 
 
+# The official postgres:17 image commonly grants trust authentication on
+# 127.0.0.1 *inside its own container*. Test real application credentials
+# from the running API container across the Docker private network instead.
+# This script is passed as a harmless python -c argument: passwords pass
+# via exec stdin only and are never written into Docker args / shell history.
+APP_DATABASE_AUTH_PROBE = r"""
+import os
+import sys
+import psycopg
+from psycopg.conninfo import conninfo_to_dict
+
+try:
+    password = sys.stdin.readline(512).rstrip("\n")
+    config = conninfo_to_dict(os.environ["SMARTPLOY_DATABASE_URL"])
+    # Reject local sockets/loopback, an alternative PG host or an absent
+    # password override: use precisely the live application's PG service.
+    if config.get("host") != "postgres" or not (24 <= len(password) <= 511):
+        raise ValueError("invalid_app_database_target")
+    config["password"] = password
+    config["connect_timeout"] = "5"
+    with psycopg.connect(**config) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT inet_client_addr() IS NOT NULL AND inet_server_addr() IS NOT NULL")
+            if cur.fetchone() != (True,):
+                raise ValueError("not_network_auth")
+    print("1")
+except Exception:
+    # Do not print exceptions: DSN, credentials and network details are
+    # intentionally absent from logs and caller error messages.
+    sys.exit(1)
+"""
+
+
+def application_password_valid(dc, password: str) -> bool:
+    """Verify SCRAM over the exact application-to-Postgres network path."""
+    if not PASSWORD.fullmatch(password):
+        raise RotationError("invalid_password_candidate")
+    result = dc(
+        "exec", "-T", "api", "python", "-c", APP_DATABASE_AUTH_PROBE,
+        data=password + "\n", check=False, timeout=45,
+    )
+    return result.returncode == 0 and result.stdout.strip() == "1"
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Safely rotate ONLY SmartPloy's existing PostgreSQL role")
     parser.add_argument("--apply", action="store_true")
@@ -232,19 +276,16 @@ def main(argv: list[str]) -> int:
             raise RotationError("postgres_local_admin_auth_unavailable")
 
         def password_valid(pw: str) -> bool:
-            cmd = ('IFS= read -r PGPASSWORD; export PGPASSWORD; '
-                   'exec psql -h 127.0.0.1 -X -qAt -v ON_ERROR_STOP=1 '
-                   '-U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1"')
-            result = dc("exec", "-T", "postgres", "sh", "-ec", cmd,
-                        data=pw + "\n", check=False)
-            return result.returncode == 0 and result.stdout.strip() == "1"
+            return application_password_valid(dc, pw)
 
+        # The original probe used -h 127.0.0.1 INSIDE the Postgres
+        # container; the official image can trust that local loopback.
+        # The application-to-database Docker bridge is the meaningful
+        # path for proving the exposed password was actually revoked.
         if not password_valid(old):
-            raise RotationError("existing_password_failed_tcp_auth")
-        # Reject misconfigured PostgreSQL host trust: a password change
-        # would not actually revoke the publicly exposed credential.
+            raise RotationError("existing_password_failed_app_network_auth")
         if password_valid("deliberately-invalid-password-" + secrets.token_hex(16)):
-            raise RotationError("postgres_tcp_auth_accepts_wrong_password")
+            raise RotationError("postgres_app_network_accepts_wrong_password")
 
         # Reuse the existing production backup + checksum + lock-aware
         # retention bypass. Do not overwrite any other services' volumes.
