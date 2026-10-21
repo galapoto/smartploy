@@ -922,7 +922,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 describe("first opt-in creates private IT applications immediately", () => {
   const openOptIn = async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /Use IT job starter targets/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Use nationwide junior IT & planning targets/i }));
     fireEvent.click(screen.getByRole("checkbox", {
       name: /Automatically prepare suitable job drafts/i,
     }));
