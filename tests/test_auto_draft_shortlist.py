@@ -521,7 +521,6 @@ def test_manual_or_unknown_search_feeds_never_create_unattended_private_drafts()
 def test_both_existing_finnish_public_feed_policy_types_remain_usable_for_drafts():
     """Reuse real JobMarket Finland/Kuntarekry policy types, not a Lever-only gate."""
     from smartploy.auto_draft_shortlist import _approved_source_for_auto_draft
-    from smartploy.domain import JobCandidate
     original = candidate("Junior Data Analyst")
     assert _approved_source_for_auto_draft(original)
     choices = (
