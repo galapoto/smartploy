@@ -38,7 +38,21 @@ _PLANNING_TITLE = (
     r"projektiassistent\w*|project[- ]?(?:planner|coordinator|"
     r"assistant)|planning[- ]?(?:officer|specialist|engineer|"
     r"coordinator)|urban[- ]?planner|environmental[- ]?engineer|"
-    r"ympäristöinsinöör\w*)(?!\w)"
+    r"ympäristöinsinöör\w*|"
+    r"toimistopalvelu(?:jen)?[- ]?suunnittelij\w*|toimistokoordinaattor\w*|"
+    r"hallinto[- ]?(?:suunnittelij|koordinaattor|asiantuntij)\w*|"
+    r"kehittämis(?:suunnittelij|koordinaattor|asiantuntij)\w*|"
+    r"viestintä(?:suunnittelij|koordinaattor|asiantuntij)\w*|"
+    r"verkkoviestintä\w*|verkkosisältö\w*|"
+    r"sisältö(?:suunnittelij|koordinaattor|asiantuntij)\w*|"
+    r"intranet[- ]?(?:koordinaattor|asiantuntij|suunnittelij)\w*|"
+    r"tiedonhallin\w*|tietoasiantuntij\w*|"
+    r"palvelu(?:suunnittelij|koordinaattor)\w*|"
+    r"project[- ]?specialist|office[- ]?(?:planner|coordinator|administrator)|"
+    r"administrative[- ]?(?:planner|coordinator|specialist)|"
+    r"(?:digital|content|website|web[- ]?content|communications|intranet|"
+    r"documentation|knowledge[- ]?management)[- ]?(?:planner|coordinator|specialist)|"
+    r"technical[- ]?writer|document[- ]?controller)(?!\w)"
 )
 
 _REJECT_TRANSPORT_TITLE = (
