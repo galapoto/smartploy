@@ -273,6 +273,82 @@ class PostgresApplicationAgentRepository:
                 row = cur.fetchone()
         return self._public(row) if row else None
 
+
+    def record_milestone(
+        self, profile_id: str, agent_id: str, *,
+        milestone: str, expected_revision: int, now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        """Only the applicant may attest a stage, never a pasted recruiter mail."""
+        if milestone not in MILESTONE_EVENTS:
+            raise ValueError("Unsupported application milestone")
+        moment = _now(now)
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT a.state, a.revision, a.milestone, a.followups_sent,
+                              w.status
+                       FROM smartploy_application_agents a
+                       JOIN smartploy_application_workspaces w
+                         ON w.workspace_id = a.workspace_id
+                       WHERE a.agent_id = %s AND a.profile_id = %s
+                         AND NOT EXISTS (
+                           SELECT 1 FROM smartploy_account_erasure_requests er
+                           WHERE er.profile_id = a.profile_id
+                         )
+                       FOR UPDATE OF a, w""",
+                    (agent_id, profile_id),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                state, revision, previous, count, workspace_status = row
+                if revision != expected_revision:
+                    raise ApplicationAgentConflict("Agent changed in another tab. Reload.")
+                if state == "closed":
+                    raise ApplicationAgentConflict("Closed agents cannot accept new events.")
+                if workspace_status not in SUBMITTED_WORKSPACE_STATUSES:
+                    raise ApplicationAgentConflict(
+                        "First report your submission in Application Studio."
+                    )
+                if milestone not in TERMINAL_MILESTONES and (
+                    ORDER[milestone] <= ORDER.get(previous, 100)
+                ):
+                    raise ApplicationAgentConflict(
+                        "A repeated or earlier recruiter stage needs a new review."
+                    )
+                terminal = milestone in TERMINAL_MILESTONES
+                next_state = "closed" if terminal else state
+                next_due = (
+                    None if terminal or state == "paused"
+                    else next_case_due(milestone, workspace_status, moment, count)
+                )
+                cur.execute(
+                    """UPDATE smartploy_application_agents
+                       SET milestone=%s, state=%s, revision=revision+1,
+                           next_due_at=%s, updated_at=%s, closed_at=%s,
+                           close_reason=%s
+                       WHERE agent_id=%s AND profile_id=%s""",
+                    (
+                        milestone, next_state, next_due, moment,
+                        moment if terminal else None,
+                        milestone if terminal else "",
+                        agent_id, profile_id,
+                    ),
+                )
+                event_type, message = MILESTONE_EVENTS[milestone]
+                cur.execute(
+                    """INSERT INTO smartploy_application_agent_events
+                       (agent_id,sequence,event_type,message,occurred_at)
+                       VALUES (%s,%s,%s,%s,%s)""",
+                    (agent_id, revision + 1, event_type, message, moment),
+                )
+                cur.execute(
+                    self._COLUMNS + " WHERE a.agent_id=%s AND a.profile_id=%s",
+                    (agent_id, profile_id),
+                )
+                latest = cur.fetchone()
+        return self._public(latest) if latest else None
+
     def process_due(
         self, *, limit: int = 20, now: datetime | None = None
     ) -> dict[str, int | bool]:
