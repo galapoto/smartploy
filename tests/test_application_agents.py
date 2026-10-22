@@ -282,7 +282,7 @@ def test_api_owner_only_case_lifecycle_and_no_body_identity(store, monkeypatch):
         assert app.post(
             route, headers={**headers_a,
                             "X-Smartploy-Expected-User-Id": who_b["user_id"]}
-        ).status_code == 403
+        ).status_code == 409  # Existing middleware rejects stale user header first.
 
         created = app.post(route, headers=headers_a)
         assert created.status_code == 201, created.text
