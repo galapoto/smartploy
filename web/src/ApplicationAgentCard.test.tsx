@@ -10,6 +10,8 @@ vi.mock("./api", () => ({
   getApplicationAgent: vi.fn(),
   createApplicationAgent: vi.fn(),
   changeApplicationAgent: vi.fn(),
+  recordApplicationAgentMilestone: vi.fn(),
+  recordApplicationAgentFollowup: vi.fn(),
 }));
 
 const caseAgent: ApplicationAgent = {
@@ -20,6 +22,8 @@ const caseAgent: ApplicationAgent = {
   updated_at: "2026-10-22T14:00:00Z", closed_at: "", close_reason: "",
   external_actions_authorized: false, employer_contacted: false,
   notification_channel: "in_app_only",
+  milestone: "none", milestone_source: "none", workspace_status: "draft",
+  followups_sent: 0, last_followup_at: "", followup_suggestion: "",
 };
 
 const response = (agents: ApplicationAgent[]) => ({
@@ -48,9 +52,86 @@ beforeEach(() => {
     external_actions_performed: 0,
   });
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Agent Zero in the existing application studio", () => {
+
+  it("never records a recruiter milestone against an unsent draft", async () => {
+    vi.mocked(api.getApplicationAgents).mockResolvedValue(response([caseAgent]));
+    render(<ApplicationAgentCard workspaceId="workspace-A"
+      expectedUserId="user-a" verifyAccount={vi.fn(async () => {})}/>);
+    expect(await screen.findByText(/still a draft/i)).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "Recruiter update" })).toBeNull();
+    expect(api.recordApplicationAgentMilestone).not.toHaveBeenCalled();
+    expect(api.recordApplicationAgentFollowup).not.toHaveBeenCalled();
+  });
+
+  it("requires applicant attestation and never auto-sends a recruiter update", async () => {
+    const submitted = {
+      ...caseAgent, workspace_status: "self_reported_applied" as const,
+      followup_suggestion: "Hello recruiter,\n\n[Your name]",
+    };
+    vi.mocked(api.getApplicationAgents).mockResolvedValue(response([submitted]));
+    vi.mocked(api.getApplicationAgent).mockResolvedValue({
+      agent: submitted, events, count: 1, next_cursor: 1,
+      external_actions_authorized: false,
+    });
+    vi.mocked(api.recordApplicationAgentMilestone).mockResolvedValue({
+      agent: { ...submitted, revision: 2, milestone: "interview" },
+      milestone_source: "candidate_self_report",
+      employer_response_verified: false, external_actions_performed: 0,
+    });
+    render(<ApplicationAgentCard workspaceId="workspace-A"
+      expectedUserId="user-a" verifyAccount={vi.fn(async () => {})}/>);
+    const update = await screen.findByRole("button", {
+      name: /record applicant-reported update/i,
+    });
+    expect((update as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByRole("combobox", { name: "Recruiter update" }), {
+      target: { value: "interview" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", {
+      name: /i personally confirm this update/i,
+    }));
+    fireEvent.click(update);
+    await waitFor(() => expect(api.recordApplicationAgentMilestone).toHaveBeenCalledWith(
+      "agent-fixture-a", "interview", 1, "user-a"
+    ));
+    expect(api.recordApplicationAgentFollowup).not.toHaveBeenCalled();
+  });
+
+  it("logs only a personally sent follow-up, never sends emails", async () => {
+    const submitted = {
+      ...caseAgent, workspace_status: "provider_acknowledged" as const,
+      followup_suggestion: "Hello,\n\nMy application...",
+    };
+    vi.mocked(api.getApplicationAgents).mockResolvedValue(response([submitted]));
+    vi.mocked(api.getApplicationAgent).mockResolvedValue({
+      agent: submitted, events, count: 1, next_cursor: 1,
+      external_actions_authorized: false,
+    });
+    vi.mocked(api.recordApplicationAgentFollowup).mockResolvedValue({
+      agent: { ...submitted, revision: 2, followups_sent: 1 },
+      record_source: "candidate_self_report",
+      external_delivery_verified: false, external_actions_performed: 0,
+    });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<ApplicationAgentCard workspaceId="workspace-A"
+      expectedUserId="user-a" verifyAccount={vi.fn(async () => {})}/>);
+    expect(await screen.findByRole("textbox", {
+      name: /follow-up message you may copy/i,
+    })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {
+      name: /i already sent a follow-up myself/i,
+    }));
+    await waitFor(() => expect(api.recordApplicationAgentFollowup).toHaveBeenCalledWith(
+      "agent-fixture-a", 1, "user-a"
+    ));
+    expect(confirm).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /send to employer/i })).toBeNull();
+  });
+
+
   it("creates one case on explicit click without dispatching an employer action", async () => {
     vi.mocked(api.getApplicationAgents)
       .mockResolvedValueOnce(response([]))
