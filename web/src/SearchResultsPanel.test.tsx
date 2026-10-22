@@ -97,6 +97,19 @@ describe("job discovery mode semantics", () => {
     expect(screen.getByText(/Not verified from the posting:/i)).toBeTruthy();
   });
 
+  it("routes manual and AI application cards to the shared journey without creating drafts", () => {
+    const onChooseFlow = vi.fn();
+    render(<SearchResultsPanel {...common} data={general} onChooseFlow={onChooseFlow} />);
+    expect(screen.getAllByRole("button", { name: /Apply manually/ })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /Apply with AI/ })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /Prepare documents/ })).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: /Apply manually/ })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /Apply with AI/ })[0]);
+    expect(onChooseFlow).toHaveBeenNthCalledWith(1, "lever-analyst", "manual");
+    expect(onChooseFlow).toHaveBeenNthCalledWith(2, "lever-analyst", "assisted");
+    expect(common.onPrepare).not.toHaveBeenCalled();
+  });
+
   it("requires an explicit action to prepare or change search mode", () => {
     render(<SearchResultsPanel {...common} data={general} />);
     fireEvent.click(screen.getAllByRole("button", { name: /prepare documents/i })[0]);

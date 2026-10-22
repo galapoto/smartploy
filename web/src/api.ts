@@ -3,6 +3,7 @@ import type {
   Dashboard,
   HealthResponse,
   CVDocument,
+  CVJobMatches,
   CandidateFact,
   ProfileFactsResponse,
   SessionInfo,
@@ -80,6 +81,10 @@ async function request<T>(path: string, init?: RequestInit, expectedUserId?: str
   }
 
   return (await response.json()) as T;
+}
+
+export function getCVJobMatches(): Promise<CVJobMatches> {
+  return request<CVJobMatches>("/api/v1/profile/cv/matches");
 }
 
 export function getTrainingPrograms(): Promise<TrainingProgramsResponse> {

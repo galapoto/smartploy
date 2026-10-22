@@ -48,6 +48,7 @@ type MockState = {
   lastSave: Record<string, unknown> | null;
   unavailableAI: boolean;
   privateSavedJobs: Record<string, PrivateSavedJob[]>;
+  applicationWorkspaceCreates: string[];
 };
 
 function discovery(state: MockState): SearchResults {
@@ -94,6 +95,7 @@ async function installSyntheticApi(page: Page, options: {
     lastSave: null,
     unavailableAI: Boolean(options.unavailableAI),
     privateSavedJobs: {},
+    applicationWorkspaceCreates: [],
   };
   const response = async (
     route: import("@playwright/test").Route,
@@ -137,6 +139,45 @@ async function installSyntheticApi(page: Page, options: {
         state.privateSavedJobs[state.userId] = remainder;
         await response(route, { deleted: true });
       }
+      return;
+    }
+
+    if (path === "/api/v1/profile/cv" && request.method() === "POST") {
+      const uploaded = JSON.parse(request.postData() || "{}") as { filename?: string };
+      state.cvFilename = String(uploaded.filename || "Synthetic CV.docx");
+      await response(route, {
+        present: true, filename: state.cvFilename, size_bytes: 300,
+        text_preview: "Synthetic candidate with data analysis and Power BI",
+        sha256: "a".repeat(64),
+      });
+      return;
+    }
+    if (path === "/api/v1/profile/cv/matches" && request.method() === "GET") {
+      await response(route, {
+        cv_present: Boolean(state.cvFilename), cv_filename: state.cvFilename,
+        match_mode: state.cvFilename ? "cv_text_signals" : "upload_cv",
+        detected_roles: ["Data Analyst"], detected_topics: ["Power BI"],
+        recommended: [{
+          ...analyst, lane: "recommended", preference_score: 87,
+          reasons: ["Job title matches Data Analyst"],
+        }], other_jobs: [{
+          ...tester, lane: "broader", preference_score: 25,
+          reasons: [], unknown_fields: ["Experience not stated"],
+        }],
+        current_jobs_count: 2, recommended_count: 1,
+        matched_from: "local_cv_text_not_approved_evidence",
+        qualifications_verified: false, employer_actions_performed: false,
+      });
+      return;
+    }
+    if (path.startsWith("/api/v1/jobs/") && path.endsWith("/application-workspace")
+        && request.method() === "POST") {
+      state.applicationWorkspaceCreates.push(
+        decodeURIComponent(path.split("/")[4] || "")
+      );
+      await response(route, {
+        created: true, workspace: { workspace_id: "synthetic-draft-1234" },
+      });
       return;
     }
 
@@ -187,6 +228,7 @@ async function installSyntheticApi(page: Page, options: {
         : { present: false },
       "/api/v1/profile/facts": { facts: [], count: 0 },
       "/api/v1/applications": { applications: [], count: 0 },
+      "/api/v1/application-workspaces": { workspaces: [], count: 0 },
       "/api/v1/jobs": { jobs: [], count: 0 },
       "/api/v1/private-jobs": {
         jobs: state.privateSavedJobs[state.userId] || [],
@@ -216,15 +258,62 @@ async function evidence(page: Page, filename: string) {
   await page.screenshot({ path: "browser-evidence/" + filename, fullPage: true });
 }
 
+
+test("CV-first manual application goes from upload to real matching and selected private draft", async ({ page }) => {
+  const state = await installSyntheticApi(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: /Apply manually/i }).click();
+  await expect(page.getByRole("heading", {
+    name: "Upload your CV. Choose a job. Apply.",
+  })).toBeVisible();
+  await expect(page.getByRole("heading", {
+    name: "Your matching jobs appear here",
+  })).toBeVisible();
+  await page.locator("input[aria-label='Select CV to upload']").setInputFiles({
+    name: "Synthetic-IT-CV.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: Buffer.from("IN-TEST CV BLOB; no real CV"),
+  });
+  await expect(page.getByText("Synthetic-IT-CV.docx is ready")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
+  await expect(page.getByText("Junior Data Analyst")).toBeVisible();
+  await expect(page.getByText(/CV-text matches/i)).toBeVisible();
+  await page.getByRole("button", { name: "Save application draft" }).first().click();
+  await expect.poll(() => state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  await expect(page.getByRole("heading", { name: /My applications/i }).first()).toBeVisible();
+  expect(state.cvFilename).toBe("Synthetic-IT-CV.docx");
+  await evidence(page, "synthetic-cv-first-manual-application.png");
+});
+
+test("existing job-search cards open the requested assisted journey without creating a draft", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Synthetic-CV.pdf",
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Find jobs", exact: true }).click();
+  const analystCard = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
+  await analystCard.getByRole("button", { name: /Apply with AI/i }).click();
+  await expect(page.getByRole("heading", { name: "Upload your CV. Choose a job. Apply." })).toBeVisible();
+  await expect(page.locator(".flow-mode.selected")).toContainText("Apply with AI help");
+  await expect(page.locator(".flow-job.highlighted")).toContainText("Junior Data Analyst");
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+});
+
 test("production build renders inline SmartPloy logo and a working first-use chooser", async ({ page }) => {
   await installSyntheticApi(page);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Find work that fits your goals." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Apply for jobs in four simple steps." })).toBeVisible();
   const logo = page.locator("svg[aria-label='SmartPloy turquoise and navy mark']");
   await expect(logo).toBeVisible();
   const bounds = await logo.boundingBox();
   expect(bounds?.width).toBeGreaterThan(20);
   expect(bounds?.height).toBeGreaterThan(20);
+  await expect(page.getByRole("button", { name: /apply manually/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /apply with AI/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /autoapply/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /just find jobs/i })).toBeVisible();
+  await page.getByText(/Advanced: customize search preferences/i).click();
   await expect(page.getByRole("radio", { name: /Personalized jobs/i })).toBeChecked();
   await expect(page.getByRole("radio", { name: /General job search/i })).toBeVisible();
 
@@ -239,9 +328,8 @@ test("production build renders inline SmartPloy logo and a working first-use cho
 test("general browsing needs no CV; Settings switches into and out of personalized matching", async ({ page }) => {
   const state = await installSyntheticApi(page);
   await page.goto("/");
-  await page.getByRole("radio", { name: /General job search/i }).check();
-  await page.getByRole("button", { name: /Browse all jobs/i }).click();
-  await expect(page.getByRole("heading", { name: "IT & planning opportunities across Finland" })).toBeVisible();
+  await page.getByRole("button", { name: /Just find jobs/i }).click();
+  await expect(page.getByRole("heading", { name: "IT, data & planning jobs in Finland" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await expect(page.getByText("Software Tester")).toBeVisible();
   await expect(page.getByText("General listing")).toHaveCount(2);
@@ -250,7 +338,7 @@ test("general browsing needs no CV; Settings switches into and out of personaliz
   expect(state.lastSave?.roles).toEqual([]);
   await evidence(page, "synthetic-general-search.png");
 
-  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
   await page.getByPlaceholder(/Data analyst, Junior software tester/i).fill("Data Analyst");
   await page.getByRole("button", { name: /Save search preferences/i }).click();
@@ -260,7 +348,7 @@ test("general browsing needs no CV; Settings switches into and out of personaliz
   expect(state.preferences.roles).toEqual(["Data Analyst"]);
   await evidence(page, "synthetic-personalized-search.png");
 
-  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /General job search/i }).check();
   await page.getByRole("button", { name: /Save search preferences/i }).click();
   await expect(page.getByText("General listing")).toHaveCount(2);
@@ -294,7 +382,7 @@ test("Settings save is not overwritten by a manual refresh during an in-flight w
 
   await page.goto("/");
   await expect(page.getByText("87% search match")).toBeVisible();
-  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /General job search/i }).check();
   const readsBeforeSave = preferenceReads;
   await page.getByRole("button", { name: /Save search preferences/i }).click();
@@ -355,7 +443,7 @@ test("identity switch while search Settings PUT is in flight fails closed in the
 
   await page.goto("/");
   await expect(page.getByText("87% search match")).toBeVisible();
-  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /General job search/i }).check();
   await page.getByRole("button", { name: /Save search preferences/i }).click();
   await saveStarted;
@@ -379,7 +467,7 @@ test("identity switch while search Settings PUT is in flight fails closed in the
   // preferences; no stale account A save result can switch B into General.
   await page.getByRole("button", { name: /Try again/i }).click();
   await expect(page.getByText("87% search match")).toBeVisible();
-  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Advanced settings" }).click();
   await expect(page.getByRole("radio", { name: /Personalized jobs/i })).toBeChecked();
   await expect(page.getByPlaceholder(/Data analyst, Junior software tester/i))
     .toHaveValue("Account B role");
@@ -391,7 +479,7 @@ test("saved private jobs do not enter ATS discovery and vanish after account swi
   });
   await page.goto("/");
   await expect(page.getByText("General listing")).toHaveCount(2);
-  await page.getByRole("button", { name: "Find jobs" }).click();
+  await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your saved opportunities" })).toBeVisible();
   await page.getByRole("button", { name: "Save job" }).first().click();
   const modal = page.getByRole("dialog", { name: "Save an opportunity" });
@@ -409,7 +497,7 @@ test("saved private jobs do not enter ATS discovery and vanish after account swi
   state.userId = "synthetic-user-b"; // same email, different authenticated ID
   await page.getByRole("button", { name: "Refresh workspace" }).click();
   await expect(page.getByRole("heading", { name: /Make your next move/i })).toBeVisible();
-  await page.getByRole("button", { name: "Find jobs" }).click();
+  await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByText("PRIVATE-BOOKMARK-A")).toHaveCount(0);
   await expect(page.getByText(/No private saved jobs yet/i)).toBeVisible();
   expect(state.privateSavedJobs["synthetic-user-b"]).toBeUndefined();
@@ -425,7 +513,7 @@ test("a same-email account change resets unsaved criteria and private CV details
   });
   await page.goto("/");
   await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toBeVisible();
-  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
   await page.getByPlaceholder(/Data analyst, Junior software tester/i).fill("UNSAVED ACCOUNT A ONLY");
   state.userId = "synthetic-user-b";
@@ -438,12 +526,12 @@ test("a same-email account change resets unsaved criteria and private CV details
   // Switching signed-in accounts always closes the previous account's
   // editor/Settings and returns to the new user's clean dashboard.
   await expect(page.getByRole("heading", { name: /Make your next move/i })).toBeVisible();
-  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Advanced settings" }).click();
   await expect(page.getByRole("radio", { name: /General job search/i })).toBeChecked();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
   await expect(page.getByPlaceholder(/Data analyst, Junior software tester/i))
     .toHaveValue("Account B role");
-  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+  await page.getByRole("button", { name: "Start here", exact: true }).click();
   await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toHaveCount(0);
   await expect(page.getByText("ACCOUNT-B.pdf")).toBeVisible();
 });
@@ -451,6 +539,7 @@ test("a same-email account change resets unsaved criteria and private CV details
 test("a delayed application-draft response is discarded after same-email account switch", async ({ page }) => {
   const state = await installSyntheticApi(page, {
     initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "PRIVATE-ACCOUNT-A.pdf",
   });
   let release: () => void = () => {};
   const pending = new Promise<void>(resolve => { release = resolve; });
@@ -476,8 +565,10 @@ test("a delayed application-draft response is discarded after same-email account
   });
 
   await page.goto("/");
+  await page.locator(".flow-start-card").filter({ hasText: "Apply manually" }).click();
+  await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
-  await page.getByRole("button", { name: /Prepare documents/i }).first().click();
+  await page.getByRole("button", { name: "Save application draft", exact: true }).first().click();
   await started;
   state.userId = "synthetic-user-b"; // email intentionally stays the same
   release();
@@ -555,9 +646,8 @@ test("mobile onboarding remains usable when the optional local AI endpoint fails
   await installSyntheticApi(page, { unavailableAI: true });
   await page.goto("/");
   await expect(page.locator("svg[aria-label='SmartPloy turquoise and navy mark']")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Find work that fits your goals." })).toBeVisible();
-  await page.getByRole("radio", { name: /General job search/i }).check();
-  await page.getByRole("button", { name: /Browse all jobs/i }).click();
+  await expect(page.getByRole("heading", { name: "Apply for jobs in four simple steps." })).toBeVisible();
+  await page.getByRole("button", { name: /Just find jobs/i }).click();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await expect(page.getByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeVisible();
   await expect(page.getByText(/search match/i)).toHaveCount(0);

@@ -10,7 +10,7 @@ vi.mock("./api", () => ({
   addManualJob: vi.fn(), approveFact: vi.fn(), createFact: vi.fn(),
   deletePrivateSavedJob: vi.fn(), getPrivateSavedJobs: vi.fn(),
   deleteCV: vi.fn(), deleteFact: vi.fn(), getApplications: vi.fn(),
-  getCV: vi.fn(), getDashboard: vi.fn(), getHealth: vi.fn(),
+  getCV: vi.fn(), getCVJobMatches: vi.fn(), getDashboard: vi.fn(), getHealth: vi.fn(),
   getJobs: vi.fn(), getProfileFacts: vi.fn(), getSession: vi.fn(),
   startApplicationWorkspace: vi.fn(), uploadCV: vi.fn(),
   getSearchPreferences: vi.fn(), updateSearchPreferences: vi.fn(),
@@ -85,6 +85,14 @@ beforeEach(() => {
   });
   vi.mocked(api.getHealth).mockResolvedValue({ obumai_configured: false } as never);
   vi.mocked(api.getCV).mockResolvedValue({ present: false });
+  vi.mocked(api.getCVJobMatches).mockResolvedValue({
+    cv_present: true, cv_filename: "synthetic-CV.pdf", match_mode: "cv_text_signals",
+    detected_roles: ["Data Analyst"], detected_topics: ["Python"],
+    recommended: [tailored.recommendations[0]], other_jobs: [],
+    current_jobs_count: 1, recommended_count: 1,
+    matched_from: "local_cv_text_not_approved_evidence",
+    qualifications_verified: false, employer_actions_performed: false,
+  });
   vi.mocked(api.getProfileFacts).mockResolvedValue({ facts: [], count: 0 });
   vi.mocked(api.getApplications).mockResolvedValue({ applications: [], count: 0 });
   vi.mocked(api.getJobs).mockResolvedValue({ jobs: [], count: 0 });
@@ -149,7 +157,9 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       () => new Promise(() => { /* simulate stalled private model */ })
     );
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "Find work that fits your goals." })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Apply for jobs in four simple steps." })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Apply manually/i })).toBeTruthy();
+    fireEvent.click(screen.getByText(/Advanced: customize search preferences/i));
     expect(screen.getByRole("radio", { name: /general job search/i })).toBeTruthy();
     expect(vi.mocked(api.getSearchResults)).toHaveBeenCalled();
   });
@@ -163,7 +173,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     });
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     const signOut = await screen.findByRole("link", { name: /Sign out securely/i });
     expect(signOut.getAttribute("href")).toBe("/auth/logout");
     // Navigation to GET only displays a confirmation; no client-side
@@ -180,19 +190,26 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     });
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     expect(screen.queryByRole("link", { name: /Sign out securely/i })).toBeNull();
   });
 
-  it("supports general browsing and opens an application without personalized criteria", async () => {
+  it("supports general browsing and CV-first applications without personalized search criteria", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "synthetic-CV.pdf", sha256: "test-cv-only"
+    });
     render(<App />);
+    fireEvent.click(await screen.findByText(/Advanced: customize search preferences/i));
     fireEvent.click(await screen.findByRole("radio", { name: /general job search/i }));
     fireEvent.click(await screen.findByRole("button", { name: /browse all jobs/i }));
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     expect(screen.getByText(/1 current job listings/i)).toBeTruthy();
     expect(screen.queryByText(/90% search match/i)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /prepare documents/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Apply manually$/ }));
+    expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Save application draft" }));
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledWith("test-analyst", "usr-synthetic-1"));
     expect(await screen.findByTestId("application-editor")).toBeTruthy();
     expect(screen.getByTestId("application-editor").getAttribute("data-workspace")).toMatch(/^kit-/);
@@ -205,6 +222,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     }));
 
     render(<App />);
+    fireEvent.click(await screen.findByText(/Advanced: customize search preferences/i));
     const generalRadio = await screen.findByRole("radio", { name: /general job search/i });
     fireEvent.click(generalRadio);
     expect((generalRadio as HTMLInputElement).checked).toBe(true);
@@ -235,7 +253,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 
     render(<App />);
     expect(await screen.findByText(/90% search match/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
     fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
     expect(screen.getByRole("button", { name: /saving/i }).hasAttribute("disabled")).toBe(true);
@@ -284,7 +302,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
         oldReadStarted = true;
       })
     );
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
     await waitFor(() => expect(oldReadStarted).toBe(true));
 
@@ -309,7 +327,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
     render(<App />);
     expect(await screen.findByText(/90% search match/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
     fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/Synthetic revision conflict/);
@@ -330,7 +348,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     };
     render(<App />);
     expect(await screen.findByText(/90% search match/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
     vi.mocked(api.getSession).mockRejectedValueOnce(new Error("Synthetic authentication expiry"));
     fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
@@ -360,7 +378,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
     render(<App />);
     expect(await screen.findByText(/90% search match/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
     fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
     await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledTimes(1));
@@ -398,7 +416,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     vi.mocked(api.getSearchResults).mockImplementationOnce(() =>
       new Promise<SearchResults>((resolve) => { finishResults = resolve; })
     );
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
     fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
     await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledTimes(1));
@@ -410,6 +428,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 
   it("saves new personalized settings and transparently changes ranked results", async () => {
     render(<App />);
+    fireEvent.click(await screen.findByText(/Advanced: customize search preferences/i));
     fireEvent.change(await screen.findByPlaceholderText(/Data analyst, Junior software tester/), {
       target: { value: "Data Analyst" },
     });
@@ -417,7 +436,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByText(/90% search match/i)).toBeTruthy();
     expect(currentPrefs.mode).toBe("personalized");
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     expect(screen.getByRole("heading", { name: "Job search preferences" })).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
     fireEvent.click(screen.getByRole("button", { name: /save search preferences/i }));
@@ -456,6 +475,8 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 
   it("does not open a delayed account A application workspace for account B", async () => {
     currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getCV).mockResolvedValue({ present: true, filename: "PRIVATE-ACCOUNT-A.pdf",
+      sha256: "synthetic-owner-a-only" });
     const switchToB = switchableSession();
     let complete: (value: Awaited<ReturnType<typeof api.startApplicationWorkspace>>) => void = () => {
       throw new Error("Workspace did not start");
@@ -465,7 +486,9 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /prepare documents/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Apply manually$/ }));
+    await screen.findByRole("button", { name: "Save application draft" });
+    fireEvent.click(screen.getByRole("button", { name: "Save application draft" }));
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
     switchToB();
     await act(async () => {
@@ -490,7 +513,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
     fireEvent.change(screen.getByPlaceholderText(/Python, Finnish B2, data analytics/i), {
       target: { value: "PRIVATE-ACCOUNT-A-FACT" },
     });
@@ -502,7 +525,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByText("PRIVATE-ACCOUNT-A-FACT")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
     expect((screen.getByPlaceholderText(/Python, Finnish B2, data analytics/i) as HTMLInputElement).value).toBe("");
   });
 
@@ -526,7 +549,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     }];
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
     expect((await screen.findAllByText("SYNTHETIC-READY-CV.pdf")).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
     expect(await screen.findByText("Private saved QA opportunity")).toBeTruthy();
@@ -570,7 +593,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Refresh workspace" }).hasAttribute("disabled")).toBe(false)
     );
-    fireEvent.click(screen.getByRole("button", { name: "AI tools" }));
+    fireEvent.click(screen.getByRole("button", { name: "CV & AI tools" }));
     expect(await screen.findByText(/ObumAI service integration is not configured/i)).toBeTruthy();
     await act(async () => {
       finishOld({
@@ -730,7 +753,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     await waitFor(() => expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-CV.docx")).toBeNull());
     expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-FACT")).toBeNull();
     expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^Dashboard$/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Start here$/i })).toBeTruthy();
   });
 
   it("fails closed when the signed-in identity flips during essential workspace reads", async () => {
@@ -879,7 +902,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     const jobOption = await screen.findByRole("option", {
       name: /Junior Data Analyst — Example Oy/i,
     });
@@ -914,7 +937,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /prepare documents/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Apply manually$/ })).toBeTruthy();
   });
 });
 
@@ -922,6 +945,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 describe("first opt-in creates private IT applications immediately", () => {
   const openOptIn = async () => {
     render(<App />);
+    fireEvent.click(await screen.findByText(/Advanced: customize search preferences/i));
     fireEvent.click(await screen.findByRole("button", { name: /Use nationwide junior IT & planning targets/i }));
     fireEvent.click(screen.getByRole("checkbox", {
       name: /Automatically prepare suitable job drafts/i,
@@ -937,7 +961,7 @@ describe("first opt-in creates private IT applications immediately", () => {
     };
     render(<App />);
     expect(await screen.findByText(/90% search match/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     fireEvent.change(screen.getByPlaceholderText(/Data analyst, Junior software tester/i), {
       target: { value: "Junior Software Tester" },
     });
@@ -956,7 +980,7 @@ describe("first opt-in creates private IT applications immediately", () => {
     };
     render(<App />);
     expect(await screen.findByText(/90% search match/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
     fireEvent.change(screen.getByPlaceholderText(/Data analyst, Junior software tester/i), {
       target: { value: "Junior Software Tester" },
     });
@@ -984,7 +1008,7 @@ describe("first opt-in creates private IT applications immediately", () => {
     });
     render(<App />);
     expect(await screen.findByText(/90% search match/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
     expect(await screen.findByText("SQL")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(api.approveFact).toHaveBeenCalledWith(
@@ -1016,7 +1040,7 @@ describe("first opt-in creates private IT applications immediately", () => {
     });
     render(<App />);
     expect(await screen.findByText(/90% search match/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "CV & profile" }));
+    fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
     fireEvent.change(screen.getByPlaceholderText(/e\.g\. Python, Finnish B2/i), {
       target: { value: "SQL" },
     });
@@ -1035,7 +1059,7 @@ describe("first opt-in creates private IT applications immediately", () => {
   });
 
 
-  it("resumes AutoApply after a CV upload only with pre-approved facts", async () => {
+  it("opens CV-first job matches after upload without silently submitting or starting drafts", async () => {
     currentPrefs = {
       ...initial, completed: true, mode: "personalized",
       roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
@@ -1061,8 +1085,9 @@ describe("first opt-in creates private IT applications immediately", () => {
     await waitFor(() => expect(api.uploadCV).toHaveBeenCalledWith(
       expect.objectContaining({ name: "synthetic-CV.pdf" }), "usr-synthetic-1"
     ));
-    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
-    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
+    await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(1));
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
@@ -1083,7 +1108,7 @@ describe("first opt-in creates private IT applications immediately", () => {
       })] },
     });
     await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText(/Your CV was uploaded privately/i)).toBeTruthy();
+    expect(await screen.findByText(/CV uploaded\. Matching your CV against current jobs now/i)).toBeTruthy();
     expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
     expect(screen.queryByTestId("application-editor")).toBeNull();
   });

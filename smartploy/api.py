@@ -47,6 +47,7 @@ from .browser_receipt_storage import (
 )
 from .local_drafting import LocalDraftClient, LocalDraftError, LocalDraftSettings
 from .cv_import import CVImportError, parse_cv
+from .cv_job_matching import cv_job_matches
 from .cv_storage import MemoryCVRepository, PostgresCVRepository
 from .profile import FACT_TYPES, ProfileFact
 from .identity import (
@@ -884,6 +885,19 @@ def create_app(
         tenant, _ = tenant_context(request)
         item = app.state.cv_repository.get(tenant.profile_repository.profile_id)
         return item.summary() if item else {"present": False}
+
+    @app.get("/api/v1/profile/cv/matches")
+    def cv_first_job_matches(request: Request) -> JSONResponse:
+        """Read-only same-account local CV search across the existing job DB.
+
+        An upload alone never approves career evidence or starts employer work.
+        The response is not cacheable: this is private CV-derived information.
+        """
+        tenant, _ = tenant_context(request)
+        profile_id = tenant.profile_repository.profile_id
+        cv = app.state.cv_repository.get(profile_id)
+        result = cv_job_matches(cv, tenant.list_jobs(), profile_id=profile_id)
+        return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
 
     @app.post("/api/v1/profile/cv")
     def upload_cv(payload: CVUploadPayload, request: Request) -> dict[str, Any]:

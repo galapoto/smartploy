@@ -19,6 +19,8 @@ import {
   sectorLabel, type DisplayMode, type SectorFilter
 } from "./lib";
 import ApplicationStudio from "./ApplicationStudio";
+import ApplicationJourney from "./ApplicationJourney";
+import StartChoices from "./StartChoices";
 import SearchSetup from "./SearchSetup";
 import SearchResultsPanel from "./SearchResultsPanel";
 import TrainingProgramsPanel from "./TrainingProgramsPanel";
@@ -28,22 +30,24 @@ import type {
   ApplicationRecord, CandidateFact, CVDocument, Dashboard, HealthResponse,
   ManualJobPayload, PrivateSavedJob, RankingCard, SavedJob, SessionInfo,
   SearchPreferences, SearchPreferencesUpdate, SearchResults, LocalAIStatus,
-  JobAIProcessingConsent, JobAIProcessingConsentEvent
+  JobAIProcessingConsent, JobAIProcessingConsentEvent,
+  ApplicationFlowMode
 } from "./types";
 
-type Page = "dashboard" | "jobs" | "training" | "applications" | "profile" | "tools" | "insights" | "sources" | "settings";
+type Page = "dashboard" | "apply" | "jobs" | "training" | "applications" | "profile" | "tools" | "insights" | "sources" | "settings";
 type MatchView = "top" | "possible";
 
 const NAV: Array<{ id: Page; label: string; icon: LucideIcon }> = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "dashboard", label: "Start here", icon: LayoutDashboard },
+  { id: "apply", label: "Apply for jobs", icon: FileCheck2 },
   { id: "jobs", label: "Find jobs", icon: Search },
-  { id: "training", label: "Training & traineeships", icon: BriefcaseBusiness },
   { id: "applications", label: "My applications", icon: FileText },
-  { id: "profile", label: "CV & profile", icon: FileCheck2 },
-  { id: "tools", label: "AI tools", icon: Sparkles },
+  { id: "profile", label: "My CV & documents", icon: FileCheck2 },
+  { id: "training", label: "Training & traineeships", icon: BriefcaseBusiness },
+  { id: "tools", label: "CV & AI tools", icon: Sparkles },
   { id: "insights", label: "Career insights", icon: ChartNoAxesColumn },
   { id: "sources", label: "Job sources", icon: Database },
-  { id: "settings", label: "Settings", icon: Settings2 }
+  { id: "settings", label: "Advanced settings", icon: Settings2 }
 ];
 
 const FACT_TYPES: Array<{ value: string; label: string }> = [
@@ -110,6 +114,10 @@ class PrivateActionIdentityChanged extends Error {}
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
+  const [flowMode, setFlowMode] = useState<ApplicationFlowMode>("manual");
+  const [flowSelectedJob, setFlowSelectedJob] = useState("");
+  const [flowQueueBusy, setFlowQueueBusy] = useState(false);
+  const [startSearchBusy, setStartSearchBusy] = useState(false);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -151,6 +159,7 @@ export default function App() {
     company: "", role_title: "", location: "", description: "", application_url: ""
   });
   const uploadRef = useRef<HTMLInputElement>(null);
+  const flowQueueInFlight = useRef(false);
 
   // Old in-flight requests must not repopulate another account's workspace.
   const loadGeneration = useRef(0);
@@ -170,6 +179,8 @@ export default function App() {
     // A different account must not inherit an unsaved draft, editor, form,
     // selected job or cached navigation state belonging to its predecessor.
     setPage("dashboard"); setSearch(""); setExpandedJob("");
+    setFlowMode("manual"); setFlowSelectedJob(""); setFlowQueueBusy(false);
+    setStartSearchBusy(false); flowQueueInFlight.current = false;
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
     setBusyCV(false); setBusyFact(""); setPreparing(""); setManualBusy(false);
@@ -338,6 +349,33 @@ export default function App() {
   }, [load]);
 
   const navigate = (target: Page) => { setPage(target); setMobileNav(false); setNotice(""); };
+
+  function startApplyFlow(chosen: ApplicationFlowMode, jobKey = "") {
+    setFlowMode(chosen);
+    setFlowSelectedJob(jobKey);
+    navigate("apply");
+  }
+
+  async function startGeneralBrowse() {
+    if (!preferences) return;
+    if (preferences.completed && preferences.mode === "general") {
+      navigate("jobs"); return;
+    }
+    if (startSearchBusy) return;
+    setStartSearchBusy(true);
+    try {
+      await saveSearchPreferences({
+        mode: "general", roles: preferences.roles, locations: preferences.locations,
+        languages: preferences.languages, work_modes: preferences.work_modes,
+        keywords: preferences.keywords, skills: preferences.skills,
+        seniority: preferences.seniority, auto_draft_enabled: false,
+        expected_revision: preferences.revision,
+      });
+      navigate("jobs");
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Could not open job search.");
+    } finally { setStartSearchBusy(false); }
+  }
   async function saveSearchPreferences(next: SearchPreferencesUpdate) {
     if (savingSearchPreferences.current) {
       throw new Error("A search preference save is already in progress.");
@@ -516,15 +554,12 @@ export default function App() {
     setBusyCV(true); setNotice("");
     try {
       const uploaded = await runPrivateMutation((userId) => uploadCV(file, userId));
-      setCV(uploaded); setCVPreview(true); navigate("profile");
-      setNotice("Your CV was uploaded privately. Review its text and confirm facts before matching.");
+      setCV(uploaded); setCVPreview(false); navigate("apply");
+      setNotice("CV uploaded. Matching your CV against current jobs now. Select a job below to continue.");
       await load(true);
       // An uploaded CV is not automatically approved as career evidence.
-      // Trigger the already-consented private scan only if the user had
-      // independently approved profile facts beforehand.
-      if (facts.some((fact) => fact.approved)) {
-        await onPrepareMyAutoDrafts();
-      }
+      // CV upload never starts background employer work. It is now a clear
+      // discovery step; approved facts and AutoDraft opt-in stay independent.
     } catch (exc) {
       if (exc instanceof PrivateActionIdentityChanged) return;
       navigate("profile");
@@ -700,6 +735,44 @@ export default function App() {
     }
   }
 
+  async function onPrepareSelectedJobs(keys: string[]) {
+    if (flowQueueInFlight.current) return;
+    const selected = [...new Set(keys)].filter(Boolean).slice(0, 15);
+    if (!selected.length) return;
+    const identity = lastSessionIdentity.current;
+    flowQueueInFlight.current = true;
+    setFlowQueueBusy(true);
+    let prepared = 0;
+    let firstWorkspace = "";
+    let failure = "";
+    try {
+      // Reuse the original owner-bound, idempotent per-job workspace API.
+      // No employer POST, extension grant or automatic final browser click.
+      for (const key of selected) {
+        try {
+          const result = await runPrivateMutation((userId) =>
+            startApplicationWorkspace(key, userId));
+          if (!firstWorkspace) firstWorkspace = result.workspace.workspace_id;
+          prepared += 1;
+        } catch (exc) {
+          if (exc instanceof PrivateActionIdentityChanged) return;
+          failure = exc instanceof Error ? exc.message : "Unable to prepare the next job";
+          break;
+        }
+      }
+      if (lastSessionIdentity.current !== identity) return;
+      if (!prepared) throw new Error(failure || "No drafts were prepared");
+      setSelectedWorkspaceId(firstWorkspace);
+      navigate("applications");
+      setNotice(prepared + " private application draft(s) ready for review. " +
+        (failure ? "Stopped before the next job: " + failure + ". " : "") +
+        "No applications were sent to employers.");
+    } finally {
+      flowQueueInFlight.current = false;
+      if (lastSessionIdentity.current === identity) setFlowQueueBusy(false);
+    }
+  }
+
   async function onPrepare(canonicalKey: string) {
     const actionIdentity = lastSessionIdentity.current;
     setPreparing(canonicalKey);
@@ -724,12 +797,19 @@ export default function App() {
   if (loading && !dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><span className="spinner" /><p>Preparing your workspace…</p></div>;
   if (!dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><h1>SmartPloy isn't available</h1><p>{error}</p><button className="primary-btn" onClick={() => void load()} type="button">Try again</button></div>;
 
-  if (preferences && !preferences.completed) {
-    return <main className="setup-landing">
+  if (preferences && !preferences.completed && page === "dashboard") {
+    return <main className="setup-landing flow-first-use">
       <div className="setup-brand"><BrandMark/><span><strong>SmartPloy</strong>
-        <small>Job intelligence for Finland</small></span></div>
-      <SearchSetup key={session?.user_id || session?.profile_id || session?.subject_fingerprint || "unidentified"} initial={preferences} onSave={saveSearchPreferences}/>
-      <p className="setup-privacy"><LockKeyhole size={14}/> No CV required to browse jobs. Search choices are private to your account.</p>
+        <small>Simple job applications for Finland</small></span></div>
+      <StartChoices onMode={(choice) => startApplyFlow(choice)}
+        onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}/>
+      {error ? <p className="setup-error" role="alert">{error}</p> : null}
+      <details className="flow-advanced-setup">
+        <summary>Advanced: customize search preferences (optional)</summary>
+        <SearchSetup key={session?.user_id || session?.profile_id || session?.subject_fingerprint || "unidentified"}
+          initial={preferences} onSave={saveSearchPreferences}/>
+      </details>
+      <p className="setup-privacy"><LockKeyhole size={14}/> Find jobs without a CV, or upload one for private matching.</p>
     </main>;
   }
 
@@ -743,8 +823,13 @@ export default function App() {
   const counts = dashboard.applications;
   const onTool = (name: string) => {
     if (name === "CV Tailor" || name === "Cover Letter") {
-      if (!cv.present && !facts.some((item) => item.approved)) { navigate("profile"); setNotice("Upload your CV or approve your career evidence to begin."); }
-      else { navigate("jobs"); setNotice("Choose a job to prepare documents. You can request local AI writing assistance inside a saved draft."); }
+      if (selectedWorkspaceId) {
+        navigate("applications");
+        setNotice("Open your selected application to edit and download its CV and cover letter.");
+      } else {
+        startApplyFlow("assisted");
+        setNotice("Select a job below to open its CV and cover-letter editor.");
+      }
     } else if (name === "Application prep") navigate("applications");
     else if (name === "Career insights") navigate("insights");
     else { navigate("tools"); setNotice("Interactive interview practice is planned, but not active yet."); }
@@ -765,6 +850,7 @@ export default function App() {
     onToggleDisplay={() => setMode(mode === "heatmap" ? "percentage" : "heatmap")}
     currentPage={page === "jobs" ? "jobs" : "dashboard"}
     busyKey={preparing} onPrepare={(key) => void onPrepare(key)}
+    onChooseFlow={(key, choice) => startApplyFlow(choice, key)}
     onAllJobs={() => navigate("jobs")}
     onChangeCriteria={() => navigate("settings")}
     onChangeMode={(choice) => void changeSearchMode(choice)}
@@ -908,7 +994,7 @@ export default function App() {
         <span className="header-country"><MapPin size={16} /> Finland</span>
         <div className="header-tools">
           <a className="obumai-brand" href="https://app.obumai.com/" target="_self" title="Open ObumAI"><img src="/obumai-mark.svg" alt="" /> <strong>ObumAI</strong></a>
-          <span className={cx("connection-status", obumReady ? "connected" : "disconnected")}><span />{obumReady ? "Connected" : "Setup needed"}</span>
+          <span className={cx("connection-status", obumReady ? "connected" : "disconnected")}><span />{localAI?.ready ? "Local AI ready" : health?.obumai_configured ? "ObumAI configured" : "AI optional"}</span>
           <button className="icon-btn header-refresh" type="button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh workspace"><RefreshCw size={19} className={refreshing ? "rotate" : ""} /></button>
           <span className="avatar header-avatar" title={session?.email || "Your account"}>{avatar}</span>
         </div>
@@ -922,11 +1008,16 @@ export default function App() {
             <img className="helsinki-art" src="/helsinki-skyline.svg" alt="" />
             <div className="hero-tag"><span className="flag-finland" aria-hidden="true" /> Built for the Finnish job market</div>
           </section>
-          <div className="action-grid">
-            <button type="button" className="action-card featured" onClick={onUploadClick}><span className="action-icon"><UploadCloud size={22} /></span><span><strong>{cv.present ? "Replace your CV" : "Upload your CV"}</strong><small>{cv.present ? "Update your career evidence" : "Start with your experience"}</small></span><ArrowRight size={18} /></button>
-            <button type="button" className="action-card" onClick={() => { navigate("profile"); setNotice("LinkedIn account sync is not available yet. You can upload a CV or add your evidence directly."); }}><span className="action-icon"><BriefcaseBusiness size={21} /></span><span><strong>Build your profile</strong><small>Confirm skills and experience</small></span><ArrowRight size={18} /></button>
-            <button type="button" className="action-card" onClick={() => void load(true)} disabled={refreshing}><span className="action-icon"><RefreshCw size={21} className={refreshing ? "rotate" : ""} /></span><span><strong>Refresh listings</strong><small>Check available job data</small></span><ArrowRight size={18} /></button>
-            <button type="button" className="action-card" onClick={() => navigate("tools")}><span className="action-icon"><Sparkles size={21} /></span><span><strong>Open AI tools</strong><small>CV, letters & applications</small></span><ArrowRight size={18} /></button>
+          <StartChoices onMode={(choice) => startApplyFlow(choice)}
+            onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}/>
+          <div className="flow-home-cv">
+            <button className="outline-btn" type="button" onClick={onUploadClick}
+              disabled={busyCV}><UploadCloud size={16}/>
+              {busyCV ? "Uploading…" : cv.present ? "Replace your CV" : "Upload your CV"}
+            </button>
+            <button className="outline-btn" type="button" onClick={() => navigate("profile")}>
+              <FileText size={16}/> Manage your CV
+            </button>
           </div>
           <div className="stats-grid">
             <Stat label={preferences?.mode === "general" ? "Available jobs" : "Preference matches"}
@@ -947,6 +1038,16 @@ export default function App() {
             {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Save job</button> : null}
             {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}
           </div>
+          {page === "apply" ? <ApplicationJourney
+            key={accountViewKey} userId={session?.user_id || ""}
+            cv={cv} mode={flowMode} selectedJobKey={flowSelectedJob}
+            uploading={busyCV} preparing={preparing} queueBusy={flowQueueBusy}
+            onMode={setFlowMode} onUpload={onUploadClick}
+            onReviewCV={() => navigate("profile")}
+            onFindJobs={() => void startGeneralBrowse()}
+            onOpenApplications={() => navigate("applications")}
+            onPrepare={onPrepare} onPrepareSelected={onPrepareSelectedJobs}
+          /> : null}
           {page === "jobs" ? <div className="stacked"><div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>{privateSavedJobsPanel}</div> : null}
           {page === "training" ? <TrainingProgramsPanel /> : null}
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">{cvBlock}{factPanel}</div><aside>{sidePanel}</aside></div> : null}
@@ -955,7 +1056,7 @@ export default function App() {
           {page === "applications" ? <div className="stacked">
             <ApplicationStudio key={accountViewKey} focusId={selectedWorkspaceId}
               expectedUserId={session?.user_id || ""} expectedAuthSource={session?.auth_source || ""}
-              onFindJobs={() => navigate("jobs")} />
+              onFindJobs={() => navigate("apply")} />
             <section className="panel"><div className="panel-heading"><div><p className="section-kicker">APPLICATION TRACKER</p><h2>Your application pipeline</h2><p>A preparation draft is never counted as submitted.</p></div><span className="subtle-count">{applications.length} records</span></div>
             {applications.length ? <div className="applications-list">{applications.map((item) => <div className="application-list-row" key={item.application_id}><FileText size={20} /><div><strong>{formatState(item.state)}</strong><small>Job {item.canonical_key} · {item.updated_at ? relativeFreshness(item.updated_at) : "Updated time unknown"}</small></div><span className={cx("state-pill", item.has_been_submitted ? "good" : "waiting")}>{item.has_been_submitted ? "Submitted" : "Not submitted"}</span></div>)}</div> :
               <Empty title="No applications yet" description="When you've reviewed a job and prepared an application, the draft will appear here. No submissions are claimed without external evidence." icon={FileCheck2} action="Find jobs" onAction={() => navigate("jobs")} />}
@@ -982,7 +1083,7 @@ export default function App() {
             </section>
           </div> : null}
         </> : null}
-        <footer className="site-footer"><span>SmartPloy · Job intelligence for Finland</span><span>Powered by ObumAI · No automatic applications submitted</span></footer>
+        <footer className="site-footer"><span>SmartPloy · Job intelligence for Finland</span><span>Private CV matching · AI-assisted drafts · Employer submission requires confirmation</span></footer>
       </main>
     </div>
     {jobDialog ? <div className="modal-backdrop" role="presentation" onClick={() => setJobDialog(false)}>
