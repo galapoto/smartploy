@@ -105,6 +105,36 @@ export interface Dashboard {
   external_actions_authorized: boolean;
 }
 
+
+/** One durable case identity per selected application workspace. */
+export interface ApplicationAgent {
+  agent_id: string;
+  workspace_id: string;
+  canonical_key: string;
+  role_title: string;
+  company: string;
+  state: "active" | "paused" | "closed";
+  revision: number;
+  next_due_at: string;
+  last_woke_at: string;
+  created_at: string;
+  updated_at: string;
+  closed_at: string;
+  close_reason: "" | "owner_closed";
+  external_actions_authorized: false;
+  employer_contacted: false;
+  notification_channel: "in_app_only";
+}
+
+export interface ApplicationAgentEvent {
+  sequence: number;
+  event_type: "case_created" | "review_reminder_due" | "case_paused" |
+    "case_resumed" | "case_closed";
+  message: string;
+  occurred_at: string;
+  external_actions_performed: 0;
+}
+
 export interface ApplicationRecord {
   application_id: string;
   canonical_key: string;
