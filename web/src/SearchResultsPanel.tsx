@@ -63,7 +63,9 @@ function JobCard(props: {
         onClick={props.onChooseFlow} disabled={!job.source_current}>
         Manual / AutoApply <ArrowRight size={15}/>
       </button> : null}
-      <button type="button" className="outline-btn compact" onClick={props.onPrepare} disabled={props.busy || !job.source_current}>
+      <button type="button" className="outline-btn compact"
+        aria-label={"Prepare documents for " + job.role_title}
+        onClick={props.onPrepare} disabled={props.busy || !job.source_current}>
         {props.busy ? "Opening…" : "Prepare documents"} <ArrowRight size={15}/>
       </button>
     </div>
