@@ -203,7 +203,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.getByText(/1 current job listings/i)).toBeTruthy();
     expect(screen.queryByText(/90% search match/i)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /prepare documents/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /prepare documents/i })[0]);
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledWith("test-analyst", "usr-synthetic-1"));
     expect(await screen.findByTestId("application-editor")).toBeTruthy();
     expect(screen.getByTestId("application-editor").getAttribute("data-workspace")).toMatch(/^kit-/);
@@ -478,7 +478,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /prepare documents/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /prepare documents/i })[0]);
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
     switchToB();
     await act(async () => {
@@ -583,7 +583,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Refresh workspace" }).hasAttribute("disabled")).toBe(false)
     );
-    fireEvent.click(screen.getByRole("button", { name: "AI tools" }));
+    fireEvent.click(screen.getByRole("button", { name: "CV & AI tools" }));
     expect(await screen.findByText(/ObumAI service integration is not configured/i)).toBeTruthy();
     await act(async () => {
       finishOld({
@@ -743,7 +743,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     await waitFor(() => expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-CV.docx")).toBeNull());
     expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-FACT")).toBeNull();
     expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^Dashboard$/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start here", exact: true })).toBeTruthy();
   });
 
   it("fails closed when the signed-in identity flips during essential workspace reads", async () => {
@@ -927,7 +927,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /prepare documents/i })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /prepare documents/i })[0]).toBeTruthy();
   });
 });
 
