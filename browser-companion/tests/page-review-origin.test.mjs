@@ -83,7 +83,11 @@ test("Komplyint OIDC origin verifies an exact packet with same-origin cookies on
     assert.equal(options.headers.Authorization, undefined);
   }
   const body = JSON.parse(requests[1].options.body);
-  assert.deepEqual(body, binding);
+  // The workspace ID is already in the path; never duplicate it into the
+  // verified digest binding body (which the existing API forbids).
+  const { workspace_id, ...expectedBody } = binding;
+  assert.deepEqual(body, expectedBody);
+  assert.equal(requests[1].url.endsWith("/" + workspace_id + "/verify-reviewed-packet"), true);
   assert.equal(requests[1].options.headers["X-Smartploy-Expected-User-Id"], session.user_id);
   assert.equal(JSON.stringify(outcome).includes(session.user_id), false);
 });
