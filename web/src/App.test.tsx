@@ -743,7 +743,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     await waitFor(() => expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-CV.docx")).toBeNull());
     expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-FACT")).toBeNull();
     expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Start here", exact: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Start here$/i })).toBeTruthy();
   });
 
   it("fails closed when the signed-in identity flips during essential workspace reads", async () => {
