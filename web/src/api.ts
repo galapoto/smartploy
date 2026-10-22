@@ -13,6 +13,8 @@ import type {
   PrivateSavedJobsResponse,
   PreparationResponse,
   ApplicationWorkspace,
+  ApplicationAgent,
+  ApplicationAgentEvent,
   ApplicationWorkspacesResponse,
   TrainingProgramsResponse
 } from "./types";
@@ -192,6 +194,46 @@ export function startApplicationWorkspace(canonicalKey: string, expectedUserId: 
   return request<{ workspace: ApplicationWorkspace; created: boolean }>(
     "/api/v1/jobs/" + encodeURIComponent(canonicalKey) + "/application-workspace",
     { method: "POST" }, expectedUserId
+  );
+}
+
+
+/** Agent Zero never sends, calls, submits, or grants external actions. */
+export function getApplicationAgents(): Promise<{
+  agents: ApplicationAgent[];
+  count: number;
+  external_actions_authorized: false;
+}> {
+  return request("/api/v1/application-agents");
+}
+
+export function getApplicationAgent(agentId: string): Promise<{
+  agent: ApplicationAgent;
+  events: ApplicationAgentEvent[];
+  count: number;
+  next_cursor: number;
+  external_actions_authorized: false;
+}> {
+  return request("/api/v1/application-agents/" + encodeURIComponent(agentId));
+}
+
+export function createApplicationAgent(
+  workspaceId: string, expectedUserId: string
+): Promise<{ agent: ApplicationAgent; created: boolean; external_actions_performed: 0 }> {
+  return request(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/agent",
+    { method: "POST" }, expectedUserId
+  );
+}
+
+export function changeApplicationAgent(
+  agentId: string, action: "pause" | "resume" | "close", expectedRevision: number,
+  expectedUserId: string
+): Promise<{ agent: ApplicationAgent; external_actions_performed: 0 }> {
+  return request(
+    "/api/v1/application-agents/" + encodeURIComponent(agentId) + "/" + action,
+    { method: "POST", body: JSON.stringify({ expected_revision: expectedRevision }) },
+    expectedUserId
   );
 }
 

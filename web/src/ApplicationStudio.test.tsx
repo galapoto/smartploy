@@ -9,6 +9,10 @@ import type { ApplicationWorkspace, ApplicationWorkspacesResponse, SessionInfo }
 vi.mock("./api", () => ({
   getSession: vi.fn(),
   getApplicationWorkspaces: vi.fn(),
+  getApplicationAgents: vi.fn(),
+  getApplicationAgent: vi.fn(),
+  createApplicationAgent: vi.fn(),
+  changeApplicationAgent: vi.fn(),
   getLocalAIStatus: vi.fn(),
   getBrowserHandoffReadiness: vi.fn(),
   getEmployerAttemptStatus: vi.fn(),
@@ -77,6 +81,9 @@ beforeEach(() => {
   activeUser = "usr-a";
   vi.mocked(api.getSession).mockImplementation(async () => session(activeUser));
   vi.mocked(api.getApplicationWorkspaces).mockResolvedValue(draft("A"));
+  vi.mocked(api.getApplicationAgents).mockResolvedValue({
+    agents: [], count: 0, external_actions_authorized: false,
+  });
   vi.mocked(api.getLocalAIStatus).mockResolvedValue({
     configured: false, ready: false, provider: "disabled",
     model: "", external_ai_forwarding: false,
