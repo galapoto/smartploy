@@ -15,7 +15,7 @@ from smartploy.service import SmartployService
 
 api_module = importlib.import_module("smartploy.api")
 PUBLIC_FIELDS = frozenset({
-    "ok", "service", "public_origin", "storage",
+    "ok", "service", "release_revision", "public_origin", "storage",
     "worker", "access", "obumai_configured",
     "external_actions_authorized",
 })
