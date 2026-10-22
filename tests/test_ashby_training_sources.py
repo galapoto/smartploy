@@ -157,7 +157,9 @@ def test_opportunity_kind_only_uses_title_and_employer_classification(title, emp
 
 def test_training_provider_links_not_counted_as_live_vacancies_or_autoapply():
     programs = load_training_programs()
-    assert len(programs) == 9
+    assert len(programs) == 12
+    assert any("AI Academy F.E.C Uusimaa" in str(p["title"]) for p in programs)
+    assert any("Software, Analytics & AI Academy" in str(p["title"]) for p in programs)
     assert {"Saranen", "Academic Work Academy", "Siemens", "Nokia"}.issubset(
         {p["provider"] for p in programs}
     )
