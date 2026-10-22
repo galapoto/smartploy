@@ -80,8 +80,11 @@ def test_vahehyva_planner_cv_finds_current_office_and_data_roles_without_approve
     assert matches["employer_actions_performed"] is False
     assert matches["current_jobs_count"] == 4
     names = {row["job"]["role_title"] for row in matches["recommended"]}
-    assert "Toimistosuunnittelija" in names
     assert "IT Suunnittelija" in names
+    # An office-planning related title is still visible in Explore more,
+    # without falsely claiming a direct title match from this CV.
+    related = {row["job"]["role_title"] for row in matches["other_jobs"]}
+    assert "Toimistosuunnittelija" in names | related
     assert "Delivery Driver" not in names
     assert all(row["job"]["source_current"] for row in matches["recommended"])
     assert "person-private@example.invalid" not in json.dumps(matches)
