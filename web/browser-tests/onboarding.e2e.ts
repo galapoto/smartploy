@@ -314,7 +314,7 @@ test("general browsing needs no CV; Settings switches into and out of personaliz
   const state = await installSyntheticApi(page);
   await page.goto("/");
   await page.getByRole("button", { name: /Just find jobs/i }).click();
-  await expect(page.getByRole("heading", { name: "IT & planning opportunities across Finland" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "IT, data & planning jobs in Finland" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await expect(page.getByText("Software Tester")).toBeVisible();
   await expect(page.getByText("General listing")).toHaveCount(2);
@@ -464,7 +464,7 @@ test("saved private jobs do not enter ATS discovery and vanish after account swi
   });
   await page.goto("/");
   await expect(page.getByText("General listing")).toHaveCount(2);
-  await page.getByRole("button", { name: "Find jobs" }).click();
+  await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your saved opportunities" })).toBeVisible();
   await page.getByRole("button", { name: "Save job" }).first().click();
   const modal = page.getByRole("dialog", { name: "Save an opportunity" });
@@ -482,7 +482,7 @@ test("saved private jobs do not enter ATS discovery and vanish after account swi
   state.userId = "synthetic-user-b"; // same email, different authenticated ID
   await page.getByRole("button", { name: "Refresh workspace" }).click();
   await expect(page.getByRole("heading", { name: /Make your next move/i })).toBeVisible();
-  await page.getByRole("button", { name: "Find jobs" }).click();
+  await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByText("PRIVATE-BOOKMARK-A")).toHaveCount(0);
   await expect(page.getByText(/No private saved jobs yet/i)).toBeVisible();
   expect(state.privateSavedJobs["synthetic-user-b"]).toBeUndefined();
@@ -524,6 +524,7 @@ test("a same-email account change resets unsaved criteria and private CV details
 test("a delayed application-draft response is discarded after same-email account switch", async ({ page }) => {
   const state = await installSyntheticApi(page, {
     initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "PRIVATE-ACCOUNT-A.pdf",
   });
   let release: () => void = () => {};
   const pending = new Promise<void>(resolve => { release = resolve; });
@@ -549,8 +550,10 @@ test("a delayed application-draft response is discarded after same-email account
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Apply manually", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
-  await page.getByRole("button", { name: /Prepare documents/i }).first().click();
+  await page.getByRole("button", { name: "Save application draft", exact: true }).first().click();
   await started;
   state.userId = "synthetic-user-b"; // email intentionally stays the same
   release();
