@@ -194,7 +194,10 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByRole("link", { name: /Sign out securely/i })).toBeNull();
   });
 
-  it("supports general browsing and opens an application without personalized criteria", async () => {
+  it("supports general browsing and CV-first applications without personalized search criteria", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "synthetic-CV.pdf", sha256: "test-cv-only"
+    });
     render(<App />);
     fireEvent.click(await screen.findByText(/Advanced: customize search preferences/i));
     fireEvent.click(await screen.findByRole("radio", { name: /general job search/i }));
@@ -203,7 +206,10 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.getByText(/1 current job listings/i)).toBeTruthy();
     expect(screen.queryByText(/90% search match/i)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /prepare documents for junior data analyst/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply manually", exact: true }));
+    expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Save application draft" }));
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledWith("test-analyst", "usr-synthetic-1"));
     expect(await screen.findByTestId("application-editor")).toBeTruthy();
     expect(screen.getByTestId("application-editor").getAttribute("data-workspace")).toMatch(/^kit-/);
@@ -469,6 +475,8 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 
   it("does not open a delayed account A application workspace for account B", async () => {
     currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    vi.mocked(api.getCV).mockResolvedValue({ present: true, filename: "PRIVATE-ACCOUNT-A.pdf",
+      sha256: "synthetic-owner-a-only" });
     const switchToB = switchableSession();
     let complete: (value: Awaited<ReturnType<typeof api.startApplicationWorkspace>>) => void = () => {
       throw new Error("Workspace did not start");
@@ -478,7 +486,9 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /prepare documents for junior data analyst/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply manually", exact: true }));
+    await screen.findByRole("button", { name: "Save application draft" });
+    fireEvent.click(screen.getByRole("button", { name: "Save application draft" }));
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
     switchToB();
     await act(async () => {
@@ -927,7 +937,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /prepare documents for junior data analyst/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Apply manually", exact: true })).toBeTruthy();
   });
 });
 
