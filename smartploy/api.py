@@ -1337,6 +1337,20 @@ def create_app(
             )
         return repo, tenant.profile_repository.profile_id
 
+    @app.get("/api/v1/application-workspaces/{workspace_id}/agent")
+    def get_workspace_application_agent(workspace_id: str, request: Request) -> JSONResponse:
+        """Owner-bound O(1) case lookup, including accounts with >100 cases."""
+        repo, owner = application_agent_context(request)
+        try:
+            agent = repo.get_for_workspace(owner, workspace_id)
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Application agent unavailable") from exc
+        return JSONResponse(
+            {"present": agent is not None, "agent": agent,
+             "external_actions_authorized": False},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     @app.post("/api/v1/application-workspaces/{workspace_id}/agent")
     def start_application_agent(workspace_id: str, request: Request) -> JSONResponse:
         repo, owner = application_agent_context(request, mutate=True)
