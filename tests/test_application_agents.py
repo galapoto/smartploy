@@ -323,3 +323,145 @@ def test_api_owner_only_case_lifecycle_and_no_body_identity(store, monkeypatch):
         assert close.json()["external_actions_performed"] == 0
     finally:
         workspaces.delete(who_a["profile_id"], workspace.workspace_id)
+
+
+def test_candidate_followup_requires_real_workspace_submission_and_is_bounded(store):
+    agents, workspaces = store
+    owner = "agent-followup-" + uuid4().hex
+    workspace = synthetic_case(owner)
+    workspaces.create_or_get(workspace)
+    now = datetime.now(timezone.utc)
+    try:
+        agent, made = agents.create_or_get(owner, workspace.workspace_id, now=now)
+        assert made and agent
+        aid = agent["agent_id"]
+        assert agent["workspace_status"] == "draft"
+        assert agent["followup_suggestion"] == ""
+        with pytest.raises(ApplicationAgentConflict, match="First report your submission"):
+            agents.record_milestone(
+                owner, aid, milestone="recruiter_replied", expected_revision=1
+            )
+        with pytest.raises(ApplicationAgentConflict, match="cannot record"):
+            agents.log_candidate_followup(owner, aid, expected_revision=1)
+
+        applied = workspaces.report_applied(
+            owner, workspace.workspace_id, expected_revision=1,
+            reference="Applicant saw a submission confirmation",
+        )
+        assert applied and applied.status == "self_reported_applied"
+        agent = agents.get(owner, aid)
+        assert agent and agent["workspace_status"] == "self_reported_applied"
+        assert agent["milestone_source"] == "none"
+        assert "Junior Data Analyst" in agent["followup_suggestion"]
+
+        responded = agents.record_milestone(
+            owner, aid, milestone="recruiter_replied",
+            expected_revision=1, now=now,
+        )
+        assert responded and responded["revision"] == 2
+        assert responded["milestone_source"] == "candidate_self_report"
+        assert responded["next_due_at"]
+        assert responded["external_actions_authorized"] is False
+        assert responded["employer_contacted"] is False
+        with pytest.raises(ApplicationAgentConflict, match="repeated or earlier"):
+            agents.record_milestone(
+                owner, aid, milestone="recruiter_replied", expected_revision=2,
+            )
+
+        reported = agents.log_candidate_followup(
+            owner, aid, expected_revision=2, now=now + timedelta(days=1),
+        )
+        assert reported and reported["followups_sent"] == 1
+        assert reported["last_followup_at"]
+        second = agents.log_candidate_followup(
+            owner, aid, expected_revision=3, now=now + timedelta(days=5),
+        )
+        assert second and second["followups_sent"] == 2
+        assert second["followup_suggestion"] == ""
+        with pytest.raises(ApplicationAgentConflict, match="another routine follow-up"):
+            agents.log_candidate_followup(owner, aid, expected_revision=4)
+
+        hired = agents.record_milestone(
+            owner, aid, milestone="hired", expected_revision=4,
+            now=now + timedelta(days=6),
+        )
+        assert hired and hired["state"] == "closed"
+        assert hired["close_reason"] == "hired"
+        assert hired["milestone"] == "hired"
+        assert hired["next_due_at"] == ""
+        assert hired["milestone_source"] == "candidate_self_report"
+        with pytest.raises(ApplicationAgentConflict, match="Closed"):
+            agents.record_milestone(
+                owner, aid, milestone="rejected", expected_revision=5,
+            )
+        assert agents.process_due(
+            now=now + timedelta(days=30), limit=50,
+        )["employer_contacts"] == 0
+        assert agents.get(owner, aid)["revision"] == 5
+        assert [event["event_type"] for event in agents.events(owner, aid)] == [
+            "case_created", "candidate_reported_reply",
+            "candidate_reported_followup", "candidate_reported_followup",
+            "candidate_reported_hired",
+        ]
+    finally:
+        workspaces.delete(owner, workspace.workspace_id)
+
+
+def test_interview_offer_rejection_is_terminal_and_case_stays_private(store):
+    agents, workspaces = store
+    owner = "agent-stage-" + uuid4().hex
+    workspace = synthetic_case(owner)
+    workspaces.create_or_get(workspace)
+    try:
+        workspaces.report_applied(owner, workspace.workspace_id, expected_revision=1)
+        agent, _ = agents.create_or_get(owner, workspace.workspace_id)
+        assert agent
+        aid = agent["agent_id"]
+        invited = agents.record_milestone(
+            owner, aid, milestone="interview", expected_revision=1,
+        )
+        assert invited and invited["milestone"] == "interview"
+        with pytest.raises(ApplicationAgentConflict):
+            agents.record_milestone(
+                owner, aid, milestone="recruiter_replied", expected_revision=2,
+            )
+        offered = agents.record_milestone(
+            owner, aid, milestone="offer", expected_revision=2,
+        )
+        assert offered and offered["state"] == "active"
+        rejected = agents.record_milestone(
+            owner, aid, milestone="rejected", expected_revision=3,
+        )
+        assert rejected and rejected["state"] == "closed"
+        assert rejected["close_reason"] == "rejected"
+        assert rejected["next_due_at"] == ""
+        assert agents.get("some-other-profile", aid) is None
+        assert agents.events("some-other-profile", aid) == []
+    finally:
+        workspaces.delete(owner, workspace.workspace_id)
+
+
+def test_applied_case_wakes_once_with_in_app_followup_not_external_send(store):
+    agents, workspaces = store
+    owner = "agent-reminder-" + uuid4().hex
+    workspace = synthetic_case(owner)
+    workspaces.create_or_get(workspace)
+    current = datetime.now(timezone.utc)
+    try:
+        workspaces.report_applied(owner, workspace.workspace_id, expected_revision=1)
+        agent, _ = agents.create_or_get(owner, workspace.workspace_id, now=current)
+        assert agent
+        aid = agent["agent_id"]
+        assert agents.process_due(
+            now=current + timedelta(days=8), limit=50,
+        )["external_actions_performed"] == 0
+        latest = agents.get(owner, aid)
+        assert latest and latest["revision"] == 2
+        event = agents.events(owner, aid)[-1]
+        assert event["event_type"] == "followup_due"
+        assert event["external_actions_performed"] == 0
+        # Same worker pass or a duplicate worker cannot re-deliver this event.
+        agents.process_due(now=current + timedelta(days=8), limit=50)
+        assert agents.get(owner, aid)["revision"] == 2
+    finally:
+        workspaces.delete(owner, workspace.workspace_id)
