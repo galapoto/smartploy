@@ -2,14 +2,20 @@
    SmartPloy-site verification. NO bearer credential, CV or browser submit. */
 import { PacketError, validatePacket } from "./logic.mjs";
 
-export const SMARTPLOY_ORIGIN = "https://smartploy.obumai.com";
+// Exact first-party allowlist. No caller-supplied origin, wildcard or redirect.
+export const SMARTPLOY_ORIGIN = "https://smartploy.komplyint.fi";
+export const SMARTPLOY_LEGACY_ORIGIN = "https://smartploy.obumai.com";
+export const SMARTPLOY_REVIEW_ORIGINS = Object.freeze([
+  SMARTPLOY_ORIGIN, SMARTPLOY_LEGACY_ORIGIN,
+]);
 export const REVIEW_SESSION_SECONDS = 5 * 60;
 
 export function isSmartPloyTab(url) {
   try {
     const here = new URL(url);
-    return here.origin === SMARTPLOY_ORIGIN && !here.username && !here.password &&
-      here.port === "" && here.protocol === "https:";
+    return SMARTPLOY_REVIEW_ORIGINS.includes(here.origin) &&
+      !here.username && !here.password && here.port === "" &&
+      here.protocol === "https:";
   } catch { return false; }
 }
 
