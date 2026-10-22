@@ -173,6 +173,8 @@ Do domain/company registry validation and public vacancy provenance checks to pr
 - **A2A v1**: optional inter-agent interoperability. Do not expose authority delegation directly. https://a2a-protocol.org/v1.0.0/
 - **Playwright**: deterministic browser observations and permitted form work, not CAPTCHA/MFA bypass.
 
+**Mandatory reuse research sequence before any component is built from scratch:** (1) search SmartPloy, obumellm and each existing ObumAI specialist repository; (2) inspect relevant public implementations surfaced by GitHub and documented YouTube/TikTok technical demonstrations, following any links back to their canonical upstream source; (3) compare functionality, maintenance, safety and source license; (4) legally reuse or adapt with attribution and required obligations, or independently implement when the licensing/quality gate fails; (5) benchmark implementation time against a documented from-scratch estimate. Videos and social demonstrations are discovery clues, **not proof that a package works or is licensed for copying**. Never assume that modifying restrictive-license code makes it reusable.
+
 For each import: inspect feature fit, provenance, maintainer status, exact license at a pinned revision, security history, transitive deps, compatibility, source policy and integration test costs. **Changing licensed code does not remove license obligations.** Record reused vs adapted vs written-from-scratch lines, owner and estimated engineering time saved; do not invent a numeric speedup before benchmarking.
 
 ## 8. EU/Finland compliance and risk model (as of 22 Oct 2026)
