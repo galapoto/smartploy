@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import os
 
 from .auto_draft_shortlist import prepare_worker_shortlists
+from .application_agents import PostgresApplicationAgentRepository
 from .application_storage import PostgresApplicationRepository
 from .obumai import ObumAIClient, ObumAIError, ObumAISettings
 from .preparation_storage import PostgresPreparationRepository, REFRESHABLE_PREPARATION_STATES
@@ -344,5 +345,36 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
                     },
                 )
             )
+
+
+    # SP22: one shared scheduled worker for any number of dormant application
+    # case identities. Opt-in at operator level only after migration 025 is
+    # applied. This runs zero model calls and zero off-platform actions.
+    agent_flag = os.getenv("SMARTPLOY_WORKER_AGENT_ZERO_ENABLED", "false").strip().lower()
+    if agent_flag not in {"true", "false"}:
+        raise ValueError("SMARTPLOY_WORKER_AGENT_ZERO_ENABLED must be true or false")
+    if agent_flag == "true":
+        agent_cadence = _positive_int(
+            "SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS", 60, maximum=86400,
+        )
+        max_batch = _positive_int(
+            "SMARTPLOY_WORKER_AGENT_ZERO_BATCH_LIMIT", 20, maximum=50,
+        )
+
+        def run_application_agents() -> WorkerTaskResult:
+            report = PostgresApplicationAgentRepository(dsn).process_due(limit=max_batch)
+            return WorkerTaskResult(status="healthy", details=report)
+
+        specs.append(WorkerTaskSpec(
+            task_id="application:agent-zero-reminders",
+            task_kind="application_agent",
+            cadence_seconds=agent_cadence,
+            runner=run_application_agents,
+            metadata={
+                "channel": "in_app_only",
+                "external_actions_authorized": False,
+                "employer_submission_authorized": False,
+            },
+        ))
 
     return specs
