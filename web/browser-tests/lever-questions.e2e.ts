@@ -204,3 +204,50 @@ test("new required control added by last input is never reported as safely compl
   expect(await page.locator("#new_required").count()).toBe(1);
   expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
 });
+
+
+test("extra sensitive ARIA and secondary label cues cannot hide behind an ordinary first label",async ({page})=>{
+  const outside = await setup(page);
+  const whyInput = page.locator("#why");
+  await whyInput.evaluate(el => el.setAttribute("aria-label", "Do you need visa sponsorship?"));
+  expect((await act(page,[why()])).status).toBe("blocked");
+  await whyInput.evaluate(el => el.removeAttribute("aria-label"));
+
+  await page.evaluate(()=>{
+    const extra = document.createElement("label");
+    extra.id = "extra_sensitive_label";
+    extra.htmlFor = "why";
+    extra.textContent = "Expected salary";
+    document.querySelector("form")!.append(extra);
+  });
+  expect((await act(page,[why()])).status).toBe("blocked");
+  await page.locator("#extra_sensitive_label").evaluate(el => el.remove());
+
+  await page.evaluate(()=>{
+    const extra = document.createElement("span");
+    extra.id = "linked_question";
+    extra.textContent = "GDPR consent";
+    document.querySelector("form")!.append(extra);
+    document.getElementById("why")!.setAttribute("aria-labelledby", "linked_question");
+  });
+  expect((await act(page,[why()])).status).toBe("blocked");
+  await page.locator("#linked_question").evaluate(el => el.remove());
+  expect((await act(page,[why()])).status).toBe("blocked"); // dangling ARIA reference
+  expect(await whyInput.inputValue()).toBe("");
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
+test("employer changes auxiliary question meaning on final input event: never claim safe completion",async ({page})=>{
+  const outside = await setup(page);
+  await page.locator("#why").evaluate(el=>{
+    el.addEventListener("change",()=>{
+      el.setAttribute("aria-label", "Do you agree to the legal terms and privacy consent?");
+    },{once:true});
+  });
+  const result = await act(page,[why()]);
+  expect(result.status).toBe("partial_needs_review");
+  expect(result.filled).toBe(1);
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
