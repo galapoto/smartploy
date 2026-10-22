@@ -304,7 +304,7 @@ async function onVerifySmartPloyReview() {
     const tab = await activeTab();
     if (!isSmartPloyTab(tab.url)) {
       throw new PacketError(
-        "Open smartploy.obumai.com while signed in, then click Verify review. " +
+        "Open smartploy.komplyint.fi while signed in, then click Verify review. " +
         "After verification, return to the employer form and paste this same packet."
       );
     }
