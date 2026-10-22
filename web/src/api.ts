@@ -208,6 +208,14 @@ export function getApplicationAgents(): Promise<{
   return request("/api/v1/application-agents");
 }
 
+export function getApplicationAgentForWorkspace(workspaceId: string): Promise<{
+  present: boolean; agent: ApplicationAgent | null; external_actions_authorized: false;
+}> {
+  return request(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/agent"
+  );
+}
+
 export function getApplicationAgent(agentId: string): Promise<{
   agent: ApplicationAgent;
   events: ApplicationAgentEvent[];
