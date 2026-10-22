@@ -23,6 +23,7 @@ from .ai_processing_consent import (
     PostgresJobAIConsentRepository,
 )
 from .auto_draft_shortlist import prepare_profile_shortlist
+from .training_directory import TrainingDirectoryError, load_training_programs
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
@@ -1201,6 +1202,21 @@ def create_app(
             summary.public_counts(),
             headers={"Cache-Control": "private, no-store"},
         )
+
+    @app.get("/api/v1/training-programs")
+    def training_program_directory() -> JSONResponse:
+        """Read-only provider destinations, never active-vacancy or application data."""
+        try:
+            programmes = load_training_programs()
+        except TrainingDirectoryError:
+            raise HTTPException(status_code=503, detail="Training programme directory unavailable") from None
+        return JSONResponse({
+            "programs": programmes,
+            "count": len(programmes),
+            "opening_status": "check_provider",
+            "job_count_included": 0,
+            "external_actions_authorized": False,
+        }, headers={"Cache-Control": "private, no-store"})
 
     @app.get("/api/v1/jobs")
     def list_jobs() -> dict[str, Any]:
