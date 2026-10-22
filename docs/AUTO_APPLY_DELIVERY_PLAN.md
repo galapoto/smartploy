@@ -1,3 +1,5 @@
+> **P0 USER-FLOW OVERRIDE — 22 October 2026:** Implement the agreed single CV-first experience **Choose mode → Upload CV → Match current jobs → Pick one → Apply / Save for review → Next job**. Manual, Assisted and AutoApply must be explicit; browse-only job search never requires a CV. The previous source-count rollout is subordinate to fixing this flow. Reuse existing CV storage, job matcher, application workspaces and guardrails; do not pretend browser auto-submit is complete. See [SP21 urgent plan](SP21_CV_FIRST_APPLICATION_JOURNEY_PLAN.md). 
+
 # SmartPloy AutoApply — delivery and reuse-first plan
 
 _Updated 21 October 2026. A source-code branch is not a production release._
