@@ -285,6 +285,21 @@ test("CV-first manual application goes from upload to real matching and selected
   await evidence(page, "synthetic-cv-first-manual-application.png");
 });
 
+test("existing job-search cards open the requested assisted journey without creating a draft", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Synthetic-CV.pdf",
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Find jobs", exact: true }).click();
+  const analystCard = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
+  await analystCard.getByRole("button", { name: /Apply with AI/i }).click();
+  await expect(page.getByRole("heading", { name: "Upload your CV. Choose a job. Apply." })).toBeVisible();
+  await expect(page.locator(".flow-mode.selected")).toContainText("Apply with AI help");
+  await expect(page.locator(".flow-job.highlighted")).toContainText("Junior Data Analyst");
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+});
+
 test("production build renders inline SmartPloy logo and a working first-use chooser", async ({ page }) => {
   await installSyntheticApi(page);
   await page.goto("/");
@@ -550,7 +565,7 @@ test("a delayed application-draft response is discarded after same-email account
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Apply manually", exact: true }).click();
+  await page.locator(".flow-start-card").filter({ hasText: "Apply manually" }).click();
   await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await page.getByRole("button", { name: "Save application draft", exact: true }).first().click();
