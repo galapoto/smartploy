@@ -349,6 +349,72 @@ class PostgresApplicationAgentRepository:
                 latest = cur.fetchone()
         return self._public(latest) if latest else None
 
+
+    def log_candidate_followup(
+        self, profile_id: str, agent_id: str, *,
+        expected_revision: int, now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        """Record a user-reported send, not an outgoing communication."""
+        moment = _now(now)
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT a.state,a.revision,a.milestone,a.followups_sent,w.status
+                       FROM smartploy_application_agents a
+                       JOIN smartploy_application_workspaces w
+                         ON w.workspace_id=a.workspace_id
+                       WHERE a.agent_id=%s AND a.profile_id=%s
+                         AND NOT EXISTS (
+                             SELECT 1 FROM smartploy_account_erasure_requests er
+                             WHERE er.profile_id=a.profile_id
+                         )
+                       FOR UPDATE OF a, w""",
+                    (agent_id, profile_id),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                state, revision, milestone, count, workspace_status = row
+                if revision != expected_revision:
+                    raise ApplicationAgentConflict("Agent changed in another tab. Reload.")
+                if (
+                    state != "active"
+                    or milestone not in {"none", "recruiter_replied"}
+                    or workspace_status not in SUBMITTED_WORKSPACE_STATUSES
+                    or count >= 2
+                ):
+                    raise ApplicationAgentConflict(
+                        "This case cannot record another routine follow-up."
+                    )
+                next_due = next_case_due(
+                    milestone, workspace_status, moment, count + 1,
+                    last_sent_at=moment,
+                )
+                cur.execute(
+                    """UPDATE smartploy_application_agents
+                       SET followups_sent=followups_sent+1,
+                           last_followup_at=%s, next_due_at=%s,
+                           revision=revision+1, updated_at=%s
+                       WHERE agent_id=%s AND profile_id=%s""",
+                    (moment, next_due, moment, agent_id, profile_id),
+                )
+                cur.execute(
+                    """INSERT INTO smartploy_application_agent_events
+                       (agent_id,sequence,event_type,message,occurred_at)
+                       VALUES (%s,%s,'candidate_reported_followup',%s,%s)""",
+                    (
+                        agent_id, revision + 1,
+                        "You reported sending a follow-up. SmartPloy did not send it.",
+                        moment,
+                    ),
+                )
+                cur.execute(
+                    self._COLUMNS + " WHERE a.agent_id=%s AND a.profile_id=%s",
+                    (agent_id, profile_id),
+                )
+                latest = cur.fetchone()
+        return self._public(latest) if latest else None
+
     def process_due(
         self, *, limit: int = 20, now: datetime | None = None
     ) -> dict[str, int | bool]:
