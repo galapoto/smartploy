@@ -132,13 +132,19 @@ if ! PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
   fail "local SmartPloy health contract failed"
 fi
 
-HEALTH_FIELDS="$(python3 - "${HEALTH_FILE}" <<'PY'
+HEALTH_FIELDS="$(python3 - "${HEALTH_FILE}" "${DEPLOYED_SHA:0:12}" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as handle:
     health = json.load(handle)
 
+# Public health alone is not a signed release receipt, but it must agree
+# with the already-checked Git checkout and Docker image identity.
+assert health.get("release_revision") == sys.argv[2], (
+    "Public health revision differs from the deployed source"
+)
+print("release_revision=" + health["release_revision"])
 worker = health.get("worker") or {}
 access = health.get("access") or {}
 
