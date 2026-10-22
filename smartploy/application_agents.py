@@ -428,8 +428,11 @@ class PostgresApplicationAgentRepository:
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    """SELECT a.agent_id, a.revision
+                    """SELECT a.agent_id, a.revision, a.milestone,
+                              a.followups_sent, w.status
                        FROM smartploy_application_agents a
+                       JOIN smartploy_application_workspaces w
+                         ON w.workspace_id=a.workspace_id
                        WHERE a.state = 'active' AND a.next_due_at <= %s
                          AND NOT EXISTS (
                              SELECT 1 FROM smartploy_account_erasure_requests er
@@ -440,19 +443,25 @@ class PostgresApplicationAgentRepository:
                     (moment, size),
                 )
                 claimed = cur.fetchall()
-                for agent_id, revision in claimed:
+                for agent_id, revision, milestone, count, workspace_status in claimed:
+                    event_type, message = due_message(
+                        milestone, workspace_status, count,
+                    )
+                    next_due = next_case_due(
+                        milestone, workspace_status, moment, count,
+                    )
                     cur.execute(
                         """UPDATE smartploy_application_agents
                            SET revision = revision + 1,
                                next_due_at = %s, last_woke_at = %s, updated_at = %s
                            WHERE agent_id = %s AND state = 'active'""",
-                        (moment + FOLLOW_UP_DELAY, moment, moment, agent_id),
+                        (next_due, moment, moment, agent_id),
                     )
                     cur.execute(
                         """INSERT INTO smartploy_application_agent_events
                            (agent_id, sequence, event_type, message, occurred_at)
-                           VALUES (%s, %s, 'review_reminder_due', %s, %s)""",
-                        (agent_id, revision + 1, DUE_MESSAGE, moment),
+                           VALUES (%s, %s, %s, %s, %s)""",
+                        (agent_id, revision + 1, event_type, message, moment),
                     )
         return {
             "woken": len(claimed),
