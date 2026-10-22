@@ -48,7 +48,8 @@ class PostgresApplicationAgentRepository:
         SELECT a.agent_id, a.workspace_id, w.canonical_key, w.role_title,
                w.company, a.state, a.revision, a.next_due_at, a.last_woke_at,
                a.created_at, a.updated_at, a.closed_at, a.close_reason,
-               a.milestone, a.followups_sent, a.last_followup_at, w.status
+               a.milestone, a.followups_sent, a.last_followup_at, w.status,
+               a.observed_workspace_status
         FROM smartploy_application_agents a
         JOIN smartploy_application_workspaces w ON w.workspace_id = a.workspace_id
     """
@@ -81,6 +82,7 @@ class PostgresApplicationAgentRepository:
             "followups_sent": row[14],
             "last_followup_at": iso(row[15]),
             "workspace_status": row[16],
+            "observed_workspace_status": row[17],
             "milestone_source": "candidate_self_report" if row[13] != "none" else "none",
             "followup_suggestion": (
                 followup_draft(row[4], row[3])
@@ -118,7 +120,7 @@ class PostgresApplicationAgentRepository:
                 cur.execute(
                     """INSERT INTO smartploy_application_agents
                            (agent_id, workspace_id, profile_id, next_due_at,
-                            created_at, updated_at)
+                            created_at, updated_at, observed_workspace_status)
                        SELECT %s, w.workspace_id, w.profile_id,
                               CASE WHEN w.status = 'draft' THEN %s
                                    ELSE GREATEST(
@@ -126,7 +128,7 @@ class PostgresApplicationAgentRepository:
                                            w.self_reported_applied_at, w.updated_at
                                        ) + INTERVAL '7 days')
                               END,
-                              %s, %s
+                              %s, %s, w.status
                        FROM smartploy_application_workspaces w
                        WHERE w.workspace_id = %s AND w.profile_id = %s
                          AND NOT EXISTS (
