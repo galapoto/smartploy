@@ -270,6 +270,6 @@ export default function ApplicationAgentCard(props: {
     </div> : null}
     {error ? <p role="alert">{error}</p> : null}
     <p className="studio-ai-privacy">Private candidate reports and in-app reminders only.
-      Model calls and external actions are disabled. SmartPloy never emails recruiters from this card.</p>
+      model calls and external actions are disabled. SmartPloy never emails recruiters from this card.</p>
   </section>;
 }
