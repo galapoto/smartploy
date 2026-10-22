@@ -27,7 +27,7 @@ The main navigation and first-use start must show clear distinct entry paths:
 - Add owner-only, read-only **CV-to-current-database match endpoint**. Parse stored CV text locally; derive search *signals* (not asserted credentials); reuse `SearchPreferences`, `search_jobs`, bilingual job-title matching and source-current gate. If no signals, return unranked current jobs with explicit uncertainty instead of fabricate a fit. Do not send CV or matching results to ObumAI/employers.
 - New first-use choice and simplified page with Manual / Assisted / Auto; job search remains separate. Progress: **1 choose → 2 upload → 3 choose job → 4 application draft/review**. Mode not equal to employer submit consent.
 - Refactor upload success to navigate directly to ranked jobs and meaningful next action, not silently to Profile; preserve approved facts.
-- Per-job **Apply manually / Prepare with AI** both call the existing owner-bound `startApplicationWorkspace` and open the existing Application Studio; do not invent a silent submit or a queue that doesn't exist.
+- Per-job **Apply manually / Apply with AI** on existing search cards first select the exact job and chosen application mode, then open the shared CV-first journey. Choosing a mode or job must NOT implicitly create a draft. An explicit **Save application draft / Prepare CV & application** action then reuses owner-bound `startApplicationWorkspace` and the existing `ApplicationStudio` editor; do not invent silent submission.
 - Explicit notice for blocked or unsupported final automatic employer submission and a next step. Clear loading, error, empty-job and no-CV states.
 - Tests: CV ranking from actual uploaded text and current database; only owner can read; unrelated driving matches not shown as recommendations; upload-to-matches path; mode selection & job selection; no automatic employer POST.
 - Release: exact-head 5/5 GitHub CI, main merge, then guarded OVH exact SHA; independent signed-in first-user acceptance.
@@ -52,6 +52,12 @@ The main navigation and first-use start must show clear distinct entry paths:
 ## Reuse vs scratch — SP21
 **Reused**: existing `cv_import.parse_cv`, `cv_storage` owner-scoped stored CV, `search_preferences.search_jobs` bilingual/role relevance, source-current job repository, `startApplicationWorkspace`, `ApplicationStudio`, protected `runPrivateMutation`, ZITADEL identity, current React navigation and tests.
 **New**: deterministic CV signal extraction and safe read-only matching endpoint, mode-centric CV-first journey UI, concise application-mode routing and regression tests. No external library, new crawler, employer action, credential, account store or new table.
+
+## Implementation notes — reuse-first positioning
+
+- Search result cards now send **Apply manually** and **Apply with AI** to the same `ApplicationJourney` while retaining the selected canonical job key. The job remains source-gated; merely selecting an application mode does not trigger an employer action or a private draft.
+- The app retains its established search, account-bound CV repository, CV matching endpoint, Application Studio, local AI suggestions and browser/partner submission safeguards. The change is UI routing plus acceptance coverage, not a second application service.
+- The reused browser and React tests now assert mode routing, no implicit draft, explicit workspace creation, private account-switch fail-closed behavior and CV-first browser navigation.
 
 ## Evidence and deployment truth
 Baseline deployed and verified by operator log: SP20 `2bc677e3d5b9b9e0cfdfd6fd0295a0fda86ce2b0` (healthy API/worker/web/Postgres, local Ollama bridge PASS, full ObumAI integration disabled).
