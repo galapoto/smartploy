@@ -112,10 +112,8 @@ def opportunity_kind(title: str, employment_type: str = "") -> str:
         r"(?<!\w)(?:trainee|traineeship|oppisopim\w*|rekrykoulut\w*|rekrytoiva[- ]?koulut\w*)(?!\w)", name
     ):
         return "traineeship"
-    if re.search(
-        r"(?<!\w)(?:graduate[- ]?(?:programme|program|scheme)|"
-        r"graduate[- ]?(?:engineer|analyst|developer|specialist)|"
-        r"vastavalmistune\w*)(?!\w)", name
-    ):
+    # Graduate / vastavalmistunut is an explicitly published title-level
+    # cue, not an inference from school, CV or arbitrary description text.
+    if re.search(r"(?<!\w)(?:graduate|vastavalmistune\w*)(?!\w)", name):
         return "graduate"
     return "job"
