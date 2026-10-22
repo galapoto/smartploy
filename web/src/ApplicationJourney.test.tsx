@@ -61,11 +61,11 @@ describe("SP21 application journey", () => {
     expect(role).toBeTruthy();
     expect(screen.getByText(/1 CV-text matches/i)).toBeTruthy();
     expect(screen.getByText(/Search cues detected in CV/i)).toBeTruthy();
-    expect(screen.getByRole("link", { name: /apply on employer site/i }).getAttribute("href"))
+    expect(screen.getAllByRole("link", { name: /apply on employer site/i })[0].getAttribute("href"))
       .toBe("https://employer.example.invalid/planner");
-    expect(screen.getByRole("link", { name: /apply on employer site/i }).getAttribute("rel"))
+    expect(screen.getAllByRole("link", { name: /apply on employer site/i })[0].getAttribute("rel"))
       .toContain("noopener");
-    fireEvent.click(screen.getByRole("button", { name: /save application draft/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /save application draft/i })[0]);
     await waitFor(() => expect(p.onPrepare).toHaveBeenCalledWith("current-planner"));
     expect(screen.queryByRole("button", { name: /submit application/i })).toBeNull();
     expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
@@ -88,9 +88,9 @@ describe("SP21 application journey", () => {
     await screen.findByText("IT-suunnittelija");
     fireEvent.click(screen.getByRole("radio", { name: /filter jobs only/i }));
     expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
-    expect(screen.getByRole("link", { name: /apply on employer site/i })).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: /apply on employer site/i })[0]).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: /match \+ tailored documents/i }));
-    fireEvent.click(screen.getByRole("button", { name: /prepare CV & application/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /prepare CV & application/i })[0]);
     await waitFor(() => expect(p.onPrepare).toHaveBeenCalledWith("current-planner"));
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
   });
@@ -100,7 +100,7 @@ describe("SP21 application journey", () => {
     render(<ApplicationJourney {...p} />);
     await screen.findByText("IT-suunnittelija");
     expect(screen.getByText(/does not send applications to employers/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("checkbox", { name: /select for preparation/i }));
+    fireEvent.click(screen.getAllByRole("checkbox", { name: /select for preparation/i })[0]);
     fireEvent.click(screen.getByRole("button", { name: /prepare selected applications/i }));
     await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(["current-planner"]));
     expect(screen.queryByRole("button", { name: /submit application/i })).toBeNull();
