@@ -235,7 +235,7 @@ export default function ApplicationAgentCard(props: {
             I personally confirm this update
           </label>
           <button type="button" className="outline-btn compact"
-            disabled={busy || !outcomeConfirmed || agent.state === "closed"}
+            disabled={busy || !outcomeConfirmed}
             onClick={() => void reportMilestone()}>
             <CheckCircle2 size={15}/> Record applicant-reported update
           </button>
