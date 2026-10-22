@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "config" / "finland_public_ats_pilot.json"
 IT_PORTFOLIO = ROOT / "config" / "finland_it_public_ats_portfolio.json"
 NATIONWIDE_PORTFOLIO = ROOT / "config" / "finland_nationwide_ats_portfolio.json"
+ASHBY_TRAINEE_PORTFOLIO = ROOT / "config" / "finland_ashby_trainee_portfolio.json"
 ENV = ROOT / "deploy" / "personal" / "env"
 KEY = "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON"
 FILE_KEY = "SMARTPLOY_PUBLIC_ATS_SOURCES_FILE"
@@ -352,6 +353,96 @@ def plan_nationwide_portfolio_upgrade(
     return "".join(lines), True
 
 
+def reviewed_ashby_trainee_portfolio(
+    registry: Path = ASHBY_TRAINEE_PORTFOLIO,
+) -> list[dict]:
+    """Use the original 22 trusted records plus seven exact Ashby boards.
+
+    Validation intentionally needs only Python's standard library: operator
+    config is staged on OVH host, not inside the runtime Docker image.
+    """
+    original = reviewed_nationwide_portfolio()
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    if not isinstance(payload, list) or len(payload) != 29:
+        raise PilotConfigurationError("Expected 29 ATS sources including seven Ashby boards")
+    if payload[:len(original)] != original:
+        raise PilotConfigurationError("Growth portfolio unexpectedly modified original 22 sources")
+    allowed_fields = {
+        "provider", "tenant", "label", "employer_sector",
+        "external_ai_forwarding_allowed", "location_terms",
+    }
+    expected = {
+        "hoxhunt", "reaktor", "skylo", "swarmia", "distance",
+        "zeal-network", "n8n",
+    }
+    observed: set[str] = set()
+    for item in payload[len(original):]:
+        if not isinstance(item, dict) or set(item) != allowed_fields:
+            raise PilotConfigurationError("Invalid Ashby board fields")
+        tenant = item.get("tenant")
+        if not isinstance(tenant, str) or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9-]{0,99}", tenant
+        ):
+            raise PilotConfigurationError("Invalid Ashby board slug")
+        key = tenant.casefold()
+        if key in observed:
+            raise PilotConfigurationError("Duplicate Ashby board")
+        observed.add(key)
+        locations = item.get("location_terms")
+        if (
+            item.get("provider") != "ashby"
+            or not isinstance(item.get("label"), str)
+            or not item["label"].strip()
+            or len(item["label"]) > 200
+            or item.get("employer_sector") != "private"
+            or item.get("external_ai_forwarding_allowed") is not False
+            or not isinstance(locations, list)
+            or not 1 <= len(locations) <= 20
+            or not all(
+                isinstance(loc, str) and 2 <= len(loc.strip()) <= 80
+                for loc in locations
+            )
+            or "finland" not in {loc.strip().casefold() for loc in locations}
+        ):
+            raise PilotConfigurationError("Ashby boards must be read-only and Finland-scoped")
+    if observed != expected:
+        raise PilotConfigurationError("Unreviewed Ashby employer in growth portfolio")
+    return payload
+
+
+def plan_ashby_trainee_upgrade(
+    env_contents: str,
+    nationwide: list[dict],
+    growth: list[dict],
+    *,
+    rollback: bool = False,
+) -> tuple[str, bool]:
+    """Only replace the exact 22/29-source policy; never clobber custom feeds."""
+    lines = env_contents.splitlines(keepends=True)
+    locations = [i for i, line in enumerate(lines) if line.startswith(KEY + "=")]
+    external_files = [
+        line[len(FILE_KEY) + 1:].strip()
+        for line in lines if line.startswith(FILE_KEY + "=")
+    ]
+    if len(locations) != 1 or len(external_files) > 1 or any(external_files):
+        raise PilotConfigurationError("Expected exactly one private inline ATS selection")
+    i = locations[0]
+    try:
+        current = json.loads(lines[i][len(KEY) + 1:].strip())
+    except (ValueError, TypeError) as exc:
+        raise PilotConfigurationError("Existing private ATS registry is invalid JSON") from exc
+    expected, target = (growth, nationwide) if rollback else (nationwide, growth)
+    if current == target:
+        return env_contents, False
+    if current != expected:
+        raise PilotConfigurationError("Refusing to override operator-modified ATS source selection")
+    ending = "\r\n" if lines[i].endswith("\r\n") else "\n"
+    lines[i] = KEY + "=" + json.dumps(
+        target, ensure_ascii=False, separators=(",", ":")
+    ) + ending
+    return "".join(lines), True
+
+
 def _validate_private_env(path: Path) -> os.stat_result:
     try:
         details = path.lstat()
@@ -376,12 +467,22 @@ def stage_pilot(
     upgrade_nationwide_portfolio: bool = False,
     rollback_nationwide_to_five: bool = False,
     rollback_nationwide_to_seven: bool = False,
+    upgrade_ashby_trainee_portfolio: bool = False,
+    rollback_ashby_trainee_portfolio: bool = False,
 ) -> dict:
+    ashby_actions = sum((upgrade_ashby_trainee_portfolio, rollback_ashby_trainee_portfolio))
     nationwide_actions = sum((
         upgrade_nationwide_portfolio,
         rollback_nationwide_to_five,
         rollback_nationwide_to_seven,
     ))
+    if ashby_actions > 1 or (ashby_actions and any((
+        upgrade_tsmg_transport, rollback_tsmg_transport,
+        upgrade_it_portfolio, rollback_it_portfolio,
+        upgrade_nationwide_portfolio, rollback_nationwide_to_five,
+        rollback_nationwide_to_seven,
+    ))):
+        raise PilotConfigurationError("Choose only one ATS source upgrade")
     if nationwide_actions > 1 or (nationwide_actions and any((
         upgrade_tsmg_transport, rollback_tsmg_transport,
         upgrade_it_portfolio, rollback_it_portfolio,
@@ -395,7 +496,9 @@ def stage_pilot(
         raise PilotConfigurationError("Choose only one ATS portfolio operation")
     sources = reviewed_sources(registry)
     former_sources = sources
-    if nationwide_actions:
+    if ashby_actions:
+        sources = reviewed_ashby_trainee_portfolio()
+    elif nationwide_actions:
         sources = reviewed_nationwide_portfolio()
     elif upgrade_it_portfolio or rollback_it_portfolio:
         sources = reviewed_it_portfolio()
@@ -404,7 +507,12 @@ def stage_pilot(
     env_stat = _validate_private_env(env)
     original = env.read_text(encoding="utf-8")
     pilot_json = json.dumps(sources, ensure_ascii=False, separators=(",", ":"))
-    if nationwide_actions:
+    if ashby_actions:
+        nationwide = reviewed_nationwide_portfolio()
+        replacement, changed = plan_ashby_trainee_upgrade(
+            original, nationwide, sources, rollback=rollback_ashby_trainee_portfolio,
+        )
+    elif nationwide_actions:
         seven = reviewed_it_portfolio()
         rollback_to = (
             "five" if rollback_nationwide_to_five
@@ -448,6 +556,7 @@ def stage_pilot(
     selected = (
         former_sources if rollback_it_portfolio or rollback_nationwide_to_five
         else seven if rollback_nationwide_to_seven
+        else nationwide if rollback_ashby_trainee_portfolio
         else sources
     )
     return {
@@ -455,7 +564,8 @@ def stage_pilot(
         "tenant_ids": [item["tenant"] for item in selected],
         "region_policy": "explicit Finland/Finnish locations only",
         "transport_scope": (
-            "finland_nationwide_ats_portfolio_v3" if nationwide_actions
+            "finland_ashby_trainee_portfolio_v4" if ashby_actions
+            else "finland_nationwide_ats_portfolio_v3" if nationwide_actions
             else "finland_it_public_ats_portfolio_v2" if (upgrade_it_portfolio or rollback_it_portfolio)
             else "TSMG only" if (upgrade_tsmg_transport or rollback_tsmg_transport)
             else "initial approved pilot"
@@ -502,6 +612,14 @@ def main() -> int:
         "--rollback-nationwide-to-seven", action="store_true",
         help="restore exact IT-first seven-source roster from reviewed 22-source roster",
     )
+    policy_action.add_argument(
+        "--upgrade-ashby-trainee-portfolio", action="store_true",
+        help="add seven new read-only Ashby boards to the exact existing 22-source roster",
+    )
+    policy_action.add_argument(
+        "--rollback-ashby-trainee-portfolio", action="store_true",
+        help="restore the exact previous 22-source roster from reviewed 29 sources",
+    )
     args = parser.parse_args()
     try:
         result = stage_pilot(
@@ -513,6 +631,8 @@ def main() -> int:
             upgrade_nationwide_portfolio=args.upgrade_nationwide_portfolio,
             rollback_nationwide_to_five=args.rollback_nationwide_to_five,
             rollback_nationwide_to_seven=args.rollback_nationwide_to_seven,
+            upgrade_ashby_trainee_portfolio=args.upgrade_ashby_trainee_portfolio,
+            rollback_ashby_trainee_portfolio=args.rollback_ashby_trainee_portfolio,
         )
     except (PilotConfigurationError, OSError, ValueError) as exc:
         raise SystemExit("ATS pilot: " + str(exc)) from exc
