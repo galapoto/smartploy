@@ -850,7 +850,7 @@ export default function App() {
     onToggleDisplay={() => setMode(mode === "heatmap" ? "percentage" : "heatmap")}
     currentPage={page === "jobs" ? "jobs" : "dashboard"}
     busyKey={preparing} onPrepare={(key) => void onPrepare(key)}
-    onChooseFlow={(key) => startApplyFlow("manual", key)}
+    onChooseFlow={(key, choice) => startApplyFlow(choice, key)}
     onAllJobs={() => navigate("jobs")}
     onChangeCriteria={() => navigate("settings")}
     onChangeMode={(choice) => void changeSearchMode(choice)}
