@@ -10,6 +10,7 @@ vi.mock("./api", () => ({
   getSession: vi.fn(),
   getApplicationWorkspaces: vi.fn(),
   getApplicationAgents: vi.fn(),
+  getApplicationAgentForWorkspace: vi.fn(),
   getApplicationAgent: vi.fn(),
   createApplicationAgent: vi.fn(),
   changeApplicationAgent: vi.fn(),
@@ -83,6 +84,9 @@ beforeEach(() => {
   vi.mocked(api.getApplicationWorkspaces).mockResolvedValue(draft("A"));
   vi.mocked(api.getApplicationAgents).mockResolvedValue({
     agents: [], count: 0, external_actions_authorized: false,
+  });
+  vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue({
+    present: false, agent: null, external_actions_authorized: false,
   });
   vi.mocked(api.getLocalAIStatus).mockResolvedValue({
     configured: false, ready: false, provider: "disabled",
