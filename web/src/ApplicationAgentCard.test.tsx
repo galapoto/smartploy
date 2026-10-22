@@ -23,6 +23,7 @@ const caseAgent: ApplicationAgent = {
   external_actions_authorized: false, employer_contacted: false,
   notification_channel: "in_app_only",
   milestone: "none", milestone_source: "none", workspace_status: "draft",
+  observed_workspace_status: "draft",
   followups_sent: 0, last_followup_at: "", followup_suggestion: "",
 };
 
