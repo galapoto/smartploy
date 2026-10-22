@@ -5,6 +5,7 @@ import { listingObservationLabels, safeExternalJobUrl, scoreBand, sectorLabel, t
 
 function JobCard(props: {
   item: SearchJobCard; displayMode: DisplayMode; busy: boolean; onPrepare: () => void;
+  onChooseFlow?: () => void;
 }) {
   const { item } = props;
   const [showWhy, setShowWhy] = useState(false);
@@ -58,7 +59,11 @@ function JobCard(props: {
       {postingUrl ? <a href={postingUrl} className="outline-btn compact"
         target="_blank" rel="noopener noreferrer">Job posting <ArrowUpRight size={14}/></a> :
         <span className="muted">Employer link unavailable — verify with the source.</span>}
-      <button type="button" className="navy-btn compact" onClick={props.onPrepare} disabled={props.busy || !job.source_current}>
+      {props.onChooseFlow ? <button type="button" className="navy-btn compact"
+        onClick={props.onChooseFlow} disabled={!job.source_current}>
+        Manual / AutoApply <ArrowRight size={15}/>
+      </button> : null}
+      <button type="button" className="outline-btn compact" onClick={props.onPrepare} disabled={props.busy || !job.source_current}>
         {props.busy ? "Opening…" : "Prepare documents"} <ArrowRight size={15}/>
       </button>
     </div>
@@ -77,6 +82,7 @@ export default function SearchResultsPanel(props: {
   currentPage: "dashboard" | "jobs";
   busyKey: string;
   onPrepare: (canonicalKey: string) => void;
+  onChooseFlow?: (canonicalKey: string) => void;
   onAllJobs: () => void;
   onChangeCriteria: () => void;
   onChangeMode: (value: "personalized" | "general") => void;
@@ -218,7 +224,8 @@ export default function SearchResultsPanel(props: {
       {shown.map((item) => <JobCard key={item.canonical_key} item={item}
         displayMode={props.displayMode}
         busy={props.busyKey === item.canonical_key}
-        onPrepare={() => props.onPrepare(item.canonical_key)}/>)}
+        onPrepare={() => props.onPrepare(item.canonical_key)}
+        onChooseFlow={props.onChooseFlow ? () => props.onChooseFlow!(item.canonical_key) : undefined}/>)}
       {!shown.length ? <div className="empty-state">
         <BriefcaseBusiness size={30}/>
         <h3>{general ? "No jobs for these filters" : props.view === "top" ?
