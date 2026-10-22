@@ -46,7 +46,9 @@ export default function ApplicationJourney(props: {
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const [filter, setFilter] = useState("");
-  const [showOther, setShowOther] = useState(false);
+  // Show weaker but potentially important planner-adjacent vacancies by
+  // default, clearly distinguished from direct CV-text matches.
+  const [showOther, setShowOther] = useState(true);
   const [assistance, setAssistance] = useState<ApplicationAssistanceLevel>("documents");
   const [selected, setSelected] = useState<string[]>([]);
 
@@ -77,6 +79,13 @@ export default function ApplicationJourney(props: {
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [props.cv.present, props.cv.sha256, props.userId, revision]);
+
+  useEffect(() => {
+    if (props.selectedJobKey && results?.other_jobs.some((row) =>
+      row.canonical_key === props.selectedJobKey)) {
+      setShowOther(true);
+    }
+  }, [props.selectedJobKey, results]);
 
   const jobs = useMemo(() => {
     const rows = [...(results?.recommended || []), ...(showOther ? results?.other_jobs || [] : [])];
