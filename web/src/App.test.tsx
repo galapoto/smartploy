@@ -206,7 +206,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.getByText(/1 current job listings/i)).toBeTruthy();
     expect(screen.queryByText(/90% search match/i)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Apply manually", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Apply manually$/ }));
     expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "Save application draft" }));
@@ -486,7 +486,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Apply manually", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Apply manually$/ }));
     await screen.findByRole("button", { name: "Save application draft" });
     fireEvent.click(screen.getByRole("button", { name: "Save application draft" }));
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
@@ -937,7 +937,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Apply manually", exact: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Apply manually$/ })).toBeTruthy();
   });
 });
 
