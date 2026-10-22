@@ -577,3 +577,139 @@ def test_api_requires_explicit_claim_and_current_account_for_followups(store, mo
         ).status_code == 409
     finally:
         workspaces.delete(who_a["profile_id"], workspace.workspace_id)
+
+
+def test_worker_reconciles_real_submission_before_followup_and_never_sends(store):
+    """An old draft reminder must not become an immediate employer follow-up."""
+    agents, workspaces = store
+    owner = "agent-transition-" + uuid4().hex
+    workspace = synthetic_case(owner)
+    workspaces.create_or_get(workspace)
+    now = datetime.now(timezone.utc)
+    try:
+        created, _ = agents.create_or_get(
+            owner, workspace.workspace_id, now=now - timedelta(days=2),
+        )
+        assert created and created["observed_workspace_status"] == "draft"
+        assert created["workspace_status"] == "draft"
+        aid = created["agent_id"]
+        applied = workspaces.report_applied(
+            owner, workspace.workspace_id, expected_revision=1,
+            reference="Owner-reported synthetic submission",
+        )
+        assert applied and applied.status == "self_reported_applied"
+        assert agents.get(owner, aid)["workspace_status"] == "self_reported_applied"
+        assert agents.get(owner, aid)["observed_workspace_status"] == "draft"
+        report = agents.process_due(now=now + timedelta(seconds=5))
+        assert report["workspace_updates_reconciled"] == 1
+        assert report["woken"] == 0
+        assert report["external_actions_performed"] == 0
+        assert report["employer_contacts"] == 0
+        after = agents.get(owner, aid)
+        assert after and after["observed_workspace_status"] == "self_reported_applied"
+        assert after["revision"] == 2
+        assert datetime.fromisoformat(after["next_due_at"]) >= now + timedelta(days=7)
+        assert [e["event_type"] for e in agents.events(owner, aid)] == [
+            "case_created", "application_self_reported",
+        ]
+        # A duplicate worker pass is strictly idempotent.
+        assert agents.process_due(now=now + timedelta(seconds=5))[
+            "workspace_updates_reconciled"
+        ] == 0
+        assert agents.get(owner, aid)["revision"] == 2
+        report = agents.process_due(now=now + timedelta(days=8))
+        assert report["woken"] >= 1
+        assert report["external_actions_performed"] == 0
+        assert [e["event_type"] for e in agents.events(owner, aid)] == [
+            "case_created", "application_self_reported", "followup_due",
+        ]
+        assert agents.get(owner, aid)["revision"] == 3
+    finally:
+        workspaces.delete(owner, workspace.workspace_id)
+
+
+def test_provider_status_upgrade_is_recorded_once_without_restarting_cadence(store):
+    agents, workspaces = store
+    owner = "agent-provider-status-" + uuid4().hex
+    workspace = synthetic_case(owner)
+    workspaces.create_or_get(workspace)
+    now = datetime.now(timezone.utc)
+    try:
+        workspaces.report_applied(
+            owner, workspace.workspace_id, expected_revision=1,
+            reference="Synthetic applicant reported submitted",
+        )
+        original, _ = agents.create_or_get(owner, workspace.workspace_id, now=now)
+        assert original
+        aid = original["agent_id"]
+        assert original["observed_workspace_status"] == "self_reported_applied"
+        old_due = original["next_due_at"]
+        # Isolated synthetic transition, representing the pre-existing
+        # partner-API receipt workflow's write to the original workspace.
+        # No fake external provider POST is performed by this test.
+        with connect(DSN) as conn:
+            conn.execute(
+                """UPDATE smartploy_application_workspaces
+                   SET status='provider_acknowledged', updated_at=%s
+                   WHERE workspace_id=%s AND profile_id=%s""",
+                (now + timedelta(hours=1), workspace.workspace_id, owner),
+            )
+        report = agents.process_due(now=now + timedelta(hours=1))
+        assert report["workspace_updates_reconciled"] == 1
+        assert report["woken"] == 0
+        item = agents.get(owner, aid)
+        assert item and item["workspace_status"] == "provider_acknowledged"
+        assert item["observed_workspace_status"] == "provider_acknowledged"
+        assert item["next_due_at"] == old_due
+        assert item["employer_contacted"] is False
+        assert agents.events(owner, aid)[-1]["event_type"] == (
+            "application_provider_acknowledged"
+        )
+        assert agents.process_due(now=now + timedelta(hours=1))[
+            "workspace_updates_reconciled"
+        ] == 0
+        assert agents.get(owner, aid)["revision"] == 2
+    finally:
+        workspaces.delete(owner, workspace.workspace_id)
+
+
+def test_stopped_agents_and_account_erasure_do_not_reconcile_new_app_status(store):
+    agents, workspaces = store
+    owner = "agent-stopped-status-" + uuid4().hex
+    workspace = synthetic_case(owner)
+    workspaces.create_or_get(workspace)
+    now = datetime.now(timezone.utc)
+    try:
+        created, _ = agents.create_or_get(owner, workspace.workspace_id, now=now)
+        assert created
+        aid = created["agent_id"]
+        paused = agents.transition(
+            owner, aid, action="pause", expected_revision=1, now=now,
+        )
+        assert paused and paused["state"] == "paused"
+        workspaces.report_applied(
+            owner, workspace.workspace_id, expected_revision=1,
+            reference="Applicant-reported synthetic submission",
+        )
+        assert agents.process_due(now=now + timedelta(days=8))[
+            "workspace_updates_reconciled"
+        ] == 0
+        assert agents.get(owner, aid)["observed_workspace_status"] == "draft"
+        resumed = agents.transition(
+            owner, aid, action="resume", expected_revision=2, now=now,
+        )
+        assert resumed and resumed["state"] == "active"
+        report = agents.process_due(now=now + timedelta(seconds=5))
+        assert report["workspace_updates_reconciled"] == 1
+        assert report["woken"] == 0
+        assert agents.get(owner, aid)["revision"] == 4
+        closed = agents.transition(
+            owner, aid, action="close", expected_revision=4, now=now,
+        )
+        assert closed and closed["state"] == "closed"
+        assert agents.process_due(now=now + timedelta(days=30))[
+            "workspace_updates_reconciled"
+        ] == 0
+        assert agents.get(owner, aid)["revision"] == 5
+    finally:
+        workspaces.delete(owner, workspace.workspace_id)
