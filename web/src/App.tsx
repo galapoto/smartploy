@@ -20,6 +20,7 @@ import {
 } from "./lib";
 import ApplicationStudio from "./ApplicationStudio";
 import ApplicationJourney from "./ApplicationJourney";
+import StartChoices from "./StartChoices";
 import SearchSetup from "./SearchSetup";
 import SearchResultsPanel from "./SearchResultsPanel";
 import TrainingProgramsPanel from "./TrainingProgramsPanel";
@@ -734,6 +735,44 @@ export default function App() {
     }
   }
 
+  async function onPrepareSelectedJobs(keys: string[]) {
+    if (flowQueueInFlight.current) return;
+    const selected = [...new Set(keys)].filter(Boolean).slice(0, 15);
+    if (!selected.length) return;
+    const identity = lastSessionIdentity.current;
+    flowQueueInFlight.current = true;
+    setFlowQueueBusy(true);
+    let prepared = 0;
+    let firstWorkspace = "";
+    let failure = "";
+    try {
+      // Reuse the original owner-bound, idempotent per-job workspace API.
+      // No employer POST, extension grant or automatic final browser click.
+      for (const key of selected) {
+        try {
+          const result = await runPrivateMutation((userId) =>
+            startApplicationWorkspace(key, userId));
+          if (!firstWorkspace) firstWorkspace = result.workspace.workspace_id;
+          prepared += 1;
+        } catch (exc) {
+          if (exc instanceof PrivateActionIdentityChanged) return;
+          failure = exc instanceof Error ? exc.message : "Unable to prepare the next job";
+          break;
+        }
+      }
+      if (lastSessionIdentity.current !== identity) return;
+      if (!prepared) throw new Error(failure || "No drafts were prepared");
+      setSelectedWorkspaceId(firstWorkspace);
+      navigate("applications");
+      setNotice(prepared + " private application draft(s) ready for review. " +
+        (failure ? "Stopped before the next job: " + failure + ". " : "") +
+        "No applications were sent to employers.");
+    } finally {
+      flowQueueInFlight.current = false;
+      if (lastSessionIdentity.current === identity) setFlowQueueBusy(false);
+    }
+  }
+
   async function onPrepare(canonicalKey: string) {
     const actionIdentity = lastSessionIdentity.current;
     setPreparing(canonicalKey);
@@ -758,12 +797,19 @@ export default function App() {
   if (loading && !dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><span className="spinner" /><p>Preparing your workspace…</p></div>;
   if (!dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><h1>SmartPloy isn't available</h1><p>{error}</p><button className="primary-btn" onClick={() => void load()} type="button">Try again</button></div>;
 
-  if (preferences && !preferences.completed) {
-    return <main className="setup-landing">
+  if (preferences && !preferences.completed && page === "dashboard") {
+    return <main className="setup-landing flow-first-use">
       <div className="setup-brand"><BrandMark/><span><strong>SmartPloy</strong>
-        <small>Job intelligence for Finland</small></span></div>
-      <SearchSetup key={session?.user_id || session?.profile_id || session?.subject_fingerprint || "unidentified"} initial={preferences} onSave={saveSearchPreferences}/>
-      <p className="setup-privacy"><LockKeyhole size={14}/> No CV required to browse jobs. Search choices are private to your account.</p>
+        <small>Simple job applications for Finland</small></span></div>
+      <StartChoices onMode={(choice) => startApplyFlow(choice)}
+        onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}/>
+      {error ? <p className="setup-error" role="alert">{error}</p> : null}
+      <details className="flow-advanced-setup">
+        <summary>Advanced: customize search preferences (optional)</summary>
+        <SearchSetup key={session?.user_id || session?.profile_id || session?.subject_fingerprint || "unidentified"}
+          initial={preferences} onSave={saveSearchPreferences}/>
+      </details>
+      <p className="setup-privacy"><LockKeyhole size={14}/> Find jobs without a CV, or upload one for private matching.</p>
     </main>;
   }
 
@@ -961,11 +1007,16 @@ export default function App() {
             <img className="helsinki-art" src="/helsinki-skyline.svg" alt="" />
             <div className="hero-tag"><span className="flag-finland" aria-hidden="true" /> Built for the Finnish job market</div>
           </section>
-          <div className="action-grid">
-            <button type="button" className="action-card featured" onClick={onUploadClick}><span className="action-icon"><UploadCloud size={22} /></span><span><strong>{cv.present ? "Replace your CV" : "Upload your CV"}</strong><small>{cv.present ? "Update your career evidence" : "Start with your experience"}</small></span><ArrowRight size={18} /></button>
-            <button type="button" className="action-card" onClick={() => { navigate("profile"); setNotice("LinkedIn account sync is not available yet. You can upload a CV or add your evidence directly."); }}><span className="action-icon"><BriefcaseBusiness size={21} /></span><span><strong>Build your profile</strong><small>Confirm skills and experience</small></span><ArrowRight size={18} /></button>
-            <button type="button" className="action-card" onClick={() => void load(true)} disabled={refreshing}><span className="action-icon"><RefreshCw size={21} className={refreshing ? "rotate" : ""} /></span><span><strong>Refresh listings</strong><small>Check available job data</small></span><ArrowRight size={18} /></button>
-            <button type="button" className="action-card" onClick={() => navigate("tools")}><span className="action-icon"><Sparkles size={21} /></span><span><strong>Open AI tools</strong><small>CV, letters & applications</small></span><ArrowRight size={18} /></button>
+          <StartChoices onMode={(choice) => startApplyFlow(choice)}
+            onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}/>
+          <div className="flow-home-cv">
+            <button className="outline-btn" type="button" onClick={onUploadClick}
+              disabled={busyCV}><UploadCloud size={16}/>
+              {busyCV ? "Uploading…" : cv.present ? "Replace your CV" : "Upload your CV"}
+            </button>
+            <button className="outline-btn" type="button" onClick={() => navigate("profile")}>
+              <FileText size={16}/> My CV & documents
+            </button>
           </div>
           <div className="stats-grid">
             <Stat label={preferences?.mode === "general" ? "Available jobs" : "Preference matches"}
@@ -986,6 +1037,16 @@ export default function App() {
             {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Save job</button> : null}
             {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}
           </div>
+          {page === "apply" ? <ApplicationJourney
+            key={accountViewKey} userId={session?.user_id || ""}
+            cv={cv} mode={flowMode} selectedJobKey={flowSelectedJob}
+            uploading={busyCV} preparing={preparing} queueBusy={flowQueueBusy}
+            onMode={setFlowMode} onUpload={onUploadClick}
+            onReviewCV={() => navigate("profile")}
+            onFindJobs={() => void startGeneralBrowse()}
+            onOpenApplications={() => navigate("applications")}
+            onPrepare={onPrepare} onPrepareSelected={onPrepareSelectedJobs}
+          /> : null}
           {page === "jobs" ? <div className="stacked"><div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>{privateSavedJobsPanel}</div> : null}
           {page === "training" ? <TrainingProgramsPanel /> : null}
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">{cvBlock}{factPanel}</div><aside>{sidePanel}</aside></div> : null}
