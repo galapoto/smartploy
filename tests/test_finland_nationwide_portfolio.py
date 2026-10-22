@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+import subprocess
+import sys
 
 import httpx
 import pytest
@@ -162,3 +165,34 @@ def test_smartrecruiters_prefilters_foreign_country_before_detail_fetch():
     assert adapter.last_total_postings == 3
     assert adapter.last_location_filtered_count == 1
     assert all(o.payload["role_title"] == "Information Management Planner" for o in results)
+
+
+def test_nationwide_ovh_staging_uses_stock_python_without_site_packages(tmp_path):
+    """Reproduce /usr/bin/python3 without pip packages on the Ubuntu host.
+
+    The API/worker containers have httpx, but root-managed host staging must
+    never require app imports or manipulate live env outside exact guard.
+    """
+    env = tmp_path / "private-env"
+    original = _env(reviewed_sources())
+    env.write_text(original, encoding="utf-8")
+    env.chmod(0o600)
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts" / "configure_finland_ats_pilot.py"
+    runner = (
+        "import json, runpy, sys; from pathlib import Path; "
+        "script = runpy.run_path(sys.argv[1]); "
+        "receipt = script['stage_pilot']("
+        "env=Path(sys.argv[2]), upgrade_nationwide_portfolio=True); "
+        "print(json.dumps(receipt, sort_keys=True))"
+    )
+    done = subprocess.run(
+        [sys.executable, "-I", "-S", "-c", runner, str(script), str(env)],
+        capture_output=True, text=True, timeout=15, check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    receipt = json.loads(done.stdout)
+    assert receipt["source_count"] == 22
+    assert receipt["private_env"] == "change_ready"
+    assert "synthetic-keep-private" not in done.stdout
+    assert env.read_text(encoding="utf-8") == original
