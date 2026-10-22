@@ -1,5 +1,7 @@
 # Smartploy
 
+**Project planning and verified reuse:** [Master AutoApply project plan](docs/PROJECT_PLAN.md) · [Source, safety, licensing, YouTube/TikTok audit (18 Oct 2026)](docs/REUSE_FIRST_AUDIT_2026-10-18.md). The project plan is a proposed roadmap; audit documentation alone does not authorize deployments or employer applications.
+
 Smartploy is a standalone job-intelligence and application orchestration product for Finland, powered by ObumAI.
 
 Smartploy discovers and normalizes jobs, deduplicates repeated listings, tracks freshness and source
