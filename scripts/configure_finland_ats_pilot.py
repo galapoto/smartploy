@@ -135,8 +135,9 @@ def reviewed_it_portfolio(registry: Path = IT_PORTFOLIO) -> list[dict]:
     The previous TSMG driving-heavy source is retired from this
     IT-first portfolio, but the operator can restore the prior five.
     """
-    from smartploy.sources.public_ats import PublicATSSourceConfig
-
+    # The OVH staging command runs on stock host Python, outside Docker.
+    # Do NOT import app modules here: public_ats imports httpx, which is
+    # installed in the API/worker images but is not required on the host.
     payload = json.loads(registry.read_text(encoding="utf-8"))
     expected = {
         ("lever", "uprightproject"), ("lever", "brightlyworks"),
@@ -147,27 +148,53 @@ def reviewed_it_portfolio(registry: Path = IT_PORTFOLIO) -> list[dict]:
     if not isinstance(payload, list) or len(payload) != 7:
         raise PilotConfigurationError("Expected seven reviewed IT-first ATS boards")
     source_ids: set[tuple[str, str]] = set()
+    allowed = {
+        "provider", "tenant", "label", "stack", "employer_sector",
+        "external_ai_forwarding_allowed", "location_terms",
+        "request_timeout_seconds", "page_size",
+    }
     for item in payload:
         if not isinstance(item, dict):
             raise PilotConfigurationError("Portfolio source must be an object")
-        try:
-            setting = PublicATSSourceConfig.from_dict(item)
-        except (ValueError, TypeError) as exc:
-            raise PilotConfigurationError("Invalid public ATS board configuration") from exc
-        key = (setting.provider, setting.tenant)
+        provider, tenant = item.get("provider"), item.get("tenant")
+        label = item.get("label")
+        if (
+            set(item) - allowed
+            or provider not in {"lever", "greenhouse"}
+            or not isinstance(tenant, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,99}", tenant)
+            or not isinstance(label, str)
+            or not label.strip()
+            or len(label) > 200
+            or not isinstance(item.get("stack", ""), str)
+        ):
+            raise PilotConfigurationError("Invalid public ATS board configuration")
+        key = (provider, tenant)
         if key in source_ids:
             raise PilotConfigurationError("Duplicate IT portfolio employer")
         source_ids.add(key)
-        if setting.external_ai_forwarding_allowed is not False:
+        if item.get("external_ai_forwarding_allowed") is not False:
             raise PilotConfigurationError("Public IT portfolio forbids external AI forwarding")
-        if setting.employer_sector != "private" or not setting.location_terms:
+        locations = item.get("location_terms")
+        if (
+            item.get("employer_sector") != "private"
+            or not isinstance(locations, list)
+            or not 1 <= len(locations) <= 20
+            or not all(
+                isinstance(term, str)
+                and 2 <= len(term.strip()) <= 80
+                and not any(ord(ch) < 32 for ch in term)
+                for term in locations
+            )
+        ):
             raise PilotConfigurationError("IT portfolio requires explicit Finland locations")
-        if "finland" not in setting.location_terms:
+        if "finland" not in {term.strip().casefold() for term in locations}:
             raise PilotConfigurationError("Country term Finland must be present")
-        if setting.stack != ("global" if setting.provider == "lever" else ""):
+        if item.get("stack", "") != ("global" if provider == "lever" else ""):
             raise PilotConfigurationError("IT portfolio unexpected provider/stack")
-        if setting.page_size is not None or setting.request_timeout_seconds is not None:
+        if item.get("page_size") is not None or item.get("request_timeout_seconds") is not None:
             raise PilotConfigurationError("IT portfolio cannot override network rate limits")
+
     if source_ids != expected:
         raise PilotConfigurationError("Unreviewed employer in IT portfolio")
     return payload
