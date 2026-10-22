@@ -6,7 +6,7 @@ import * as api from "./api";
 import type { ApplicationAgent } from "./types";
 
 vi.mock("./api", () => ({
-  getApplicationAgents: vi.fn(),
+  getApplicationAgentForWorkspace: vi.fn(),
   getApplicationAgent: vi.fn(),
   createApplicationAgent: vi.fn(),
   changeApplicationAgent: vi.fn(),
@@ -27,7 +27,8 @@ const caseAgent: ApplicationAgent = {
 };
 
 const response = (agents: ApplicationAgent[]) => ({
-  agents, count: agents.length, external_actions_authorized: false as const,
+  present: agents.length > 0, agent: agents[0] || null,
+  external_actions_authorized: false as const,
 });
 
 const events = [{
@@ -39,7 +40,7 @@ const events = [{
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(api.getApplicationAgents).mockResolvedValue(response([]));
+  vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue(response([]));
   vi.mocked(api.getApplicationAgent).mockResolvedValue({
     agent: caseAgent, events, count: 1, next_cursor: 1,
     external_actions_authorized: false,
@@ -57,7 +58,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 describe("Agent Zero in the existing application studio", () => {
 
   it("never records a recruiter milestone against an unsent draft", async () => {
-    vi.mocked(api.getApplicationAgents).mockResolvedValue(response([caseAgent]));
+    vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue(response([caseAgent]));
     render(<ApplicationAgentCard workspaceId="workspace-A"
       expectedUserId="user-a" verifyAccount={vi.fn(async () => {})}/>);
     expect(await screen.findByText(/still a draft/i)).toBeTruthy();
@@ -71,7 +72,7 @@ describe("Agent Zero in the existing application studio", () => {
       ...caseAgent, workspace_status: "self_reported_applied" as const,
       followup_suggestion: "Hello recruiter,\n\n[Your name]",
     };
-    vi.mocked(api.getApplicationAgents).mockResolvedValue(response([submitted]));
+    vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue(response([submitted]));
     vi.mocked(api.getApplicationAgent).mockResolvedValue({
       agent: submitted, events, count: 1, next_cursor: 1,
       external_actions_authorized: false,
@@ -105,7 +106,7 @@ describe("Agent Zero in the existing application studio", () => {
       ...caseAgent, workspace_status: "provider_acknowledged" as const,
       followup_suggestion: "Hello,\n\nMy application...",
     };
-    vi.mocked(api.getApplicationAgents).mockResolvedValue(response([submitted]));
+    vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue(response([submitted]));
     vi.mocked(api.getApplicationAgent).mockResolvedValue({
       agent: submitted, events, count: 1, next_cursor: 1,
       external_actions_authorized: false,
@@ -133,7 +134,7 @@ describe("Agent Zero in the existing application studio", () => {
 
 
   it("creates one case on explicit click without dispatching an employer action", async () => {
-    vi.mocked(api.getApplicationAgents)
+    vi.mocked(api.getApplicationAgentForWorkspace)
       .mockResolvedValueOnce(response([]))
       .mockResolvedValue(response([caseAgent]));
     const verifyAccount = vi.fn(async () => {});
@@ -154,7 +155,7 @@ describe("Agent Zero in the existing application studio", () => {
   });
 
   it("sends one expected-revision pause, never a silent employer message", async () => {
-    vi.mocked(api.getApplicationAgents).mockResolvedValue(response([caseAgent]));
+    vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue(response([caseAgent]));
     const verifyAccount = vi.fn(async () => {});
     render(<ApplicationAgentCard workspaceId="workspace-A"
       expectedUserId="user-a" verifyAccount={verifyAccount}/>);
@@ -179,7 +180,7 @@ describe("Agent Zero in the existing application studio", () => {
   });
 
   it("fails closed when durable application agent storage is unavailable", async () => {
-    vi.mocked(api.getApplicationAgents).mockRejectedValueOnce(
+    vi.mocked(api.getApplicationAgentForWorkspace).mockRejectedValueOnce(
       new Error("No migrated PostgreSQL agent ledger")
     );
     render(<ApplicationAgentCard workspaceId="workspace-A"
