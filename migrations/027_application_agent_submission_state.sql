@@ -33,5 +33,6 @@ ALTER TABLE smartploy_application_agent_events
       'followup_due','candidate_reported_followup',
       'candidate_reported_reply','candidate_reported_interview',
       'candidate_reported_offer','candidate_reported_rejected','candidate_reported_hired',
-      'application_self_reported','application_provider_acknowledged'
+      'application_self_reported','application_provider_acknowledged',
+      'application_draft_review'
     ));
