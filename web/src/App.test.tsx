@@ -422,6 +422,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 
   it("saves new personalized settings and transparently changes ranked results", async () => {
     render(<App />);
+    fireEvent.click(await screen.findByText(/Advanced: customize search preferences/i));
     fireEvent.change(await screen.findByPlaceholderText(/Data analyst, Junior software tester/), {
       target: { value: "Data Analyst" },
     });
@@ -1048,7 +1049,7 @@ describe("first opt-in creates private IT applications immediately", () => {
   });
 
 
-  it("resumes AutoApply after a CV upload only with pre-approved facts", async () => {
+  it("opens CV-first job matches after upload without silently submitting or starting drafts", async () => {
     currentPrefs = {
       ...initial, completed: true, mode: "personalized",
       roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
@@ -1074,8 +1075,9 @@ describe("first opt-in creates private IT applications immediately", () => {
     await waitFor(() => expect(api.uploadCV).toHaveBeenCalledWith(
       expect.objectContaining({ name: "synthetic-CV.pdf" }), "usr-synthetic-1"
     ));
-    await waitFor(() => expect(api.prepareMyMatchingDrafts).toHaveBeenCalledTimes(1));
-    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
+    await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(1));
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
@@ -1096,7 +1098,7 @@ describe("first opt-in creates private IT applications immediately", () => {
       })] },
     });
     await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText(/Your CV was uploaded privately/i)).toBeTruthy();
+    expect(await screen.findByText(/CV uploaded\. Matching your CV against current jobs now/i)).toBeTruthy();
     expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
     expect(screen.queryByTestId("application-editor")).toBeNull();
   });
