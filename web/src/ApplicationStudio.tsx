@@ -14,6 +14,7 @@ import {
   recordEmployerReviewIntent, cancelEmployerReviewIntent,
   getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
+import ApplicationAgentCard from "./ApplicationAgentCard";
 import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import type { EmployerAttemptState, EmployerReviewIntentState, EmployerFinalActionReadiness, LeverPartnerReadiness, LeverProviderAcknowledgment, LeverPartnerReviewEvidence } from "./api";
@@ -741,6 +742,12 @@ export default function ApplicationStudio(props: {
                   ? "Lever confirmed creation of this application. Your approved CV/letter were sent. This is not a hiring decision."
                   : "SmartPloy has not independently verified submission of this draft. Review every CV and cover-letter claim before sending."}</p></div>
         </div>
+        <ApplicationAgentCard
+          key={props.expectedUserId + ":" + selected.workspace_id}
+          workspaceId={selected.workspace_id}
+          expectedUserId={props.expectedUserId}
+          verifyAccount={verifyAccount}
+        />
         <section className="studio-ai-card" aria-label="Optional local AI writing support">
           <div className="studio-ai-heading">
             <span className="studio-ai-icon"><Sparkles size={19}/></span>
