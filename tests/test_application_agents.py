@@ -159,6 +159,8 @@ def test_same_employer_two_accounts_have_disjoint_cases_and_deletion_cascades(st
         assert first and second
         assert first["agent_id"] != second["agent_id"]
         assert agents.get(owner_b, first["agent_id"]) is None
+        assert agents.get_for_workspace(owner_a, a.workspace_id)["agent_id"] == first["agent_id"]
+        assert agents.get_for_workspace(owner_b, a.workspace_id) is None
         assert agents.events(owner_b, first["agent_id"]) == []
         assert agents.transition(
             owner_b, first["agent_id"], action="close", expected_revision=1,
@@ -291,6 +293,12 @@ def test_api_owner_only_case_lifecycle_and_no_body_identity(store, monkeypatch):
         assert created.json()["external_actions_performed"] == 0
         assert app.post(route, headers=headers_a).json()["created"] is False
         agent_route = "/api/v1/application-agents/" + agent["agent_id"]
+        own_lookup = app.get(route, headers=a)
+        assert own_lookup.status_code == 200
+        assert own_lookup.headers["cache-control"] == "private, no-store"
+        assert own_lookup.json()["present"] is True
+        assert own_lookup.json()["agent"]["agent_id"] == agent["agent_id"]
+        assert app.get(route, headers=b).json()["present"] is False
         assert app.get("/api/v1/application-agents", headers=b).json()["count"] == 0
         assert app.get(agent_route, headers=b).status_code == 404
         assert app.get(agent_route, headers=a).json()["events"][0]["event_type"] == "case_created"
