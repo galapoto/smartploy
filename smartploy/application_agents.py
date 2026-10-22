@@ -172,6 +172,24 @@ class PostgresApplicationAgentRepository:
                 row = cur.fetchone()
         return self._public(row) if row else None
 
+    def get_for_workspace(
+        self, profile_id: str, workspace_id: str
+    ) -> dict[str, Any] | None:
+        """Avoid listing/capping all a user's agents to display one workspace."""
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    self._COLUMNS + """
+                    WHERE a.profile_id=%s AND a.workspace_id=%s
+                      AND NOT EXISTS (
+                          SELECT 1 FROM smartploy_account_erasure_requests er
+                          WHERE er.profile_id=a.profile_id
+                      )""",
+                    (profile_id, workspace_id),
+                )
+                row = cur.fetchone()
+        return self._public(row) if row else None
+
     def list(self, profile_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 100))
         with connect(self.dsn) as conn:
