@@ -421,7 +421,8 @@ def test_interview_offer_rejection_is_terminal_and_case_stays_private(store):
     workspace = synthetic_case(owner)
     workspaces.create_or_get(workspace)
     try:
-        workspaces.report_applied(owner, workspace.workspace_id, expected_revision=1)
+        workspaces.report_applied(owner, workspace.workspace_id, expected_revision=1,
+                               reference="Applicant-confirmed synthetic submission")
         agent, _ = agents.create_or_get(owner, workspace.workspace_id)
         assert agent
         aid = agent["agent_id"]
@@ -456,7 +457,8 @@ def test_applied_case_wakes_once_with_in_app_followup_not_external_send(store):
     workspaces.create_or_get(workspace)
     current = datetime.now(timezone.utc)
     try:
-        workspaces.report_applied(owner, workspace.workspace_id, expected_revision=1)
+        workspaces.report_applied(owner, workspace.workspace_id, expected_revision=1,
+                               reference="Applicant-confirmed synthetic submission")
         agent, _ = agents.create_or_get(owner, workspace.workspace_id, now=current)
         assert agent
         aid = agent["agent_id"]
@@ -504,6 +506,7 @@ def test_api_requires_explicit_claim_and_current_account_for_followups(store, mo
     try:
         workspaces.report_applied(
             who_a["profile_id"], workspace.workspace_id, expected_revision=1,
+            reference="Applicant-confirmed synthetic submission",
         )
         started = app.post(
             "/api/v1/application-workspaces/" + workspace.workspace_id + "/agent",
