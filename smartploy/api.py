@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from hashlib import sha256
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import parse_qs, urlsplit
 
 from authlib.integrations.base_client import OAuthError
@@ -218,6 +218,21 @@ class WorkspaceEditPayload(BaseModel):
     expected_revision: int = Field(ge=1)
     cv_text: str = Field(min_length=1, max_length=30000)
     cover_letter_text: str = Field(min_length=1, max_length=10000)
+
+
+class ApplicationAgentMilestonePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1, le=2147483647)
+    milestone: Literal[
+        "recruiter_replied", "interview", "offer", "rejected", "hired"
+    ]
+    confirmed_personally_observed: StrictBool = False
+
+
+class ApplicationAgentReportedFollowupPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1, le=2147483647)
+    confirmed_sent_by_applicant: StrictBool = False
 
 
 class ApplicationAgentTransitionPayload(BaseModel):
@@ -1368,6 +1383,59 @@ def create_app(
             {"agent": agent, "events": events, "count": len(events),
              "next_cursor": events[-1]["sequence"] if events else after_sequence,
              "external_actions_authorized": False},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.post("/api/v1/application-agents/{agent_id}/milestone")
+    def report_candidate_milestone(
+        agent_id: str, payload: ApplicationAgentMilestonePayload,
+        request: Request,
+    ) -> JSONResponse:
+        if payload.confirmed_personally_observed is not True:
+            raise HTTPException(
+                status_code=422, detail="Personally confirm this recruiter outcome"
+            )
+        repo, owner = application_agent_context(request, mutate=True)
+        try:
+            agent = repo.record_milestone(
+                owner, agent_id, milestone=payload.milestone,
+                expected_revision=payload.expected_revision,
+            )
+        except ApplicationAgentConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Application agent unavailable") from exc
+        if agent is None:
+            raise HTTPException(status_code=404, detail="Application agent not found")
+        return JSONResponse(
+            {"agent": agent, "milestone_source": "candidate_self_report",
+             "employer_response_verified": False, "external_actions_performed": 0},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.post("/api/v1/application-agents/{agent_id}/followup-sent")
+    def report_candidate_followup_sent(
+        agent_id: str, payload: ApplicationAgentReportedFollowupPayload,
+        request: Request,
+    ) -> JSONResponse:
+        if payload.confirmed_sent_by_applicant is not True:
+            raise HTTPException(
+                status_code=422, detail="Confirm that you personally sent the follow-up"
+            )
+        repo, owner = application_agent_context(request, mutate=True)
+        try:
+            agent = repo.log_candidate_followup(
+                owner, agent_id, expected_revision=payload.expected_revision,
+            )
+        except ApplicationAgentConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Application agent unavailable") from exc
+        if agent is None:
+            raise HTTPException(status_code=404, detail="Application agent not found")
+        return JSONResponse(
+            {"agent": agent, "record_source": "candidate_self_report",
+             "external_delivery_verified": False, "external_actions_performed": 0},
             headers={"Cache-Control": "private, no-store"},
         )
 
