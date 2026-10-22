@@ -15,6 +15,7 @@ import type {
   ApplicationWorkspace,
   ApplicationAgent,
   ApplicationAgentEvent,
+  ApplicationAgentMilestone,
   ApplicationWorkspacesResponse,
   TrainingProgramsResponse
 } from "./types";
@@ -207,14 +208,24 @@ export function getApplicationAgents(): Promise<{
   return request("/api/v1/application-agents");
 }
 
-export function getApplicationAgent(agentId: string): Promise<{
+export function getApplicationAgentForWorkspace(workspaceId: string): Promise<{
+  present: boolean; agent: ApplicationAgent | null; external_actions_authorized: false;
+}> {
+  return request(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/agent"
+  );
+}
+
+export function getApplicationAgent(agentId: string, afterSequence = 0): Promise<{
   agent: ApplicationAgent;
   events: ApplicationAgentEvent[];
   count: number;
   next_cursor: number;
   external_actions_authorized: false;
 }> {
-  return request("/api/v1/application-agents/" + encodeURIComponent(agentId));
+  const cursor = Number.isSafeInteger(afterSequence) ? Math.max(0, afterSequence) : 0;
+  return request("/api/v1/application-agents/" + encodeURIComponent(agentId)
+    + "?after_sequence=" + cursor);
 }
 
 export function createApplicationAgent(
@@ -234,6 +245,34 @@ export function changeApplicationAgent(
     "/api/v1/application-agents/" + encodeURIComponent(agentId) + "/" + action,
     { method: "POST", body: JSON.stringify({ expected_revision: expectedRevision }) },
     expectedUserId
+  );
+}
+
+
+/** Only stores user-confirmed recruiter stages. Never sends to employers. */
+export function recordApplicationAgentMilestone(
+  agentId: string, milestone: ApplicationAgentMilestone, expectedRevision: number,
+  expectedUserId: string,
+): Promise<{ agent: ApplicationAgent; milestone_source: "candidate_self_report";
+  employer_response_verified: false; external_actions_performed: 0 }> {
+  return request(
+    "/api/v1/application-agents/" + encodeURIComponent(agentId) + "/milestone",
+    { method: "POST", body: JSON.stringify({
+      milestone, expected_revision: expectedRevision, confirmed_personally_observed: true,
+    }) }, expectedUserId
+  );
+}
+
+/** Record an applicant-reported follow-up only, not a delivery receipt. */
+export function recordApplicationAgentFollowup(
+  agentId: string, expectedRevision: number, expectedUserId: string,
+): Promise<{ agent: ApplicationAgent; record_source: "candidate_self_report";
+  external_delivery_verified: false; external_actions_performed: 0 }> {
+  return request(
+    "/api/v1/application-agents/" + encodeURIComponent(agentId) + "/followup-sent",
+    { method: "POST", body: JSON.stringify({
+      expected_revision: expectedRevision, confirmed_sent_by_applicant: true,
+    }) }, expectedUserId
   );
 }
 

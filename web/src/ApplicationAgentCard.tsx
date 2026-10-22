@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { BellRing, CheckCircle2, Clock3, PauseCircle, PlayCircle, RefreshCw, ShieldCheck, StopCircle } from "lucide-react";
 import {
   changeApplicationAgent, createApplicationAgent,
-  getApplicationAgent, getApplicationAgents
+  getApplicationAgent, getApplicationAgentForWorkspace,
+  recordApplicationAgentMilestone, recordApplicationAgentFollowup
 } from "./api";
-import type { ApplicationAgent, ApplicationAgentEvent } from "./types";
+import type { ApplicationAgent, ApplicationAgentEvent, ApplicationAgentMilestone } from "./types";
 
 /** In-app-only agent lifecycle; parent checks account identity before/after every request. */
 export default function ApplicationAgentCard(props: {
@@ -18,6 +19,8 @@ export default function ApplicationAgentCard(props: {
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState("");
+  const [milestone, setMilestone] = useState<ApplicationAgentMilestone>("recruiter_replied");
+  const [outcomeConfirmed, setOutcomeConfirmed] = useState(false);
   const [reload, setReload] = useState(0);
 
   const refresh = useCallback(() => setReload((previous) => previous + 1), []);
@@ -27,16 +30,19 @@ export default function ApplicationAgentCard(props: {
     setAgent(null);
     setEvents([]);
     setError("");
+    setOutcomeConfirmed(false);
     setLoading(true);
     void (async () => {
       try {
         await props.verifyAccount();
-        const list = await getApplicationAgents();
+        const lookup = await getApplicationAgentForWorkspace(props.workspaceId);
         await props.verifyAccount();
         if (!active) return;
-        const selected = list.agents.find((item) => item.workspace_id === props.workspaceId) || null;
+        const selected = lookup.agent;
         if (selected) {
-          const detailed = await getApplicationAgent(selected.agent_id);
+          const detailed = await getApplicationAgent(
+            selected.agent_id, Math.max(0, selected.revision - 5)
+          );
           await props.verifyAccount();
           if (!active) return;
           setAgent(detailed.agent);
@@ -100,10 +106,57 @@ export default function ApplicationAgentCard(props: {
     }
   }
 
+  async function reportMilestone() {
+    if (!agent || busy || loading || unavailable || !outcomeConfirmed ||
+        agent.state === "closed" || agent.workspace_status === "draft") return;
+    if (["hired", "rejected"].includes(milestone) && !window.confirm(
+      "End this application agent based on your personal report of " + milestone +
+      "? It will never wake again. This does not verify the employer outcome."
+    )) return;
+    const active = agent;
+    setBusy(true); setError("");
+    try {
+      await props.verifyAccount();
+      await recordApplicationAgentMilestone(
+        active.agent_id, milestone, active.revision, props.expectedUserId
+      );
+      await props.verifyAccount();
+      setOutcomeConfirmed(false);
+      refresh();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Could not record the reported update.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reportFollowupSent() {
+    if (!agent || busy || loading || unavailable || !agent.followup_suggestion ||
+        agent.state !== "active") return;
+    if (!window.confirm(
+      "Confirm that YOU already sent this follow-up outside SmartPloy. " +
+      "SmartPloy cannot verify its delivery and will not send anything."
+    )) return;
+    const active = agent;
+    setBusy(true); setError("");
+    try {
+      await props.verifyAccount();
+      await recordApplicationAgentFollowup(
+        active.agent_id, active.revision, props.expectedUserId
+      );
+      await props.verifyAccount();
+      refresh();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Could not record your reported follow-up.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <section className="studio-ai-card" aria-label="Your job application agent">
     <div className="studio-ai-heading">
       <span className="studio-ai-icon"><BellRing size={19} /></span>
-      <div><strong>Application agent · Agent Zero</strong>
+      <div><strong>Application agent · follow-up tracking</strong>
         <p>One private agent for this job. It tracks your next steps and keeps an in-app
           activity history. No emails, calls or employer applications are sent by this agent.</p>
       </div>
@@ -140,6 +193,69 @@ export default function ApplicationAgentCard(props: {
           <StopCircle size={15} /> End case
         </button>
       </div> : <p><CheckCircle2 size={15} /> Case ended. Existing documents remain available.</p>}
+      <div className="studio-info">
+        <ShieldCheck size={16}/>
+        <div>
+          <strong>{agent.workspace_status === "provider_acknowledged"
+            ? "Application submission acknowledged by provider"
+            : agent.workspace_status === "self_reported_applied"
+              ? "Application reported sent by you"
+              : "Application is still a draft"}</strong>
+          <p>{agent.milestone !== "none"
+            ? "Latest milestone: " + agent.milestone.replaceAll("_", " ") +
+              " (your report only, not independently verified)."
+            : "No recruiter outcome recorded."}
+            {agent.next_due_at ? " · Next in-app review " +
+              new Date(agent.next_due_at).toLocaleString() : ""}
+          </p>
+        </div>
+      </div>
+      {agent.workspace_status === "draft" && agent.state !== "closed" ? (
+        <p>First submit or personally report submitting this application using
+          the Application Studio controls. Recruiter outcomes and follow-ups
+          cannot be recorded against an unsent draft.</p>
+      ) : null}
+      {agent.workspace_status !== "draft" && agent.state !== "closed" ? (
+        <div className="studio-ai-card" aria-label="Record applicant-confirmed recruiter update">
+          <strong>What happened with this application?</strong>
+          <p>This is your personal report. SmartPloy does not verify recruiter messages.</p>
+          <label htmlFor="agent-milestone">Recruiter update</label>
+          <select id="agent-milestone" value={milestone}
+            onChange={(event) => {
+              setMilestone(event.target.value as ApplicationAgentMilestone);
+              setOutcomeConfirmed(false);
+            }} disabled={busy}>
+            <option value="recruiter_replied">Recruiter replied</option>
+            <option value="interview">Interview invited or scheduled</option>
+            <option value="offer">Offer received</option>
+            <option value="rejected">Application rejected — end agent</option>
+            <option value="hired">Job accepted / employed — end agent</option>
+          </select>
+          <label>
+            <input type="checkbox" checked={outcomeConfirmed} disabled={busy}
+              onChange={(event) => setOutcomeConfirmed(event.target.checked)}/>
+            I personally confirm this update
+          </label>
+          <button type="button" className="outline-btn compact"
+            disabled={busy || !outcomeConfirmed}
+            onClick={() => void reportMilestone()}>
+            <CheckCircle2 size={15}/> Record applicant-reported update
+          </button>
+        </div>
+      ) : null}
+      {agent.followup_suggestion ? (
+        <div className="studio-ai-card" aria-label="Review follow-up draft">
+          <strong>Suggested polite follow-up · {agent.followups_sent}/2 reported sent</strong>
+          <p>Review and edit this template in your own email app. No recipient is selected;
+            nothing is sent, and SmartPloy cannot verify delivery.</p>
+          <textarea aria-label="Follow-up message you may copy" readOnly rows={6}
+            value={agent.followup_suggestion}/>
+          <button type="button" className="outline-btn compact" disabled={busy}
+            onClick={() => void reportFollowupSent()}>
+            <CheckCircle2 size={15}/> I already sent a follow-up myself
+          </button>
+        </div>
+      ) : null}
       {events.length > 0 ? (
         <div aria-label="Agent activity">
           <strong>Recent activity</strong>
@@ -155,7 +271,7 @@ export default function ApplicationAgentCard(props: {
         onClick={refresh}><RefreshCw size={14} /> Refresh activity</button>
     </div> : null}
     {error ? <p role="alert">{error}</p> : null}
-    <p className="studio-ai-privacy">Agent Zero stores only case progress and safe
-      reminders. Its model calls and external actions are disabled.</p>
+    <p className="studio-ai-privacy">Private candidate reports and in-app reminders only.
+      model calls and external actions are disabled. SmartPloy never emails recruiters from this card.</p>
   </section>;
 }

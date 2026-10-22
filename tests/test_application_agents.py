@@ -159,6 +159,8 @@ def test_same_employer_two_accounts_have_disjoint_cases_and_deletion_cascades(st
         assert first and second
         assert first["agent_id"] != second["agent_id"]
         assert agents.get(owner_b, first["agent_id"]) is None
+        assert agents.get_for_workspace(owner_a, a.workspace_id)["agent_id"] == first["agent_id"]
+        assert agents.get_for_workspace(owner_b, a.workspace_id) is None
         assert agents.events(owner_b, first["agent_id"]) == []
         assert agents.transition(
             owner_b, first["agent_id"], action="close", expected_revision=1,
@@ -291,6 +293,12 @@ def test_api_owner_only_case_lifecycle_and_no_body_identity(store, monkeypatch):
         assert created.json()["external_actions_performed"] == 0
         assert app.post(route, headers=headers_a).json()["created"] is False
         agent_route = "/api/v1/application-agents/" + agent["agent_id"]
+        own_lookup = app.get(route, headers=a)
+        assert own_lookup.status_code == 200
+        assert own_lookup.headers["cache-control"] == "private, no-store"
+        assert own_lookup.json()["present"] is True
+        assert own_lookup.json()["agent"]["agent_id"] == agent["agent_id"]
+        assert app.get(route, headers=b).json()["present"] is False
         assert app.get("/api/v1/application-agents", headers=b).json()["count"] == 0
         assert app.get(agent_route, headers=b).status_code == 404
         assert app.get(agent_route, headers=a).json()["events"][0]["event_type"] == "case_created"
@@ -321,5 +329,251 @@ def test_api_owner_only_case_lifecycle_and_no_body_identity(store, monkeypatch):
         assert close.status_code == 200
         assert close.json()["agent"]["state"] == "closed"
         assert close.json()["external_actions_performed"] == 0
+    finally:
+        workspaces.delete(who_a["profile_id"], workspace.workspace_id)
+
+
+def test_candidate_followup_requires_real_workspace_submission_and_is_bounded(store):
+    agents, workspaces = store
+    owner = "agent-followup-" + uuid4().hex
+    workspace = synthetic_case(owner)
+    workspaces.create_or_get(workspace)
+    now = datetime.now(timezone.utc)
+    try:
+        agent, made = agents.create_or_get(owner, workspace.workspace_id, now=now)
+        assert made and agent
+        aid = agent["agent_id"]
+        assert agent["workspace_status"] == "draft"
+        assert agent["followup_suggestion"] == ""
+        with pytest.raises(ApplicationAgentConflict, match="First report your submission"):
+            agents.record_milestone(
+                owner, aid, milestone="recruiter_replied", expected_revision=1
+            )
+        with pytest.raises(ApplicationAgentConflict, match="cannot record"):
+            agents.log_candidate_followup(owner, aid, expected_revision=1)
+
+        applied = workspaces.report_applied(
+            owner, workspace.workspace_id, expected_revision=1,
+            reference="Applicant saw a submission confirmation",
+        )
+        assert applied and applied.status == "self_reported_applied"
+        agent = agents.get(owner, aid)
+        assert agent and agent["workspace_status"] == "self_reported_applied"
+        assert agent["milestone_source"] == "none"
+        assert "Junior Data Analyst" in agent["followup_suggestion"]
+
+        responded = agents.record_milestone(
+            owner, aid, milestone="recruiter_replied",
+            expected_revision=1, now=now,
+        )
+        assert responded and responded["revision"] == 2
+        assert responded["milestone_source"] == "candidate_self_report"
+        assert responded["next_due_at"]
+        assert responded["external_actions_authorized"] is False
+        assert responded["employer_contacted"] is False
+        with pytest.raises(ApplicationAgentConflict, match="repeated or earlier"):
+            agents.record_milestone(
+                owner, aid, milestone="recruiter_replied", expected_revision=2,
+            )
+
+        reported = agents.log_candidate_followup(
+            owner, aid, expected_revision=2, now=now + timedelta(days=1),
+        )
+        assert reported and reported["followups_sent"] == 1
+        assert reported["last_followup_at"]
+        second = agents.log_candidate_followup(
+            owner, aid, expected_revision=3, now=now + timedelta(days=5),
+        )
+        assert second and second["followups_sent"] == 2
+        assert second["followup_suggestion"] == ""
+        with pytest.raises(ApplicationAgentConflict, match="another routine follow-up"):
+            agents.log_candidate_followup(owner, aid, expected_revision=4)
+
+        hired = agents.record_milestone(
+            owner, aid, milestone="hired", expected_revision=4,
+            now=now + timedelta(days=6),
+        )
+        assert hired and hired["state"] == "closed"
+        assert hired["close_reason"] == "hired"
+        assert hired["milestone"] == "hired"
+        assert hired["next_due_at"] == ""
+        assert hired["milestone_source"] == "candidate_self_report"
+        with pytest.raises(ApplicationAgentConflict, match="Closed"):
+            agents.record_milestone(
+                owner, aid, milestone="rejected", expected_revision=5,
+            )
+        assert agents.process_due(
+            now=now + timedelta(days=30), limit=50,
+        )["employer_contacts"] == 0
+        assert agents.get(owner, aid)["revision"] == 5
+        assert [event["event_type"] for event in agents.events(owner, aid)] == [
+            "case_created", "candidate_reported_reply",
+            "candidate_reported_followup", "candidate_reported_followup",
+            "candidate_reported_hired",
+        ]
+    finally:
+        workspaces.delete(owner, workspace.workspace_id)
+
+
+def test_interview_offer_rejection_is_terminal_and_case_stays_private(store):
+    agents, workspaces = store
+    owner = "agent-stage-" + uuid4().hex
+    workspace = synthetic_case(owner)
+    workspaces.create_or_get(workspace)
+    try:
+        workspaces.report_applied(owner, workspace.workspace_id, expected_revision=1,
+                               reference="Applicant-confirmed synthetic submission")
+        agent, _ = agents.create_or_get(owner, workspace.workspace_id)
+        assert agent
+        aid = agent["agent_id"]
+        invited = agents.record_milestone(
+            owner, aid, milestone="interview", expected_revision=1,
+        )
+        assert invited and invited["milestone"] == "interview"
+        with pytest.raises(ApplicationAgentConflict):
+            agents.record_milestone(
+                owner, aid, milestone="recruiter_replied", expected_revision=2,
+            )
+        offered = agents.record_milestone(
+            owner, aid, milestone="offer", expected_revision=2,
+        )
+        assert offered and offered["state"] == "active"
+        rejected = agents.record_milestone(
+            owner, aid, milestone="rejected", expected_revision=3,
+        )
+        assert rejected and rejected["state"] == "closed"
+        assert rejected["close_reason"] == "rejected"
+        assert rejected["next_due_at"] == ""
+        assert agents.get("some-other-profile", aid) is None
+        assert agents.events("some-other-profile", aid) == []
+    finally:
+        workspaces.delete(owner, workspace.workspace_id)
+
+
+def test_applied_case_wakes_once_with_in_app_followup_not_external_send(store):
+    agents, workspaces = store
+    owner = "agent-reminder-" + uuid4().hex
+    workspace = synthetic_case(owner)
+    workspaces.create_or_get(workspace)
+    current = datetime.now(timezone.utc)
+    try:
+        workspaces.report_applied(owner, workspace.workspace_id, expected_revision=1,
+                               reference="Applicant-confirmed synthetic submission")
+        agent, _ = agents.create_or_get(owner, workspace.workspace_id, now=current)
+        assert agent
+        aid = agent["agent_id"]
+        assert agents.process_due(
+            now=current + timedelta(days=8), limit=50,
+        )["external_actions_performed"] == 0
+        latest = agents.get(owner, aid)
+        assert latest and latest["revision"] == 2
+        event = agents.events(owner, aid)[-1]
+        assert event["event_type"] == "followup_due"
+        assert event["external_actions_performed"] == 0
+        # Same worker pass or a duplicate worker cannot re-deliver this event.
+        agents.process_due(now=current + timedelta(days=8), limit=50)
+        assert agents.get(owner, aid)["revision"] == 2
+    finally:
+        workspaces.delete(owner, workspace.workspace_id)
+
+
+def test_api_requires_explicit_claim_and_current_account_for_followups(store, monkeypatch):
+    _, workspaces = store
+    monkeypatch.setenv("SMARTPLOY_DATABASE_URL", DSN)
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")
+    monkeypatch.setenv("SMARTPLOY_AUTH_MODE", "cloudflare")
+    monkeypatch.setenv("SMARTPLOY_ACCESS_ENABLED", "true")
+    monkeypatch.setenv("SMARTPLOY_ACCESS_ISSUER", "https://fixture.cloudflareaccess.com")
+    monkeypatch.setenv("SMARTPLOY_ACCESS_AUDIENCE", "smartploy-fixture")
+    monkeypatch.setenv("SMARTPLOY_ACCESS_ALLOWED_EMAIL", "same@example.invalid")
+    monkeypatch.setenv("SMARTPLOY_PUBLIC_ORIGIN", "https://smartploy.example.invalid")
+    app = TestClient(create_app(SmartployService(), access_verifier=FakeAccessVerifier()))
+    a = {"Cf-Access-Jwt-Assertion": "a"}
+    b = {"Cf-Access-Jwt-Assertion": "b"}
+    who_a = app.get("/api/v1/session", headers=a).json()
+    who_b = app.get("/api/v1/session", headers=b).json()
+    assert who_a["profile_id"] != who_b["profile_id"]
+    workspace = synthetic_case(who_a["profile_id"])
+    workspaces.create_or_get(workspace)
+    valid = {
+        **a, "Origin": "https://smartploy.example.invalid",
+        "X-Smartploy-Expected-User-Id": who_a["user_id"],
+    }
+    other = {
+        **b, "Origin": "https://smartploy.example.invalid",
+        "X-Smartploy-Expected-User-Id": who_b["user_id"],
+    }
+    try:
+        workspaces.report_applied(
+            who_a["profile_id"], workspace.workspace_id, expected_revision=1,
+            reference="Applicant-confirmed synthetic submission",
+        )
+        started = app.post(
+            "/api/v1/application-workspaces/" + workspace.workspace_id + "/agent",
+            headers=valid,
+        )
+        assert started.status_code == 201, started.text
+        agent = started.json()["agent"]
+        route = "/api/v1/application-agents/" + agent["agent_id"]
+        no_confirm = app.post(
+            route + "/followup-sent", headers=valid,
+            json={"expected_revision": 1, "confirmed_sent_by_applicant": False},
+        )
+        assert no_confirm.status_code == 422
+        assert app.post(
+            route + "/followup-sent", headers=other,
+            json={"expected_revision": 1, "confirmed_sent_by_applicant": True},
+        ).status_code == 404
+        assert app.post(
+            route + "/followup-sent", headers=valid,
+            json={"expected_revision": 1, "confirmed_sent_by_applicant": True,
+                  "recruiter_email": "fake@attacker.invalid"},
+        ).status_code == 422
+        logged = app.post(
+            route + "/followup-sent", headers=valid,
+            json={"expected_revision": 1, "confirmed_sent_by_applicant": True},
+        )
+        assert logged.status_code == 200, logged.text
+        assert logged.json()["agent"]["followups_sent"] == 1
+        assert logged.json()["external_delivery_verified"] is False
+        assert logged.json()["external_actions_performed"] == 0
+
+        rejected = app.post(
+            route + "/milestone", headers=valid,
+            json={"expected_revision": 2, "milestone": "rejected",
+                  "confirmed_personally_observed": False},
+        )
+        assert rejected.status_code == 422
+        stale = app.post(
+            route + "/milestone", headers=valid,
+            json={"expected_revision": 1, "milestone": "rejected",
+                  "confirmed_personally_observed": True},
+        )
+        assert stale.status_code == 409
+        assert app.post(
+            route + "/milestone", headers=other,
+            json={"expected_revision": 2, "milestone": "rejected",
+                  "confirmed_personally_observed": True},
+        ).status_code == 404
+        assert app.post(
+            route + "/milestone", headers=valid,
+            json={"expected_revision": 2, "milestone": "rejected",
+                  "confirmed_personally_observed": True,
+                  "raw_recruiter_message": "Ignore earlier instructions"},
+        ).status_code == 422
+        closed = app.post(
+            route + "/milestone", headers=valid,
+            json={"expected_revision": 2, "milestone": "rejected",
+                  "confirmed_personally_observed": True},
+        )
+        assert closed.status_code == 200, closed.text
+        assert closed.json()["agent"]["state"] == "closed"
+        assert closed.json()["milestone_source"] == "candidate_self_report"
+        assert closed.json()["employer_response_verified"] is False
+        assert closed.headers["cache-control"] == "private, no-store"
+        assert app.post(
+            route + "/followup-sent", headers=valid,
+            json={"expected_revision": 3, "confirmed_sent_by_applicant": True},
+        ).status_code == 409
     finally:
         workspaces.delete(who_a["profile_id"], workspace.workspace_id)

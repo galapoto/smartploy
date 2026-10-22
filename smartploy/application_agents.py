@@ -12,6 +12,11 @@ from typing import Any, Literal
 
 from psycopg import connect
 
+from .application_followups import (
+    MILESTONE_EVENTS, ORDER, SUBMITTED_WORKSPACE_STATUSES, TERMINAL_MILESTONES,
+    due_message, followup_draft, next_case_due,
+)
+
 
 class ApplicationAgentConflict(ValueError):
     """The agent changed, stopped, or is not in the requested state."""
@@ -42,7 +47,8 @@ class PostgresApplicationAgentRepository:
     _COLUMNS = """
         SELECT a.agent_id, a.workspace_id, w.canonical_key, w.role_title,
                w.company, a.state, a.revision, a.next_due_at, a.last_woke_at,
-               a.created_at, a.updated_at, a.closed_at, a.close_reason
+               a.created_at, a.updated_at, a.closed_at, a.close_reason,
+               a.milestone, a.followups_sent, a.last_followup_at, w.status
         FROM smartploy_application_agents a
         JOIN smartploy_application_workspaces w ON w.workspace_id = a.workspace_id
     """
@@ -71,6 +77,17 @@ class PostgresApplicationAgentRepository:
             "updated_at": iso(row[10]),
             "closed_at": iso(row[11]),
             "close_reason": row[12],
+            "milestone": row[13],
+            "followups_sent": row[14],
+            "last_followup_at": iso(row[15]),
+            "workspace_status": row[16],
+            "milestone_source": "candidate_self_report" if row[13] != "none" else "none",
+            "followup_suggestion": (
+                followup_draft(row[4], row[3])
+                if row[5] == "active" and row[16] in SUBMITTED_WORKSPACE_STATUSES
+                and row[13] in {"none", "recruiter_replied"} and row[14] < 2
+                else ""
+            ),
             "external_actions_authorized": False,
             "employer_contacted": False,
             "notification_channel": "in_app_only",
@@ -102,7 +119,14 @@ class PostgresApplicationAgentRepository:
                     """INSERT INTO smartploy_application_agents
                            (agent_id, workspace_id, profile_id, next_due_at,
                             created_at, updated_at)
-                       SELECT %s, w.workspace_id, w.profile_id, %s, %s, %s
+                       SELECT %s, w.workspace_id, w.profile_id,
+                              CASE WHEN w.status = 'draft' THEN %s
+                                   ELSE GREATEST(
+                                       %s, COALESCE(
+                                           w.self_reported_applied_at, w.updated_at
+                                       ) + INTERVAL '7 days')
+                              END,
+                              %s, %s
                        FROM smartploy_application_workspaces w
                        WHERE w.workspace_id = %s AND w.profile_id = %s
                          AND NOT EXISTS (
@@ -111,7 +135,7 @@ class PostgresApplicationAgentRepository:
                          )
                        ON CONFLICT (workspace_id) DO NOTHING
                        RETURNING agent_id""",
-                    (identity, moment, moment, moment, workspace, owner),
+                    (identity, moment, moment, moment, moment, workspace, owner),
                 )
                 created = cur.fetchone() is not None
                 if created:
@@ -144,6 +168,24 @@ class PostgresApplicationAgentRepository:
                           WHERE er.profile_id = a.profile_id
                       )""",
                     (profile_id, agent_id),
+                )
+                row = cur.fetchone()
+        return self._public(row) if row else None
+
+    def get_for_workspace(
+        self, profile_id: str, workspace_id: str
+    ) -> dict[str, Any] | None:
+        """Avoid listing/capping all a user's agents to display one workspace."""
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    self._COLUMNS + """
+                    WHERE a.profile_id=%s AND a.workspace_id=%s
+                      AND NOT EXISTS (
+                          SELECT 1 FROM smartploy_account_erasure_requests er
+                          WHERE er.profile_id=a.profile_id
+                      )""",
+                    (profile_id, workspace_id),
                 )
                 row = cur.fetchone()
         return self._public(row) if row else None
@@ -249,6 +291,148 @@ class PostgresApplicationAgentRepository:
                 row = cur.fetchone()
         return self._public(row) if row else None
 
+
+    def record_milestone(
+        self, profile_id: str, agent_id: str, *,
+        milestone: str, expected_revision: int, now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        """Only the applicant may attest a stage, never a pasted recruiter mail."""
+        if milestone not in MILESTONE_EVENTS:
+            raise ValueError("Unsupported application milestone")
+        moment = _now(now)
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT a.state, a.revision, a.milestone, a.followups_sent,
+                              w.status
+                       FROM smartploy_application_agents a
+                       JOIN smartploy_application_workspaces w
+                         ON w.workspace_id = a.workspace_id
+                       WHERE a.agent_id = %s AND a.profile_id = %s
+                         AND NOT EXISTS (
+                           SELECT 1 FROM smartploy_account_erasure_requests er
+                           WHERE er.profile_id = a.profile_id
+                         )
+                       FOR UPDATE OF a, w""",
+                    (agent_id, profile_id),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                state, revision, previous, count, workspace_status = row
+                if revision != expected_revision:
+                    raise ApplicationAgentConflict("Agent changed in another tab. Reload.")
+                if state == "closed":
+                    raise ApplicationAgentConflict("Closed agents cannot accept new events.")
+                if workspace_status not in SUBMITTED_WORKSPACE_STATUSES:
+                    raise ApplicationAgentConflict(
+                        "First report your submission in Application Studio."
+                    )
+                if milestone not in TERMINAL_MILESTONES and (
+                    ORDER[milestone] <= ORDER.get(previous, 100)
+                ):
+                    raise ApplicationAgentConflict(
+                        "A repeated or earlier recruiter stage needs a new review."
+                    )
+                terminal = milestone in TERMINAL_MILESTONES
+                next_state = "closed" if terminal else state
+                next_due = (
+                    None if terminal or state == "paused"
+                    else next_case_due(milestone, workspace_status, moment, count)
+                )
+                cur.execute(
+                    """UPDATE smartploy_application_agents
+                       SET milestone=%s, state=%s, revision=revision+1,
+                           next_due_at=%s, updated_at=%s, closed_at=%s,
+                           close_reason=%s
+                       WHERE agent_id=%s AND profile_id=%s""",
+                    (
+                        milestone, next_state, next_due, moment,
+                        moment if terminal else None,
+                        milestone if terminal else "",
+                        agent_id, profile_id,
+                    ),
+                )
+                event_type, message = MILESTONE_EVENTS[milestone]
+                cur.execute(
+                    """INSERT INTO smartploy_application_agent_events
+                       (agent_id,sequence,event_type,message,occurred_at)
+                       VALUES (%s,%s,%s,%s,%s)""",
+                    (agent_id, revision + 1, event_type, message, moment),
+                )
+                cur.execute(
+                    self._COLUMNS + " WHERE a.agent_id=%s AND a.profile_id=%s",
+                    (agent_id, profile_id),
+                )
+                latest = cur.fetchone()
+        return self._public(latest) if latest else None
+
+
+    def log_candidate_followup(
+        self, profile_id: str, agent_id: str, *,
+        expected_revision: int, now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        """Record a user-reported send, not an outgoing communication."""
+        moment = _now(now)
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT a.state,a.revision,a.milestone,a.followups_sent,w.status
+                       FROM smartploy_application_agents a
+                       JOIN smartploy_application_workspaces w
+                         ON w.workspace_id=a.workspace_id
+                       WHERE a.agent_id=%s AND a.profile_id=%s
+                         AND NOT EXISTS (
+                             SELECT 1 FROM smartploy_account_erasure_requests er
+                             WHERE er.profile_id=a.profile_id
+                         )
+                       FOR UPDATE OF a, w""",
+                    (agent_id, profile_id),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                state, revision, milestone, count, workspace_status = row
+                if revision != expected_revision:
+                    raise ApplicationAgentConflict("Agent changed in another tab. Reload.")
+                if (
+                    state != "active"
+                    or milestone not in {"none", "recruiter_replied"}
+                    or workspace_status not in SUBMITTED_WORKSPACE_STATUSES
+                    or count >= 2
+                ):
+                    raise ApplicationAgentConflict(
+                        "This case cannot record another routine follow-up."
+                    )
+                next_due = next_case_due(
+                    milestone, workspace_status, moment, count + 1,
+                    last_sent_at=moment,
+                )
+                cur.execute(
+                    """UPDATE smartploy_application_agents
+                       SET followups_sent=followups_sent+1,
+                           last_followup_at=%s, next_due_at=%s,
+                           revision=revision+1, updated_at=%s
+                       WHERE agent_id=%s AND profile_id=%s""",
+                    (moment, next_due, moment, agent_id, profile_id),
+                )
+                cur.execute(
+                    """INSERT INTO smartploy_application_agent_events
+                       (agent_id,sequence,event_type,message,occurred_at)
+                       VALUES (%s,%s,'candidate_reported_followup',%s,%s)""",
+                    (
+                        agent_id, revision + 1,
+                        "You reported sending a follow-up. SmartPloy did not send it.",
+                        moment,
+                    ),
+                )
+                cur.execute(
+                    self._COLUMNS + " WHERE a.agent_id=%s AND a.profile_id=%s",
+                    (agent_id, profile_id),
+                )
+                latest = cur.fetchone()
+        return self._public(latest) if latest else None
+
     def process_due(
         self, *, limit: int = 20, now: datetime | None = None
     ) -> dict[str, int | bool]:
@@ -262,8 +446,11 @@ class PostgresApplicationAgentRepository:
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    """SELECT a.agent_id, a.revision
+                    """SELECT a.agent_id, a.revision, a.milestone,
+                              a.followups_sent, w.status
                        FROM smartploy_application_agents a
+                       JOIN smartploy_application_workspaces w
+                         ON w.workspace_id=a.workspace_id
                        WHERE a.state = 'active' AND a.next_due_at <= %s
                          AND NOT EXISTS (
                              SELECT 1 FROM smartploy_account_erasure_requests er
@@ -274,19 +461,25 @@ class PostgresApplicationAgentRepository:
                     (moment, size),
                 )
                 claimed = cur.fetchall()
-                for agent_id, revision in claimed:
+                for agent_id, revision, milestone, count, workspace_status in claimed:
+                    event_type, message = due_message(
+                        milestone, workspace_status, count,
+                    )
+                    next_due = next_case_due(
+                        milestone, workspace_status, moment, count,
+                    )
                     cur.execute(
                         """UPDATE smartploy_application_agents
                            SET revision = revision + 1,
                                next_due_at = %s, last_woke_at = %s, updated_at = %s
                            WHERE agent_id = %s AND state = 'active'""",
-                        (moment + FOLLOW_UP_DELAY, moment, moment, agent_id),
+                        (next_due, moment, moment, agent_id),
                     )
                     cur.execute(
                         """INSERT INTO smartploy_application_agent_events
                            (agent_id, sequence, event_type, message, occurred_at)
-                           VALUES (%s, %s, 'review_reminder_due', %s, %s)""",
-                        (agent_id, revision + 1, DUE_MESSAGE, moment),
+                           VALUES (%s, %s, %s, %s, %s)""",
+                        (agent_id, revision + 1, event_type, message, moment),
                     )
         return {
             "woken": len(claimed),
