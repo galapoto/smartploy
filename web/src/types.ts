@@ -106,6 +106,8 @@ export interface Dashboard {
 }
 
 
+export type ApplicationAgentMilestone = "recruiter_replied" | "interview" | "offer" | "rejected" | "hired";
+
 /** One durable case identity per selected application workspace. */
 export interface ApplicationAgent {
   agent_id: string;
@@ -120,7 +122,13 @@ export interface ApplicationAgent {
   created_at: string;
   updated_at: string;
   closed_at: string;
-  close_reason: "" | "owner_closed";
+  close_reason: "" | "owner_closed" | "rejected" | "hired";
+  milestone: ApplicationAgentMilestone | "none";
+  milestone_source: "none" | "candidate_self_report";
+  workspace_status: "draft" | "self_reported_applied" | "provider_acknowledged";
+  followups_sent: number;
+  last_followup_at: string;
+  followup_suggestion: string;
   external_actions_authorized: false;
   employer_contacted: false;
   notification_channel: "in_app_only";
@@ -129,7 +137,10 @@ export interface ApplicationAgent {
 export interface ApplicationAgentEvent {
   sequence: number;
   event_type: "case_created" | "review_reminder_due" | "case_paused" |
-    "case_resumed" | "case_closed";
+    "case_resumed" | "case_closed" | "followup_due" |
+    "candidate_reported_followup" | "candidate_reported_reply" |
+    "candidate_reported_interview" | "candidate_reported_offer" |
+    "candidate_reported_rejected" | "candidate_reported_hired";
   message: string;
   occurred_at: string;
   external_actions_performed: 0;
