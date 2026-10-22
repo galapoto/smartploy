@@ -16,6 +16,7 @@ import pytest
 from psycopg import connect
 from psycopg.types.json import Jsonb
 
+from smartploy.application_agents import PostgresApplicationAgentRepository
 from smartploy.account_erasure import (
     ErasureIdentityMismatch, PostgresAccountErasureRepository,
     inspect_quarantined_account,
@@ -401,3 +402,31 @@ def test_refresh_excludes_quarantined_owner_without_starving_other_jobs(scoped):
     assert [v.profile_id for v in remaining] == [b.profile_id]
     assert remaining[0].obum_job_id == "remote-" + kb
     assert len(q.list_operator_obligations(report.request_id)) == 1
+
+
+def test_agent_zero_events_are_included_in_account_erasure_inventory(scoped):
+    """New owner-scoped tables must not be invisible to privacy operations."""
+    a, b, _, _, _, _, _, _, _ = scoped
+    workspace_id = "kit-agent-erasure-" + uuid4().hex
+    with connect(DSN) as conn:
+        conn.execute(
+            """INSERT INTO smartploy_application_workspaces
+               (workspace_id, profile_id, canonical_key, role_title, company,
+                cv_text, cover_letter_text, job_fingerprint)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                workspace_id, a.profile_id, "job-agent-" + uuid4().hex,
+                "Junior QA", "Fictional Company", "Approved synthetic CV",
+                "Synthetic cover letter", "a" * 64,
+            ),
+        )
+    repo = PostgresApplicationAgentRepository(DSN)
+    first, created = repo.create_or_get(a.profile_id, workspace_id)
+    assert created and first is not None
+    PostgresAccountErasureRepository(DSN).quarantine(a.user_id, a.profile_id)
+    inventory = inspect_quarantined_account(DSN, a.user_id, a.profile_id)
+    assert inventory.counts["application_agents"] == 1
+    assert inventory.counts["application_agent_events"] == 1
+    assert inventory.unknown_owner_tables == ()
+    assert repo.get(a.profile_id, first["agent_id"]) is None
+    assert repo.list(b.profile_id) == []
