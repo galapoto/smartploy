@@ -147,7 +147,7 @@ describe("Agent Zero in the existing application studio", () => {
       "workspace-A", "user-a"
     ));
     expect(await screen.findByText(/A private application agent was created/)).toBeTruthy();
-    expect(api.getApplicationAgent).toHaveBeenCalledWith("agent-fixture-a");
+    expect(api.getApplicationAgent).toHaveBeenCalledWith("agent-fixture-a", 0);
     const card = screen.getByLabelText("Your job application agent");
     expect(card.textContent).toContain("No emails, calls or employer applications");
     expect(card.textContent).toContain("model calls and external actions are disabled");
