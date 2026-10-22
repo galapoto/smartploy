@@ -600,11 +600,16 @@ def test_worker_reconciles_real_submission_before_followup_and_never_sends(store
         assert applied and applied.status == "self_reported_applied"
         assert agents.get(owner, aid)["workspace_status"] == "self_reported_applied"
         assert agents.get(owner, aid)["observed_workspace_status"] == "draft"
-        report = agents.process_due(now=now + timedelta(seconds=5))
-        assert report["workspace_updates_reconciled"] == 1
-        assert report["woken"] == 0
-        assert report["external_actions_performed"] == 0
-        assert report["employer_contacts"] == 0
+        # Two independent worker claims must deliver one status event only.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            reports = list(pool.map(
+                lambda _: agents.process_due(now=now + timedelta(seconds=5)),
+                range(2),
+            ))
+        assert sum(r["workspace_updates_reconciled"] for r in reports) == 1
+        assert all(r["woken"] == 0 for r in reports)
+        assert all(r["external_actions_performed"] == 0 for r in reports)
+        assert all(r["employer_contacts"] == 0 for r in reports)
         after = agents.get(owner, aid)
         assert after and after["observed_workspace_status"] == "self_reported_applied"
         assert after["revision"] == 2
@@ -712,4 +717,51 @@ def test_stopped_agents_and_account_erasure_do_not_reconcile_new_app_status(stor
         ] == 0
         assert agents.get(owner, aid)["revision"] == 5
     finally:
+        workspaces.delete(owner, workspace.workspace_id)
+
+
+def test_erasure_quarantine_blocks_pending_status_reconciliation(store):
+    agents, workspaces = store
+    owner = "agent-quarantined-transition-" + uuid4().hex
+    workspace = synthetic_case(owner)
+    workspaces.create_or_get(workspace)
+    request_id = "er-" + uuid4().hex
+    now = datetime.now(timezone.utc)
+    try:
+        created, _ = agents.create_or_get(owner, workspace.workspace_id, now=now)
+        assert created and created["observed_workspace_status"] == "draft"
+        workspaces.report_applied(
+            owner, workspace.workspace_id, expected_revision=1,
+            reference="Synthetic owner-reported submission",
+        )
+        with connect(DSN) as conn:
+            conn.execute(
+                """INSERT INTO smartploy_account_erasure_requests
+                   (request_id, user_id, profile_id) VALUES (%s,%s,%s)""",
+                (request_id, "usr-" + uuid4().hex, owner),
+            )
+        report = agents.process_due(now=now + timedelta(days=10))
+        assert report["workspace_updates_reconciled"] == 0
+        assert report["external_actions_performed"] == 0
+        assert report["employer_contacts"] == 0
+        with connect(DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT observed_workspace_status, revision FROM
+                       smartploy_application_agents WHERE agent_id=%s""",
+                    (created["agent_id"],),
+                )
+                assert cur.fetchone() == ("draft", 1)
+                cur.execute(
+                    """SELECT count(*) FROM smartploy_application_agent_events
+                       WHERE agent_id=%s""",
+                    (created["agent_id"],),
+                )
+                assert cur.fetchone()[0] == 1
+    finally:
+        with connect(DSN) as conn:
+            conn.execute(
+                "DELETE FROM smartploy_account_erasure_requests WHERE request_id=%s",
+                (request_id,),
+            )
         workspaces.delete(owner, workspace.workspace_id)
