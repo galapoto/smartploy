@@ -133,3 +133,18 @@ def test_worker_schema_failure_is_reported_without_breaking_memory_dashboard(mon
     assert "error" not in health.json()["worker"]
     assert "error" not in health.json()["storage"]
     assert "not-a-postgresql-dsn" not in health.text
+
+
+def test_health_revision_is_exact_bounded_docker_build_identity(monkeypatch):
+    """Independent public smoke checks detect a stale running release."""
+    monkeypatch.setenv("SMARTPLOY_APP_VERSION", "c82ad79882e0")
+    api = client()
+    result = api.get("/healthz")
+    assert result.status_code == 200
+    assert result.json()["release_revision"] == "c82ad79882e0"
+    assert result.headers["cache-control"] == "no-store"
+    for invalid in ("dev", "", "not-a-sha", "c82ad79882e0extra", "1" * 40, "secret=123"):
+        monkeypatch.setenv("SMARTPLOY_APP_VERSION", invalid)
+        assert api.get("/healthz").json()["release_revision"] == ""
+    monkeypatch.delenv("SMARTPLOY_APP_VERSION")
+    assert api.get("/healthz").json()["release_revision"] == ""
