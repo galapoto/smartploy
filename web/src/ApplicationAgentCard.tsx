@@ -40,7 +40,9 @@ export default function ApplicationAgentCard(props: {
         if (!active) return;
         const selected = lookup.agent;
         if (selected) {
-          const detailed = await getApplicationAgent(selected.agent_id);
+          const detailed = await getApplicationAgent(
+            selected.agent_id, Math.max(0, selected.revision - 5)
+          );
           await props.verifyAccount();
           if (!active) return;
           setAgent(detailed.agent);
