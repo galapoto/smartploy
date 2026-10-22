@@ -15,7 +15,7 @@ def test_training_directory_returns_honest_read_only_provider_links(monkeypatch)
     assert result.status_code == 200, result.text
     assert result.headers["cache-control"] == "private, no-store"
     response = result.json()
-    assert response["count"] == 9
+    assert response["count"] == 12
     assert response["job_count_included"] == 0
     assert response["opening_status"] == "check_provider"
     assert response["external_actions_authorized"] is False
