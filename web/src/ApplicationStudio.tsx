@@ -743,7 +743,7 @@ export default function ApplicationStudio(props: {
                   : "SmartPloy has not independently verified submission of this draft. Review every CV and cover-letter claim before sending."}</p></div>
         </div>
         <ApplicationAgentCard
-          key={props.expectedUserId + ":" + selected.workspace_id}
+          key={props.expectedUserId + ":" + selected.workspace_id + ":" + selected.revision}
           workspaceId={selected.workspace_id}
           expectedUserId={props.expectedUserId}
           verifyAccount={verifyAccount}
