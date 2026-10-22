@@ -28,6 +28,27 @@ ROLE_EQUIVALENTS = (
     ("it support specialist", "it-tukihenkilö"),
     ("project coordinator", "projektikoordinaattori"),
     ("project planner", "projektisuunnittelija"),
+    ("it planner", "it-suunnittelija"),
+    ("ict planner", "ict-suunnittelija"),
+    ("information management planner", "tietohallinnon suunnittelija"),
+    ("office planner", "toimistosuunnittelija"),
+    ("office planner", "toimistopalvelujen suunnittelija"),
+    ("administrative planner", "hallinnon suunnittelija"),
+    ("development planner", "kehittämissuunnittelija"),
+    ("service planner", "palvelusuunnittelija"),
+    ("communications coordinator", "viestintäkoordinaattori"),
+    ("communications specialist", "viestintäasiantuntija"),
+    ("content coordinator", "sisältökoordinaattori"),
+    ("web content specialist", "verkkosisältöasiantuntija"),
+    ("intranet specialist", "intranet-asiantuntija"),
+    ("information specialist", "tietoasiantuntija"),
+    ("information management specialist", "tiedonhallinnan asiantuntija"),
+    ("project specialist", "projektiasiantuntija"),
+    ("office coordinator", "toimistokoordinaattori"),
+    ("administrative coordinator", "hallintokoordinaattori"),
+    ("service coordinator", "palvelukoordinaattori"),
+    ("documentation coordinator", "dokumenttikoordinaattori"),
+    ("digital services coordinator", "digipalvelukoordinaattori"),
 )
 LANGUAGE_LABELS = {
     "english": frozenset({"english", "englanti", "englanninkielinen", "englanniksi", "en"}),
@@ -183,7 +204,27 @@ def _role_alignment(title: str, roles: tuple[str, ...]) -> tuple[float, str]:
             and re.search(r"(?<!\w)[a-zåäö]*suunnittelij[a-zåäö]*(?!\w)", title.casefold())
             is not None
         )
-        if _mentions_phrase(title, term) or _translated_role_match(title, term) or planning_compound:
+        # A Finnish Planner supporting intranet, documentation, digital
+        # content, communications and office processes may be recruited as
+        # a coordinator/specialist, with no "suunnittelija" in the title.
+        # Match this small title-only family, never incidental job prose.
+        planner_adjacent = (
+            term.strip().casefold() == "suunnittelija"
+            and re.search(
+                r"(?<!\w)(?:toimistokoordinaattor\w*|hallintokoordinaattor\w*|"
+                r"kehittämis(?:asiantuntij|koordinaattor)\w*|"
+                r"viestintä(?:koordinaattor|asiantuntij)\w*|"
+                r"verkkosisältö\w*|verkkoviestintä\w*|sisältökoordinaattor\w*|"
+                r"intranet[- ]?(?:koordinaattor|asiantuntij)\w*|"
+                r"tiedonhallin\w*|tietoasiantuntij\w*|"
+                r"palvelukoordinaattor\w*|dokumenttikoordinaattor\w*|"
+                r"office[- ]?(?:coordinator|planner|administrator)|"
+                r"(?:web[- ]?content|content|communications|documentation|digital[- ]?services)"
+                r"[- ]?(?:coordinator|specialist)|technical[- ]?writer)(?!\w)",
+                title.casefold(),
+            ) is not None
+        )
+        if _mentions_phrase(title, term) or _translated_role_match(title, term) or planning_compound or planner_adjacent:
             overlap = 1.0
         if overlap > strongest[0]:
             strongest = overlap, term

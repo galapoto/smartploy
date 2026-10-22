@@ -43,6 +43,17 @@ def posting(title: str, description: str = "The employer uses Python for schedul
     ("Hankesuunnittelija", "planning"),
     ("Projektisuunnittelija", "planning"),
     ("Project Planner", "planning"),
+    ("Toimistopalvelujen suunnittelija", "planning"),
+    ("Toimistokoordinaattori", "planning"),
+    ("Hallintokoordinaattori", "planning"),
+    ("Kehittämisasiantuntija", "planning"),
+    ("Viestintäkoordinaattori", "planning"),
+    ("Verkkosisältöasiantuntija", "planning"),
+    ("Intranet-asiantuntija", "planning"),
+    ("Tiedonhallinnan asiantuntija", "planning"),
+    ("Office Coordinator", "planning"),
+    ("Technical Writer", "planning"),
+    ("Digital Content Specialist", "planning"),
     ("Urban Planner", "planning"),
     ("Environmental Engineer", "planning"),
     ("Delivery Driver", "other"),
@@ -118,3 +129,62 @@ def test_explicit_unrelated_target_does_not_get_blocked_by_it_focus():
     }, revision=0)
     res = search_jobs([posting("Driver", "Uses Python")], pref)
     assert len(res["recommendations"]) == 1
+
+
+@pytest.mark.parametrize(("requested", "published"), [
+    ("Office Planner", "Toimistopalvelujen suunnittelija"),
+    ("Office Coordinator", "Toimistokoordinaattori"),
+    ("Administrative Coordinator", "Hallintokoordinaattori"),
+    ("Communications Coordinator", "Viestintäkoordinaattori"),
+    ("Content Coordinator", "Sisältökoordinaattori"),
+    ("Information Management Specialist", "Tiedonhallinnan asiantuntija"),
+    ("Development Planner", "Kehittämissuunnittelija"),
+    ("Intranet Specialist", "Intranet-asiantuntija"),
+    ("Information Specialist", "Tietoasiantuntija"),
+])
+def test_finnish_vake_planner_equivalents_match_without_inventing_experience(
+    requested, published,
+):
+    pref = revise_preferences("vake-synthetic", {
+        "mode": "personalized", "roles": [requested],
+        "seniority": "any",
+    }, revision=0)
+    results = search_jobs([posting(published)], pref)
+    assert [x["job"]["role_title"] for x in results["recommendations"]] == [published]
+    assert any("English/Finnish equivalent" in x
+               for x in results["recommendations"][0]["reasons"])
+
+
+@pytest.mark.parametrize("published", [
+    "Viestintäkoordinaattori",
+    "Intranet-asiantuntija",
+    "Toimistokoordinaattori",
+    "Web Content Coordinator",
+    "Digital Content Specialist",
+    "Tiedonhallinta-asiantuntija",
+    "Technical Writer",
+])
+def test_general_suunnittelija_target_finds_vake_adjacent_title(published):
+    pref = revise_preferences("vake-synthetic", {
+        "mode": "personalized", "roles": ["Suunnittelija"],
+        "seniority": "any",
+    }, revision=0)
+    cards = search_jobs([posting(published)], pref)
+    assert [x["job"]["role_title"] for x in cards["recommendations"]] == [published]
+
+
+def test_vake_planner_expansion_does_not_promote_driving_or_warehouse_role():
+    pref = revise_preferences("vake-synthetic", {
+        "mode": "personalized", "roles": ["Suunnittelija"],
+        "keywords": ["intranet", "Python"], "seniority": "any",
+    }, revision=0)
+    results = search_jobs([
+        posting("Delivery Driver", "Maintain intranet documentation and Python"),
+        posting("Warehouse Assistant", "Use intranet and Python tools"),
+        posting("Viestintäkoordinaattori", "Maintain intranet"),
+    ], pref)
+    assert [x["job"]["role_title"] for x in results["recommendations"]] == [
+        "Viestintäkoordinaattori",
+    ]
+    assert len(results["broader"]) == 2
+

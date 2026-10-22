@@ -18,6 +18,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "config" / "finland_public_ats_pilot.json"
 IT_PORTFOLIO = ROOT / "config" / "finland_it_public_ats_portfolio.json"
+NATIONWIDE_PORTFOLIO = ROOT / "config" / "finland_nationwide_ats_portfolio.json"
 ENV = ROOT / "deploy" / "personal" / "env"
 KEY = "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON"
 FILE_KEY = "SMARTPLOY_PUBLIC_ATS_SOURCES_FILE"
@@ -198,6 +199,132 @@ def plan_it_portfolio_upgrade(
     lines[index] = KEY + "=" + new_json + ending
     return "".join(lines), True
 
+
+def reviewed_nationwide_portfolio(
+    registry: Path = NATIONWIDE_PORTFOLIO,
+) -> list[dict]:
+    """Validate the curated 22-board wider-discovery roster before private staging.
+
+    Source metadata is an ingestion hypothesis, not proof of current vacancies
+    or a licence to submit applications. Keep the configured subset immutable
+    and validate it through existing vetted Lever/Greenhouse/SmartRecruiters
+    adapters. Every source remains Finland-scoped and local-only.
+    """
+    # This host-side staging tool must run on a stock Ubuntu Python 3
+    # WITHOUT importing httpx or the application dependency tree. Strictly
+    # validate the immutable registry here, while worker/CI also validates
+    # each source with the original typed PublicATSSourceConfig.from_dict.
+    expected = {
+        ("lever", "global", "uprightproject"),
+        ("lever", "global", "brightlyworks"),
+        ("lever", "global", "netlight"),
+        ("lever", "global", "rovio-2"),
+        ("lever", "global", "alifsemi"),
+        ("lever", "global", "dnb"),
+        ("lever", "global", "jobgether"),
+        ("lever", "global", "weloglobal"),
+        ("lever", "eu", "quadcode"),
+        ("greenhouse", "", "oura"),
+        ("greenhouse", "", "wolt"),
+        ("greenhouse", "", "smartlyio"),
+        ("greenhouse", "", "alphasense"),
+        ("greenhouse", "", "energyhub"),
+        ("greenhouse", "", "yousician"),
+        ("greenhouse", "", "pronto"),
+        ("smartrecruiters", "", "AFRY"),
+        ("smartrecruiters", "", "DeloitteNordic"),
+        ("smartrecruiters", "", "Ramboll3"),
+        ("smartrecruiters", "", "YIT1"),
+        ("smartrecruiters", "", "Tieto2"),
+        ("smartrecruiters", "", "TurnerTownsend"),
+    }
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    if not isinstance(payload, list) or len(payload) != len(expected):
+        raise PilotConfigurationError("Expected the 22-source nationwide portfolio")
+    observed = set()
+    allowed_fields = {
+        "provider", "tenant", "label", "stack", "employer_sector",
+        "external_ai_forwarding_allowed", "location_terms",
+    }
+    for raw in payload:
+        if not isinstance(raw, dict):
+            raise PilotConfigurationError("Portfolio source must be an object")
+        if set(raw) - allowed_fields:
+            raise PilotConfigurationError("Unsupported nationwide ATS source fields")
+        provider, tenant = raw.get("provider"), raw.get("tenant")
+        stack = raw.get("stack", "")
+        label = raw.get("label")
+        if (
+            not isinstance(provider, str)
+            or not isinstance(tenant, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,99}", tenant)
+            or not isinstance(label, str)
+            or not label.strip()
+            or len(label) > 200
+            or not isinstance(stack, str)
+            or (provider == "lever" and stack not in {"global", "eu"})
+            or (provider != "lever" and stack != "")
+        ):
+            raise PilotConfigurationError("Invalid nationwide ATS source configuration")
+        identity = (provider, stack, tenant)
+        if identity in observed:
+            raise PilotConfigurationError("Duplicate nationwide ATS board")
+        observed.add(identity)
+        locations = raw.get("location_terms")
+        if (
+            raw.get("external_ai_forwarding_allowed") is not False
+            or raw.get("employer_sector") != "private"
+            or not isinstance(locations, list)
+            or not 1 <= len(locations) <= 20
+            or not all(isinstance(term, str)
+                       and 2 <= len(term.strip()) <= 80
+                       and not any(ord(ch) < 32 for ch in term)
+                       for term in locations)
+            or "finland" not in {term.strip().casefold() for term in locations}
+        ):
+            raise PilotConfigurationError("Nationwide ATS sources must be Finland-scoped and private")
+    if observed != expected:
+        raise PilotConfigurationError("Unreviewed employer in nationwide ATS portfolio")
+    return payload
+
+
+def plan_nationwide_portfolio_upgrade(
+    env_contents: str, legacy: list[dict], seven: list[dict],
+    nationwide: list[dict], *, rollback_to: str = "",
+) -> tuple[str, bool]:
+    """Only replace an exact known 5/7/22-source roster; preserve all other env."""
+    lines = env_contents.splitlines(keepends=True)
+    indices = [i for i, row in enumerate(lines) if row.startswith(KEY + "=")]
+    file_values = [row[len(FILE_KEY) + 1:].strip()
+                   for row in lines if row.startswith(FILE_KEY + "=")]
+    if len(indices) != 1 or len(file_values) > 1 or any(file_values):
+        raise PilotConfigurationError("Expected exactly one inline ATS registry and no registry file")
+    index = indices[0]
+    try:
+        current = json.loads(lines[index][len(KEY) + 1:].strip())
+    except (ValueError, TypeError) as exc:
+        raise PilotConfigurationError("Existing nationwide ATS settings are invalid JSON") from exc
+
+    if rollback_to:
+        if rollback_to not in {"five", "seven"}:
+            raise PilotConfigurationError("Invalid portfolio rollback target")
+        target = legacy if rollback_to == "five" else seven
+        if current != nationwide and current != target:
+            raise PilotConfigurationError("Refusing to roll back operator-modified ATS portfolio")
+    else:
+        target = nationwide
+        if current not in (legacy, seven, nationwide):
+            raise PilotConfigurationError("Refusing to overwrite operator-modified ATS portfolio")
+
+    if current == target:
+        return env_contents, False
+    ending = "\r\n" if lines[index].endswith("\r\n") else "\n"
+    lines[index] = KEY + "=" + json.dumps(
+        target, ensure_ascii=False, separators=(",", ":")
+    ) + ending
+    return "".join(lines), True
+
+
 def _validate_private_env(path: Path) -> os.stat_result:
     try:
         details = path.lstat()
@@ -219,7 +346,20 @@ def stage_pilot(
     rollback_tsmg_transport: bool = False,
     upgrade_it_portfolio: bool = False,
     rollback_it_portfolio: bool = False,
+    upgrade_nationwide_portfolio: bool = False,
+    rollback_nationwide_to_five: bool = False,
+    rollback_nationwide_to_seven: bool = False,
 ) -> dict:
+    nationwide_actions = sum((
+        upgrade_nationwide_portfolio,
+        rollback_nationwide_to_five,
+        rollback_nationwide_to_seven,
+    ))
+    if nationwide_actions > 1 or (nationwide_actions and any((
+        upgrade_tsmg_transport, rollback_tsmg_transport,
+        upgrade_it_portfolio, rollback_it_portfolio,
+    ))):
+        raise PilotConfigurationError("Choose exactly one source portfolio operation")
     if upgrade_tsmg_transport and rollback_tsmg_transport:
         raise PilotConfigurationError("Choose upgrade or rollback, not both")
     if (upgrade_it_portfolio or rollback_it_portfolio) and (
@@ -228,14 +368,25 @@ def stage_pilot(
         raise PilotConfigurationError("Choose only one ATS portfolio operation")
     sources = reviewed_sources(registry)
     former_sources = sources
-    if upgrade_it_portfolio or rollback_it_portfolio:
+    if nationwide_actions:
+        sources = reviewed_nationwide_portfolio()
+    elif upgrade_it_portfolio or rollback_it_portfolio:
         sources = reviewed_it_portfolio()
     elif registry != REGISTRY and (upgrade_tsmg_transport or rollback_tsmg_transport):
         raise PilotConfigurationError("Transport upgrade requires original reviewed pilot")
     env_stat = _validate_private_env(env)
     original = env.read_text(encoding="utf-8")
     pilot_json = json.dumps(sources, ensure_ascii=False, separators=(",", ":"))
-    if upgrade_it_portfolio or rollback_it_portfolio:
+    if nationwide_actions:
+        seven = reviewed_it_portfolio()
+        rollback_to = (
+            "five" if rollback_nationwide_to_five
+            else "seven" if rollback_nationwide_to_seven else ""
+        )
+        replacement, changed = plan_nationwide_portfolio_upgrade(
+            original, former_sources, seven, sources, rollback_to=rollback_to,
+        )
+    elif upgrade_it_portfolio or rollback_it_portfolio:
         replacement, changed = plan_it_portfolio_upgrade(
             original, former_sources, sources, rollback=rollback_it_portfolio,
         )
@@ -267,13 +418,18 @@ def stage_pilot(
 
     # Rollback receipts report the actual restored five employers rather
     # than the seven-source target still loaded for source validation.
-    selected = former_sources if rollback_it_portfolio else sources
+    selected = (
+        former_sources if rollback_it_portfolio or rollback_nationwide_to_five
+        else seven if rollback_nationwide_to_seven
+        else sources
+    )
     return {
         "source_count": len(selected),
         "tenant_ids": [item["tenant"] for item in selected],
         "region_policy": "explicit Finland/Finnish locations only",
         "transport_scope": (
-            "finland_it_public_ats_portfolio_v2" if (upgrade_it_portfolio or rollback_it_portfolio)
+            "finland_nationwide_ats_portfolio_v3" if nationwide_actions
+            else "finland_it_public_ats_portfolio_v2" if (upgrade_it_portfolio or rollback_it_portfolio)
             else "TSMG only" if (upgrade_tsmg_transport or rollback_tsmg_transport)
             else "initial approved pilot"
         ),
@@ -307,6 +463,18 @@ def main() -> int:
         "--rollback-it-portfolio", action="store_true",
         help="restore old five-source pilot only if current selection equals reviewed IT portfolio",
     )
+    policy_action.add_argument(
+        "--upgrade-nationwide-portfolio", action="store_true",
+        help="replace exactly 5 or 7 known ATS boards with 22 Finland/remote IT and planner boards",
+    )
+    policy_action.add_argument(
+        "--rollback-nationwide-to-five", action="store_true",
+        help="restore exact original five-source roster from reviewed 22-source roster",
+    )
+    policy_action.add_argument(
+        "--rollback-nationwide-to-seven", action="store_true",
+        help="restore exact IT-first seven-source roster from reviewed 22-source roster",
+    )
     args = parser.parse_args()
     try:
         result = stage_pilot(
@@ -315,6 +483,9 @@ def main() -> int:
             rollback_tsmg_transport=args.rollback_tsmg_transport,
             upgrade_it_portfolio=args.upgrade_it_portfolio,
             rollback_it_portfolio=args.rollback_it_portfolio,
+            upgrade_nationwide_portfolio=args.upgrade_nationwide_portfolio,
+            rollback_nationwide_to_five=args.rollback_nationwide_to_five,
+            rollback_nationwide_to_seven=args.rollback_nationwide_to_seven,
         )
     except (PilotConfigurationError, OSError, ValueError) as exc:
         raise SystemExit("ATS pilot: " + str(exc)) from exc

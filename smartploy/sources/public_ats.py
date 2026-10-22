@@ -501,17 +501,31 @@ class SmartRecruitersAdapter(PublicATSAdapter):
                 break
             offset += len(page)
 
+        # Global SmartRecruiters boards can hold thousands of openings. The
+        # public LIST already provides structured country/city metadata; do
+        # not make one detailed HTTP request per obviously foreign posting.
+        # For ambiguous/missing country, fetch full details instead of
+        # guessing and silently dropping potentially Finnish vacancies.
+        # Keep complete-list exhaustion + all-or-nothing retirement rules.
+        self.last_total_postings = len(summaries)
         observations: list[SourceObservation] = []
         for summary in summaries:
             posting_id = _string(summary.get("id"))
             if not posting_id:
                 raise PublicATSError("SmartRecruiters list item is missing id")
+            listed = summary.get("location") if isinstance(summary.get("location"), dict) else {}
+            listed_country = _string(listed.get("country"))
+            if self.config.location_terms and listed_country and not self._location_matches(
+                listed_country, listed.get("city"), listed.get("region"),
+                listed.get("fullLocation"),
+            ):
+                self.last_location_filtered_count += 1
+                continue
             detail_url = self.base + "/" + quote(posting_id, safe="")
             detail = self._get_json(detail_url, expected_host=SMARTRECRUITERS_HOST)
             if not isinstance(detail, dict):
                 raise PublicATSError("SmartRecruiters detail response is not an object")
             observation = self._observation(detail, timestamp)
-            self.last_total_postings += 1
             location = detail.get("location") if isinstance(detail.get("location"), dict) else {}
             if self._location_matches(
                 observation.payload.get("location", ""),
