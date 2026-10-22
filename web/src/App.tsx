@@ -19,6 +19,7 @@ import {
   sectorLabel, type DisplayMode, type SectorFilter
 } from "./lib";
 import ApplicationStudio from "./ApplicationStudio";
+import ApplicationJourney from "./ApplicationJourney";
 import SearchSetup from "./SearchSetup";
 import SearchResultsPanel from "./SearchResultsPanel";
 import TrainingProgramsPanel from "./TrainingProgramsPanel";
@@ -28,22 +29,24 @@ import type {
   ApplicationRecord, CandidateFact, CVDocument, Dashboard, HealthResponse,
   ManualJobPayload, PrivateSavedJob, RankingCard, SavedJob, SessionInfo,
   SearchPreferences, SearchPreferencesUpdate, SearchResults, LocalAIStatus,
-  JobAIProcessingConsent, JobAIProcessingConsentEvent
+  JobAIProcessingConsent, JobAIProcessingConsentEvent,
+  ApplicationFlowMode
 } from "./types";
 
-type Page = "dashboard" | "jobs" | "training" | "applications" | "profile" | "tools" | "insights" | "sources" | "settings";
+type Page = "dashboard" | "apply" | "jobs" | "training" | "applications" | "profile" | "tools" | "insights" | "sources" | "settings";
 type MatchView = "top" | "possible";
 
 const NAV: Array<{ id: Page; label: string; icon: LucideIcon }> = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "dashboard", label: "Start here", icon: LayoutDashboard },
+  { id: "apply", label: "Apply for jobs", icon: FileCheck2 },
   { id: "jobs", label: "Find jobs", icon: Search },
-  { id: "training", label: "Training & traineeships", icon: BriefcaseBusiness },
   { id: "applications", label: "My applications", icon: FileText },
-  { id: "profile", label: "CV & profile", icon: FileCheck2 },
-  { id: "tools", label: "AI tools", icon: Sparkles },
+  { id: "profile", label: "My CV & documents", icon: FileCheck2 },
+  { id: "training", label: "Training & traineeships", icon: BriefcaseBusiness },
+  { id: "tools", label: "CV & AI tools", icon: Sparkles },
   { id: "insights", label: "Career insights", icon: ChartNoAxesColumn },
   { id: "sources", label: "Job sources", icon: Database },
-  { id: "settings", label: "Settings", icon: Settings2 }
+  { id: "settings", label: "Advanced settings", icon: Settings2 }
 ];
 
 const FACT_TYPES: Array<{ value: string; label: string }> = [
@@ -110,6 +113,10 @@ class PrivateActionIdentityChanged extends Error {}
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
+  const [flowMode, setFlowMode] = useState<ApplicationFlowMode>("manual");
+  const [flowSelectedJob, setFlowSelectedJob] = useState("");
+  const [flowQueueBusy, setFlowQueueBusy] = useState(false);
+  const [startSearchBusy, setStartSearchBusy] = useState(false);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -151,6 +158,7 @@ export default function App() {
     company: "", role_title: "", location: "", description: "", application_url: ""
   });
   const uploadRef = useRef<HTMLInputElement>(null);
+  const flowQueueInFlight = useRef(false);
 
   // Old in-flight requests must not repopulate another account's workspace.
   const loadGeneration = useRef(0);
@@ -170,6 +178,8 @@ export default function App() {
     // A different account must not inherit an unsaved draft, editor, form,
     // selected job or cached navigation state belonging to its predecessor.
     setPage("dashboard"); setSearch(""); setExpandedJob("");
+    setFlowMode("manual"); setFlowSelectedJob(""); setFlowQueueBusy(false);
+    setStartSearchBusy(false); flowQueueInFlight.current = false;
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
     setBusyCV(false); setBusyFact(""); setPreparing(""); setManualBusy(false);
@@ -338,6 +348,33 @@ export default function App() {
   }, [load]);
 
   const navigate = (target: Page) => { setPage(target); setMobileNav(false); setNotice(""); };
+
+  function startApplyFlow(chosen: ApplicationFlowMode, jobKey = "") {
+    setFlowMode(chosen);
+    setFlowSelectedJob(jobKey);
+    navigate("apply");
+  }
+
+  async function startGeneralBrowse() {
+    if (!preferences) return;
+    if (preferences.completed && preferences.mode === "general") {
+      navigate("jobs"); return;
+    }
+    if (startSearchBusy) return;
+    setStartSearchBusy(true);
+    try {
+      await saveSearchPreferences({
+        mode: "general", roles: preferences.roles, locations: preferences.locations,
+        languages: preferences.languages, work_modes: preferences.work_modes,
+        keywords: preferences.keywords, skills: preferences.skills,
+        seniority: preferences.seniority, auto_draft_enabled: false,
+        expected_revision: preferences.revision,
+      });
+      navigate("jobs");
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Could not open job search.");
+    } finally { setStartSearchBusy(false); }
+  }
   async function saveSearchPreferences(next: SearchPreferencesUpdate) {
     if (savingSearchPreferences.current) {
       throw new Error("A search preference save is already in progress.");
@@ -516,15 +553,12 @@ export default function App() {
     setBusyCV(true); setNotice("");
     try {
       const uploaded = await runPrivateMutation((userId) => uploadCV(file, userId));
-      setCV(uploaded); setCVPreview(true); navigate("profile");
-      setNotice("Your CV was uploaded privately. Review its text and confirm facts before matching.");
+      setCV(uploaded); setCVPreview(false); navigate("apply");
+      setNotice("CV uploaded. Matching your CV against current jobs now. Select a job below to continue.");
       await load(true);
       // An uploaded CV is not automatically approved as career evidence.
-      // Trigger the already-consented private scan only if the user had
-      // independently approved profile facts beforehand.
-      if (facts.some((fact) => fact.approved)) {
-        await onPrepareMyAutoDrafts();
-      }
+      // CV upload never starts background employer work. It is now a clear
+      // discovery step; approved facts and AutoDraft opt-in stay independent.
     } catch (exc) {
       if (exc instanceof PrivateActionIdentityChanged) return;
       navigate("profile");
@@ -743,8 +777,13 @@ export default function App() {
   const counts = dashboard.applications;
   const onTool = (name: string) => {
     if (name === "CV Tailor" || name === "Cover Letter") {
-      if (!cv.present && !facts.some((item) => item.approved)) { navigate("profile"); setNotice("Upload your CV or approve your career evidence to begin."); }
-      else { navigate("jobs"); setNotice("Choose a job to prepare documents. You can request local AI writing assistance inside a saved draft."); }
+      if (selectedWorkspaceId) {
+        navigate("applications");
+        setNotice("Open your selected application to edit and download its CV and cover letter.");
+      } else {
+        startApplyFlow("assisted");
+        setNotice("Select a job below to open its CV and cover-letter editor.");
+      }
     } else if (name === "Application prep") navigate("applications");
     else if (name === "Career insights") navigate("insights");
     else { navigate("tools"); setNotice("Interactive interview practice is planned, but not active yet."); }
