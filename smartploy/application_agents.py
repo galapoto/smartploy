@@ -452,7 +452,8 @@ class PostgresApplicationAgentRepository:
                 cur.execute(
                     """SELECT a.agent_id, a.revision, a.milestone,
                               a.followups_sent, a.last_followup_at, a.next_due_at,
-                              w.status, w.self_reported_applied_at, w.updated_at
+                              a.observed_workspace_status, w.status,
+                              w.self_reported_applied_at, w.updated_at
                        FROM smartploy_application_agents a
                        JOIN smartploy_application_workspaces w
                          ON w.workspace_id = a.workspace_id
@@ -470,7 +471,8 @@ class PostgresApplicationAgentRepository:
                 changed = cur.fetchall()
                 for (
                     agent_id, revision, milestone, followup_count, last_sent_at,
-                    previous_due, workspace_status, self_applied_at, workspace_updated,
+                    previous_due, previously_observed, workspace_status,
+                    self_applied_at, workspace_updated,
                 ) in changed:
                     if workspace_status == "self_reported_applied":
                         event_type = "application_self_reported"
@@ -499,6 +501,14 @@ class PostgresApplicationAgentRepository:
                             milestone, workspace_status, moment, followup_count,
                             last_sent_at=last_sent_at,
                         )
+                    elif (
+                        previously_observed == "self_reported_applied"
+                        and workspace_status == "provider_acknowledged"
+                    ):
+                        # A stronger independent provider acknowledgement
+                        # does not restart an already-running application
+                        # follow-up clock or send another notification.
+                        next_due = previous_due
                     elif milestone == "none" and followup_count == 0:
                         # Reuse career-ops applied-first cadence, but anchor it
                         # to the REAL application date, not the older draft
