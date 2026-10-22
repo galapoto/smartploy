@@ -137,5 +137,54 @@
       "Administration"
     ],
     "eligibility_note": "Training search API is separate from the job API and requires approval; this is a portal link only."
+  },
+  {
+    "id": "saranen-ai-academy-uusimaa-autumn-2026",
+    "provider": "Saranen",
+    "title": "AI Academy F.E.C Uusimaa — autumn 2026 (apply by 23 Oct 2026)",
+    "kind": "recruitment_training",
+    "region": "Uusimaa",
+    "url": "https://www.saranen.fi/tyonhakijalle/toihin-koulutuksesta/ai-academy-uusimaa-syksy2026",
+    "focus": [
+      "AI",
+      "Data",
+      "Automation",
+      "Business Analysis",
+      "IT"
+    ],
+    "eligibility_note": "Source checked 22 Oct 2026: applications close 23 Oct 2026. Unemployed or fixed-term employment ending soon; register with employment services. Two separate applications (employment office + Saranen) required. Check whether intake is still open."
+  },
+  {
+    "id": "saranen-digital-growth-ai-uusimaa-2026",
+    "provider": "Saranen",
+    "title": "Digital Growth & AI Academy Uusimaa — apply by 26 Oct 2026",
+    "kind": "recruitment_training",
+    "region": "Uusimaa",
+    "url": "https://www.saranen.fi/tyonhakijalle/toihin-koulutuksesta/digital-growth-ai-academy-uusimaa",
+    "focus": [
+      "AI",
+      "Digital Marketing",
+      "Automation",
+      "CRM",
+      "Business Development"
+    ],
+    "eligibility_note": "Source checked 22 Oct 2026: deadline 26 Oct 2026; requires unemployment or risk of unemployment. Two-stage application; verify actual intake status and Finnish-language requirements (B1.1) at source."
+  },
+  {
+    "id": "saranen-software-analytics-ai-turku-2026",
+    "provider": "Saranen",
+    "title": "Software, Analytics & AI Academy Varsinais-Suomi — application to Jan 2027",
+    "kind": "recruitment_training",
+    "region": "Varsinais-Suomi",
+    "url": "https://www.saranen.fi/tyonhakijalle/toihin-koulutuksesta/software-analytics-academy-varsinais-suomi",
+    "focus": [
+      "Software",
+      "Data",
+      "Power BI",
+      "Analytics",
+      "IT",
+      "Project"
+    ],
+    "eligibility_note": "Source checked 22 Oct 2026: deadline 18 Jan 2027, candidate employer roles on programme page; unemployed or at-risk jobseeker. Applicants outside Turku employment area must agree participation with their municipality's employment authority."
   }
 ]
