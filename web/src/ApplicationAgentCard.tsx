@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BellRing, CheckCircle2, Clock3, PauseCircle, PlayCircle, RefreshCw, ShieldCheck, StopCircle } from "lucide-react";
 import {
   changeApplicationAgent, createApplicationAgent,
-  getApplicationAgent, getApplicationAgents,
+  getApplicationAgent, getApplicationAgentForWorkspace,
   recordApplicationAgentMilestone, recordApplicationAgentFollowup
 } from "./api";
 import type { ApplicationAgent, ApplicationAgentEvent, ApplicationAgentMilestone } from "./types";
@@ -35,10 +35,10 @@ export default function ApplicationAgentCard(props: {
     void (async () => {
       try {
         await props.verifyAccount();
-        const list = await getApplicationAgents();
+        const lookup = await getApplicationAgentForWorkspace(props.workspaceId);
         await props.verifyAccount();
         if (!active) return;
-        const selected = list.agents.find((item) => item.workspace_id === props.workspaceId) || null;
+        const selected = lookup.agent;
         if (selected) {
           const detailed = await getApplicationAgent(selected.agent_id);
           await props.verifyAccount();
