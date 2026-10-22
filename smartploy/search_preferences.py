@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import re
 from typing import Any, Mapping, Sequence
 
-from .career_scope import career_area, title_experience
+from .career_scope import career_area, title_experience, opportunity_kind
 from .domain import JobCandidate, utc_now_iso
 
 SEARCH_MODES = frozenset({"personalized", "general"})
@@ -296,6 +296,11 @@ def _job_card(candidate: JobCandidate) -> dict[str, Any]:
         # not qualification/experience or employer-permission claims.
         "career_area": career_area(job.role_title),
         "title_experience": title_experience(job.role_title),
+        "opportunity_kind": opportunity_kind(
+            job.role_title,
+            str(job.raw.get("source_details", {}).get("employment_type") or "")
+            if isinstance(job.raw.get("source_details"), dict) else "",
+        ),
         "location": job.location, "work_mode": job.work_mode,
         "language": job.language, "deadline": job.deadline,
         "application_url": job.application_url,
