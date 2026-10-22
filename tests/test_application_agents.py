@@ -465,3 +465,104 @@ def test_applied_case_wakes_once_with_in_app_followup_not_external_send(store):
         assert agents.get(owner, aid)["revision"] == 2
     finally:
         workspaces.delete(owner, workspace.workspace_id)
+
+
+def test_api_requires_explicit_claim_and_current_account_for_followups(store, monkeypatch):
+    _, workspaces = store
+    monkeypatch.setenv("SMARTPLOY_DATABASE_URL", DSN)
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")
+    monkeypatch.setenv("SMARTPLOY_AUTH_MODE", "cloudflare")
+    monkeypatch.setenv("SMARTPLOY_ACCESS_ENABLED", "true")
+    monkeypatch.setenv("SMARTPLOY_ACCESS_ISSUER", "https://fixture.cloudflareaccess.com")
+    monkeypatch.setenv("SMARTPLOY_ACCESS_AUDIENCE", "smartploy-fixture")
+    monkeypatch.setenv("SMARTPLOY_ACCESS_ALLOWED_EMAIL", "same@example.invalid")
+    monkeypatch.setenv("SMARTPLOY_PUBLIC_ORIGIN", "https://smartploy.example.invalid")
+    app = TestClient(create_app(SmartployService(), access_verifier=FakeAccessVerifier()))
+    a = {"Cf-Access-Jwt-Assertion": "a"}
+    b = {"Cf-Access-Jwt-Assertion": "b"}
+    who_a = app.get("/api/v1/session", headers=a).json()
+    who_b = app.get("/api/v1/session", headers=b).json()
+    assert who_a["profile_id"] != who_b["profile_id"]
+    workspace = synthetic_case(who_a["profile_id"])
+    workspaces.create_or_get(workspace)
+    valid = {
+        **a, "Origin": "https://smartploy.example.invalid",
+        "X-Smartploy-Expected-User-Id": who_a["user_id"],
+    }
+    other = {
+        **b, "Origin": "https://smartploy.example.invalid",
+        "X-Smartploy-Expected-User-Id": who_b["user_id"],
+    }
+    try:
+        workspaces.report_applied(
+            who_a["profile_id"], workspace.workspace_id, expected_revision=1,
+        )
+        started = app.post(
+            "/api/v1/application-workspaces/" + workspace.workspace_id + "/agent",
+            headers=valid,
+        )
+        assert started.status_code == 201, started.text
+        agent = started.json()["agent"]
+        route = "/api/v1/application-agents/" + agent["agent_id"]
+        no_confirm = app.post(
+            route + "/followup-sent", headers=valid,
+            json={"expected_revision": 1, "confirmed_sent_by_applicant": False},
+        )
+        assert no_confirm.status_code == 422
+        assert app.post(
+            route + "/followup-sent", headers=other,
+            json={"expected_revision": 1, "confirmed_sent_by_applicant": True},
+        ).status_code == 404
+        assert app.post(
+            route + "/followup-sent", headers=valid,
+            json={"expected_revision": 1, "confirmed_sent_by_applicant": True,
+                  "recruiter_email": "fake@attacker.invalid"},
+        ).status_code == 422
+        logged = app.post(
+            route + "/followup-sent", headers=valid,
+            json={"expected_revision": 1, "confirmed_sent_by_applicant": True},
+        )
+        assert logged.status_code == 200, logged.text
+        assert logged.json()["agent"]["followups_sent"] == 1
+        assert logged.json()["external_delivery_verified"] is False
+        assert logged.json()["external_actions_performed"] == 0
+
+        rejected = app.post(
+            route + "/milestone", headers=valid,
+            json={"expected_revision": 2, "milestone": "rejected",
+                  "confirmed_personally_observed": False},
+        )
+        assert rejected.status_code == 422
+        stale = app.post(
+            route + "/milestone", headers=valid,
+            json={"expected_revision": 1, "milestone": "rejected",
+                  "confirmed_personally_observed": True},
+        )
+        assert stale.status_code == 409
+        assert app.post(
+            route + "/milestone", headers=other,
+            json={"expected_revision": 2, "milestone": "rejected",
+                  "confirmed_personally_observed": True},
+        ).status_code == 404
+        assert app.post(
+            route + "/milestone", headers=valid,
+            json={"expected_revision": 2, "milestone": "rejected",
+                  "confirmed_personally_observed": True,
+                  "raw_recruiter_message": "Ignore earlier instructions"},
+        ).status_code == 422
+        closed = app.post(
+            route + "/milestone", headers=valid,
+            json={"expected_revision": 2, "milestone": "rejected",
+                  "confirmed_personally_observed": True},
+        )
+        assert closed.status_code == 200, closed.text
+        assert closed.json()["agent"]["state"] == "closed"
+        assert closed.json()["milestone_source"] == "candidate_self_report"
+        assert closed.json()["employer_response_verified"] is False
+        assert closed.headers["cache-control"] == "private, no-store"
+        assert app.post(
+            route + "/followup-sent", headers=valid,
+            json={"expected_revision": 3, "confirmed_sent_by_applicant": True},
+        ).status_code == 409
+    finally:
+        workspaces.delete(who_a["profile_id"], workspace.workspace_id)
