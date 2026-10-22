@@ -6,6 +6,14 @@
 **Priority:** P0 architecture following completion of the existing SP21 CV-first release  
 **Principle:** One real application → one durable agent identity → one verifiable outcome. Reuse existing SmartPloy and ObumAI code first.
 
+## Architecture Decision ADR-ASP-001 — reuse audit (22 October 2026)
+
+The separate [Agentic SmartPloy reuse audit and framework decision record](AGENTIC_SMARTPLOY_REUSE_AUDIT_20261022.md) is the **mandatory subsystem selection reference** before introducing new agent software. It inventories 30+ leading GitHub projects, inspects existing SmartPloy and ObumAI code, correlates three previously discussed YouTube demonstrations with canonical repositories, records AGPL/custom-license restrictions, distinguishes code from reference patterns, and outlines synthetic benchmark gates.
+
+**Default:** existing SmartPloy PostgreSQL application workspace + worker scheduling + ObumAI bounded reasoning; **agent type:** persistent case-scoped event-driven logical worker. **First outside job-domain candidate:** career-ops (MIT) followup/reply/outcome logic. **Frameworks:** do not add new runtime until existing callback versus LangGraph, Pydantic AI and Microsoft Agent Framework demonstrate a net benefit. **Browser:** existing companion/ObumAI observer first; Stagehand/Browser Use/Playwright MCP sandbox challengers. **Fleet:** Paperclip budget/heartbeat patterns, not a second whole product. **License:** no unreviewed copying of Skyvern AGPL or n8n/Dify/AutoGPT restricted/mixed-license code.
+
+The audit's illustrative six-slice build-effort comparison is **276 vs 140 hypothetical person-hours (136 h avoided, ~2.0×)**. These are *scenario assumptions, not measured speedup or production ETA*. Only audited code commits and timed integration runs can turn this into a delivery claim.
+
 ## 1. Executive decision
 
 SmartPloy evolves from a job-discovery/AutoApply website into an agentic, candidate-controlled job-search operating system. It does not discard the ongoing CV-first flow; it makes that flow the front door to persistent, per-application digital workers.
