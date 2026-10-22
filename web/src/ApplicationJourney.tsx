@@ -292,3 +292,4 @@ export default function ApplicationJourney(props: {
       </div>
     </section>
   </div>;
+}
