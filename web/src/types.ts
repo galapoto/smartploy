@@ -467,3 +467,23 @@ export interface TrainingProgramsResponse {
   job_count_included: 0;
   external_actions_authorized: false;
 }
+
+/** Read-only owner-bound matches derived from stored CV text, not verified qualifications. */
+export interface CVJobMatches {
+  cv_present: boolean;
+  cv_filename: string;
+  match_mode: "upload_cv" | "cv_text_signals" | "no_recognized_cv_signals";
+  detected_roles: string[];
+  detected_topics: string[];
+  recommended: SearchJobCard[];
+  other_jobs: SearchJobCard[];
+  current_jobs_count: number;
+  recommended_count: number;
+  matched_from: "none" | "local_cv_text_not_approved_evidence";
+  qualifications_verified: false;
+  employer_actions_performed: false;
+}
+
+/** A product experience mode, not employer-automation authorization. */
+export type ApplicationFlowMode = "manual" | "assisted" | "automatic";
+export type ApplicationAssistanceLevel = "filter" | "documents" | "full";
