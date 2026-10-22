@@ -210,8 +210,10 @@ def reviewed_nationwide_portfolio(
     and validate it through existing vetted Lever/Greenhouse/SmartRecruiters
     adapters. Every source remains Finland-scoped and local-only.
     """
-    from smartploy.sources.public_ats import PublicATSSourceConfig
-
+    # This host-side staging tool must run on a stock Ubuntu Python 3
+    # WITHOUT importing httpx or the application dependency tree. Strictly
+    # validate the immutable registry here, while worker/CI also validates
+    # each source with the original typed PublicATSSourceConfig.from_dict.
     expected = {
         ("lever", "global", "uprightproject"),
         ("lever", "global", "brightlyworks"),
@@ -240,25 +242,47 @@ def reviewed_nationwide_portfolio(
     if not isinstance(payload, list) or len(payload) != len(expected):
         raise PilotConfigurationError("Expected the 22-source nationwide portfolio")
     observed = set()
+    allowed_fields = {
+        "provider", "tenant", "label", "stack", "employer_sector",
+        "external_ai_forwarding_allowed", "location_terms",
+    }
     for raw in payload:
         if not isinstance(raw, dict):
             raise PilotConfigurationError("Portfolio source must be an object")
-        try:
-            source = PublicATSSourceConfig.from_dict(raw)
-        except (ValueError, TypeError) as exc:
-            raise PilotConfigurationError("Invalid nationwide ATS source configuration") from exc
-        identity = (source.provider, source.stack, source.tenant)
+        if set(raw) - allowed_fields:
+            raise PilotConfigurationError("Unsupported nationwide ATS source fields")
+        provider, tenant = raw.get("provider"), raw.get("tenant")
+        stack = raw.get("stack", "")
+        label = raw.get("label")
+        if (
+            not isinstance(provider, str)
+            or not isinstance(tenant, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,99}", tenant)
+            or not isinstance(label, str)
+            or not label.strip()
+            or len(label) > 200
+            or not isinstance(stack, str)
+            or (provider == "lever" and stack not in {"global", "eu"})
+            or (provider != "lever" and stack != "")
+        ):
+            raise PilotConfigurationError("Invalid nationwide ATS source configuration")
+        identity = (provider, stack, tenant)
         if identity in observed:
             raise PilotConfigurationError("Duplicate nationwide ATS board")
         observed.add(identity)
+        locations = raw.get("location_terms")
         if (
-            source.external_ai_forwarding_allowed is not False
-            or source.employer_sector != "private"
-            or "finland" not in source.location_terms
+            raw.get("external_ai_forwarding_allowed") is not False
+            or raw.get("employer_sector") != "private"
+            or not isinstance(locations, list)
+            or not 1 <= len(locations) <= 20
+            or not all(isinstance(term, str)
+                       and 2 <= len(term.strip()) <= 80
+                       and not any(ord(ch) < 32 for ch in term)
+                       for term in locations)
+            or "finland" not in {term.strip().casefold() for term in locations}
         ):
             raise PilotConfigurationError("Nationwide ATS sources must be Finland-scoped and private")
-        if source.request_timeout_seconds is not None or source.page_size is not None:
-            raise PilotConfigurationError("Nationwide source overrides require separate transport review")
     if observed != expected:
         raise PilotConfigurationError("Unreviewed employer in nationwide ATS portfolio")
     return payload
