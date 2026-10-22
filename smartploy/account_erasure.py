@@ -255,6 +255,7 @@ EXPECTED_OWNER_TABLES = frozenset({
     "smartploy_profile_facts", "smartploy_cv_files",
     "smartploy_application_preparations", "smartploy_applications",
     "smartploy_application_workspaces", "smartploy_browser_receipts",
+    "smartploy_application_agents",
     "smartploy_search_preferences", "smartploy_private_saved_jobs",
     "smartploy_obumai_consents", "smartploy_obumai_consent_events",
     "smartploy_obumai_dispatch_attempts",
@@ -327,6 +328,18 @@ def inspect_quarantined_account(
         ),
         "application_workspaces": (
             "SELECT count(*) FROM smartploy_application_workspaces WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "application_agents": (
+            "SELECT count(*) FROM smartploy_application_agents WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "application_agent_events": (
+            """
+            SELECT count(*) FROM smartploy_application_agent_events e
+            JOIN smartploy_application_agents a ON a.agent_id=e.agent_id
+            WHERE a.profile_id=%s
+            """,
             (profile_id,),
         ),
         "browser_receipts": (
