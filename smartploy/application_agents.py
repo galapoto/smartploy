@@ -12,6 +12,11 @@ from typing import Any, Literal
 
 from psycopg import connect
 
+from .application_followups import (
+    MILESTONE_EVENTS, ORDER, SUBMITTED_WORKSPACE_STATUSES, TERMINAL_MILESTONES,
+    due_message, followup_draft, next_case_due,
+)
+
 
 class ApplicationAgentConflict(ValueError):
     """The agent changed, stopped, or is not in the requested state."""
@@ -42,7 +47,8 @@ class PostgresApplicationAgentRepository:
     _COLUMNS = """
         SELECT a.agent_id, a.workspace_id, w.canonical_key, w.role_title,
                w.company, a.state, a.revision, a.next_due_at, a.last_woke_at,
-               a.created_at, a.updated_at, a.closed_at, a.close_reason
+               a.created_at, a.updated_at, a.closed_at, a.close_reason,
+               a.milestone, a.followups_sent, a.last_followup_at, w.status
         FROM smartploy_application_agents a
         JOIN smartploy_application_workspaces w ON w.workspace_id = a.workspace_id
     """
@@ -71,6 +77,17 @@ class PostgresApplicationAgentRepository:
             "updated_at": iso(row[10]),
             "closed_at": iso(row[11]),
             "close_reason": row[12],
+            "milestone": row[13],
+            "followups_sent": row[14],
+            "last_followup_at": iso(row[15]),
+            "workspace_status": row[16],
+            "milestone_source": "candidate_self_report" if row[13] != "none" else "none",
+            "followup_suggestion": (
+                followup_draft(row[4], row[3])
+                if row[5] == "active" and row[16] in SUBMITTED_WORKSPACE_STATUSES
+                and row[13] in {"none", "recruiter_replied"} and row[14] < 2
+                else ""
+            ),
             "external_actions_authorized": False,
             "employer_contacted": False,
             "notification_channel": "in_app_only",
@@ -102,7 +119,14 @@ class PostgresApplicationAgentRepository:
                     """INSERT INTO smartploy_application_agents
                            (agent_id, workspace_id, profile_id, next_due_at,
                             created_at, updated_at)
-                       SELECT %s, w.workspace_id, w.profile_id, %s, %s, %s
+                       SELECT %s, w.workspace_id, w.profile_id,
+                              CASE WHEN w.status = 'draft' THEN %s
+                                   ELSE GREATEST(
+                                       %s, COALESCE(
+                                           w.self_reported_applied_at, w.updated_at
+                                       ) + INTERVAL '7 days')
+                              END,
+                              %s, %s
                        FROM smartploy_application_workspaces w
                        WHERE w.workspace_id = %s AND w.profile_id = %s
                          AND NOT EXISTS (
@@ -111,7 +135,7 @@ class PostgresApplicationAgentRepository:
                          )
                        ON CONFLICT (workspace_id) DO NOTHING
                        RETURNING agent_id""",
-                    (identity, moment, moment, moment, workspace, owner),
+                    (identity, moment, moment, moment, moment, workspace, owner),
                 )
                 created = cur.fetchone() is not None
                 if created:
