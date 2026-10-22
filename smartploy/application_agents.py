@@ -270,7 +270,7 @@ class PostgresApplicationAgentRepository:
                              WHERE er.profile_id = a.profile_id
                          )
                        ORDER BY a.next_due_at, a.agent_id
-                       FOR UPDATE OF a SKIP LOCKED LIMIT %s""",
+                       LIMIT %s FOR UPDATE OF a SKIP LOCKED""",
                     (moment, size),
                 )
                 claimed = cur.fetchall()
