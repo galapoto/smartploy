@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from hashlib import sha256
 import os
+import re
 from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import parse_qs, urlsplit
 
@@ -600,9 +601,16 @@ def create_app(
         """
         storage = active.storage_status()
         worker = _worker_snapshot()
+        build_revision = os.getenv("SMARTPLOY_APP_VERSION", "").strip().lower()
+        # Dockerfile APP_VERSION is derived from the reviewed Git SHA; never
+        # echo arbitrary build args or user-configured strings into public health.
+        release_revision = (
+            build_revision if re.fullmatch(r"[0-9a-f]{12}", build_revision) else ""
+        )
         safe = {
             "ok": bool(storage.get("ready")),
             "service": "smartploy",
+            "release_revision": release_revision,
             "public_origin": app.state.public_origin,
             "storage": {
                 "mode": str(storage.get("mode") or "unknown"),
