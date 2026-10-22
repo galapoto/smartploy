@@ -21,6 +21,7 @@ import {
 import ApplicationStudio from "./ApplicationStudio";
 import SearchSetup from "./SearchSetup";
 import SearchResultsPanel from "./SearchResultsPanel";
+import TrainingProgramsPanel from "./TrainingProgramsPanel";
 import BrandMark from "./BrandMark";
 import AIConsentSettings from "./AIConsentSettings";
 import type {
@@ -30,12 +31,13 @@ import type {
   JobAIProcessingConsent, JobAIProcessingConsentEvent
 } from "./types";
 
-type Page = "dashboard" | "jobs" | "applications" | "profile" | "tools" | "insights" | "sources" | "settings";
+type Page = "dashboard" | "jobs" | "training" | "applications" | "profile" | "tools" | "insights" | "sources" | "settings";
 type MatchView = "top" | "possible";
 
 const NAV: Array<{ id: Page; label: string; icon: LucideIcon }> = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "jobs", label: "Find jobs", icon: Search },
+  { id: "training", label: "Training & traineeships", icon: BriefcaseBusiness },
   { id: "applications", label: "My applications", icon: FileText },
   { id: "profile", label: "CV & profile", icon: FileCheck2 },
   { id: "tools", label: "AI tools", icon: Sparkles },
@@ -892,10 +894,10 @@ export default function App() {
       </button>
       <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-label">WORKSPACE</div>
-        {NAV.slice(0, 6).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", page === item.id && "active")} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
+        {NAV.slice(0, 7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", page === item.id && "active")} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
         <div className="nav-divider" />
         <div className="nav-label">MANAGE</div>
-        {NAV.slice(6).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", page === item.id && "active")} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
+        {NAV.slice(7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", page === item.id && "active")} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
       </nav>
       <div className="sidebar-bottom"><span className="country-chip"><span className="flag-finland" aria-hidden="true" /> Finland</span><span className="session-profile"><span className="avatar">{avatar}</span><span><strong>{session?.email ? session.email.split("@")[0] : "Your workspace"}</strong><small>{session?.authenticated ? "Signed in" : "Private workspace"}</small></span></span></div>
     </aside>
@@ -946,6 +948,7 @@ export default function App() {
             {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}
           </div>
           {page === "jobs" ? <div className="stacked"><div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>{privateSavedJobsPanel}</div> : null}
+          {page === "training" ? <TrainingProgramsPanel /> : null}
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">{cvBlock}{factPanel}</div><aside>{sidePanel}</aside></div> : null}
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}

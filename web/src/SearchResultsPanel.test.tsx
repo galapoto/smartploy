@@ -275,3 +275,35 @@ describe("Finland-first IT, planning, and explicit all-jobs choice", () => {
     expect(screen.getByText(/not counted above or used for unattended applications/i)).toBeTruthy();
   });
 });
+
+
+describe("source-backed traineeship discovery", () => {
+  it("filters internship and graduate vacancies independently from training directories", () => {
+    const withTrainees: SearchResults = {
+      ...general,
+      available_count: 4,
+      all_jobs: [
+        ...general.all_jobs,
+        { ...job, canonical_key: "intern-role", job: {
+          ...baseJob, role_title: "Intern Data Analyst", opportunity_kind: "internship",
+        }},
+        { ...job, canonical_key: "graduate-role", job: {
+          ...baseJob, role_title: "Graduate Information Specialist", opportunity_kind: "graduate",
+        }},
+      ],
+    };
+    render(<SearchResultsPanel {...common} data={withTrainees} />);
+    fireEvent.change(screen.getByRole("combobox", { name: /opportunity type/i }), {
+      target: { value: "early_career" },
+    });
+    expect(screen.getByText("Intern Data Analyst")).toBeTruthy();
+    expect(screen.getByText("Graduate Information Specialist")).toBeTruthy();
+    expect(screen.queryByText("Software Tester")).toBeNull();
+    expect(screen.getByText("Internship")).toBeTruthy();
+    expect(screen.getByText("Graduate role")).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: /opportunity type/i }), {
+      target: { value: "all" },
+    });
+    expect(screen.getByText("Software Tester")).toBeTruthy();
+  });
+});

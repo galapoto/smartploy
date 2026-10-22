@@ -29,6 +29,10 @@ function JobCard(props: {
         <span className="quiet-chip">{item.lane === "all" ? "General listing" :
           item.lane === "recommended" ? "Matches search targets" : "Explore another role"}</span>
         <span>{sectorLabel(job.employer_sector)}</span>
+        {job.opportunity_kind && job.opportunity_kind !== "job" ?
+          <span className="quiet-chip">{job.opportunity_kind === "internship" ?
+            "Internship" : job.opportunity_kind === "traineeship" ?
+            "Traineeship" : "Graduate role"}</span> : null}
         <span>{sourceDates.origin}</span>
         <span>{sourceDates.observation}</span>
         {sourceDates.caution ? <span role="note" className="source-observation-caution">{sourceDates.caution}</span> : null}
@@ -87,6 +91,7 @@ export default function SearchResultsPanel(props: {
   // occupations remain available without touching the stored source jobs.
   const [careerFocus, setCareerFocus] = useState<"it_planning" | "all">("it_planning");
   const [levelFocus, setLevelFocus] = useState<"junior_unspecified" | "all">("junior_unspecified");
+  const [kindFocus, setKindFocus] = useState<"all" | "early_career" | "jobs">("all");
   const all = general ? data?.all_jobs || [] :
     props.view === "top" ? data?.recommendations || [] : data?.broader || [];
   const rows = useMemo(() => {
@@ -101,11 +106,17 @@ export default function SearchResultsPanel(props: {
       // Never infer a junior level from an absent experience label.
       if (general && levelFocus === "junior_unspecified" &&
           item.job.title_experience === "senior") return false;
+      // Trainee/graduate labels use published title or ATS employmentType,
+      // never user profile or speculative text from the description.
+      if (general && kindFocus === "early_career" &&
+          !["traineeship", "internship", "graduate"].includes(item.job.opportunity_kind || "job")) return false;
+      if (general && kindFocus === "jobs" &&
+          item.job.opportunity_kind && item.job.opportunity_kind !== "job") return false;
       return !query || [item.job.role_title, item.job.company, item.job.location].some(
         (field) => (field || "").toLocaleLowerCase().includes(query)
       );
     });
-  }, [all, props.sector, props.search, general, careerFocus, levelFocus]);
+  }, [all, props.sector, props.search, general, careerFocus, levelFocus, kindFocus]);
   const shown = props.currentPage === "dashboard" ? rows.slice(0, 8) : rows;
   return <section className="panel jobs-panel">
     <div className="panel-heading">
@@ -169,6 +180,12 @@ export default function SearchResultsPanel(props: {
           onChange={(event) => setLevelFocus(event.target.value as "junior_unspecified" | "all")}>
           <option value="junior_unspecified">Junior + level unspecified</option>
           <option value="all">All experience levels</option>
+        </select>
+        <select aria-label="Opportunity type" value={kindFocus}
+          onChange={(event) => setKindFocus(event.target.value as "all" | "early_career" | "jobs")}>
+          <option value="all">Jobs and traineeships</option>
+          <option value="early_career">Trainee, internship & graduate</option>
+          <option value="jobs">Regular jobs</option>
         </select></> : null}
         <select aria-label="Employer sector" value={props.sector}
           onChange={(event) => props.onSector(event.target.value as SectorFilter)}>

@@ -1,0 +1,190 @@
+[
+  {
+    "id": "saranen-recruitment-training",
+    "provider": "Saranen",
+    "title": "RekryKoulutus — IT, Data, AI and Office Work",
+    "kind": "recruitment_training",
+    "region": "Across Finland",
+    "url": "https://www.saranen.fi/tyonhakijalle/toihin-koulutuksesta",
+    "focus": [
+      "IT",
+      "Data",
+      "AI",
+      "Office",
+      "Planning"
+    ],
+    "eligibility_note": "Employment-services eligibility varies by programme; check current application windows and requirements."
+  },
+  {
+    "id": "saranen-it-career-change",
+    "provider": "Saranen",
+    "title": "Recruiting Training and Career-Change Programmes",
+    "kind": "recruitment_training",
+    "region": "Across Finland",
+    "url": "https://www.saranen.fi/aikuiskoulutus",
+    "focus": [
+      "IT Support",
+      "Cloud",
+      "Analytics",
+      "Cybersecurity"
+    ],
+    "eligibility_note": "Often requires a registered jobseeker or other employment-services eligibility; verify with the organizer."
+  },
+  {
+    "id": "academic-work-academy",
+    "provider": "Academic Work Academy",
+    "title": "Academy — Intensive Recruitment Training",
+    "kind": "academy",
+    "region": "Finland",
+    "url": "https://www.academicwork.fi/academy/koulutukset",
+    "focus": [
+      "Software",
+      "Data",
+      "IT",
+      "Career change"
+    ],
+    "eligibility_note": "Programme openings and employment terms change. The directory link does not indicate an active intake."
+  },
+  {
+    "id": "siemens-early-careers",
+    "provider": "Siemens",
+    "title": "Software Internships and Early-Career Programmes",
+    "kind": "employer_trainee",
+    "region": "Finland / Global — verify location",
+    "url": "https://www.siemens.com/fi-fi/company/siemens-software-student-talent-programs/",
+    "focus": [
+      "Software",
+      "Engineering",
+      "Project Work",
+      "Digitalization"
+    ],
+    "eligibility_note": "Some programmes are global or country-specific; check Finland location, student requirements and current availability."
+  },
+  {
+    "id": "nokia-early-careers",
+    "provider": "Nokia",
+    "title": "Students and Graduates — Early Careers",
+    "kind": "employer_trainee",
+    "region": "Finland and international",
+    "url": "https://www.nokia.com/careers/students-and-graduates/",
+    "focus": [
+      "IT",
+      "Networks",
+      "Data",
+      "Business",
+      "Research"
+    ],
+    "eligibility_note": "Choose Finland when searching. Individual vacancies determine student status, work permit and dates."
+  },
+  {
+    "id": "nokia-finland",
+    "provider": "Nokia",
+    "title": "Nokia Finland — Jobs and Trainee Routes",
+    "kind": "employer_trainee",
+    "region": "Espoo / Tampere / Oulu",
+    "url": "https://www.nokia.com/careers/our-locations/finland/",
+    "focus": [
+      "IT",
+      "Engineering",
+      "Data",
+      "Project Management"
+    ],
+    "eligibility_note": "Check individual vacancy links; a company programme overview is not an open vacancy."
+  },
+  {
+    "id": "kuntarekry-internships",
+    "provider": "Kuntarekry",
+    "title": "Municipal and Wellbeing Services Internships",
+    "kind": "internship_portal",
+    "region": "Across Finland",
+    "url": "https://www.kuntarekry.fi/fi/tyopaikat/",
+    "focus": [
+      "Office",
+      "Administration",
+      "IT",
+      "Planning",
+      "Public sector"
+    ],
+    "eligibility_note": "Use harjoittelu/trainee and office/ICT categories on the provider site; entry rules vary."
+  },
+  {
+    "id": "valtiolle-trainees",
+    "provider": "Valtiolle.fi",
+    "title": "Government Trainee and Internship Opportunities",
+    "kind": "internship_portal",
+    "region": "Across Finland",
+    "url": "https://valtiolle.fi/fi/",
+    "focus": [
+      "Administration",
+      "IT",
+      "Planning",
+      "Data",
+      "Public sector"
+    ],
+    "eligibility_note": "Government role eligibility may include language, nationality and degree requirements; verify individually."
+  },
+  {
+    "id": "tyomarkkinatori-training",
+    "provider": "Työmarkkinatori",
+    "title": "Recruitment Training and Public Employment Opportunities",
+    "kind": "recruitment_training",
+    "region": "Across Finland",
+    "url": "https://tyomarkkinatori.fi/henkiloasiakkaat/avoimet-tyopaikat",
+    "focus": [
+      "RekryKoulutus",
+      "IT",
+      "Data",
+      "Administration"
+    ],
+    "eligibility_note": "Training search API is separate from the job API and requires approval; this is a portal link only."
+  },
+  {
+    "id": "saranen-ai-academy-uusimaa-autumn-2026",
+    "provider": "Saranen",
+    "title": "AI Academy F.E.C Uusimaa — autumn 2026 (apply by 23 Oct 2026)",
+    "kind": "recruitment_training",
+    "region": "Uusimaa",
+    "url": "https://www.saranen.fi/tyonhakijalle/toihin-koulutuksesta/ai-academy-uusimaa-syksy2026",
+    "focus": [
+      "AI",
+      "Data",
+      "Automation",
+      "Business Analysis",
+      "IT"
+    ],
+    "eligibility_note": "Source checked 22 Oct 2026: applications close 23 Oct 2026. Unemployed or fixed-term employment ending soon; register with employment services. Two separate applications (employment office + Saranen) required. Check whether intake is still open."
+  },
+  {
+    "id": "saranen-digital-growth-ai-uusimaa-2026",
+    "provider": "Saranen",
+    "title": "Digital Growth & AI Academy Uusimaa — apply by 26 Oct 2026",
+    "kind": "recruitment_training",
+    "region": "Uusimaa",
+    "url": "https://www.saranen.fi/tyonhakijalle/toihin-koulutuksesta/digital-growth-ai-academy-uusimaa",
+    "focus": [
+      "AI",
+      "Digital Marketing",
+      "Automation",
+      "CRM",
+      "Business Development"
+    ],
+    "eligibility_note": "Source checked 22 Oct 2026: deadline 26 Oct 2026; requires unemployment or risk of unemployment. Two-stage application; verify actual intake status and Finnish-language requirements (B1.1) at source."
+  },
+  {
+    "id": "saranen-software-analytics-ai-turku-2026",
+    "provider": "Saranen",
+    "title": "Software, Analytics & AI Academy Varsinais-Suomi — application to Jan 2027",
+    "kind": "recruitment_training",
+    "region": "Varsinais-Suomi",
+    "url": "https://www.saranen.fi/tyonhakijalle/toihin-koulutuksesta/software-analytics-academy-varsinais-suomi",
+    "focus": [
+      "Software",
+      "Data",
+      "Power BI",
+      "Analytics",
+      "IT",
+      "Project"
+    ],
+    "eligibility_note": "Source checked 22 Oct 2026: deadline 18 Jan 2027, candidate employer roles on programme page; unemployed or at-risk jobseeker. Applicants outside Turku employment area must agree participation with their municipality's employment authority."
+  }
+]

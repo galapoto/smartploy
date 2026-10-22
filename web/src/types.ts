@@ -11,6 +11,7 @@ export interface JobCardData {
   /** Title-derived browse label, never a qualification or eligibility claim. */
   career_area?: "it_data" | "planning" | "other";
   title_experience?: "entry" | "senior" | "unspecified";
+  opportunity_kind?: "job" | "internship" | "traineeship" | "graduate";
   source_ids: string[];
   posted_at: string;
   first_seen_at: string;
@@ -440,5 +441,29 @@ export interface SearchResults {
   all_jobs: SearchJobCard[];
   available_count: number;
   score_kind: string;
+  external_actions_authorized: false;
+}
+
+/** Provider destination links are not open vacancies and cannot be auto-applied. */
+export interface TrainingProgram {
+  id: string;
+  provider: string;
+  title: string;
+  kind: "recruitment_training" | "academy" | "employer_trainee" | "internship_portal";
+  region: string;
+  url: string;
+  focus: string[];
+  eligibility_note: string;
+  opening_status: "check_provider";
+  listing_type: "directory_link";
+  counts_as_live_job: false;
+  automatic_application_authorized: false;
+}
+
+export interface TrainingProgramsResponse {
+  programs: TrainingProgram[];
+  count: number;
+  opening_status: "check_provider";
+  job_count_included: 0;
   external_actions_authorized: false;
 }

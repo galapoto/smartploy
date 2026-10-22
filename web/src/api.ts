@@ -12,7 +12,8 @@ import type {
   PrivateSavedJobsResponse,
   PreparationResponse,
   ApplicationWorkspace,
-  ApplicationWorkspacesResponse
+  ApplicationWorkspacesResponse,
+  TrainingProgramsResponse
 } from "./types";
 
 /** Read-only owner-scoped employer claim posture; never employer receipt. */
@@ -79,6 +80,10 @@ async function request<T>(path: string, init?: RequestInit, expectedUserId?: str
   }
 
   return (await response.json()) as T;
+}
+
+export function getTrainingPrograms(): Promise<TrainingProgramsResponse> {
+  return request<TrainingProgramsResponse>("/api/v1/training-programs");
 }
 
 export function getDashboard(): Promise<Dashboard> {
