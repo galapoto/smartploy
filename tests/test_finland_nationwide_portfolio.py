@@ -94,7 +94,7 @@ def test_nationwide_staging_rejects_changed_operator_roster_and_external_file(tm
 
     with pytest.raises(PilotConfigurationError, match="registry file"):
         plan_nationwide_portfolio_upgrade(
-            _env(reviewed_sources())[:-1]
+            _env(reviewed_sources())
             + "SMARTPLOY_PUBLIC_ATS_SOURCES_FILE=/private/unrelated.json\n",
             reviewed_sources(), reviewed_it_portfolio(), reviewed_nationwide_portfolio(),
         )
