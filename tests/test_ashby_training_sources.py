@@ -53,7 +53,7 @@ def test_ashby_public_api_ingests_only_listed_finnish_jobs_with_stable_ids():
     postings = [
         job("intern"),
         job("graduate", title="Graduate Data Engineer", employmentType="FullTime",
-            location="Remote", isRemote=True,
+            location="Remote", isRemote=True, workplaceType="Remote",
             address={"postalAddress": {"addressCountry": "FI", "addressLocality": "Espoo"}}),
         job("foreign", location="Stockholm, Sweden",
             address={"postalAddress": {"addressCountry": "SE"}}),
