@@ -994,7 +994,7 @@ export default function App() {
         <span className="header-country"><MapPin size={16} /> Finland</span>
         <div className="header-tools">
           <a className="obumai-brand" href="https://app.obumai.com/" target="_self" title="Open ObumAI"><img src="/obumai-mark.svg" alt="" /> <strong>ObumAI</strong></a>
-          <span className={cx("connection-status", obumReady ? "connected" : "disconnected")}><span />{obumReady ? "Connected" : "Setup needed"}</span>
+          <span className={cx("connection-status", obumReady ? "connected" : "disconnected")}><span />{localAI?.ready ? "Local AI ready" : health?.obumai_configured ? "ObumAI configured" : "AI optional"}</span>
           <button className="icon-btn header-refresh" type="button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh workspace"><RefreshCw size={19} className={refreshing ? "rotate" : ""} /></button>
           <span className="avatar header-avatar" title={session?.email || "Your account"}>{avatar}</span>
         </div>
@@ -1016,7 +1016,7 @@ export default function App() {
               {busyCV ? "Uploading…" : cv.present ? "Replace your CV" : "Upload your CV"}
             </button>
             <button className="outline-btn" type="button" onClick={() => navigate("profile")}>
-              <FileText size={16}/> My CV & documents
+              <FileText size={16}/> Manage your CV
             </button>
           </div>
           <div className="stats-grid">
@@ -1083,7 +1083,7 @@ export default function App() {
             </section>
           </div> : null}
         </> : null}
-        <footer className="site-footer"><span>SmartPloy · Job intelligence for Finland</span><span>Powered by ObumAI · No automatic applications submitted</span></footer>
+        <footer className="site-footer"><span>SmartPloy · Job intelligence for Finland</span><span>Private CV matching · AI-assisted drafts · Employer submission requires confirmation</span></footer>
       </main>
     </div>
     {jobDialog ? <div className="modal-backdrop" role="presentation" onClick={() => setJobDialog(false)}>
