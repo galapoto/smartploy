@@ -8,6 +8,7 @@ job postings; application submission endpoints are intentionally out of scope.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from hashlib import sha256
 import math
 from html import unescape
 from pathlib import Path
@@ -22,7 +23,7 @@ import httpx
 from ..domain import SourceObservation, SourcePolicy, canonicalize_url, utc_now_iso
 
 
-SUPPORTED_PROVIDERS = {"smartrecruiters", "lever", "greenhouse"}
+SUPPORTED_PROVIDERS = {"smartrecruiters", "lever", "greenhouse", "ashby"}
 SUPPORTED_SECTORS = {"public", "private", "unknown"}
 SUPPORTED_LEVER_STACKS = {"global", "eu"}
 TENANT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,99}$")
@@ -39,6 +40,7 @@ ALLOWED_CONFIG_KEYS = {
 }
 SMARTRECRUITERS_HOST = "api.smartrecruiters.com"
 GREENHOUSE_HOST = "boards-api.greenhouse.io"
+ASHBY_HOST = "api.ashbyhq.com"
 LEVER_HOSTS = {
     "global": "api.lever.co",
     "eu": "api.eu.lever.co",
@@ -46,10 +48,12 @@ LEVER_HOSTS = {
 SMARTRECRUITERS_ATTRIBUTION = "SmartRecruiters public Posting API"
 LEVER_ATTRIBUTION = "Lever published Postings API"
 GREENHOUSE_ATTRIBUTION = "Greenhouse public Job Board API"
+ASHBY_ATTRIBUTION = "Ashby published Job Postings API"
 PARSER_VERSIONS = {
     "smartrecruiters": "smartrecruiters-posting-v1",
     "lever": "lever-postings-v1",
     "greenhouse": "greenhouse-job-board-v1",
+    "ashby": "ashby-published-board-v1",
 }
 
 
@@ -113,7 +117,7 @@ class PublicATSSourceConfig:
         stack = _string(self.stack).casefold()
 
         if provider not in SUPPORTED_PROVIDERS:
-            raise PublicATSError("provider must be smartrecruiters, lever or greenhouse")
+            raise PublicATSError("provider must be smartrecruiters, lever, greenhouse or ashby")
         if not TENANT_PATTERN.fullmatch(tenant):
             raise PublicATSError(
                 "tenant must contain only letters, numbers and hyphens and be at most 100 characters"
@@ -149,8 +153,8 @@ class PublicATSSourceConfig:
         if size is not None and (type(size) is not int or not (1 <= size <= 100)):
             raise PublicATSError("page_size must be an integer between 1 and 100")
 
-        if provider == "greenhouse" and size is not None:
-            raise PublicATSError("page_size is not supported for Greenhouse full-board snapshots")
+        if provider in {"greenhouse", "ashby"} and size is not None:
+            raise PublicATSError("page_size is not supported for full-board snapshots")
 
         if provider == "lever":
             stack = stack or "global"
@@ -172,6 +176,8 @@ class PublicATSSourceConfig:
             return f"lever-{self.stack}-{tenant}"
         if self.provider == "greenhouse":
             return f"greenhouse-{tenant}"
+        if self.provider == "ashby":
+            return f"ashby-{tenant}"
         return f"smartrecruiters-{tenant}"
 
     @classmethod
@@ -814,6 +820,138 @@ class GreenhouseAdapter(PublicATSAdapter):
         return observations
 
 
+class AshbyAdapter(PublicATSAdapter):
+    """Read-only Ashby public Job Postings API. No employer credentials.
+
+    Only listed positions are published and only explicitly Finnish
+    locations are counted; a job being remote does not imply Finland.
+    No application, authentication, or candidate data ever reaches Ashby.
+    """
+
+    provider = "ashby"
+    parser_version = PARSER_VERSIONS["ashby"]
+
+    def __init__(
+        self,
+        config: PublicATSSourceConfig,
+        runtime: PublicATSRuntimeSettings | None = None,
+        *,
+        http_client: httpx.Client | None = None,
+    ) -> None:
+        if config.provider != self.provider:
+            raise PublicATSError("Ashby adapter requires ashby config")
+        super().__init__(config, runtime, http_client=http_client)
+        self.base = (
+            "https://" + ASHBY_HOST + "/posting-api/job-board/"
+            + quote(config.tenant, safe="")
+        )
+        self.last_unlisted_filtered_count = 0
+
+    def _observation(self, item: dict[str, Any], observed_at: str) -> SourceObservation:
+        title = _string(item.get("title"))
+        hosted = canonicalize_url(_string(item.get("jobUrl")))
+        # Ashby provides no required stable job ID in the public response.
+        # Use the published, canonical hosted URL as source identity rather
+        # than manufacturing vacancy IDs from title or ordering.
+        hosted_parts = hosted.split("/") if hosted else []
+        if (
+            not title or not hosted
+            or not hosted.startswith("https://jobs.ashbyhq.com/")
+            or len(hosted_parts) < 5
+            or hosted_parts[3].casefold() != self.config.tenant.casefold()
+        ):
+            raise PublicATSError("Ashby listed posting lacks a valid board job URL")
+        external_id = sha256(hosted.encode("utf-8")).hexdigest()
+        applying = canonicalize_url(_string(item.get("applyUrl"))) or hosted
+        location = _string(item.get("location"))
+        workplace = _string(item.get("workplaceType")).casefold()
+        work_mode = {
+            "remote": "remote", "hybrid": "hybrid",
+            "onsite": "onsite", "on-site": "onsite",
+        }.get(workplace, "review")
+        description = _string(item.get("descriptionPlain")) or _strip_html(item.get("descriptionHtml"))
+        employment = _string(item.get("employmentType"))
+        payload = {
+            "company": self.config.label,
+            "role_title": title,
+            "description": description,
+            "location": location,
+            "work_mode": work_mode,
+            "application_url": applying,
+            "employer_sector": self.config.employer_sector,
+            "source_attribution": ASHBY_ATTRIBUTION,
+            "external_ai_forwarding_allowed": self.config.external_ai_forwarding_allowed,
+            "source_details": {
+                "provider": self.provider,
+                "tenant": self.config.tenant,
+                "department": _string(item.get("department")),
+                "team": _string(item.get("team")),
+                "employment_type": employment,
+                "is_remote": item.get("isRemote") is True,
+                "workplace_type": _string(item.get("workplaceType")),
+                "published_at": _string(item.get("publishedAt")),
+            },
+        }
+        return SourceObservation(
+            source_id=self.source_id,
+            source_mode="api",
+            source_url=hosted,
+            raw_text=" ".join((title, self.config.label, description)),
+            payload=payload,
+            observed_at=observed_at,
+            posted_at=_string(item.get("publishedAt")),
+            source_external_id=external_id,
+        )
+
+    def fetch_all(self, *, observed_at: str | None = None) -> list[SourceObservation]:
+        timestamp = observed_at or utc_now_iso()
+        self.last_location_filtered_count = 0
+        self.last_unlisted_filtered_count = 0
+        self.last_total_postings = 0
+        response = self._get_json(self.base, expected_host=ASHBY_HOST)
+        if not isinstance(response, dict) or not isinstance(response.get("jobs"), list):
+            raise PublicATSError("Ashby published board response has unexpected shape")
+        jobs = response["jobs"]
+        if len(jobs) > self.runtime.max_items:
+            raise PublicATSError("Ashby board exceeds configured job limit")
+
+        observations: list[SourceObservation] = []
+        for item in jobs:
+            if not isinstance(item, dict):
+                raise PublicATSError("Ashby board includes a non-object posting")
+            self.last_total_postings += 1
+            # Ashby documents that isListed=False means a direct-link-only
+            # vacancy. Do not re-publish it as an advertised public job.
+            if item.get("isListed") is not True:
+                self.last_unlisted_filtered_count += 1
+                continue
+
+            address = item.get("address") if isinstance(item.get("address"), dict) else {}
+            primary = address.get("postalAddress") if isinstance(address.get("postalAddress"), dict) else {}
+            secondaries = item.get("secondaryLocations") if isinstance(item.get("secondaryLocations"), list) else []
+            structured = [
+                item.get("location", ""),
+                primary.get("addressCountry", ""),
+                primary.get("addressLocality", ""),
+                primary.get("addressRegion", ""),
+            ]
+            for secondary in secondaries[:100]:
+                if not isinstance(secondary, dict):
+                    continue
+                structured.append(secondary.get("location", ""))
+                addr = secondary.get("address") if isinstance(secondary.get("address"), dict) else {}
+                structured.extend((
+                    addr.get("addressCountry", ""),
+                    addr.get("addressLocality", ""),
+                    addr.get("addressRegion", ""),
+                ))
+            if not self._location_matches(*structured):
+                self.last_location_filtered_count += 1
+                continue
+            observations.append(self._observation(item, timestamp))
+        return observations
+
+
 def build_public_ats_adapter(
     config: PublicATSSourceConfig,
     runtime: PublicATSRuntimeSettings | None = None,
@@ -826,4 +964,6 @@ def build_public_ats_adapter(
         return LeverAdapter(config, runtime, http_client=http_client)
     if config.provider == "greenhouse":
         return GreenhouseAdapter(config, runtime, http_client=http_client)
+    if config.provider == "ashby":
+        return AshbyAdapter(config, runtime, http_client=http_client)
     raise PublicATSError("unsupported ATS provider")
