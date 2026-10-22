@@ -216,14 +216,16 @@ export function getApplicationAgentForWorkspace(workspaceId: string): Promise<{
   );
 }
 
-export function getApplicationAgent(agentId: string): Promise<{
+export function getApplicationAgent(agentId: string, afterSequence = 0): Promise<{
   agent: ApplicationAgent;
   events: ApplicationAgentEvent[];
   count: number;
   next_cursor: number;
   external_actions_authorized: false;
 }> {
-  return request("/api/v1/application-agents/" + encodeURIComponent(agentId));
+  const cursor = Number.isSafeInteger(afterSequence) ? Math.max(0, afterSequence) : 0;
+  return request("/api/v1/application-agents/" + encodeURIComponent(agentId)
+    + "?after_sequence=" + cursor);
 }
 
 export function createApplicationAgent(
