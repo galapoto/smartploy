@@ -94,3 +94,28 @@ def title_experience(title: str) -> str:
 
 def relevant_career_title(title: str) -> bool:
     return career_area(title) in {"it_data", "planning"}
+
+
+def opportunity_kind(title: str, employment_type: str = "") -> str:
+    """Published-title / ATS-type cue, never claim that a programme is open.
+
+    This is not a qualifications assessment or proof of wages. Explicit
+    "Intern" from an ATS takes priority; ordinary junior jobs remain jobs.
+    """
+    name = str(title or "").casefold()
+    label = str(employment_type or "").strip().casefold()
+    if label in {"intern", "internship"} or re.search(
+        r"(?<!\w)(?:internship|intern|harjoittelij\w*|työharjoittel\w*|kesäharjoittel\w*)(?!\w)", name
+    ):
+        return "internship"
+    if re.search(
+        r"(?<!\w)(?:trainee|traineeship|oppisopim\w*|rekrykoulut\w*|rekrytoiva[- ]?koulut\w*)(?!\w)", name
+    ):
+        return "traineeship"
+    if re.search(
+        r"(?<!\w)(?:graduate[- ]?(?:programme|program|scheme)|"
+        r"graduate[- ]?(?:engineer|analyst|developer|specialist)|"
+        r"vastavalmistune\w*)(?!\w)", name
+    ):
+        return "graduate"
+    return "job"
