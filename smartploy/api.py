@@ -11,11 +11,12 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlsplit
 
 from authlib.integrations.base_client import OAuthError
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import RedirectResponse, Response, JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 import uvicorn
+from psycopg import Error as PostgresError
 
 from .access import AccessPrincipal, AccessSettings, CloudflareAccessVerifier
 from .ai_processing_consent import (
@@ -27,6 +28,7 @@ from .training_directory import TrainingDirectoryError, load_training_programs
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
+from .application_agents import ApplicationAgentConflict, PostgresApplicationAgentRepository
 from .browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
 from .employer_submit_claim_storage import EmployerSubmitClaimDenied, PostgresEmployerSubmitClaimRepository
 from .employer_review_intent_storage import (
@@ -216,6 +218,11 @@ class WorkspaceEditPayload(BaseModel):
     expected_revision: int = Field(ge=1)
     cv_text: str = Field(min_length=1, max_length=30000)
     cover_letter_text: str = Field(min_length=1, max_length=10000)
+
+
+class ApplicationAgentTransitionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1, le=2147483647)
 
 
 class LocalAISuggestPayload(BaseModel):
@@ -496,6 +503,8 @@ def create_app(
     app.state.tenant_services = {}
     app.state.cv_repository = PostgresCVRepository(dsn) if dsn else MemoryCVRepository()
     app.state.workspace_repository = PostgresWorkspaceRepository(dsn) if dsn else MemoryWorkspaceRepository()
+    # Headless Agent Zero requires durable PostgreSQL; memory mode is not a fake agent.
+    app.state.application_agent_repository = PostgresApplicationAgentRepository(dsn) if dsn else None
     app.state.browser_receipts = PostgresBrowserReceiptRepository(dsn) if dsn else MemoryBrowserReceiptRepository()
     # SP15b: read-only employer claim posture. No memory fallback, issuer or final-click API.
     app.state.employer_claims = PostgresEmployerSubmitClaimRepository(dsn) if dsn else None
@@ -1290,6 +1299,101 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         stored, created = app.state.workspace_repository.create_or_get(proposed)
         return {"workspace": stored.to_dict(), "created": created}
+
+
+    def application_agent_context(
+        request: Request, *, mutate: bool = False
+    ) -> tuple[PostgresApplicationAgentRepository, str]:
+        tenant, binding = tenant_context(request)
+        if binding is None:
+            raise HTTPException(status_code=403, detail="Verified account required for application agents")
+        if mutate and (
+            request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Origin", public_origin) != public_origin
+            or request.headers.get("Sec-Fetch-Site", "").casefold()
+                not in {"", "same-origin", "none"}
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin account action required")
+        repo = app.state.application_agent_repository
+        if repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Durable application agents require PostgreSQL and deployment migration",
+            )
+        return repo, tenant.profile_repository.profile_id
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/agent")
+    def start_application_agent(workspace_id: str, request: Request) -> JSONResponse:
+        repo, owner = application_agent_context(request, mutate=True)
+        try:
+            agent, created = repo.create_or_get(owner, workspace_id)
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Application agent storage unavailable") from exc
+        if agent is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        return JSONResponse(
+            {"agent": agent, "created": created, "external_actions_performed": 0},
+            status_code=201 if created else 200,
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.get("/api/v1/application-agents")
+    def list_application_agents(
+        request: Request, limit: int = Query(default=100, ge=1, le=100)
+    ) -> JSONResponse:
+        repo, owner = application_agent_context(request)
+        try:
+            agents = repo.list(owner, limit=limit)
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Application agents unavailable") from exc
+        return JSONResponse(
+            {"agents": agents, "count": len(agents), "external_actions_authorized": False},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.get("/api/v1/application-agents/{agent_id}")
+    def read_application_agent(
+        agent_id: str, request: Request,
+        after_sequence: int = Query(default=0, ge=0, le=2147483647),
+    ) -> JSONResponse:
+        repo, owner = application_agent_context(request)
+        try:
+            agent = repo.get(owner, agent_id)
+            events = repo.events(owner, agent_id, after_sequence=after_sequence) if agent else []
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Application agent unavailable") from exc
+        if agent is None:
+            raise HTTPException(status_code=404, detail="Application agent not found")
+        return JSONResponse(
+            {"agent": agent, "events": events, "count": len(events),
+             "next_cursor": events[-1]["sequence"] if events else after_sequence,
+             "external_actions_authorized": False},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.post("/api/v1/application-agents/{agent_id}/{action}")
+    def change_application_agent(
+        agent_id: str, action: str, payload: ApplicationAgentTransitionPayload,
+        request: Request,
+    ) -> JSONResponse:
+        if action not in {"pause", "resume", "close"}:
+            raise HTTPException(status_code=404, detail="Application agent action not found")
+        repo, owner = application_agent_context(request, mutate=True)
+        try:
+            agent = repo.transition(
+                owner, agent_id, action=action,
+                expected_revision=payload.expected_revision,
+            )
+        except ApplicationAgentConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Application agent unavailable") from exc
+        if agent is None:
+            raise HTTPException(status_code=404, detail="Application agent not found")
+        return JSONResponse(
+            {"agent": agent, "external_actions_performed": 0},
+            headers={"Cache-Control": "private, no-store"},
+        )
 
     @app.get("/api/v1/application-workspaces")
     def list_application_workspaces(request: Request, limit: int = 100) -> dict[str, Any]:
