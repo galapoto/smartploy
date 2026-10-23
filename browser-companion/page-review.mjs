@@ -3,8 +3,14 @@
    is self-contained for Chrome's MV3 ISOLATED world. It does NOT inspect cookies,
    access employer pages or transfer a login token to the extension. */
 export async function verifyReviewOnSmartPloy(requested) {
-  const origin = "https://smartploy.obumai.com";
-  if (location.origin !== origin || location.protocol !== "https:") {
+  // This function is serialized into Chrome's isolated page world: keep the
+  // first-party origin list here, not in an imported module or popup message.
+  const allowedOrigins = [
+    "https://smartploy.komplyint.fi", "https://smartploy.obumai.com",
+  ];
+  if (!allowedOrigins.includes(location.origin) ||
+      location.protocol !== "https:" ||
+      (typeof window !== "undefined" && window.top !== window.self)) {
     return {review_verified: false, reason: "wrong_origin"};
   }
   if (
@@ -27,6 +33,7 @@ export async function verifyReviewOnSmartPloy(requested) {
     // SmartPloy cookie applies. Neither cookie nor account ID is returned.
     const sessionResponse = await fetch("/api/v1/session", {
       method: "GET", credentials: "same-origin", cache: "no-store",
+      redirect: "error",
       headers: {"Accept": "application/json"},
     });
     if (!sessionResponse.ok) {
@@ -46,6 +53,7 @@ export async function verifyReviewOnSmartPloy(requested) {
       encodeURIComponent(requested.workspace_id) + "/verify-reviewed-packet",
       {
         method: "POST", credentials: "same-origin", cache: "no-store",
+        redirect: "error",
         headers: {
           "Accept": "application/json", "Content-Type": "application/json",
           "X-Smartploy-Expected-User-Id": session.user_id

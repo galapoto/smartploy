@@ -119,7 +119,7 @@ HEALTH_FILE="$(mktemp)"
 HEALTH_OK=false
 for _ in $(seq 1 45); do
   if curl --fail --silent --show-error     -H "Host: ${PRODUCTION_HOST}"     "http://127.0.0.1:${WEB_PORT}/healthz" > "${HEALTH_FILE}"; then
-    if python3 - "${HEALTH_FILE}" "${IDENTITY_PROFILE}" "${PRODUCTION_ORIGIN}" <<'PY'
+    if python3 - "${HEALTH_FILE}" "${IDENTITY_PROFILE}" "${PRODUCTION_ORIGIN}" "${DEPLOY_SHA:0:12}" <<'PY'
 import json
 import sys
 
@@ -129,6 +129,9 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 assert health["ok"] is True
 assert health["service"] == "smartploy"
 assert health["public_origin"] == sys.argv[3]
+assert health.get("release_revision") == sys.argv[4], (
+    "Deployed API revision differs from the exact approved Git SHA"
+)
 assert health["storage"]["ready"] is True
 assert health["access"]["environment"] == "production"
 if sys.argv[2] == "oidc":

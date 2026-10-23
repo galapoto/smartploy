@@ -54,11 +54,16 @@ function storage() {
 }
 
 test("only exact SmartPloy HTTPS origin can pair; employer or lookalike origins cannot",()=>{
+  assert.equal(isSmartPloyTab("https://smartploy.komplyint.fi/"),true);
   assert.equal(isSmartPloyTab("https://smartploy.obumai.com/"),true);
   for(const url of [
-    "http://smartploy.obumai.com","https://smartploy.obumai.com.evil.invalid",
-    "https://obumai.com","https://evil.invalid",
+    "http://smartploy.komplyint.fi", "http://smartploy.obumai.com",
+    "https://smartploy.komplyint.fi.evil.invalid",
+    "https://smartploy.obumai.com.evil.invalid",
+    "https://komplyint.fi", "https://evil.invalid",
+    "https://user:secret@smartploy.komplyint.fi/app",
     "https://user:secret@smartploy.obumai.com/app",
+    "https://smartploy.komplyint.fi:9090/",
     "https://smartploy.obumai.com:9090/", "not a URL",
   ])assert.equal(isSmartPloyTab(url),false,url);
 });

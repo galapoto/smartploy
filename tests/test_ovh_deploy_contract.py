@@ -334,7 +334,12 @@ def test_both_identity_deploy_and_restore_probes_enforce_selected_host(tmp_path)
 
     for name in ("deploy.sh", "restore.sh"):
         script = (PRODUCTION_SCRIPT_DIR / name).read_text(encoding="utf-8")
-        marker = 'python3 - "${HEALTH_FILE}" "${IDENTITY_PROFILE}" "${PRODUCTION_ORIGIN}" <<\'PY\'\n'
+        marker = (
+            'python3 - "${HEALTH_FILE}" "${IDENTITY_PROFILE}" '
+            '"${PRODUCTION_ORIGIN}" "${DEPLOY_SHA:0:12}" <<\'PY\'\n'
+            if name == "deploy.sh"
+            else 'python3 - "${HEALTH_FILE}" "${IDENTITY_PROFILE}" "${PRODUCTION_ORIGIN}" <<\'PY\'\n'
+        )
         assert marker in script
         source = script.split(marker, 1)[1].split("\nPY\n", 1)[0]
         assert 'PRODUCTION_ORIGIN="$(sed -n' in script
@@ -348,6 +353,7 @@ def test_both_identity_deploy_and_restore_probes_enforce_selected_host(tmp_path)
         ):
             state = {
                 "ok": True, "service": "smartploy", "public_origin": origin,
+                "release_revision": "1" * 12,
                 "storage": {"ready": True},
                 "access": {
                     "environment": "production",
@@ -361,7 +367,8 @@ def test_both_identity_deploy_and_restore_probes_enforce_selected_host(tmp_path)
 
             def check(expected_origin, mode=identity):
                 return subprocess.run(
-                    [sys.executable, "-c", source, str(input_path), mode, expected_origin],
+                    ([sys.executable, "-c", source, str(input_path), mode, expected_origin]
+                     + (["1" * 12] if name == "deploy.sh" else [])),
                     capture_output=True, text=True, check=False, timeout=4,
                 )
 
@@ -370,6 +377,13 @@ def test_both_identity_deploy_and_restore_probes_enforce_selected_host(tmp_path)
                      else "https://smartploy.obumai.com")
             assert check(wrong).returncode != 0
             assert check(origin, "oidc" if identity == "cloudflare" else "cloudflare").returncode != 0
+            if name == "deploy.sh":
+                input_path.write_text(
+                    json.dumps({**state, "release_revision": "2" * 12}),
+                    encoding="utf-8",
+                )
+                assert check(origin).returncode != 0  # Old image, healthy process
+
 
 
 def test_release_image_health_and_evidence_proofs_select_same_identity_policy():

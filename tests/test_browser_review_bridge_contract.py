@@ -56,8 +56,11 @@ def test_only_first_party_injected_page_may_make_browser_review_network_calls():
     assert "XMLHttpRequest(" not in popup+page+policy
     assert "innerHTML" not in page+policy
     assert page.count("fetch(")==2
+    assert "https://smartploy.komplyint.fi" in page
     assert "https://smartploy.obumai.com" in page
-    assert 'location.origin !== origin' in page
+    assert "allowedOrigins.includes(location.origin)" in page
+    assert 'redirect: "error"' in page
+    assert "window.top !== window.self" in page
     assert 'credentials: "same-origin"' in page
     assert '"/api/v1/session"' in page
     assert '"/verify-reviewed-packet"' in page
