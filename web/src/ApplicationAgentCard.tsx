@@ -210,6 +210,12 @@ export default function ApplicationAgentCard(props: {
           </p>
         </div>
       </div>
+      {agent.state === "active" &&
+      agent.workspace_status !== agent.observed_workspace_status ? (
+        <p role="status">Your application status has changed. The case worker
+          will reconcile it before suggesting another follow-up.
+          No employer action will be taken automatically.</p>
+      ) : null}
       {agent.workspace_status === "draft" && agent.state !== "closed" ? (
         <p>First submit or personally report submitting this application using
           the Application Studio controls. Recruiter outcomes and follow-ups

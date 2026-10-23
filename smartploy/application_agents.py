@@ -48,7 +48,8 @@ class PostgresApplicationAgentRepository:
         SELECT a.agent_id, a.workspace_id, w.canonical_key, w.role_title,
                w.company, a.state, a.revision, a.next_due_at, a.last_woke_at,
                a.created_at, a.updated_at, a.closed_at, a.close_reason,
-               a.milestone, a.followups_sent, a.last_followup_at, w.status
+               a.milestone, a.followups_sent, a.last_followup_at, w.status,
+               a.observed_workspace_status
         FROM smartploy_application_agents a
         JOIN smartploy_application_workspaces w ON w.workspace_id = a.workspace_id
     """
@@ -81,6 +82,7 @@ class PostgresApplicationAgentRepository:
             "followups_sent": row[14],
             "last_followup_at": iso(row[15]),
             "workspace_status": row[16],
+            "observed_workspace_status": row[17],
             "milestone_source": "candidate_self_report" if row[13] != "none" else "none",
             "followup_suggestion": (
                 followup_draft(row[4], row[3])
@@ -118,7 +120,7 @@ class PostgresApplicationAgentRepository:
                 cur.execute(
                     """INSERT INTO smartploy_application_agents
                            (agent_id, workspace_id, profile_id, next_due_at,
-                            created_at, updated_at)
+                            created_at, updated_at, observed_workspace_status)
                        SELECT %s, w.workspace_id, w.profile_id,
                               CASE WHEN w.status = 'draft' THEN %s
                                    ELSE GREATEST(
@@ -126,7 +128,7 @@ class PostgresApplicationAgentRepository:
                                            w.self_reported_applied_at, w.updated_at
                                        ) + INTERVAL '7 days')
                               END,
-                              %s, %s
+                              %s, %s, w.status
                        FROM smartploy_application_workspaces w
                        WHERE w.workspace_id = %s AND w.profile_id = %s
                          AND NOT EXISTS (
@@ -433,6 +435,110 @@ class PostgresApplicationAgentRepository:
                 latest = cur.fetchone()
         return self._public(latest) if latest else None
 
+    def reconcile_workspace_updates(
+        self, *, limit: int = 20, now: datetime | None = None,
+    ) -> int:
+        """Atomically consume original workspace submission events, no sends.
+
+        This is the bridge from the real document/provider status into the
+        long-lived logical agent. It cannot infer a provider applicationId;
+        the source workspace must already have been updated by the original
+        authenticated manual reporting or provider-acknowledged ledger.
+        """
+        moment = _now(now)
+        size = max(1, min(int(limit), 50))
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT a.agent_id, a.revision, a.milestone,
+                              a.followups_sent, a.last_followup_at, a.next_due_at,
+                              a.observed_workspace_status, w.status,
+                              w.self_reported_applied_at, w.updated_at
+                       FROM smartploy_application_agents a
+                       JOIN smartploy_application_workspaces w
+                         ON w.workspace_id = a.workspace_id
+                            AND w.profile_id = a.profile_id
+                       WHERE a.state = 'active'
+                         AND a.observed_workspace_status <> w.status
+                         AND NOT EXISTS (
+                           SELECT 1 FROM smartploy_account_erasure_requests er
+                           WHERE er.profile_id = a.profile_id
+                         )
+                       ORDER BY w.updated_at, a.agent_id
+                       LIMIT %s FOR UPDATE OF a, w SKIP LOCKED""",
+                    (size,),
+                )
+                changed = cur.fetchall()
+                for (
+                    agent_id, revision, milestone, followup_count, last_sent_at,
+                    previous_due, previously_observed, workspace_status,
+                    self_applied_at, workspace_updated,
+                ) in changed:
+                    if workspace_status == "self_reported_applied":
+                        event_type = "application_self_reported"
+                        message = (
+                            "You reported submitting this application. "
+                            "The employer has not independently confirmed it."
+                        )
+                        submitted_at = self_applied_at or workspace_updated
+                    elif workspace_status == "provider_acknowledged":
+                        event_type = "application_provider_acknowledged"
+                        message = (
+                            "The authorized provider acknowledged the submitted "
+                            "application. This is not a hiring decision."
+                        )
+                        submitted_at = workspace_updated
+                    else:
+                        event_type = "application_draft_review"
+                        message = (
+                            "This application is marked as a draft. "
+                            "Review it before reporting another employer action."
+                        )
+                        submitted_at = workspace_updated
+
+                    if workspace_status == "draft":
+                        next_due = next_case_due(
+                            milestone, workspace_status, moment, followup_count,
+                            last_sent_at=last_sent_at,
+                        )
+                    elif (
+                        previously_observed == "self_reported_applied"
+                        and workspace_status == "provider_acknowledged"
+                    ):
+                        # A stronger independent provider acknowledgement
+                        # does not restart an already-running application
+                        # follow-up clock or send another notification.
+                        next_due = previous_due
+                    elif milestone == "none" and followup_count == 0:
+                        # Reuse career-ops applied-first cadence, but anchor it
+                        # to the REAL application date, not the older draft
+                        # reminder. Never suggest immediate outreach on submit.
+                        next_due = next_case_due(
+                            milestone, workspace_status, submitted_at, 0,
+                        )
+                        if next_due is not None:
+                            next_due = max(moment, next_due)
+                    else:
+                        # Preserve existing interview/reply follow-up timing if
+                        # provider acknowledgment is received later.
+                        next_due = previous_due
+
+                    cur.execute(
+                        """UPDATE smartploy_application_agents
+                           SET observed_workspace_status=%s,
+                               next_due_at=%s,
+                               revision=revision+1, updated_at=%s
+                           WHERE agent_id=%s AND state='active'""",
+                        (workspace_status, next_due, moment, agent_id),
+                    )
+                    cur.execute(
+                        """INSERT INTO smartploy_application_agent_events
+                           (agent_id, sequence, event_type, message, occurred_at)
+                           VALUES (%s,%s,%s,%s,%s)""",
+                        (agent_id, revision + 1, event_type, message, moment),
+                    )
+        return len(changed)
+
     def process_due(
         self, *, limit: int = 20, now: datetime | None = None
     ) -> dict[str, int | bool]:
@@ -443,6 +549,7 @@ class PostgresApplicationAgentRepository:
         """
         moment = _now(now)
         size = max(1, min(int(limit), 50))
+        reconciled = self.reconcile_workspace_updates(limit=size, now=moment)
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -482,6 +589,7 @@ class PostgresApplicationAgentRepository:
                         (agent_id, revision + 1, event_type, message, moment),
                     )
         return {
+            "workspace_updates_reconciled": reconciled,
             "woken": len(claimed),
             "in_app_reminders": len(claimed),
             "external_actions_performed": 0,

@@ -126,6 +126,7 @@ export interface ApplicationAgent {
   milestone: ApplicationAgentMilestone | "none";
   milestone_source: "none" | "candidate_self_report";
   workspace_status: "draft" | "self_reported_applied" | "provider_acknowledged";
+  observed_workspace_status: "draft" | "self_reported_applied" | "provider_acknowledged";
   followups_sent: number;
   last_followup_at: string;
   followup_suggestion: string;
@@ -140,7 +141,9 @@ export interface ApplicationAgentEvent {
     "case_resumed" | "case_closed" | "followup_due" |
     "candidate_reported_followup" | "candidate_reported_reply" |
     "candidate_reported_interview" | "candidate_reported_offer" |
-    "candidate_reported_rejected" | "candidate_reported_hired";
+    "candidate_reported_rejected" | "candidate_reported_hired" |
+    "application_self_reported" | "application_provider_acknowledged" |
+    "application_draft_review";
   message: string;
   occurred_at: string;
   external_actions_performed: 0;
