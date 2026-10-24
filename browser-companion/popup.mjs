@@ -714,14 +714,33 @@ async function onPreflight() {
     });
     if (!result?.result) throw new PacketError("Employer final-submit check did not complete.");
     const decision = result.result;
-    preflightPassed = false; // A local preflight never authorizes cross-device final click.
-    $("preflight").textContent = decision.ready ?
-      "Required fields and résumé attachment appear complete. Carefully check consent statements, questions and uploaded document before choosing Submit." :
-      "Not ready: " + (decision.blockers || []).join("; ");
-    $("submit").disabled = true; // Requires an authenticated one-time server grant.
-    status(decision.ready ?
-      "Employer form appears ready. Submit using the employer website; SmartPloy automated final click is currently disabled." :
-      "Preflight blocked. Complete the form or submit manually.", Boolean(decision.ready));
+    // A locally complete employer form is not authorization. The first-party
+    // server must already have burned ONE cross-device claim for the exact CV.
+    let grantReady = false;
+    if (decision.ready && !attemptReserved) {
+      try {
+        await requireOneUseFinalAttempt(chrome.storage?.session, currentPacket);
+        const key = await oneAttemptKey(currentPacket);
+        grantReady = !(await chrome.storage.local.get(key))[key];
+      } catch {
+        grantReady = false;
+      }
+    }
+    preflightPassed = Boolean(decision.ready && grantReady);
+    $("preflight").textContent = !decision.ready ?
+      "Not ready: " + (decision.blockers || []).join("; ") :
+      grantReady ?
+      "One-use employer claim is recorded. Confirm the exact CV PDF, " +
+      "all answers, legal statements and consent on the employer form." :
+      "Employer form looks ready, but no valid one-use server claim exists. " +
+      "Return to your signed-in SmartPloy tab and reserve the final action. " +
+      "Then return here and recheck this form.";
+    $("submit").disabled = !preflightPassed || !$("approve").checked;
+    $("submit").setAttribute("aria-disabled", String($("submit").disabled));
+    status(preflightPassed ?
+      "Server-reserved employer attempt ready for your final click. Nothing sent yet." :
+      "No one-use final-click authorization. Submit manually if needed.",
+      preflightPassed);
   } catch (error) { status(normalizeError(error)); }
 }
 
