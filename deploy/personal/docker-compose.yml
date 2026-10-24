@@ -53,6 +53,9 @@ services:
       SMARTPLOY_OIDC_REDIRECT_URI: ${SMARTPLOY_OIDC_REDIRECT_URI:-}
       SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI: ${SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI:-}
       SMARTPLOY_OIDC_SCOPE: ${SMARTPLOY_OIDC_SCOPE:-openid profile email}
+      # One-shot reviewed Lever final-click activation, API-only and OFF by default.
+      # Requires separate independent employer rights and applicant consent.
+      SMARTPLOY_BROWSER_FINAL_SUBMIT_ENABLED: ${SMARTPLOY_BROWSER_FINAL_SUBMIT_ENABLED:-false}
       # Per-POSTING official partner API configuration and employer-admin keys.
       # API container only. Never inject into web, worker or postgres.
       # Unset by default; code always denies automated external transfer.
