@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import os
 import re
@@ -36,7 +36,7 @@ from .employer_review_intent_storage import (
     EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
 )
 from .employer_automation_rights import (
-    LEVER_API_ACTION, PostgresEmployerAutomationRightsRepository,
+    ACTION, LEVER_API_ACTION, PostgresEmployerAutomationRightsRepository,
 )
 from .lever_partner_submit import (
     LeverPartnerRegistry, LeverPartnerTransport, LeverPartnerUnavailable,
@@ -286,6 +286,13 @@ class BrowserReviewVerificationPayload(BaseModel):
     expected_cv_pdf_size: int = Field(ge=12, le=2 * 1024 * 1024)
 
 
+class BrowserFinalAttemptPayload(BrowserReviewVerificationPayload):
+    """Separate explicit final-click decision for one reviewed employer job."""
+    confirm_one_job_final_click: StrictBool
+    acknowledge_external_employer_transfer: StrictBool
+    acknowledge_no_automatic_retry: StrictBool
+
+
 class BrowserReceiptImportPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirm_user_observed: bool
@@ -529,6 +536,12 @@ def create_app(
     # SP15e: read-only posture. No web issuer/redeemer or browser final click.
     app.state.employer_rights = PostgresEmployerAutomationRightsRepository(dsn) if dsn else None
     app.state.employer_final_actions = PostgresEmployerFinalActionGate(dsn) if dsn else None
+    # Default OFF in existing production installations. This flag cannot
+    # bypass one-job independent employer rights or user review.
+    app.state.browser_final_enabled = (
+        os.getenv("SMARTPLOY_BROWSER_FINAL_SUBMIT_ENABLED", "false").strip().lower()
+        == "true"
+    )
     app.state.partner_lever_registry = LeverPartnerRegistry.from_env()
     app.state.partner_lever_transport = LeverPartnerTransport()
     app.state.partner_lever_receipts = PostgresPartnerApplicationReceipts(dsn) if dsn else None
@@ -1772,16 +1785,15 @@ def create_app(
             reasons.append("separate_final_user_approval_missing")
         if claim is not None:
             reasons.append("previous_employer_attempt_requires_reconciliation")
-        # The trusted origin-to-extension FINAL action transport and actuation
-        # adapter DO NOT EXIST here, regardless of all policy flags.
-        reasons.append("trusted_one_use_browser_redemption_unavailable")
+        if not app.state.browser_final_enabled:
+            reasons.append("reviewed_browser_submit_disabled_in_production")
         return JSONResponse(
             {
                 "operator_permission_reviewed": policy["operator_permission_reviewed"],
                 "current_applicant_review_recorded": reviewed,
                 "separate_final_user_approval_recorded": final_approved,
                 "previous_employer_attempt_reserved": claim is not None,
-                "trusted_one_use_browser_redemption_available": False,
+                "trusted_one_use_browser_redemption_available": app.state.browser_final_enabled,
                 "final_browser_click_authorized": False,
                 "employer_submission_performed": False,
                 "employer_receipt_verified": False,
@@ -1866,6 +1878,108 @@ def create_app(
             "unattended_auto_apply_enabled": False,
             "automatic_retry_authorized": False,
         }
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/browser-final-attempt")
+    def reserve_verified_browser_final_attempt(
+        workspace_id: str, payload: BrowserFinalAttemptPayload, request: Request,
+    ) -> JSONResponse:
+        """Burn exactly one employer attempt before any browser final click.
+
+        Only invoked from the signed-in first-party tab via the user-operated
+        companion. A claim is NOT a sent application or a bearer capability;
+        browser execution is a separate, explicit user click with a local
+        no-retry lock. This route makes NO outbound employer HTTP request.
+        """
+        if not app.state.browser_final_enabled:
+            raise HTTPException(status_code=403, detail="Reviewed employer browser submit is not enabled")
+        binding = signed_in_employer_review(request)
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Same-origin verified applicant required")
+        if (
+            payload.confirm_one_job_final_click is not True
+            or payload.acknowledge_external_employer_transfer is not True
+            or payload.acknowledge_no_automatic_retry is not True
+        ):
+            raise HTTPException(status_code=422, detail="Fresh final-click approval and single-attempt acknowledgment required")
+        if (
+            app.state.employer_final_actions is None
+            or app.state.employer_claims is None
+            or app.state.employer_rights is None
+            or app.state.employer_review_intents is None
+        ):
+            raise HTTPException(status_code=503, detail="Durable final-action authorization unavailable")
+        workspace = _review_workspace(workspace_id, binding)
+        if workspace.revision != payload.expected_revision:
+            raise HTTPException(status_code=409, detail="Reviewed application revision changed")
+        if existing_employer_claim(binding, workspace) is not None:
+            raise HTTPException(status_code=409, detail="Prior employer attempt requires reconciliation")
+        tenant, _ = tenant_context(request)
+        try:
+            packet = make_browser_packet(
+                workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+            )
+        except HandoffError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if (
+            packet["document_sha256"] != payload.expected_document_sha256
+            or packet["cv_pdf_sha256"] != payload.expected_cv_pdf_sha256
+            or packet["cv_pdf_size"] != payload.expected_cv_pdf_size
+            or packet["approved_fields_sha256"] != payload.expected_fields_sha256
+            or sha256(packet["application_url"].encode("utf-8")).hexdigest()
+               != payload.expected_application_url_sha256
+        ):
+            raise HTTPException(status_code=409, detail="Reviewed employer, CV PDF or approved fields changed")
+        # Both calls reuse original SP15e atomic permission/review/claim gates,
+        # including independent two-person rights and sticky cross-device DB
+        # uniqueness. Even if this process crashes, a committed reservation
+        # cannot silently become a second application.
+        try:
+            approval, _ = app.state.employer_final_actions.approve(
+                binding, workspace_id=workspace_id,
+                expected_revision=workspace.revision,
+                expected_application_url=workspace.application_url,
+                expected_job_fingerprint=workspace.job_fingerprint,
+                expected_document_sha256=packet["document_sha256"],
+                expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                expected_fields_sha256=payload.expected_fields_sha256,
+                explicit_final_user_approval=True,
+                acknowledge_external_employer_transfer=True,
+                action_scope=ACTION,
+            )
+            reserved = app.state.employer_final_actions.consume_once_for_trusted_adapter(
+                binding, approval_id=approval.approval_id,
+                workspace_id=workspace_id, expected_revision=workspace.revision,
+                expected_application_url=workspace.application_url,
+                expected_job_fingerprint=workspace.job_fingerprint,
+                expected_document_sha256=packet["document_sha256"],
+                expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                expected_fields_sha256=payload.expected_fields_sha256,
+                action_scope=ACTION,
+            )
+        except EmployerFinalActionDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Final employer claim unavailable; check attempt status before any retry") from exc
+        return JSONResponse(
+            {
+                "claim_reserved": True,
+                "claim_id": reserved.claim.claim_id,
+                "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=90)).isoformat(),
+                "external_actions_performed": False,
+                "provider_acknowledged": False,
+                "automatic_retry_authorized": False,
+                "one_job_browser_click_permitted": True,
+            },
+            headers={
+                "Cache-Control": "private, no-store",
+                "Pragma": "no-cache",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @app.get("/api/v1/application-workspaces/{workspace_id}/partner-lever-readiness")
     def partner_lever_readiness(workspace_id: str, request: Request) -> JSONResponse:
