@@ -58,8 +58,10 @@ sudo git merge-base --is-ancestor "$SHA" refs/remotes/origin/main || {
   exit 1
 }
 
-# SP30 re-verifies this exact reviewed SHA and the clean tracked worktree
-# before checkout, image build, backups and migrations.
+# First upgrade: explicit clean checkout makes the new SP30 source gate
+# available; subsequent deploys recheck SHA, clean tree and ancestry.
+sudo git checkout --detach "$SHA"
+test "$(sudo git rev-parse HEAD)" = "$SHA"
 sudo env SMARTPLOY_PRODUCTION_IDENTITY_MODE=oidc \
   SMARTPLOY_RELEASE_APPROVED_SHA="$SHA" \
   bash deploy/personal/scripts/deploy.sh "$SHA"
