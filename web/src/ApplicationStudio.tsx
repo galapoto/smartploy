@@ -836,9 +836,13 @@ export default function ApplicationStudio(props: {
             </p>
           ) : (
             <p className="muted">
-              Automatic final submission is disabled until the companion can consume an
-              authenticated one-time cross-device server claim. You can still prepare a reviewed
-              form and submit manually on the employer website.
+              {finalAction?.trusted_one_use_browser_redemption_available
+                ? "For individually authorized Lever jobs, the browser companion can reserve a single " +
+                  "server-checked attempt and click Submit once after you review the complete employer form. " +
+                  "First record your CV review below, then verify it in the companion. " +
+                  "You may still submit manually; an attempted click is not proof of acceptance."
+                : "Automatic final submission is disabled here. You can prepare the reviewed employer " +
+                  "form using the companion and submit manually on the employer's website."}
               {!employerAttempt ? " The server attempt status is currently unavailable." : ""}
             </p>
           )}
@@ -885,7 +889,9 @@ export default function ApplicationStudio(props: {
             {!finalReview ? <p role="status">Durable review service unavailable. No authorization can be recorded.</p> : null}
           </div> : null}
           <div className="studio-packet-fallback" aria-label="Employer final-action permission">
-            <strong>Automatic employer website click · currently unavailable</strong>
+            <strong>{finalAction?.trusted_one_use_browser_redemption_available
+              ? "One-use reviewed employer final click"
+              : "Automatic employer website click · currently unavailable"}</strong>
             {finalAction ? <>
               <p role="status">
                 Independent employer automation rights: {finalAction.operator_permission_reviewed
@@ -896,10 +902,16 @@ export default function ApplicationStudio(props: {
               <p className="muted">
                 {finalAction.previous_employer_attempt_reserved
                   ? "A previous employer attempt exists and must be reconciled."
-                  : "Final employer click requires a separate user authorization and a trusted one-use server redemption."}
+                  : finalAction.trusted_one_use_browser_redemption_available
+                  ? "If the employer grants permission for this exact posting, review and fill the Lever form, " +
+                    "then reserve ONE attempt from the signed-in SmartPloy tab using the companion. " +
+                    "Return to the employer to perform the final click. No automatic retry."
+                  : "One-use employer browser submission requires an operator-enabled deployment " +
+                    "and independent per-job permission."}
               </p>
             </> : <p role="status">Policy verification unavailable. Automated final submission remains blocked.</p>}
-            <p className="muted">This indicator is informational and never permits an automatic employer submission.</p>
+            <p className="muted">This indicator is read-only. It never authorizes a browser click by
+              itself: server review, employer rights, your explicit final decision and a one-use claim are required.</p>
           </div>
           <div className="studio-packet-fallback" aria-label="Official Lever partner submission">
             <strong>Complete your reviewed job application through Lever</strong>
