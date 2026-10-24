@@ -79,28 +79,47 @@ A copy is stored at `deploy/personal/Caddyfile.host.example`.
 Cloudflare remains the public DNS/TLS/Access edge. The SmartPloy API independently verifies the Access
 application JWT.
 
-## Deploy
+## Deploy — immutable approved source (SP30)
+
+After reviewing exact merged-main GitHub CI, native ObumDelivery test evidence
+and the independent release approval, the operator selects one full 40-character
+commit SHA. Branch names, moving `main`, short SHAs, dirty tracked code, and
+commits outside remote main history are rejected before checkout.
 
 ~~~bash
 cd /srv/obum/stacks/smartploy
-bash deploy/personal/scripts/deploy.sh main
+SHA=<REVIEWED_FULL_40_CHARACTER_SHA>
+# On the first upgrade to SP30, old deploy.sh cannot run the new gate yet.
+# Inspect tracked modifications before explicitly checking out the reviewed SHA.
+test -z "$(sudo git status --porcelain --untracked-files=no)"
+sudo git fetch --no-tags origin main
+sudo git merge-base --is-ancestor "$SHA" refs/remotes/origin/main
+sudo git checkout --detach "$SHA"
+sudo env SMARTPLOY_PRODUCTION_IDENTITY_MODE=oidc \
+  SMARTPLOY_RELEASE_APPROVED_SHA="$SHA" \
+  bash deploy/personal/scripts/deploy.sh "$SHA"
 ~~~
 
+An explicitly reviewed legacy rollback retains the existing Cloudflare
+identity profile and uses the same exact-SHA argument. The default identity
+profile has NOT been silently switched. Never enable employer submission flags
+or partner credentials merely to test a release.
+
 The gate:
-1. acquires a host deployment lock;
-2. checks out the exact requested Git ref;
-3. validates committed production policy;
-4. validates Compose;
-5. builds API/web images;
-6. starts PostgreSQL;
-7. creates a pre-deploy PostgreSQL dump;
-8. runs migrations once;
-9. starts API, worker and web;
-10. validates health through `127.0.0.1:8091` using the production Host header;
-11. confirms all four services are running;
-12. records the exact deployed SHA.
+1. acquires the original host deployment lock;
+2. verifies clean tracked files and ancestry of the exact reviewed commit in origin/main;
+3. checks out that exact SHA without `--force` (private untracked env is preserved);
+4. validates the immutable identity policy and Compose;
+5. builds API/web images and starts PostgreSQL;
+6. creates a private backup before database migrations;
+7. applies migrations and starts API, worker and web;
+8. validates exact running revision, health and image identity;
+9. checks real public OIDC origin acceptance when selected;
+10. records the deployed SHA only after all required probes pass.
 
 A failed health check does not overwrite the last deployed SHA.
+GitHub CI and this source admission gate do not themselves prove native
+Woodpecker qualification, an authorized OVH rollout or an employer receipt.
 
 ## Backups
 
