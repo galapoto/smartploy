@@ -910,7 +910,7 @@ export default function ApplicationStudio(props: {
                     "and independent per-job permission."}
               </p>
             </> : <p role="status">Policy verification unavailable. Automated final submission remains blocked.</p>}
-            <p className="muted">This indicator is read-only. It never authorizes a browser click by
+            <p className="muted">This informational indicator never permits a browser click by
               itself: server review, employer rights, your explicit final decision and a one-use claim are required.</p>
           </div>
           <div className="studio-packet-fallback" aria-label="Official Lever partner submission">
