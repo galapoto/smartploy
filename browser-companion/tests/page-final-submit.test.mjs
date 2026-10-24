@@ -25,7 +25,7 @@ async function withFakeEmployer({
   employerUrl = URL, email = "candidate@example.invalid", fullName = "Synthetic Applicant",
   cvBytes = pdf, requiredMissing = false, challenge = false, duplicateButton = false,
   formValid = true, letterValue = letter, submitThrows = false,
-  noLock = false,
+  noLock = false, extraAttachment = false,
 } = {}) {
   const old = Object.fromEntries(
     ["location","window","document","getComputedStyle"].map(x => [x,globalThis[x]])
@@ -46,6 +46,8 @@ async function withFakeEmployer({
     control({type:"textarea",value:letterValue,
       labels:[{innerText:"Cover letter"}]}),
     control({type:"file", files:[file], labels:[{innerText:"CV / Résumé"}]}),
+    control({type:"file", files: extraAttachment ? [file] : [],
+      labels:[{innerText:"Other supporting document"}]}),
     control({type:"checkbox", required:requiredMissing, checked:!requiredMissing,
       labels:[{innerText:"Consent"}]}),
   ];
@@ -139,4 +141,12 @@ test("browser click exception yields unknown outcome; never a second click",asyn
   assert.equal(r.result.reason,"outcome_uncertain_do_not_retry");
   assert.equal(r.clicks,1);
   assert.equal(r.marker,true);
+});
+
+test("unreviewed second file attachment prevents the final employer click", async () => {
+  const r = await withFakeEmployer({extraAttachment:true});
+  assert.equal(r.result.attempted,false);
+  assert.equal(r.result.reason,"unreviewed_extra_attachment_present");
+  assert.equal(r.clicks,0);
+  assert.equal(r.marker,false);
 });
