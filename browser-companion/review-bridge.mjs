@@ -182,8 +182,8 @@ export async function requireOneUseFinalAttempt(storage, packet, now = Date.now(
   return true;
 }
 
-export async function consumeLocalFinalAttempt(storage, packet) {
-  await requireOneUseFinalAttempt(storage, packet);
+export async function consumeLocalFinalAttempt(storage, packet, now = Date.now()) {
+  await requireOneUseFinalAttempt(storage, packet, now);
   const key = await finalAttemptSessionKey(packet);
   await storage.set({[key]: {marker: "consumed-final-click-v1"}});
   return true;
