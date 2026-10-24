@@ -5,7 +5,9 @@ import { PacketError } from "../logic.mjs";
 import {
   approvedFieldsSha256, isSmartPloyTab, recordVerifiedReview,
   requireVerifiedReview, reviewSessionKey, sha256Text,
-  validateReviewPacket, REVIEW_SESSION_SECONDS
+  validateReviewPacket, REVIEW_SESSION_SECONDS,
+  recordOneUseFinalAttempt, requireOneUseFinalAttempt,
+  consumeLocalFinalAttempt, finalAttemptSessionKey
 } from "../review-bridge.mjs";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
@@ -158,4 +160,56 @@ test("reviewed field fingerprint matches independent Python UTF-8 length-prefix 
   await assert.rejects(approvedFieldsSha256({
     ...packet().fields,unauthorized_field:"private CV"
   }),PacketError);
+});
+
+
+test("verified review + nonbearer server claim authorizes only one exact local attempt",async()=>{
+  const pkt=validateReviewPacket(packet(),now),store=storage();
+  await recordVerifiedReview(store,pkt,verdict(),now);
+  const claim={
+    claim_reserved:true,claim_id:"employer-claim-"+"1".repeat(32),
+    expires_at:new Date(now+85_000).toISOString(),
+    external_actions_performed:false,provider_acknowledged:false,
+    automatic_retry_authorized:false,
+  };
+  const info=await recordOneUseFinalAttempt(store,pkt,claim,now);
+  assert.equal(Date.parse(info.expires_at),now+85_000);
+  assert.equal(await requireOneUseFinalAttempt(store,pkt,now),true);
+  const key=await finalAttemptSessionKey(pkt);
+  assert.match(key,/^smartploy\.final\.[a-f0-9]{64}$/);
+  const written=JSON.stringify(Object.fromEntries(store.state));
+  for(const forbidden of ["Synthetic Applicant","test@example.invalid","jobs.lever.co",
+    "cover_letter","session_cookie","bearer","full_name"]){
+    assert.equal(written.includes(forbidden),false,forbidden);
+  }
+  await assert.rejects(recordOneUseFinalAttempt(store,pkt,claim,now),PacketError);
+  await assert.rejects(requireOneUseFinalAttempt(store,pkt,now+85_000),PacketError);
+  const another=validateReviewPacket(packet({revision:3}),now);
+  await assert.rejects(requireOneUseFinalAttempt(store,another,now),PacketError);
+});
+
+test("missing review and forged final claim never unlock browser submit",async()=>{
+  const pkt=validateReviewPacket(packet(),now);
+  const claim={
+    claim_reserved:true,claim_id:"employer-claim-"+"1".repeat(32),
+    expires_at:new Date(now+20_000).toISOString(),
+    external_actions_performed:false,provider_acknowledged:false,
+    automatic_retry_authorized:false,
+  };
+  const absent=storage();
+  await assert.rejects(recordOneUseFinalAttempt(absent,pkt,claim,now),PacketError);
+  const ready=storage();
+  await recordVerifiedReview(ready,pkt,verdict(),now);
+  for(const altered of [
+    {...claim,claim_id:"bad"}, {...claim,claim_reserved:false},
+    {...claim,provider_acknowledged:true},
+    {...claim,external_actions_performed:true},
+    {...claim,automatic_retry_authorized:true},
+    {...claim,expires_at:new Date(now-1000).toISOString()},
+    {...claim,expires_at:new Date(now+400_000).toISOString()},
+  ]){
+    await assert.rejects(recordOneUseFinalAttempt(ready,pkt,altered,now),PacketError);
+  }
+  const key=await finalAttemptSessionKey(pkt);
+  assert.equal((await ready.get(key))[key],undefined);
 });
