@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1] / "browser-companion"
 
 def test_no_new_browser_background_or_remote_host_capability():
     manifest = json.loads((ROOT / "manifest.json").read_text())
-    assert manifest["version"] == "0.2.0"
+    assert manifest["version"] == "0.3.0"
     assert set(manifest["permissions"]) == {"activeTab", "scripting", "storage"}
     for key in ("host_permissions", "background", "content_scripts"):
         assert key not in manifest
@@ -45,6 +45,10 @@ def test_cv_identity_preserved_but_final_click_fail_closed_without_server_claim(
     assert "A CV/résumé must be attached in its own labeled upload field." in popup
     assert 'crypto.subtle.digest("SHA-256", bytes)' in popup
     assert 'attemptReserved' in popup
-    assert "Automatic final submission is unavailable until cross-device server authorization" in popup
+    assert "await requireOneUseFinalAttempt(chrome.storage.session, packet)" in popup
+    assert "await chrome.storage.local.set({[key]: stamp})" in popup
+    assert popup.index("await chrome.storage.local.set({[key]: stamp})") < popup.index(
+        "func: submitReviewedLeverOnce")
+    assert 'func: reserveFinalClickOnSmartPloy' in popup
     assert "func: submitOnce" not in popup
     assert "live[0].click()" not in popup
