@@ -745,13 +745,75 @@ async function onPreflight() {
 }
 
 async function onSubmit() {
-  // Never call chrome.scripting.executeScript with an employer submit click
-  // until an authenticated, one-time *server* claim consumption protocol has
-  // been designed, reviewed and tested with two separate devices.
-  // This handler remains as a fail-closed guard for old/unpacked popup pages.
+  if (!currentPacket || !preflightPassed || !$("approve").checked ||
+      attemptReserved || targetTabId === null) return;
+  if (!window.confirm(
+    "FINAL CONFIRMATION: CLICK THE EMPLOYER'S SUBMIT BUTTON ONCE?\n\n" +
+    currentPacket.company + " — " + currentPacket.role_title + "\n\n" +
+    "The reviewed applicant details and CV may be sent to this employer. " +
+    "The attempt was already reserved across devices and can never be retried " +
+    "automatically. A click is NOT proof the employer accepted the application. Proceed?"
+  )) return;
   $("submit").disabled = true;
+  $("submit").setAttribute("aria-disabled", "true");
   preflightPassed = false;
-  status("Automatic final submission is unavailable until cross-device server authorization is implemented. Review the employer form and submit manually on the employer website. Never retry an uncertain prior attempt.");
+  try {
+    const packet = validateReviewPacket(currentPacketToJSON());
+    const key = await oneAttemptKey(packet);
+    const tab = await activeTab();
+    if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
+        !exactLeverForm(tab.url, packet.application_url)) {
+      throw new PacketError("Employer tab or job changed. Do not risk a second attempt.");
+    }
+    if (!chrome.storage?.local || !chrome.storage?.session) {
+      throw new PacketError("Durable local attempt protection unavailable.");
+    }
+    await withSubmissionLock(key, navigator.locks, async () => {
+      await requireOneUseFinalAttempt(chrome.storage.session, packet);
+      if ((await chrome.storage.local.get(key))[key]) {
+        throw new PacketError("This employer attempt was already used. Do not retry.");
+      }
+      const stamp = {
+        marker: "one_employer_submit_attempt_reserved_v1",
+        recorded_at: new Date().toISOString(),
+      };
+      // Persist irreversible no-retry record BEFORE any employer-page action.
+      // Never save CV, personal name/email, employer URL or a bearer token.
+      await chrome.storage.local.set({[key]: stamp});
+      if ((await chrome.storage.local.get(key))[key]?.marker !== stamp.marker) {
+        throw new PacketError(
+          "Local no-retry record could not be verified. Do not submit."
+        );
+      }
+      attemptReserved = true;
+      await consumeLocalFinalAttempt(chrome.storage.session, packet);
+      const [result] = await chrome.scripting.executeScript({
+        target: {tabId: tab.id}, world: "ISOLATED",
+        func: submitReviewedLeverOnce,
+        args: [{
+          application_url: packet.application_url,
+          cv_pdf_sha256: packet.cv_pdf_sha256,
+          cv_pdf_size: packet.cv_pdf_size,
+          email: packet.fields.email,
+          full_name: packet.fields.full_name,
+        }],
+      });
+      const finding = result?.result;
+      if (!finding) throw new PacketError(
+        "Employer outcome unknown. Attempt reserved; do not retry."
+      );
+      status(finding.attempted ?
+        "One permitted employer final click was attempted. Check the " +
+        "employer confirmation and save its reference. SmartPloy has NOT " +
+        "verified provider acceptance." :
+        "The final click was blocked (" + (finding.reason || "unknown") +
+        "). The server attempt remains consumed; reconcile manually. " +
+        "No automatic retry.", finding.attempted === true);
+    });
+  } catch (error) {
+    status(normalizeError(error) +
+      " If a server or local attempt was reserved, DO NOT retry.");
+  }
 }
 
 async function onResumeReceipt() {
@@ -854,7 +916,8 @@ $("copyReceipt").addEventListener("click", async () => {
   }
 });
 $("approve").addEventListener("change", () => {
-  $("submit").disabled = true; // User approval alone is not a server-issued claim.
+  $("submit").disabled = !preflightPassed || !$("approve").checked || attemptReserved;
+  $("submit").setAttribute("aria-disabled", String($("submit").disabled));
 });
 $("packet").addEventListener("input", () => {
   currentPacket = null; currentPlan = null; currentQuestionPlan = null; targetTabId = null;
