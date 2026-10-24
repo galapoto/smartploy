@@ -58,11 +58,12 @@ sudo git merge-base --is-ancestor "$SHA" refs/remotes/origin/main || {
   exit 1
 }
 
-sudo git checkout --detach "$SHA"
+# SP30 re-verifies this exact reviewed SHA and the clean tracked worktree
+# before checkout, image build, backups and migrations.
+sudo env SMARTPLOY_PRODUCTION_IDENTITY_MODE=oidc \
+  SMARTPLOY_RELEASE_APPROVED_SHA="$SHA" \
+  bash deploy/personal/scripts/deploy.sh "$SHA"
 test "$(sudo git rev-parse HEAD)" = "$SHA"
-
-sudo bash deploy/personal/scripts/preflight.sh
-sudo bash deploy/personal/scripts/deploy.sh "$SHA"
 
 sudo bash deploy/personal/scripts/assert-healthy-stack.sh
 sudo bash deploy/personal/scripts/assert-running-images.sh "$SHA"
@@ -77,8 +78,9 @@ sudo docker exec smartploy-worker-1 \
 
 The command uses a **reviewed SHA**, not \`main\`; therefore another
 developer's merge does not silently change the release contents and does
-not invalidate the pin. The GitHub CI check is a separate human gate, not
-automatically enforced by this shell snippet.
+not invalidate the pin. SP30 itself rejects mutable refs, short hashes, dirty tracked source and
+commits outside remote main, but native Woodpecker CI and actual owner
+approval remain independent gates, not automatically attested by Git.
 
 The production scripts still own backups, migrations, image checks,
 protection checks and evidence. Do not expose the API, PostgreSQL or
