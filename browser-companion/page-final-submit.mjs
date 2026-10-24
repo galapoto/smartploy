@@ -68,9 +68,11 @@ export async function submitReviewedLeverOnce(expected) {
   const form = finalButton.closest("form");
   if (!form || !visible(form)) return fail("standard_employer_form_missing");
 
-  const elements = Array.from(form.querySelectorAll("input,textarea,select"))
-    .filter(visible);
-  if (elements.length > 250) return fail("dynamic_form_too_large");
+  // Inspect every form control for attachments, including non-visible inputs:
+  // hidden populated file controls may still be sent with the employer form.
+  const allElements = Array.from(form.querySelectorAll("input,textarea,select"));
+  if (allElements.length > 250) return fail("dynamic_form_too_large");
+  const elements = allElements.filter(visible);
   for (const item of elements) {
     if (item.disabled) continue;
     const type = String(item.type || "").toLowerCase();
@@ -133,7 +135,7 @@ export async function submitReviewedLeverOnce(expected) {
   }
   // Only the one previously reviewed CV may be attached. Extra file inputs can
   // carry private or stale documents that are not covered by the CV digest.
-  const otherAttachments = elements.filter((item) =>
+  const otherAttachments = allElements.filter((item) =>
     String(item.type || "").toLowerCase() === "file" &&
     item !== resumes[0] && Boolean(item.files?.length)
   );
