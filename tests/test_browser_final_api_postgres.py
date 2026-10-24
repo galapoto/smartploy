@@ -25,7 +25,6 @@ from smartploy.identity import AuthenticatedPrincipal, PostgresIdentityRepositor
 from smartploy.oidc import MemorySessionRepository, SESSION_COOKIE_NAME
 from smartploy.profile import ProfileFact
 from smartploy.profile_storage import PostgresProfileRepository
-from smartploy.service import SmartployService
 from smartploy.storage import PostgresJobRepository
 
 
