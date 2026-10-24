@@ -1,4 +1,4 @@
-"""SP15 browser one-attempt helper is reusable, but final click fails closed."""
+"""SP26 first-party one-use claim and browser-wide lock prove no duplicate click."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "browser-companion"
@@ -19,16 +19,20 @@ def test_existing_lock_helper_is_retained_without_bypassing_server_claim():
     assert 'lockManager.request(key, { mode: "exclusive" }' in module
     assert "Exclusive application lock unavailable." in module
 
-    # SP15b: no user checkbox/preflight can unlock a final click while the
-    # authenticated cross-device server-grant/consume protocol is missing.
-    assert "preflightPassed = false; // A local preflight" in popup
-    assert '"submit").disabled = true; // Requires an authenticated one-time server grant.' in popup
-    assert '  $("submit").disabled = true; // User approval alone is not a server-issued claim.' in popup
+    # A browser-only checkbox remains insufficient; it must have a genuine
+    # first-party reserved one-use claim and a Chrome-profile exclusive lock.
+    assert "await requireOneUseFinalAttempt(chrome.storage.session, packet)" in popup
+    assert "await recordOneUseFinalAttempt(" in popup
+    assert "withSubmissionLock(key, navigator.locks" in popup
+    assert "await chrome.storage.local.set({[key]: stamp})" in popup
+    assert popup.index("await chrome.storage.local.set({[key]: stamp})") < popup.index(
+        "func: submitReviewedLeverOnce")
+    assert "func: reserveFinalClickOnSmartPloy" in popup
     assert "func: submitOnce" not in popup
     assert "live[0].click()" not in popup
-    assert "withSubmissionLock(key, navigator.locks" not in popup
     assert 'id="submit" class="danger" disabled aria-disabled="true"' in html
-    assert "click the employer's own Submit button yourself" in html
+    assert 'id="reserveFinal"' in html
+    assert "do not retry" in html.lower()
 
 
 def test_lock_helper_has_no_hidden_site_or_employer_network_authority():
