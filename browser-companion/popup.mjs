@@ -796,6 +796,7 @@ async function onSubmit() {
           cv_pdf_size: packet.cv_pdf_size,
           email: packet.fields.email,
           full_name: packet.fields.full_name,
+          cover_letter: packet.fields.cover_letter,
         }],
       });
       const finding = result?.result;
