@@ -26,15 +26,20 @@ async function withFakeEmployer({
   cvBytes = pdf, requiredMissing = false, challenge = false, duplicateButton = false,
   formValid = true, letterValue = letter, submitThrows = false,
   noLock = false, extraAttachment = false, hiddenExtraAttachment = false,
+  mutateDuringCvRead = null,
 } = {}) {
   const old = Object.fromEntries(
     ["location","window","document","getComputedStyle"].map(x => [x,globalThis[x]])
   );
-  const state = {clicks: 0, marker: false};
+  const state = {clicks: 0, marker: false, challenge, duplicateButton};
   const file = {
     size: cvBytes.length, name: "candidate-reviewed.pdf",
     type: "application/pdf",
     async arrayBuffer() {
+      // Simulate a reactive employer form changing during asynchronous PDF read.
+      if (typeof mutateDuringCvRead === "function") {
+        mutateDuringCvRead(inputs, state, file);
+      }
       return cvBytes.buffer.slice(cvBytes.byteOffset, cvBytes.byteOffset+cvBytes.byteLength);
     },
   };
@@ -74,8 +79,8 @@ async function withFakeEmployer({
       hasAttribute: () => noLock ? true : state.marker,
       setAttribute: (k,v) => {state.marker=true;},
     },
-    querySelector: () => challenge ? {} : null,
-    querySelectorAll: () => duplicateButton ? [button,button] : [button],
+    querySelector: () => state.challenge ? {} : null,
+    querySelectorAll: () => state.duplicateButton ? [button,button] : [button],
   };
   const binding = {
     application_url: URL, cv_pdf_sha256:pdfDigest, cv_pdf_size:pdf.length,
@@ -159,4 +164,33 @@ test("hidden populated employer file input is rejected before final click", asyn
   assert.equal(r.result.reason,"unreviewed_extra_attachment_present");
   assert.equal(r.clicks,0);
   assert.equal(r.marker,false);
+});
+
+test("changes during async CV hashing cannot bypass final-click review", async () => {
+  const mutations = [
+    ["email", (inputs) => { inputs[1].value = "changed@example.invalid"; }],
+    ["name", (inputs) => { inputs[0].value = "Other Applicant"; }],
+    ["cover letter", (inputs) => { inputs[2].value = "Changed letter after review"; }],
+    ["visible extra attachment", (inputs, state, file) => { inputs[4].files = [file]; }],
+    ["hidden extra attachment", (inputs, state, file) => { inputs[5].files = [file]; }],
+    ["replaced CV input", (inputs, state, file) => {
+      inputs[3].files = [{...file}];
+    }],
+    ["required consent unchecked", (inputs) => {
+      inputs[6].required = true;
+      inputs[6].checked = false;
+    }],
+    ["new employer field", (inputs) => {
+      inputs.push(control({type:"text", value:"new data"}));
+    }],
+    ["late CAPTCHA", (inputs, state) => { state.challenge = true; }],
+    ["late duplicate submit", (inputs, state) => { state.duplicateButton = true; }],
+  ];
+  for (const [label, mutateDuringCvRead] of mutations) {
+    const r = await withFakeEmployer({mutateDuringCvRead});
+    assert.equal(r.result.attempted, false, label);
+    assert.equal(r.result.reason, "employer_form_changed", label);
+    assert.equal(r.clicks, 0, label);
+    assert.equal(r.marker, false, label);
+  }
 });
