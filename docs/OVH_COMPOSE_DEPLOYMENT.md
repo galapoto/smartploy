@@ -89,6 +89,12 @@ commits outside remote main history are rejected before checkout.
 ~~~bash
 cd /srv/obum/stacks/smartploy
 SHA=<REVIEWED_FULL_40_CHARACTER_SHA>
+# On the first upgrade to SP30, old deploy.sh cannot run the new gate yet.
+# Inspect tracked modifications before explicitly checking out the reviewed SHA.
+test -z "$(sudo git status --porcelain --untracked-files=no)"
+sudo git fetch --no-tags origin main
+sudo git merge-base --is-ancestor "$SHA" refs/remotes/origin/main
+sudo git checkout --detach "$SHA"
 sudo env SMARTPLOY_PRODUCTION_IDENTITY_MODE=oidc \
   SMARTPLOY_RELEASE_APPROVED_SHA="$SHA" \
   bash deploy/personal/scripts/deploy.sh "$SHA"
