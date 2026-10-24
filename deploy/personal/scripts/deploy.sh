@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET_REF="${1:-main}"
+TARGET_REF="${1:-}"
+if [[ "$#" -ne 1 || ! "$TARGET_REF" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "SmartPloy deploy: an approved immutable 40-character Git SHA is required; main/branch are not release targets" >&2
+  exit 2
+fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${COMPOSE_DIR}/../.." && pwd)"
@@ -44,15 +48,15 @@ cleanup() {
 trap cleanup EXIT
 
 cd "${REPO_ROOT}"
-git fetch --prune origin
-if git show-ref --verify --quiet "refs/remotes/origin/${TARGET_REF}"; then
-  RESOLVED_REF="origin/${TARGET_REF}"
-else
-  RESOLVED_REF="${TARGET_REF}"
-fi
-
-git checkout --detach --force "${RESOLVED_REF}"
+# Reuse the dedicated source gate before any checkout or Docker mutation:
+# require clean tracked files and the exact reviewed SHA in origin/main.
+bash "${SCRIPT_DIR}/check-approved-source.sh" "${TARGET_REF}" >/dev/null
+git checkout --detach "${TARGET_REF}"
 DEPLOY_SHA="$(git rev-parse HEAD)"
+if [[ "${DEPLOY_SHA}" != "${TARGET_REF}" ]]; then
+  echo "SmartPloy deploy: checked-out commit differs from approved exact SHA" >&2
+  exit 3
+fi
 export SMARTPLOY_IMAGE_TAG="${DEPLOY_SHA:0:12}"
 
 bash "${SCRIPT_DIR}/validate-runtime-policy.sh" "${POLICY_FILE}"
