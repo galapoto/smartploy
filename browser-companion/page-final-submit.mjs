@@ -14,7 +14,9 @@ export async function submitReviewedLeverOnce(expected) {
       !Number.isSafeInteger(expected.cv_pdf_size) ||
       expected.cv_pdf_size < 12 || expected.cv_pdf_size > 2 * 1024 * 1024 ||
       typeof expected.email !== "string" || !expected.email.includes("@") ||
-      typeof expected.full_name !== "string" || !expected.full_name.trim()) {
+      typeof expected.full_name !== "string" || !expected.full_name.trim() ||
+      typeof expected.cover_letter !== "string" ||
+      expected.cover_letter.length < 60) {
     return fail("invalid_reviewed_binding");
   }
   if (typeof window !== "undefined" && window.top !== window.self) {
@@ -112,6 +114,14 @@ export async function submitReviewedLeverOnce(expected) {
       expected.full_name.trim().replace(/\s+/g, " ");
   if (!fullNameMatches && !splitNameMatches) {
     return fail("reviewed_name_changed_or_unverifiable");
+  }
+
+  const letters = elements.filter((item) =>
+    /cover.?letter|saatekirje|personligt brev/i.test(labelled(item)));
+  if (letters.length > 1 ||
+      (letters.length === 1 &&
+       String(letters[0].value || "").trim() !== expected.cover_letter.trim())) {
+    return fail("reviewed_cover_letter_changed_or_unverifiable");
   }
 
   const resumes = elements.filter((item) => {
