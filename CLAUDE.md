@@ -1,0 +1,1 @@
+Claude agent directive: before each run read AGENTS.md; at each delivery follow GLOBAL-AGENT-RUN-PROOF v1. Report plan ID, before/after core function, reused/improved/scratch proof with safety/license, exact original CI/live state and roadmap progress. Obey stricter local approvals and production holds.
