@@ -1,5 +1,43 @@
 # SmartPloy Apply Companion — reviewed Lever form assistance
 
+> **SP26 CURRENT FLOW — 24 October 2026 (source only):** Chrome companion 0.3.0
+> supports ONE user-confirmed final browser click on an exact Lever job, but
+> ONLY when the API flag SMARTPLOY_BROWSER_FINAL_SUBMIT_ENABLED is explicitly
+> enabled by the authorized operator, that specific employer has independently
+> approved automation rights, and the applicant's reviewed one-job server claim
+> was consumed and recorded. It is OFF in existing production by default.
+> **A click is an attempted submission, not a provider-issued acknowledgment.**
+> Unsupported postings and uncertain outcomes remain manual. See
+> [SP26 authoritative implementation and release gate](SP26_ONE_USE_BROWSER_FINAL_ACTION.md).
+> The older SP15b/SP15d historical sections below describe pre-SP26 behavior.
+
+## SP26 reviewed one-use final action, when expressly available
+
+1. Use the ordinary flow below to prepare a current employer application and
+   approved SmartPloy CV/letter; record exact CV/job review and verify the packet
+   from a signed-in **smartploy.komplyint.fi** browser tab.
+2. On the employer's exact Lever /apply page, inspect, fill only approved contact
+   fields, select the matching reviewed PDF, answer sensitive questions yourself,
+   read consent and legal terms, then check all required fields.
+3. Return to the **signed-in SmartPloy tab**, reopen the companion with the same
+   packet, and click **Reserve ONE reviewed employer final click**. This
+   atomically burns a durable cross-device attempt even if the later click fails.
+4. Return to the same employer tab before the short-lived local claim expires,
+   reopen the companion, re-inspect the form, select **Check required fields**,
+   confirm you reviewed all answers, and explicitly choose **Submit once**.
+   A Web Lock and permanent local no-retry marker are committed BEFORE any
+   employer button is clicked. Unsupported/changed forms fail closed.
+5. Inspect the employer response and save any confirmation/reference. Do not
+   automatically retry or mark the job acknowledged solely because the browser
+   clicked. Use the existing observed-receipt or personally-reported status,
+   distinct from a true official Lever partner API provider ID.
+
+This user-operated, non-background path does **not** implement general headless
+AutoApply. Do not enable it on OVH merely to test a real employer without their
+verified permission and independent release acceptance.
+
+---
+
 > **SP15d REVIEW-VERIFICATION BRIDGE, DRAFT ONLY (18 Oct 2026):** The automated final
 > application click is intentionally disabled until a signed-in, owner-scoped
 > server claim can be consumed atomically across separate browsers and devices.
