@@ -22,6 +22,13 @@
         your session cookie, CV, approved contact details or application text.</p>
       <button id="verifyReview" type="button" class="secondary">Verify review on signed-in SmartPloy</button>
       <p id="reviewInfo" role="status"></p>
+      <p class="muted">After filling and personally reviewing the employer form,
+        return to the signed-in SmartPloy tab and use the next button to reserve
+        ONE attempt across all devices. You must return to the same employer form
+        and finish before the short-lived claim expires. If the browser or
+        employer is uncertain, do not retry the same application.</p>
+      <button id="reserveFinal" type="button" class="danger">Reserve ONE reviewed employer final click (if authorized)</button>
+      <p id="finalClaimInfo" role="status"></p>
       <p class="muted">Then open the employer's Lever page, reopen this companion,
         paste the SAME packet and inspect the form. Verification lasts at most five minutes.</p>
       <button id="inspect">Inspect verified employer form (no submit)</button>
@@ -38,7 +45,7 @@
     </section>
 
     <section id="submission" hidden>
-      <h2>3. Review employer form and submit manually</h2>
+      <h2>3. Review employer form and submit once when authorized</h2>
       <p class="warning">Select a reviewed SmartPloy CV PDF for an explicitly approved transfer,
         or attach it yourself on the employer page. The employer may upload immediately
         when the file is placed in its résumé field. You must personally review and
@@ -58,11 +65,15 @@
       <button id="check">Check required fields</button>
       <p id="preflight" role="status"></p>
       <label class="confirm"><input type="checkbox" id="approve" />
-        I have reviewed the employer's form and will decide whether to submit on the employer website.</label>
-      <button id="submit" class="danger" disabled aria-disabled="true">Automatic final submit unavailable</button>
-      <p class="warning">The SmartPloy automated final click remains disabled pending an authenticated,
-        one-time server claim consumed across devices. If you wish to apply, review the form and
-        click the employer's own Submit button yourself. Do not retry any uncertain attempt.</p>
+        I have reviewed the complete employer form, legal consents and exact CV.
+        I authorize this one use only, and understand no automatic retry is possible.</label>
+      <button id="submit" class="danger" disabled aria-disabled="true">Submit once (requires verified server claim)</button>
+      <p class="warning">Final browser clicking is off by default, restricted to
+        exact reviewed Lever postings with independent employer permission,
+        signed-in SmartPloy approval, and an irreversible cross-device claim.
+        You may always submit manually using the employer's own button.
+        A browser click is not proof that the employer accepted your application.
+        Never retry when the previous outcome is uncertain.</p>
       <button id="receipt" class="secondary">Check visible confirmation &amp; export receipt</button>
     </section>
 

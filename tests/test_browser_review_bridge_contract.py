@@ -1,7 +1,8 @@
-"""SP15d: first-party reviewed-packet verification may prepare fields only.
+"""SP26: first-party reviewed-packet and one-shot final claim remain isolated.
 
-The actual extension has no background runner, host grants or external cookie
-authority, and its final employer Submit click remains absent.
+The extension has no background runner, wildcard host grants or cookie
+exfiltration. Only an authenticated sticky server claim plus applicant click
+can lead to a final employer action.
 """
 from pathlib import Path
 import json
@@ -9,7 +10,7 @@ import json
 EXT=Path(__file__).resolve().parents[1]/"browser-companion"
 
 
-def test_exact_existing_mv3_capabilities_and_no_final_employer_click():
+def test_exact_existing_mv3_capabilities_and_first_party_claim_gate():
     manifest=json.loads((EXT/"manifest.json").read_text())
     popup=(EXT/"popup.mjs").read_text()
     markup=(EXT/"popup.html").read_text()
@@ -19,6 +20,9 @@ def test_exact_existing_mv3_capabilities_and_no_final_employer_click():
         assert forbidden not in manifest
     assert "func: submitOnce" not in popup
     assert "live[0].click()" not in popup
+    assert "await requireOneUseFinalAttempt(chrome.storage.session, packet)" in popup
+    assert "func: reserveFinalClickOnSmartPloy" in popup
+    assert "func: submitReviewedLeverOnce" in popup
     assert 'disabled aria-disabled="true"' in markup
     assert "func: verifyReviewOnSmartPloy" in popup
     assert 'world: "ISOLATED"' in popup
@@ -72,3 +76,21 @@ def test_only_first_party_injected_page_may_make_browser_review_network_calls():
     assert "reviewSessionKey" in policy
     assert "storage.set({ [key]:" in policy
     assert "chrome.storage.local" not in page+policy
+
+def test_new_browser_claim_stays_on_first_party_and_employer_click_has_no_server_session():
+    page=(EXT/"page-final-claim.mjs").read_text()
+    employer=(EXT/"page-final-submit.mjs").read_text()
+    popup=(EXT/"popup.mjs").read_text()
+    assert "allowedOrigins.includes(location.origin)" in page
+    assert 'redirect: "error"' in page
+    assert page.count("fetch(")==2
+    assert "document.cookie" not in page+employer+popup
+    assert "fetch(" not in employer+popup
+    assert "XMLHttpRequest(" not in employer
+    assert "chrome.runtime" not in employer
+    assert "chrome.storage.local.set" in popup
+    assert "finalButton.click()" in employer
+    assert "provider_acknowledged: false" in employer
+    assert "cv.arrayBuffer()" in employer
+    assert "crypto.subtle.digest" in employer
+    assert "captcha" in employer

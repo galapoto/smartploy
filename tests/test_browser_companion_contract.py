@@ -1,4 +1,4 @@
-"""Review-only MV3 companion: no hidden network or local-only employer submit."""
+"""MV3 companion: one server-reserved final action, no silent employer submit."""
 from __future__ import annotations
 
 import json
@@ -18,7 +18,7 @@ def test_companion_runs_only_on_the_user_clicked_active_tab():
     assert (ROOT / "icon128.png").stat().st_size > 100
 
 
-def test_companion_cannot_automatically_click_submit_before_server_grant_exists():
+def test_companion_cannot_click_without_server_claim_and_final_confirmation():
     source = (ROOT / "popup.mjs").read_text(encoding="utf-8")
     policy = (ROOT / "logic.mjs").read_text(encoding="utf-8")
     html = (ROOT / "popup.html").read_text(encoding="utf-8")
@@ -33,7 +33,14 @@ def test_companion_cannot_automatically_click_submit_before_server_grant_exists(
     assert 'confirmed_visible: true' in source
     assert 'confirmation_page_sha256:' in source
     assert 'async function onSubmit()' in source
-    assert 'Automatic final submission is unavailable until cross-device server authorization' in source
+    assert 'requireOneUseFinalAttempt(chrome.storage.session, packet)' in source
+    assert 'withSubmissionLock(key, navigator.locks' in source
+    assert 'await chrome.storage.local.set({[key]: stamp})' in source
+    assert source.index('await chrome.storage.local.set({[key]: stamp})') < source.index(
+        'func: submitReviewedLeverOnce')
+    assert 'func: reserveFinalClickOnSmartPloy' in source
+    assert 'func: submitReviewedLeverOnce' in source
+    assert 'id="reserveFinal"' in html
     assert "func: submitOnce" not in source
     assert "live[0].click()" not in source
     assert 'disabled aria-disabled="true"' in html

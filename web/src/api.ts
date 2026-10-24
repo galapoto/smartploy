@@ -444,7 +444,7 @@ export type EmployerFinalActionReadiness = {
   current_applicant_review_recorded: boolean;
   separate_final_user_approval_recorded: boolean;
   previous_employer_attempt_reserved: boolean;
-  trusted_one_use_browser_redemption_available: false;
+  trusted_one_use_browser_redemption_available: boolean;
   final_browser_click_authorized: false;
   employer_submission_performed: false;
   employer_receipt_verified: false;

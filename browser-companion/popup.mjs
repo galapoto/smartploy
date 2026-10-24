@@ -6,12 +6,15 @@ import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, MAX_PD
 import { attachReviewedPdf } from "./page-attachment.mjs";
 import { QuestionError, planReviewedQuestions, validateReviewedAnswers } from "./questions.mjs";
 import { fillReviewedAnswers } from "./page-questions.mjs";
-import { AttemptError, oneAttemptKey } from "./attempt-lock.mjs";
+import { AttemptError, oneAttemptKey, withSubmissionLock } from "./attempt-lock.mjs";
 import {
   approvedFieldsSha256, isSmartPloyTab, recordVerifiedReview,
-  requireVerifiedReview, sha256Text, validateReviewPacket
+  requireVerifiedReview, sha256Text, validateReviewPacket,
+  recordOneUseFinalAttempt, requireOneUseFinalAttempt, consumeLocalFinalAttempt
 } from "./review-bridge.mjs";
 import { verifyReviewOnSmartPloy } from "./page-review.mjs";
+import { reserveFinalClickOnSmartPloy } from "./page-final-claim.mjs";
+import { submitReviewedLeverOnce } from "./page-final-submit.mjs";
 
 const $ = (id) => document.getElementById(id);
 let targetTabId = null;
@@ -341,6 +344,73 @@ async function onVerifySmartPloyReview() {
   }
 }
 
+async function onReserveFinalAttempt() {
+  $("finalClaimInfo").textContent = "";
+  try {
+    const packet = validateReviewPacket($("packet").value);
+    const tab = await activeTab();
+    if (!isSmartPloyTab(tab.url)) {
+      throw new PacketError(
+        "Open your signed-in smartploy.komplyint.fi tab and return to the companion."
+      );
+    }
+    await requireVerifiedReview(chrome.storage?.session, packet);
+    const key = await oneAttemptKey(packet);
+    if (!chrome.storage?.local || (await chrome.storage.local.get(key))[key]) {
+      throw new PacketError("An employer attempt is already recorded locally. Do not retry.");
+    }
+    // The employer form must already have been inspected/reviewed. We return
+    // to SmartPloy for the one-use server claim to keep HttpOnly sessions
+    // isolated from all employer pages.
+    if (!window.confirm(
+      "RESERVE ONE IRREVERSIBLE EMPLOYER SUBMISSION ATTEMPT?\n\n" +
+      packet.company + " — " + packet.role_title + "\n" +
+      packet.application_url + "\n\n" +
+      "I personally reviewed the complete employer form, CV, all answers " +
+      "and consent statements. The server reserves this job across devices " +
+      "NOW, even if the browser click later fails. No automatic retry. " +
+      "Only an independently permitted employer may receive the application. Proceed?"
+    )) return;
+    const [response] = await chrome.scripting.executeScript({
+      target: {tabId: tab.id}, world: "ISOLATED",
+      func: reserveFinalClickOnSmartPloy,
+      args: [{
+        workspace_id: packet.workspace_id,
+        expected_revision: packet.revision,
+        expected_document_sha256: packet.document_sha256,
+        expected_cv_pdf_sha256: packet.cv_pdf_sha256,
+        expected_fields_sha256: await approvedFieldsSha256(packet.fields),
+        expected_application_url_sha256: await sha256Text(packet.application_url),
+        expected_cv_pdf_size: packet.cv_pdf_size,
+        confirm_one_job_final_click: true,
+        acknowledge_external_employer_transfer: true,
+        acknowledge_no_automatic_retry: true,
+      }],
+    });
+    const verdict = response?.result;
+    if (response?.frameId !== 0 || verdict?.claim_reserved !== true) {
+      throw new PacketError(
+        "No confirmed server authorization (" + (verdict?.reason || "unknown") +
+        "). Check My applications > attempt status before another action. Do not retry."
+      );
+    }
+    const marker = await recordOneUseFinalAttempt(
+      chrome.storage.session, packet, verdict,
+    );
+    $("finalClaimInfo").textContent =
+      "Server attempt reserved until " +
+      new Date(marker.expires_at).toLocaleTimeString() +
+      ". Return to the SAME employer form, reopen this companion, " +
+      "check all required fields and click the one-use Submit button.";
+    status("One server attempt reserved. Nothing has been sent to the employer yet.", true);
+  } catch (error) {
+    status(normalizeError(error));
+    $("finalClaimInfo").textContent =
+      "No final-click permission confirmed. A server claim may already be " +
+      "consumed. Check My applications before any repeat.";
+  }
+}
+
 async function onInspect() {
   try {
     const tab = await activeTab();
@@ -644,25 +714,107 @@ async function onPreflight() {
     });
     if (!result?.result) throw new PacketError("Employer final-submit check did not complete.");
     const decision = result.result;
-    preflightPassed = false; // A local preflight never authorizes cross-device final click.
-    $("preflight").textContent = decision.ready ?
-      "Required fields and résumé attachment appear complete. Carefully check consent statements, questions and uploaded document before choosing Submit." :
-      "Not ready: " + (decision.blockers || []).join("; ");
-    $("submit").disabled = true; // Requires an authenticated one-time server grant.
-    status(decision.ready ?
-      "Employer form appears ready. Submit using the employer website; SmartPloy automated final click is currently disabled." :
-      "Preflight blocked. Complete the form or submit manually.", Boolean(decision.ready));
+    // A locally complete employer form is not authorization. The first-party
+    // server must already have burned ONE cross-device claim for the exact CV.
+    let grantReady = false;
+    if (decision.ready && !attemptReserved) {
+      try {
+        await requireOneUseFinalAttempt(chrome.storage?.session, currentPacket);
+        const key = await oneAttemptKey(currentPacket);
+        grantReady = !(await chrome.storage.local.get(key))[key];
+      } catch {
+        grantReady = false;
+      }
+    }
+    preflightPassed = Boolean(decision.ready && grantReady);
+    $("preflight").textContent = !decision.ready ?
+      "Not ready: " + (decision.blockers || []).join("; ") :
+      grantReady ?
+      "One-use employer claim is recorded. Confirm the exact CV PDF, " +
+      "all answers, legal statements and consent on the employer form." :
+      "Employer form looks ready, but no valid one-use server claim exists. " +
+      "Return to your signed-in SmartPloy tab and reserve the final action. " +
+      "Then return here and recheck this form.";
+    $("submit").disabled = !preflightPassed || !$("approve").checked;
+    $("submit").setAttribute("aria-disabled", String($("submit").disabled));
+    status(preflightPassed ?
+      "Server-reserved employer attempt ready for your final click. Nothing sent yet." :
+      "No one-use final-click authorization. Submit manually if needed.",
+      preflightPassed);
   } catch (error) { status(normalizeError(error)); }
 }
 
 async function onSubmit() {
-  // Never call chrome.scripting.executeScript with an employer submit click
-  // until an authenticated, one-time *server* claim consumption protocol has
-  // been designed, reviewed and tested with two separate devices.
-  // This handler remains as a fail-closed guard for old/unpacked popup pages.
+  if (!currentPacket || !preflightPassed || !$("approve").checked ||
+      attemptReserved || targetTabId === null) return;
+  if (!window.confirm(
+    "FINAL CONFIRMATION: CLICK THE EMPLOYER'S SUBMIT BUTTON ONCE?\n\n" +
+    currentPacket.company + " — " + currentPacket.role_title + "\n\n" +
+    "The reviewed applicant details and CV may be sent to this employer. " +
+    "The attempt was already reserved across devices and can never be retried " +
+    "automatically. A click is NOT proof the employer accepted the application. Proceed?"
+  )) return;
   $("submit").disabled = true;
+  $("submit").setAttribute("aria-disabled", "true");
   preflightPassed = false;
-  status("Automatic final submission is unavailable until cross-device server authorization is implemented. Review the employer form and submit manually on the employer website. Never retry an uncertain prior attempt.");
+  try {
+    const packet = validateReviewPacket(currentPacketToJSON());
+    const key = await oneAttemptKey(packet);
+    const tab = await activeTab();
+    if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
+        !exactLeverForm(tab.url, packet.application_url)) {
+      throw new PacketError("Employer tab or job changed. Do not risk a second attempt.");
+    }
+    if (!chrome.storage?.local || !chrome.storage?.session) {
+      throw new PacketError("Durable local attempt protection unavailable.");
+    }
+    await withSubmissionLock(key, navigator.locks, async () => {
+      await requireOneUseFinalAttempt(chrome.storage.session, packet);
+      if ((await chrome.storage.local.get(key))[key]) {
+        throw new PacketError("This employer attempt was already used. Do not retry.");
+      }
+      const stamp = {
+        marker: "one_employer_submit_attempt_reserved_v1",
+        recorded_at: new Date().toISOString(),
+      };
+      // Persist irreversible no-retry record BEFORE any employer-page action.
+      // Never save CV, personal name/email, employer URL or a bearer token.
+      await chrome.storage.local.set({[key]: stamp});
+      if ((await chrome.storage.local.get(key))[key]?.marker !== stamp.marker) {
+        throw new PacketError(
+          "Local no-retry record could not be verified. Do not submit."
+        );
+      }
+      attemptReserved = true;
+      await consumeLocalFinalAttempt(chrome.storage.session, packet);
+      const [result] = await chrome.scripting.executeScript({
+        target: {tabId: tab.id}, world: "ISOLATED",
+        func: submitReviewedLeverOnce,
+        args: [{
+          application_url: packet.application_url,
+          cv_pdf_sha256: packet.cv_pdf_sha256,
+          cv_pdf_size: packet.cv_pdf_size,
+          email: packet.fields.email,
+          full_name: packet.fields.full_name,
+          cover_letter: packet.fields.cover_letter,
+        }],
+      });
+      const finding = result?.result;
+      if (!finding) throw new PacketError(
+        "Employer outcome unknown. Attempt reserved; do not retry."
+      );
+      status(finding.attempted ?
+        "One permitted employer final click was attempted. Check the " +
+        "employer confirmation and save its reference. SmartPloy has NOT " +
+        "verified provider acceptance." :
+        "The final click was blocked (" + (finding.reason || "unknown") +
+        "). The server attempt remains consumed; reconcile manually. " +
+        "No automatic retry.", finding.attempted === true);
+    });
+  } catch (error) {
+    status(normalizeError(error) +
+      " If a server or local attempt was reserved, DO NOT retry.");
+  }
 }
 
 async function onResumeReceipt() {
@@ -743,6 +895,7 @@ async function onReceipt() {
 }
 
 $("verifyReview").addEventListener("click", () => void onVerifySmartPloyReview());
+$("reserveFinal").addEventListener("click", () => void onReserveFinalAttempt());
 $("inspect").addEventListener("click", () => void onInspect());
 $("resume").addEventListener("click", () => void onResumeReceipt());
 $("fill").addEventListener("click", () => void onFill());
@@ -764,7 +917,8 @@ $("copyReceipt").addEventListener("click", async () => {
   }
 });
 $("approve").addEventListener("change", () => {
-  $("submit").disabled = true; // User approval alone is not a server-issued claim.
+  $("submit").disabled = !preflightPassed || !$("approve").checked || attemptReserved;
+  $("submit").setAttribute("aria-disabled", String($("submit").disabled));
 });
 $("packet").addEventListener("input", () => {
   currentPacket = null; currentPlan = null; currentQuestionPlan = null; targetTabId = null;
