@@ -49,8 +49,13 @@ def test_answers_are_ephemeral_and_submit_remains_separately_approved():
     assert '"submit").disabled = true' in function_body
     assert 'currentQuestionPlan = null' in function_body
     assert '"questionList").replaceChildren()' in function_body
-    # SP15b: no local-only final click exists. Question fill remains separate
-    # from any future user-authorized cross-device server-granted submit.
+    # SP26: question filling NEVER grants employer-submit authority; only a
+    # separate, signed-in final-click decision with independently approved
+    # employer rights can consume a cross-device sticky claim.
     assert 'func: submitOnce' not in source
     assert 'live[0].click()' not in source
-    assert 'Automatic final submission is unavailable until cross-device server authorization' in source
+    assert 'func: reserveFinalClickOnSmartPloy' in source
+    assert 'func: submitReviewedLeverOnce' in source
+    assert 'requireOneUseFinalAttempt(chrome.storage.session, packet)' in source
+    assert source.index('async function onPreflight()') < source.index(
+        'async function onSubmit()')
