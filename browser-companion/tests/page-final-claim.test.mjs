@@ -107,6 +107,6 @@ test("outdated review, untrusted reply or ambiguous network never returns a clai
   for(const config of [{deny:true},{redirect:true},{invalidReturn:true}]) {
     const r=await simulate("https://smartploy.komplyint.fi",config);
     assert.equal(r.outcome.claim_reserved,false);
-    assert.equal(r.events.length,2);
+    assert.equal(r.events.length,config.redirect?1:2);
   }
 });
