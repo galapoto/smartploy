@@ -51,18 +51,21 @@ export async function submitReviewedLeverOnce(expected) {
     return style.display !== "none" && style.visibility !== "hidden" &&
       element.getClientRects().length > 0;
   };
-  if (document.querySelector(
-    'iframe[src*="recaptcha"],iframe[src*="hcaptcha"],.g-recaptcha,[data-sitekey],.cf-turnstile'
-  )) return fail("security_challenge_requires_human");
+  const challengeSelector =
+    'iframe[src*="recaptcha"],iframe[src*="hcaptcha"],.g-recaptcha,[data-sitekey],.cf-turnstile';
+  if (document.querySelector(challengeSelector)) {
+    return fail("security_challenge_requires_human");
+  }
+  const eligibleSubmitButton = (element) => {
+    const title = String(
+      element.innerText || element.value || element.getAttribute("aria-label") || ""
+    ).replace(/\s+/g, " ").trim().toLowerCase();
+    return visible(element) && !element.disabled &&
+      ["submit application", "send application", "lähetä hakemus",
+       "skicka ansökan"].includes(title);
+  };
   const buttons = Array.from(document.querySelectorAll('button,input[type="submit"]'))
-    .filter((element) => {
-      const title = String(
-        element.innerText || element.value || element.getAttribute("aria-label") || ""
-      ).replace(/\s+/g, " ").trim().toLowerCase();
-      return visible(element) && !element.disabled &&
-        ["submit application", "send application", "lähetä hakemus",
-         "skicka ansökan"].includes(title);
-    });
+    .filter(eligibleSubmitButton);
   if (buttons.length !== 1) return fail("nonunique_final_submit_control");
   const finalButton = buttons[0];
   const form = finalButton.closest("form");
@@ -73,18 +76,19 @@ export async function submitReviewedLeverOnce(expected) {
   const allElements = Array.from(form.querySelectorAll("input,textarea,select"));
   if (allElements.length > 250) return fail("dynamic_form_too_large");
   const elements = allElements.filter(visible);
-  for (const item of elements) {
-    if (item.disabled) continue;
+  const unresolvedEmployerField = (item) => {
+    if (item.disabled) return false;
     const type = String(item.type || "").toLowerCase();
-    if (type === "password" || type === "hidden") continue;
+    if (type === "password" || type === "hidden") return false;
     const required = item.required === true ||
       item.getAttribute("aria-required") === "true";
     const hasValue = type === "file" ? Boolean(item.files?.length) :
       ["checkbox", "radio"].includes(type) ? Boolean(item.checked) :
       Boolean(String(item.value || "").trim());
-    if ((required && !hasValue) || (item.validity && !item.validity.valid)) {
-      return fail("required_employer_field_unresolved");
-    }
+    return (required && !hasValue) || (item.validity && !item.validity.valid);
+  };
+  if (elements.some(unresolvedEmployerField)) {
+    return fail("required_employer_field_unresolved");
   }
   if (typeof form.checkValidity !== "function" || !form.checkValidity()) {
     return fail("employer_form_invalid");
@@ -106,15 +110,18 @@ export async function submitReviewedLeverOnce(expected) {
   }
   const names = elements.filter((item) => item.autocomplete === "name" ||
     /^(full.?name|full.?legal.?name|name|koko nimi|namn)$/.test(labelled(item)));
-  const fullNameMatches = names.length === 1 &&
-    String(names[0].value || "").trim().replace(/\s+/g, " ") ===
-    expected.full_name.trim().replace(/\s+/g, " ");
   const firsts = elements.filter((item) => item.autocomplete === "given-name");
   const lasts = elements.filter((item) => item.autocomplete === "family-name");
-  const splitNameMatches = firsts.length === 1 && lasts.length === 1 &&
-    [firsts[0].value, lasts[0].value].map(s => String(s || "").trim()).join(" ") ===
-      expected.full_name.trim().replace(/\s+/g, " ");
-  if (!fullNameMatches && !splitNameMatches) {
+  const reviewedNameStillMatches = () => {
+    const exactName = expected.full_name.trim().replace(/\s+/g, " ");
+    const fullNameMatches = names.length === 1 &&
+      String(names[0].value || "").trim().replace(/\s+/g, " ") === exactName;
+    const splitNameMatches = firsts.length === 1 && lasts.length === 1 &&
+      [firsts[0].value, lasts[0].value].map(s => String(s || "").trim()).join(" ") ===
+        exactName;
+    return fullNameMatches || splitNameMatches;
+  };
+  if (!reviewedNameStillMatches()) {
     return fail("reviewed_name_changed_or_unverifiable");
   }
 
@@ -158,10 +165,33 @@ export async function submitReviewedLeverOnce(expected) {
     return fail("reviewed_cv_unverifiable");
   }
 
-  // All DOM checks are refreshed just before the ONE click. A dynamic page
-  // racing this click yields an uncertain result, never a silent retry.
-  if (location.href !== here.href || finalButton.disabled || !visible(finalButton) ||
+  // CV reading and SHA-256 hashing are asynchronous. A reactive employer form
+  // can change during either await. Revalidate all bindings synchronously,
+  // without another await between these checks and the ONE final click.
+  const liveControls = Array.from(form.querySelectorAll("input,textarea,select"));
+  const liveVisible = liveControls.filter(visible);
+  const liveSubmitButtons = Array.from(
+    document.querySelectorAll('button,input[type="submit"]')
+  ).filter(eligibleSubmitButton);
+  if (location.href !== here.href || !visible(form) ||
+      document.querySelector(challengeSelector) ||
+      liveControls.length !== allElements.length ||
+      liveControls.some((item, index) => item !== allElements[index]) ||
+      liveVisible.length !== elements.length ||
+      liveVisible.some((item, index) => item !== elements[index]) ||
+      liveSubmitButtons.length !== 1 || liveSubmitButtons[0] !== finalButton ||
       finalButton.closest("form") !== form || !form.checkValidity() ||
+      liveVisible.some(unresolvedEmployerField) ||
+      liveControls.some((item) =>
+        String(item.type || "").toLowerCase() === "file" &&
+        item !== resumes[0] && Boolean(item.files?.length)
+      ) ||
+      resumes[0].files?.length !== 1 || resumes[0].files[0] !== cv ||
+      String(emailInputs[0].value || "").trim().toLowerCase() !==
+        expected.email.trim().toLowerCase() ||
+      !reviewedNameStillMatches() ||
+      (letters.length === 1 &&
+       String(letters[0].value || "").trim() !== expected.cover_letter.trim()) ||
       document.documentElement?.hasAttribute("data-smartploy-final-attempt")) {
     return fail("employer_form_changed");
   }
