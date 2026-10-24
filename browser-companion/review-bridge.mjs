@@ -118,3 +118,73 @@ export async function requireVerifiedReview(storage, packet, now = Date.now()) {
   }
   return true;
 }
+
+
+/* SP26 browser final-click stamp. The server has ALREADY burned its sticky
+   employer-job attempt before this arrives. This session marker is NOT a
+   bearer key, cannot authorize server work or be transferred across devices.
+   Final click requires this + local browser attempt marker + explicit UI
+   confirmation, and always ends as an unverified employer outcome. */
+export async function finalAttemptSessionKey(packet) {
+  const original = await reviewSessionKey(packet);
+  return original.replace(/^smartploy\.review\./, "smartploy.final.");
+}
+
+export async function recordOneUseFinalAttempt(storage, packet, result, now = Date.now()) {
+  sessionStorage(storage);
+  if (!result || result.claim_reserved !== true ||
+      !/^employer-claim-[a-f0-9]{32}$/.test(result.claim_id || "") ||
+      result.provider_acknowledged !== false ||
+      result.external_actions_performed !== false ||
+      result.automatic_retry_authorized !== false) {
+    throw new PacketError(
+      "Server final-action claim is missing or unverified. Check attempt status; do not retry."
+    );
+  }
+  const expires = Date.parse(result.expires_at);
+  if (!Number.isFinite(expires) || expires <= now ||
+      expires > now + 90_000 + 120_000 ||
+      Date.parse(packet.expires_at) <= now) {
+    throw new PacketError(
+      "Server final-action claim expired or untrusted. No employer click is permitted."
+    );
+  }
+  await requireVerifiedReview(storage, packet, now);
+  const key = await finalAttemptSessionKey(packet);
+  if ((await storage.get(key))[key]) {
+    throw new PacketError("A final employer attempt already exists in this browser session.");
+  }
+  const marker = {
+    marker: "reserved-final-click-v1", claim_id: result.claim_id,
+    expires_at: Math.min(expires, now + 90_000),
+  };
+  await storage.set({[key]: marker});
+  if (JSON.stringify((await storage.get(key))[key]) !== JSON.stringify(marker)) {
+    throw new PacketError("One-use browser claim was not durably stored. Never retry the server claim.");
+  }
+  return {expires_at: new Date(marker.expires_at).toISOString()};
+}
+
+export async function requireOneUseFinalAttempt(storage, packet, now = Date.now()) {
+  sessionStorage(storage);
+  await requireVerifiedReview(storage, packet, now);
+  const key = await finalAttemptSessionKey(packet);
+  const item = (await storage.get(key))[key];
+  if (!item || item.marker !== "reserved-final-click-v1" ||
+      !/^employer-claim-[a-f0-9]{32}$/.test(item.claim_id || "") ||
+      !Number.isFinite(item.expires_at) ||
+      item.expires_at <= now || item.expires_at > now + 90_000) {
+    throw new PacketError(
+      "No current one-use server claim for this exact job and CV. " +
+      "Return to the signed-in SmartPloy tab or review the prior attempt."
+    );
+  }
+  return true;
+}
+
+export async function consumeLocalFinalAttempt(storage, packet) {
+  await requireOneUseFinalAttempt(storage, packet);
+  const key = await finalAttemptSessionKey(packet);
+  await storage.set({[key]: {marker: "consumed-final-click-v1"}});
+  return true;
+}
