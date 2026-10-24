@@ -131,6 +131,15 @@ export async function submitReviewedLeverOnce(expected) {
   if (resumes.length !== 1 || resumes[0].files?.length !== 1) {
     return fail("unique_reviewed_cv_attachment_missing");
   }
+  // Only the one previously reviewed CV may be attached. Extra file inputs can
+  // carry private or stale documents that are not covered by the CV digest.
+  const otherAttachments = elements.filter((item) =>
+    String(item.type || "").toLowerCase() === "file" &&
+    item !== resumes[0] && Boolean(item.files?.length)
+  );
+  if (otherAttachments.length) {
+    return fail("unreviewed_extra_attachment_present");
+  }
   const cv = resumes[0].files[0];
   if (cv.size !== expected.cv_pdf_size || cv.size > 2 * 1024 * 1024 ||
       !/\.pdf$/i.test(cv.name) ||
