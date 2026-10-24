@@ -183,6 +183,9 @@ test("verified review + nonbearer server claim authorizes only one exact local a
     assert.equal(written.includes(forbidden),false,forbidden);
   }
   await assert.rejects(recordOneUseFinalAttempt(store,pkt,claim,now),PacketError);
+  await consumeLocalFinalAttempt(store,pkt,now);
+  await assert.rejects(requireOneUseFinalAttempt(store,pkt,now),PacketError);
+  await assert.rejects(consumeLocalFinalAttempt(store,pkt,now),PacketError);
   await assert.rejects(requireOneUseFinalAttempt(store,pkt,now+85_000),PacketError);
   const another=validateReviewPacket(packet({revision:3}),now);
   await assert.rejects(requireOneUseFinalAttempt(store,another,now),PacketError);
