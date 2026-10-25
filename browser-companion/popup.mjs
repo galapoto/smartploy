@@ -281,7 +281,9 @@ async function inspectReceipt(expectedOrigin, expectedAccount, expectedAshbyPost
     /^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}$/.test(expectedAshbyPosting) &&
     (here.pathname === expectedAshbyPosting ||
       here.pathname === expectedAshbyPosting + "/" ||
-      here.pathname.startsWith(expectedAshbyPosting + "/"));
+      here.pathname === expectedAshbyPosting + "/application" ||
+      here.pathname === expectedAshbyPosting + "/application/" ||
+      here.pathname.startsWith(expectedAshbyPosting + "/application/"));
   if (
     here.origin !== expectedOrigin || here.username || here.password ||
     here.port || !(lever || ashby)
