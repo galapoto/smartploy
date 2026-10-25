@@ -94,11 +94,11 @@ def _posting_url(raw: str) -> str:
 
 
 def _assisted_posting_url(raw: str) -> str:
-    """Accept exact hosted Lever/Ashby jobs for user-reviewed form HELP only.
+    """Accept exact hosted Lever, Ashby or Greenhouse for reviewed form HELP.
 
-    IMPORTANT: the original `_posting_url` remains Lever-only and is reused by
-    `employer_automation_rights.employer_job_key` for independent final-send
-    permissions. An assisted Ashby packet does NOT grant any submit authority.
+    The original `_posting_url` remains Lever-only and is used by independent
+    final-submit rights. Greenhouse and Ashby never acquire submit authority.
+    Non-hosted/embedded/custom Greenhouse pages remain manual.
     """
     try:
         return _posting_url(raw)
@@ -109,19 +109,30 @@ def _assisted_posting_url(raw: str) -> str:
         if (
             not isinstance(raw, str) or len(raw) > 1500
             or parsed.scheme != "https"
-            or parsed.hostname != "jobs.ashbyhq.com"
             or parsed.username or parsed.password
             or parsed.port not in (None, 443)
             or parsed.query or parsed.fragment
-            or not re.fullmatch(
-                r"/[A-Za-z0-9_-]{1,100}/[A-Za-z0-9_-]{1,160}(?:/application/?)?",
-                parsed.path,
+            or not (
+                (
+                    parsed.hostname == "jobs.ashbyhq.com"
+                    and re.fullmatch(
+                        r"/[A-Za-z0-9_-]{1,100}/[A-Za-z0-9_-]{1,160}(?:/application/?)?",
+                        parsed.path,
+                    )
+                )
+                or (
+                    parsed.hostname in {"job-boards.greenhouse.io", "boards.greenhouse.io"}
+                    and re.fullmatch(
+                        r"/[A-Za-z0-9_-]{1,100}/jobs/[0-9]{1,20}/?",
+                        parsed.path,
+                    )
+                )
             )
         ):
             raise ValueError
     except (ValueError, TypeError) as exc:
         raise HandoffError(
-            "An exact hosted Lever or Ashby HTTPS application URL is required"
+            "An exact hosted Lever, Ashby or Greenhouse HTTPS job URL is required"
         ) from exc
     return raw
 

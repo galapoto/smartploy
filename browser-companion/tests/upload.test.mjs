@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  UploadError, MAX_PDF_BYTES, chooseResumeField, exactLeverForm, exactAssistedForm, exactAshbyReceiptPage, isLeverFinalProvider,
+  UploadError, MAX_PDF_BYTES, chooseResumeField, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactAshbyReceiptPage, isLeverFinalProvider,
   encodePdfBase64, validatePdf
 } from "../upload.mjs";
 
@@ -137,4 +137,31 @@ test("SP42 Ashby manual receipt observation stays on the exact posted job", () =
     confirmation,current + "/application?unreviewed=1"
   ),false);
   assert.equal(isLeverFinalProvider(current + "/application"),false);
+});
+
+const greenhouseModern="https://job-boards.greenhouse.io/synthetic-it/jobs/123456789";
+const greenhouseLegacy="https://boards.greenhouse.io/synthetic-it/jobs/123456789";
+
+test("SP43 exact reviewed Greenhouse form works on official hosted job and legacy redirect",()=>{
+  for(const approved of [greenhouseModern,greenhouseLegacy]){
+    for(const actual of [greenhouseModern,greenhouseLegacy,greenhouseModern+"/"]){
+      assert.equal(exactGreenhouseForm(actual,approved),true,actual);
+      assert.equal(exactAssistedForm(actual,approved),true);
+    }
+    assert.equal(isLeverFinalProvider(approved),false);
+  }
+  for(const actual of [
+    "https://job-boards.greenhouse.io/synthetic-it/jobs/123456790",
+    "https://job-boards.greenhouse.io/synthetic-it/jobs/1234567890",
+    "https://job-boards.greenhouse.io/another/jobs/123456789",
+    "https://job-boards.greenhouse.io.evil.invalid/synthetic-it/jobs/123456789",
+    "http://job-boards.greenhouse.io/synthetic-it/jobs/123456789",
+    greenhouseModern+"?gh_src=unreviewed",greenhouseModern+"#private",
+    greenhouseModern+"/application",greenhouseModern+"/submit",
+  ]){
+    assert.equal(exactAssistedForm(actual,greenhouseLegacy),false,actual);
+  }
+  assert.equal(exactGreenhouseForm(
+    greenhouseModern,greenhouseModern+"?gh_src=unknown"
+  ),false);
 });

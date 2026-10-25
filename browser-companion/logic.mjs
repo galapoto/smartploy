@@ -70,10 +70,20 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
       return [base, base + "/", base + "/application", base + "/application/"]
         .includes(current.pathname);
     })();
+  // SP43: Only Greenhouse-owned hosted job pages. The old boards host may
+  // redirect to the current job-boards host; both must retain EXACT board+ID.
+  // Custom career pages, embeds, job aliases and tracking links stay manual.
+  const ghHosts = ["boards.greenhouse.io", "job-boards.greenhouse.io"];
+  const greenhouse = ghHosts.includes(target.hostname) &&
+    ghHosts.includes(current.hostname) &&
+    /^\/[A-Za-z0-9_-]{1,100}\/jobs\/[0-9]{1,20}\/?$/.test(target.pathname) &&
+    current.pathname.replace(/\/+$/, "") === target.pathname.replace(/\/+$/, "") &&
+    !target.search && !current.search && !target.hash && !current.hash;
   if (target.protocol !== "https:" || current.protocol !== "https:" ||
       target.username || target.password || current.username || current.password ||
       target.port !== "" || current.port !== "" ||
-      current.origin !== target.origin || !(lever || ashby)) {
+      (current.origin !== target.origin && !greenhouse) ||
+      !(lever || ashby || greenhouse)) {
     throw new PacketError("Open the exact supported employer job/application page linked from SmartPloy");
   }
   const f = packet.fields;

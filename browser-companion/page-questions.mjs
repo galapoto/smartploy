@@ -19,10 +19,16 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
     !here.search && !intended.search && !here.hash && !intended.hash &&
     [ashbyPosting + "/application", ashbyPosting + "/application/"]
       .includes(here.pathname);
+  const ghHosts = ["boards.greenhouse.io", "job-boards.greenhouse.io"];
+  const greenhouse = ghHosts.includes(here.hostname) &&
+    ghHosts.includes(intended.hostname) &&
+    /^\/[A-Za-z0-9_-]{1,100}\/jobs\/[0-9]{1,20}\/?$/u.test(intended.pathname) &&
+    here.pathname.replace(/\/+$/, "") === intended.pathname.replace(/\/+$/, "") &&
+    !here.search && !intended.search && !here.hash && !intended.hash;
   if (here.protocol !== "https:" || intended.protocol !== "https:" ||
-      here.origin !== intended.origin ||
+      (here.origin !== intended.origin && !greenhouse) ||
       here.username || here.password || intended.username || intended.password ||
-      here.port || intended.port || !(lever || ashby) ||
+      here.port || intended.port || !(lever || ashby || greenhouse) ||
       (typeof window !== "undefined" && window.top !== window.self) ||
       location.href !== inspectedUrl) {
     return stop("The employer or application form changed.");

@@ -1,5 +1,15 @@
 # SmartPloy Apply Companion — reviewed Lever and Ashby form assistance
 
+> **SP43 GREENHOUSE HOSTED FORM HELP (source only, 25 Oct):**
+> The same verified first-party review and MV3 companion can help fill
+> ordinary, personally approved contact fields, ordinary reviewed questions
+> and a matching CV PDF on `job-boards.greenhouse.io/{board}/jobs/{id}`
+> (or the equivalent legacy `boards.greenhouse.io` URL with the SAME
+> board+job). It does not support custom employer sites or iframe-only forms.
+> Greenhouse **final submission and browser receipt export remain MANUAL**.
+> Use *I applied on employer site* after personally sending it.
+> See [SP43 boundaries and acceptance](SP43_GREENHOUSE_REVIEWED_BROWSER_HANDOFF.md).
+>
 > **SP42 MANUALLY SUBMITTED ASHBY OBSERVATIONS (source only, 25 Oct):**
 > After YOU personally submit an Ashby application, the same companion
 > can inspect a reference-bearing confirmation on the **same exact job**

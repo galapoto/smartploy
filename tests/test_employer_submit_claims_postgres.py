@@ -1415,3 +1415,62 @@ def test_sp41_real_postgres_ashby_review_verifies_owner_without_employer_submit_
     repo.cancel(a, application_url=url)
     with pytest.raises(EmployerReviewIntentDenied, match="cancelled"):
         repo.verify_for_companion(a, **args)
+
+
+def test_sp43_real_postgres_greenhouse_review_reuses_owner_locked_ledger_not_submit(scoped):
+    """Current official Greenhouse job may be reviewed, NEVER claim employer click."""
+    a,b,wa,wb,key,_,fingerprint,letter,ledger,_=scoped
+    modern="https://job-boards.greenhouse.io/synthetic-it/jobs/123456789"
+    legacy="https://boards.greenhouse.io/synthetic-it/jobs/123456789"
+    with connect(DSN) as conn:
+        conn.execute(
+            "UPDATE smartploy_jobs SET candidate=%s WHERE canonical_key=%s",
+            (Jsonb({
+                "description_fingerprint":fingerprint,
+                "job":{"application_url":modern},
+            }),key),
+        )
+        conn.execute(
+            """UPDATE smartploy_application_workspaces
+               SET application_url=%s WHERE workspace_id IN (%s,%s)""",
+            (modern,wa,wb),
+        )
+    repo=PostgresEmployerReviewIntentRepository(DSN)
+    assert repo._employer_key(modern)==repo._employer_key(legacy)
+    assert repo._employer_key(modern)!=repo._employer_key(
+        "https://job-boards.greenhouse.io/synthetic-it/jobs/123456790"
+    )
+    assert repo._employer_key(modern)!=repo._employer_key(
+        "https://job-boards.greenhouse.io/another/jobs/123456789"
+    )
+    digest=sha256((
+        "Reviewed synthetic resume with sufficient content" + "\0" + letter
+    ).encode()).hexdigest()
+    args=dict(
+        workspace_id=wa,expected_revision=1,
+        expected_application_url=modern,expected_job_fingerprint=fingerprint,
+        expected_document_sha256=digest,expected_cv_pdf_sha256="e"*64,
+    )
+    with pytest.raises(EmployerReviewIntentDenied,match="signed-in review"):
+        repo.verify_for_companion(a,**args)
+    prepared,created=repo.prepare(
+        a,**args,explicit_user_review=True,
+        acknowledge_no_automatic_submit=True,
+    )
+    assert created and prepared.state=="pending"
+    assert prepared.public_status(workspace_id=wa,revision=1)["browser_grant_issued"] is False
+    assert repo.get(b,modern) is None
+    verified=repo.verify_for_companion(a,**args)
+    assert verified.intent_id==prepared.intent_id
+    with pytest.raises(EmployerReviewIntentDenied):
+        repo.verify_for_companion(b,**args)
+    with pytest.raises(EmployerSubmitClaimDenied):
+        ledger.reserve(
+            a,workspace_id=wa,expected_revision=1,
+            expected_application_url=modern,expected_job_fingerprint=fingerprint,
+            explicit_final_user_approval=True,employer_submission_permitted=True,
+        )
+    assert ledger.get(a,key) is None
+    repo.cancel(a,application_url=modern)
+    with pytest.raises(EmployerReviewIntentDenied,match="cancelled"):
+        repo.verify_for_companion(a,**args)

@@ -23,11 +23,18 @@ export async function attachReviewedPdf(payload) {
     !page.search && !approved.search && !page.hash && !approved.hash &&
     [ashbyPosting + "/application", ashbyPosting + "/application/"]
       .includes(page.pathname);
+  const ghHosts = ["boards.greenhouse.io", "job-boards.greenhouse.io"];
+  const greenhouse = ghHosts.includes(page.hostname) &&
+    ghHosts.includes(approved.hostname) &&
+    /^\/[A-Za-z0-9_-]{1,100}\/jobs\/[0-9]{1,20}\/?$/.test(approved.pathname) &&
+    page.pathname.replace(/\/+$/, "") === approved.pathname.replace(/\/+$/, "") &&
+    !page.search && !approved.search && !page.hash && !approved.hash;
   if (
     page.protocol !== "https:" || approved.protocol !== "https:" ||
-    page.origin !== approved.origin || page.username || page.password ||
+    (page.origin !== approved.origin && !greenhouse) ||
+    page.username || page.password ||
     approved.username || approved.password || page.port || approved.port ||
-    !(lever || ashby) || location.href !== payload.inspected_url ||
+    !(lever || ashby || greenhouse) || location.href !== payload.inspected_url ||
     (typeof window !== "undefined" && window.top !== window.self)
   ) return stop("The employer job/form changed; reinspect before attaching.");
   if (
