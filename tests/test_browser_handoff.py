@@ -381,3 +381,108 @@ def test_sp41_server_ashby_workspace_to_signed_user_review_packet_never_contacts
     assert packet.json()["packet"]["privacy"]["employer_submit_allowed_without_new_approval"] is False
     assert packet.json()["external_actions_performed"] is False
     assert client.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
+
+
+# SP43: already ingested current Finland Greenhouse jobs now have an exact,
+# consented owner-reviewed HANDOFF; this does not create employer send rights.
+GREENHOUSE_MODERN = "https://job-boards.greenhouse.io/synthetic-it/jobs/123456789"
+GREENHOUSE_LEGACY = "https://boards.greenhouse.io/synthetic-it/jobs/123456789"
+
+
+@pytest.mark.parametrize("hosted", [GREENHOUSE_MODERN, GREENHOUSE_LEGACY])
+def test_sp43_greenhouse_review_packet_reuses_existing_owner_cv_and_no_submit(hosted):
+    from smartploy.browser_handoff import _posting_url, _assisted_posting_url
+    from smartploy.employer_automation_rights import EmployerRightsDenied, employer_job_key
+
+    item = replace(candidate(), job=replace(candidate().job, application_url=hosted))
+    workspace = replace(ready_workspace(), application_url=hosted)
+    assert _assisted_posting_url(hosted) == hosted
+    assert review_handoff(workspace, item, profile())["ready"] is True
+    packet = make_browser_packet(
+        workspace, item, profile(),
+        now=datetime(2026, 10, 25, 16, 0, tzinfo=timezone.utc),
+    )
+    assert packet["application_url"] == hosted
+    assert packet["fields"]["email"] == "test.candidate@example.com"
+    assert packet["cv_pdf_sha256"] == sha256(
+        render_document(workspace, kind="cv", file_format="pdf")[0]
+    ).hexdigest()
+    assert packet["privacy"]["employer_submit_allowed_without_new_approval"] is False
+    assert "This is an uploaded CV" not in json.dumps(packet)
+    with pytest.raises(HandoffError):
+        _posting_url(hosted)
+    with pytest.raises(EmployerRightsDenied):
+        employer_job_key(hosted)
+
+
+@pytest.mark.parametrize("untrusted", [
+    "https://evil.example/synthetic-it/jobs/123456789",
+    "https://job-boards.greenhouse.io.evil.invalid/synthetic-it/jobs/123456789",
+    "http://job-boards.greenhouse.io/synthetic-it/jobs/123456789",
+    "https://user:secret@job-boards.greenhouse.io/synthetic-it/jobs/123456789",
+    "https://job-boards.greenhouse.io/synthetic-it/jobs/123456789?gh_src=unreviewed",
+    "https://job-boards.greenhouse.io/synthetic-it/jobs/123456789#secret",
+    "https://job-boards.greenhouse.io/synthetic-it/jobs/123456789/submit",
+    "https://job-boards.greenhouse.io/synthetic-it/jobs/123456789-extra",
+    "https://job-boards.greenhouse.io/synthetic-it/jobs/abc",
+    "https://job-boards.greenhouse.io/another/jobs/123456789/redirect",
+    "https://job-boards.greenhouse.io/embed/job_app?for=synthetic-it&token=123456789",
+    "https://careers.example.com/jobs/123456789",
+])
+def test_sp43_greenhouse_rejects_untrusted_employer_forms(untrusted):
+    from smartploy.browser_handoff import _assisted_posting_url
+    with pytest.raises(HandoffError):
+        _assisted_posting_url(untrusted)
+    workspace = replace(ready_workspace(), application_url=untrusted)
+    item = replace(candidate(), job=replace(candidate().job, application_url=untrusted))
+    assert review_handoff(workspace, item, profile())["ready"] is False
+
+
+def test_sp43_greenhouse_owner_application_api_issues_only_review_packet():
+    svc = SmartployService()
+    svc.register_source(SourcePolicy("manual-import", "Manual", "manual", ("manual",)))
+    cli = TestClient(create_app(svc))
+    posted = cli.post("/api/v1/jobs/ingest", json={
+        "observation": {
+            "source_id": "manual-import", "source_mode": "manual",
+            "source_url": GREENHOUSE_MODERN,
+            "raw_text": "Junior data engineer Helsinki Python SQL",
+            "payload": {
+                "company": "Synthetic IT", "role_title": "Junior Data Engineer",
+                "description": "Python SQL ETL in Finland",
+                "application_url": GREENHOUSE_MODERN,
+                "location": "Helsinki",
+            },
+        }
+    })
+    assert posted.status_code == 200, posted.text
+    key = posted.json()["candidate"]["canonical_key"]
+    for fact in profile().approved_facts:
+        assert cli.post("/api/v1/profile/facts", json={
+            "fact_type": fact.fact_type, "value": fact.value, "approved": True,
+        }).status_code == 201
+    created = cli.post(f"/api/v1/jobs/{key}/application-workspace")
+    assert created.status_code == 200, created.text
+    workspace = created.json()["workspace"]
+    wid = workspace["workspace_id"]
+    edited = cli.put(f"/api/v1/application-workspaces/{wid}", json={
+        "expected_revision": workspace["revision"],
+        "cv_text": "Reviewed candidate SQL Python CV",
+        "cover_letter_text": (
+            "Dear Hiring Team, I am interested in this role because my "
+            "reviewed SQL and Python experience matches it. "
+            "Kind regards, Test Candidate."
+        ),
+    })
+    assert edited.status_code == 200, edited.text
+    revision = edited.json()["workspace"]["revision"]
+    readiness = cli.get(f"/api/v1/application-workspaces/{wid}/handoff-readiness")
+    assert readiness.status_code == 200 and readiness.json()["ready"] is True
+    packet = cli.post(f"/api/v1/application-workspaces/{wid}/browser-packet",json={
+        "expected_revision":revision, "confirm_private_data_transfer":True,
+    })
+    assert packet.status_code == 200, packet.text
+    assert packet.json()["packet"]["application_url"] == GREENHOUSE_MODERN
+    assert packet.json()["external_actions_performed"] is False
+    assert packet.json()["packet"]["privacy"]["employer_submit_allowed_without_new_approval"] is False
+    assert cli.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
