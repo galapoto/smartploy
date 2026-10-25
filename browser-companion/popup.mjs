@@ -302,6 +302,14 @@ async function inspectReceipt(expectedOrigin, expectedAccount) {
   };
 }
 
+/* Ashby has NO automated final-click attempt protocol. Do not call the
+   original Lever-only oneAttemptKey on these reviewed form-help packets. */
+async function hasPriorLeverAttempt(packet) {
+  if (!isLeverFinalProvider(packet.application_url)) return false;
+  const key = await oneAttemptKey(packet);
+  return Boolean((await chrome.storage.local.get(key))[key]);
+}
+
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || !tab.url) throw new PacketError("Open the employer job page first.");
@@ -539,8 +547,7 @@ async function onAttach() {
         !exactAssistedForm(tab.url, currentPacket.application_url)) {
       throw new PacketError("Open and reinspect the exact reviewed employer form before attaching.");
     }
-    const attemptKey = await oneAttemptKey(currentPacket);
-    if ((await chrome.storage.local.get(attemptKey))[attemptKey]) {
+    if (await hasPriorLeverAttempt(currentPacket)) {
       throw new PacketError("An application attempt was already reserved. Do not alter or resend this form.");
     }
     const [inspection] = await chrome.scripting.executeScript({
@@ -634,8 +641,7 @@ async function onReviewQuestions() {
         !exactAssistedForm(tab.url, currentPacket.application_url)) {
       throw new QuestionError("Open and reinspect the matching employer application before reviewing questions.");
     }
-    const key = await oneAttemptKey(currentPacket);
-    if ((await chrome.storage.local.get(key))[key]) {
+    if (await hasPriorLeverAttempt(currentPacket)) {
       throw new QuestionError("A submission was already attempted; do not change or repeat this form.");
     }
     const [reply] = await chrome.scripting.executeScript({
@@ -704,9 +710,8 @@ async function onFillQuestions() {
     const again = await activeTab();
     validatePacket(currentPacketToJSON(), again.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
-    const key = await oneAttemptKey(currentPacket);
     if (again.id !== targetTabId || again.url !== tab.url ||
-        (await chrome.storage.local.get(key))[key]) {
+        await hasPriorLeverAttempt(currentPacket)) {
       throw new QuestionError("Application state changed; do not retry until reinspection.");
     }
     const [result] = await chrome.scripting.executeScript({
