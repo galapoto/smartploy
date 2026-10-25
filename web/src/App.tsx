@@ -12,7 +12,7 @@ import {
   startApplicationWorkspace, uploadCV, getJobAIConsents, getJobAIConsentEvents,
   grantJobAIConsent, revokeJobAIConsent,
   getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus,
-  prepareMyMatchingDrafts
+  prepareMyMatchingDrafts, type AutoDraftResult
 } from "./api";
 import {
   filterBySector, formatState, queueLabel, relativeFreshness, safeExternalJobUrl, scoreBand,
@@ -63,6 +63,17 @@ const FACT_TYPES: Array<{ value: string; label: string }> = [
 
 function cx(...parts: Array<string | undefined | false>): string {
   return parts.filter(Boolean).join(" ");
+}
+
+/** Only actual case creations are counted; a draft is never an employer send. */
+function agentTrackingNotice(result: AutoDraftResult): string {
+  const started = result.agents_started || 0;
+  const already = result.agents_already_present || 0;
+  const unavailable = result.agents_unavailable || 0;
+  if (!started && !already && !unavailable) return "";
+  return " " + started + " new private application agent(s), " +
+    already + " existing agent(s), " + unavailable +
+    " agent(s) unavailable. In-app reminders need an independently enabled worker; no employer was contacted.";
 }
 
 function Empty(props: { title: string; description: string; action?: string; onAction?: () => void; icon?: LucideIcon }) {
@@ -453,10 +464,12 @@ export default function App() {
         setNotice("Automatic IT search is enabled, but matching jobs came from manual or unverified sources. Set up a reviewed public employer feed for automatic drafts. You can still review those listings yourself.");
       } else if (shouldScan && firstScan?.status === "prepared" && firstScan.created > 0) {
         setPage("applications");
-        setNotice(firstScan.created + " matched IT application draft(s) prepared privately. Review each CV and letter before any employer submission.");
+        setNotice(firstScan.created + " matched IT application draft(s) prepared privately. Review each CV and letter before any employer submission." +
+          agentTrackingNotice(firstScan));
       } else if (shouldScan && firstScan?.status === "prepared") {
-        setPage("jobs");
-        setNotice("Automatic IT search is enabled. No new safe matches were ready; you can review current jobs and prepare drafts again.");
+        setPage(firstScan.agents_started ? "applications" : "jobs");
+        setNotice("Automatic IT search is enabled. No new safe matches were ready; you can review current jobs and prepare drafts again." +
+          agentTrackingNotice(firstScan));
       } else if (shouldScan && (scanUnavailable || firstScan?.status !== "prepared")) {
         setPage("jobs");
         setNotice("Your automatic IT search setting was saved, but the first draft scan could not finish. Use 'Find and prepare matching drafts now' to retry.");
@@ -719,10 +732,12 @@ export default function App() {
         setNotice("Automatic drafts are not available for these account settings.");
       } else if (result.created) {
         navigate("applications");
-        setNotice(result.created + " new matched IT application draft(s) saved privately. Review each CV and letter before submitting.");
+        setNotice(result.created + " new matched IT application draft(s) saved privately. Review each CV and letter before submitting." +
+          agentTrackingNotice(result));
       } else {
         navigate("jobs");
-        setNotice("No new safe matches this time. Existing private drafts are preserved. Check the source and background-worker status before trying again.");
+        setNotice("No new safe matches this time. Existing private drafts are preserved. Check the source and background-worker status before trying again." +
+          agentTrackingNotice(result));
       }
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged) &&
