@@ -421,7 +421,10 @@ def test_postgres_auto_draft_opt_in_starts_one_private_agent_and_honors_revocati
     spaces = PostgresWorkspaceRepository(DSN)
     cv = PostgresCVRepository(DSN)
     agents = PostgresApplicationAgentRepository(DSN)
-    example = candidate("Junior Data Analyst",
+    # The canonical job identity includes title/company/location. Give this
+    # fixture its own title to avoid merging with earlier tests' same-role
+    # Postgres job while changing the reviewed application URL.
+    example = candidate("Junior Data Analyst " + unique[:10],
                         url="https://careers.example.fi/jobs/" + unique)
     config = {
         "mode": "personalized", "roles": ["Data Analyst"],
