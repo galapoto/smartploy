@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import os
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from smartploy.auto_draft_shortlist import prepare_profile_shortlist
@@ -994,3 +995,163 @@ def test_cross_account_cv_and_profile_mismatch_are_refused_at_final_save():
     assert changing.reads == 2
     assert result.created == 0
     assert spaces.list(pid) == []
+
+def _real_ashby_public_board_candidate():
+    """Exercise the existing SP20 public API adapter, not hand-crafted metadata."""
+    from smartploy.sources.public_ats import (
+        PublicATSSourceConfig, PublicATSRuntimeSettings, build_public_ats_adapter,
+    )
+
+    config = PublicATSSourceConfig.from_dict({
+        "provider": "ashby",
+        "tenant": "synthetic-it",
+        "label": "Synthetic IT Employer",
+        "location_terms": ["Finland", "Helsinki"],
+        "external_ai_forwarding_allowed": False,
+    })
+    posting = {
+        "title": "Junior Data Analyst",
+        "isListed": True,
+        "jobUrl": "https://jobs.ashbyhq.com/synthetic-it/job-123",
+        "applyUrl": "https://jobs.ashbyhq.com/synthetic-it/job-123/application",
+        "descriptionPlain": "Python data analysis and SQL business reporting",
+        "location": "Helsinki, Finland", "isRemote": False,
+        "employmentType": "FullTime", "workplaceType": "Hybrid",
+    }
+    unseen = dict(posting, jobUrl="https://jobs.ashbyhq.com/synthetic-it/hidden",
+                  applyUrl="https://jobs.ashbyhq.com/synthetic-it/hidden/application",
+                  isListed=False)
+    foreign = dict(posting, jobUrl="https://jobs.ashbyhq.com/synthetic-it/foreign",
+                   applyUrl="https://jobs.ashbyhq.com/synthetic-it/foreign/application",
+                   location="Stockholm, Sweden")
+    seen = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, str(request.url)))
+        return httpx.Response(200, json={"jobs": [posting, unseen, foreign]})
+
+    adapter = build_public_ats_adapter(
+        config, PublicATSRuntimeSettings(max_items=10),
+        http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+    )
+    try:
+        observations = adapter.fetch_all(
+            observed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        )
+    finally:
+        adapter.close()
+    assert seen == [(
+        "GET", "https://api.ashbyhq.com/posting-api/job-board/synthetic-it",
+    )]
+    assert len(observations) == 1  # No unlisted/foreign job can gain draft authority.
+    record = normalize_observation(observations[0], adapter.policy())
+    assert record.candidate is not None
+    return record.candidate
+
+
+def test_sp40_actual_finnish_ashby_public_api_prepares_one_private_reviewable_draft():
+    """SP20 job discovery now reaches the EXISTING opted-in AutoApply pipeline."""
+    from smartploy.auto_draft_shortlist import _approved_source_for_auto_draft
+
+    listed = _real_ashby_public_board_candidate()
+    assert listed.source_ids == ("ashby-synthetic-it",)
+    assert listed.job.raw["source_details"]["provider"] == "ashby"
+    assert _approved_source_for_auto_draft(listed)
+    user, prefs, _, profile, cv, spaces, _ = fixture()
+    jobs = MemoryJobRepositoryWith(listed)
+    result = prepare_profile_shortlist(
+        user, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces,
+    )
+    assert result.status == "prepared"
+    assert result.eligible == result.created == 1
+    assert result.unverified_source_skipped == 0
+    drafts = spaces.list(user)
+    assert len(drafts) == 1
+    assert drafts[0].company == "Synthetic IT Employer"
+    assert drafts[0].application_url.endswith("/job-123/application")
+    assert drafts[0].status == "draft"
+    assert drafts[0].to_dict()["authority"]["may_submit_to_employer"] is False
+    assert result.public_counts()["employer_actions_performed"] is False
+    assert result.public_counts()["provider_calls"] == 0
+    again = prepare_profile_shortlist(
+        user, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces,
+    )
+    assert again.created == 0 and again.already_prepared == 1
+    assert len(spaces.list(user)) == 1
+
+
+def test_sp40_ashby_draft_rejects_wrong_board_provider_id_and_rewritten_application():
+    """An ATS-looking source ID is never sufficient for unattended preparation."""
+    from smartploy.auto_draft_shortlist import _approved_source_for_auto_draft
+
+    original = _real_ashby_public_board_candidate()
+    assert _approved_source_for_auto_draft(original)
+
+    def altered_raw(**keys):
+        return replace(original, job=replace(
+            original.job, raw={**original.job.raw, **keys},
+        ))
+
+    mismatches = (
+        replace(original, job=replace(
+            original.job, application_url="https://untrusted.example.invalid/apply")),
+        replace(original, job=replace(
+            original.job,
+            application_url="https://jobs.ashbyhq.com/other-board/job-123/application")),
+        replace(original, job=replace(
+            original.job,
+            application_url="https://jobs.ashbyhq.com/synthetic-it/other-job/application")),
+        replace(original, job=replace(
+            original.job,
+            application_url="http://jobs.ashbyhq.com/synthetic-it/job-123/application")),
+        altered_raw(source_external_id="0" * 64),
+        altered_raw(source_url="https://jobs.ashbyhq.com/synthetic-it/other-job"),
+        altered_raw(source_details={"provider": "lever", "tenant": "synthetic-it"}),
+        altered_raw(source_details={"provider": "ashby", "tenant": "another"}),
+        replace(original, metadata={**original.metadata, "terms_review_status": "review"}),
+        replace(original, metadata={**original.metadata, "source_mode": "browser"}),
+        replace(original, source_ids=("ashby-synthetic-it", "manual-unknown")),
+        replace(original, source_ids=("ashby-other-board",)),
+    )
+    user, prefs, _, profile, cv, spaces, _ = fixture()
+    for rejected in mismatches:
+        assert not _approved_source_for_auto_draft(rejected), rejected
+        result = prepare_profile_shortlist(
+            user, preferences_repository=prefs,
+            job_repository=MemoryJobRepositoryWith(rejected),
+            profile_repository=profile, cv_repository=cv,
+            workspace_repository=spaces,
+        )
+        assert result.created == 0
+        assert result.public_counts()["employer_actions_performed"] is False
+    assert spaces.list(user) == []
+
+
+def test_sp40_ashby_rechecks_changed_employer_target_inside_optin_write_guard():
+    original = _real_ashby_public_board_candidate()
+    switched = replace(original, job=replace(
+        original.job,
+        application_url="https://jobs.ashbyhq.com/other-board/job-123/application",
+    ))
+
+    class ChangedAshbyTarget(MemoryJobRepository):
+        def __init__(self):
+            super().__init__()
+            self.upsert(original)
+
+        def get(self, canonical_key):
+            return switched
+
+    user, prefs, _, profile, cv, spaces, _ = fixture()
+    outcome = prepare_profile_shortlist(
+        user, preferences_repository=prefs, job_repository=ChangedAshbyTarget(),
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces,
+    )
+    assert outcome.created == 0
+    assert spaces.list(user) == []
+    assert outcome.public_counts()["employer_actions_performed"] is False
