@@ -306,7 +306,8 @@ export default function ApplicationStudio(props: {
   }
 
   async function askLocalAI() {
-    if (!selected || dirty || selected.status !== "draft" || browserReceipt || !aiStatus?.ready) return;
+    if (!selected || dirty || selected.status !== "draft" || browserReceipt ||
+        employerAttempt?.previous_attempt_reserved || !aiStatus?.ready) return;
     const ok = window.confirm(
       "Send the job description and your approved profile facts to the configured " +
       "private local ObumAI/Ollama model? Your uploaded CV file, unapproved profile " +
@@ -330,7 +331,8 @@ export default function ApplicationStudio(props: {
   }
 
   async function insertAISuggestion() {
-    if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt) return;
+    if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt ||
+        employerAttempt?.previous_attempt_reserved) return;
     const draft = aiSuggestion.proposal;
     const ticket = captureDraft(selected);
     if (!window.confirm(
@@ -575,8 +577,10 @@ export default function ApplicationStudio(props: {
   }
 
   async function onImportObservedReceipt() {
+    // A reserved employer claim prevents ANOTHER send, not importing
+    // observation-only proof for the original reviewed application.
     if (!selected || selected.status !== "draft" || browserReceipt ||
-        partnerReceipt || employerAttempt?.previous_attempt_reserved) return;
+        partnerReceipt) return;
     let parsed: BrowserReceiptImport;
     try {
       if (receiptInput.length < 30 || receiptInput.length > 5000) {
@@ -613,12 +617,23 @@ export default function ApplicationStudio(props: {
   }
 
   async function markApplied() {
-    if (!selected || selected.status !== "draft" || partnerReceipt ||
-        employerAttempt?.previous_attempt_reserved) return;
+    // Reconciliation of a consumed one-use attempt is NOT a second employer
+    // transfer. The signed-in owner must personally confirm an actual send.
+    if (!selected || selected.status !== "draft" || partnerReceipt) return;
     if (dirty) { setError("Save the document changes before updating its application status."); return; }
-    if (!window.confirm(
-      "Confirm that you personally submitted this application on the employer's website. " +
-      "SmartPloy has NOT submitted it or verified the employer's confirmation."
+    const reserved = employerAttempt?.previous_attempt_reserved === true;
+    if (reserved && !browserReceipt) {
+      setError("Import a matching browser-observed confirmation before reporting a reserved attempt. If no confirmation exists, leave the attempt for human review; do not retry.");
+      return;
+    }
+    if (!window.confirm(reserved
+      ? "RECONCILE THIS PREVIOUS EMPLOYER ATTEMPT?\n\n" +
+        "Only continue if you PERSONALLY CONFIRMED the employer received your application. " +
+        "This records your own report; it does NOT verify an employer acknowledgement, " +
+        "click Submit, or retry the reserved attempt. If the result is uncertain, CANCEL " +
+        "and leave the application awaiting review."
+      : "Confirm that you personally submitted this application on the employer's website. " +
+        "SmartPloy has NOT submitted it or verified the employer's confirmation."
     )) return;
     const reference = window.prompt("Optional employer confirmation/reference (leave blank if unavailable):", "");
     if (reference === null) return;
@@ -708,6 +723,10 @@ export default function ApplicationStudio(props: {
           <span className="studio-list-copy"><strong>{item.role_title}</strong><small>{item.company}</small>
             <em>{item.status === "provider_acknowledged" ? "Sent · Lever acknowledged" :
               item.status === "self_reported_applied" ? "Applied · self-reported" :
+              item.workspace_id === selectedId && browserReceipt
+                ? "Confirmation observed · not verified" :
+              item.workspace_id === selectedId && employerAttempt?.previous_attempt_reserved
+                ? "Attempt reserved · review outcome" :
               "Draft · not submitted"}</em>
           </span>
         </button>)}
@@ -726,9 +745,12 @@ export default function ApplicationStudio(props: {
               selected.status === "self_reported_applied" ?
               <span className="state-pill waiting"><Clock3 size={13}/>
                 User-reported applied · not employer-verified</span> :
-              <span className="state-pill good">{browserReceipt ?
-                "Confirmation observed · employer verification pending" :
-                "Editable draft · not submitted"}</span>}
+              <span className={"state-pill " +
+                (browserReceipt || employerAttempt?.previous_attempt_reserved ? "waiting" : "good")}>
+                {browserReceipt ? "Confirmation observed · employer verification pending" :
+                  employerAttempt?.previous_attempt_reserved
+                    ? "Previous attempt · outcome needs review"
+                    : "Editable draft · not submitted"}</span>}
           </div>
           {safePostingLink(selected.application_url) ? (
             <a href={safePostingLink(selected.application_url)} className="outline-btn compact"
@@ -762,7 +784,8 @@ export default function ApplicationStudio(props: {
             </div>
           </div>
           <button className="outline-btn studio-ai-trigger" type="button"
-            disabled={!aiStatus?.ready || busy || aiBusy || dirty || selected.status !== "draft" || !!browserReceipt}
+            disabled={!aiStatus?.ready || busy || aiBusy || dirty || selected.status !== "draft" ||
+              !!browserReceipt || employerAttempt?.previous_attempt_reserved === true}
             onClick={() => void askLocalAI()}>
             <WandSparkles size={16}/> {aiBusy ? "Generating with the local model…" : "Suggest tailored wording"}
           </button>
@@ -793,7 +816,8 @@ export default function ApplicationStudio(props: {
         <div className="studio-document">
           <div className="studio-document-head"><strong><FileText size={17}/> CV draft</strong><span>{cvText.length.toLocaleString()} / 30,000 characters</span></div>
           <textarea aria-label="Editable CV text" rows={15} maxLength={30000}
-            readOnly={selected.status !== "draft" || !!browserReceipt} value={cvText}
+            readOnly={selected.status !== "draft" || !!browserReceipt ||
+              employerAttempt?.previous_attempt_reserved === true} value={cvText}
             onChange={(event) => setCvText(event.target.value)}
             placeholder="Your reviewed CV content" />
           <small>Started from your uploaded CV, when available; otherwise only approved profile facts.</small>
@@ -809,7 +833,8 @@ export default function ApplicationStudio(props: {
         <div className="studio-document">
           <div className="studio-document-head"><strong><FileCheck2 size={17}/> Cover letter draft</strong><span>{letterText.length.toLocaleString()} / 10,000 characters</span></div>
           <textarea aria-label="Editable cover letter text" rows={13} maxLength={10000}
-            readOnly={selected.status !== "draft" || !!browserReceipt} value={letterText}
+            readOnly={selected.status !== "draft" || !!browserReceipt ||
+              employerAttempt?.previous_attempt_reserved === true} value={letterText}
             onChange={(event) => setLetterText(event.target.value)}
             placeholder="Your reviewed cover letter" />
           <small>Edit the draft to include specific, accurate examples. Draft language is not an AI quality guarantee.</small>
@@ -829,11 +854,15 @@ export default function ApplicationStudio(props: {
             <ExternalLink size={18} />
           </div>
           {employerAttempt?.previous_attempt_reserved ? (
-            <p role="alert" className="studio-handoff-blockers">
-              An attempt for this employer job is already reserved across devices. Its outcome is
-              {employerAttempt.state === "uncertain" ? " uncertain" : " unverified"}.
-              Do not start another application; reconcile the employer result first.
-            </p>
+            <div role="alert" aria-label="Reserved attempt reconciliation" className="studio-handoff-blockers">
+              <strong>An attempt for this employer job is already reserved across devices.</strong>
+              <p>Its outcome is {employerAttempt.state === "uncertain" ? "uncertain" : "unverified"}.
+                Do not submit again or request a new browser packet.</p>
+              <p>Check the employer page and confirmation email. If the companion produced
+                a reference-bearing confirmation, import its observed receipt below FIRST.
+                After importing it, you may confirm the outcome for this exact job.
+                Without a matching receipt, leave the attempt awaiting review; SmartPloy never retries it.</p>
+            </div>
           ) : (
             <p className="muted">
               {finalAction?.trusted_one_use_browser_redemption_available
@@ -1017,8 +1046,12 @@ export default function ApplicationStudio(props: {
                 !!partnerReceipt || employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void save()}><Save size={16}/>{busy ? "Working…" : "Save changes"}</button>
             <button type="button" className="navy-btn" disabled={busy ||
-                !!partnerReceipt || employerAttempt?.previous_attempt_reserved === true}
-              onClick={() => void markApplied()}>I applied on employer site <CheckCircle2 size={16}/></button>
+                !!partnerReceipt ||
+                (employerAttempt?.previous_attempt_reserved === true && !browserReceipt)}
+              onClick={() => void markApplied()}>
+              {employerAttempt?.previous_attempt_reserved
+                ? "Confirm outcome of previous attempt" : "I applied on employer site"}
+              <CheckCircle2 size={16}/></button>
           </div> : selected.status === "provider_acknowledged" ?
             <p>Lever acknowledged your application{partnerReceipt ?
               " · Reference " + partnerReceipt.provider_application_id : ""}.

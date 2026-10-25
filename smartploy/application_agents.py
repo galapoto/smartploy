@@ -135,7 +135,12 @@ class PostgresApplicationAgentRepository:
                              SELECT 1 FROM smartploy_account_erasure_requests er
                              WHERE er.profile_id = w.profile_id
                          )
-                       ON CONFLICT (workspace_id) DO NOTHING
+                       -- Concurrent case-creation calls share BOTH unique keys:
+                       -- the deterministic agent_id PK and the workspace_id
+                       -- unique constraint. Targeting only workspace_id lets
+                       -- the losing request raise an agent_id UniqueViolation
+                       -- under PostgreSQL's speculative insert conflict order.
+                       ON CONFLICT DO NOTHING
                        RETURNING agent_id""",
                     (identity, moment, moment, moment, moment, workspace, owner),
                 )

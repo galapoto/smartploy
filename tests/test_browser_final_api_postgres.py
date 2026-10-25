@@ -6,6 +6,7 @@ server-atomic one-attempt reservation. This test never clicks an external page.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timezone
 from hashlib import sha256
 import os
 from uuid import uuid4
@@ -169,6 +170,13 @@ def reviewed_case(monkeypatch):
                 (a.user_id,b.user_id),
             )
         if work:
+            # A reconciled browser observation has a separate private ledger;
+            # clean it before removing this synthetic application workspace.
+            with connect(DSN) as conn:
+                conn.execute(
+                    "DELETE FROM smartploy_browser_receipts WHERE profile_id=%s AND workspace_id=%s",
+                    (a.profile_id, work.workspace_id),
+                )
             workspaces.delete(a.profile_id, work.workspace_id)
         with connect(DSN) as conn:
             conn.execute(
@@ -270,3 +278,107 @@ def test_exact_oidc_review_two_person_rights_reserves_once_without_employer_send
                 (case["a"].profile_id,),
             )
             assert cur.fetchone()[0] == 0
+
+
+def test_reserved_browser_attempt_reconciles_observed_receipt_then_owner_report(reviewed_case):
+    """SP31: finish a previously claimed application, never send the same job twice.
+
+    Uses the real OIDC / PostgreSQL HTTP routes, but only a synthetic employer
+    job and a fake on-page observation. No external employer request is made.
+    """
+    case = reviewed_case
+    api = case["api"]
+    workspace = case["work"]
+    path = f"/api/v1/application-workspaces/{workspace.workspace_id}"
+    headers = case["headers"]
+    authorize_review_and_employer(case)
+    reserved = api.post(case["claim_route"], json=case["body"], headers=headers)
+    assert reserved.status_code == 200, reserved.text
+    assert reserved.json()["provider_acknowledged"] is False
+
+    # Reuse the original transactional PostgreSQL claim guard: no CV or
+    # letter change is permitted while an employer attempt remains reserved.
+    altered = api.put(path, json={
+        "expected_revision": workspace.revision,
+        "cv_text": workspace.cv_text + "\\nUnreviewed later edits",
+        "cover_letter_text": workspace.cover_letter_text,
+    }, headers=headers)
+    assert altered.status_code == 409, altered.text
+    assert "reserved" in altered.text.lower()
+
+    # Merely consuming a browser claim is not proof of a completed send.
+    before_receipt = api.post(
+        path + "/report-applied", json={
+            "expected_revision": workspace.revision,
+            "confirmed_external_application": True,
+            "reference": "SYNTHETIC-ACK-1234",
+        }, headers=headers,
+    )
+    assert before_receipt.status_code == 409
+    assert api.get(path).json()["workspace"]["status"] == "draft"
+
+    observed = {
+        "schema": "smartploy.browser_receipt.v1",
+        "workspace_id": workspace.workspace_id,
+        "document_revision": workspace.revision,
+        "document_sha256": case["packet"]["document_sha256"],
+        "application_url": workspace.application_url,
+        "confirmation_page_url": case["url"].replace("/apply", "/confirmation")
+            + "?private_query=never_store",
+        "reference": "SYNTHETIC-ACK-1234",
+        "confirmation_page_sha256": "b" * 64,
+        "observed_at": datetime.now(timezone.utc).isoformat(),
+        "confirmed_visible": True,
+    }
+    # The claimed employer job still permits evidence-only reconciliation.
+    receipt = api.post(
+        path + "/browser-receipt",
+        json={"confirm_user_observed": True, "receipt": observed},
+        headers=headers,
+    )
+    assert receipt.status_code == 200, receipt.text
+    assert receipt.json()["receipt"]["status"] == "browser_observed_unverified"
+    assert receipt.json()["external_confirmation_verified"] is False
+    assert receipt.json()["receipt"]["actually_submitted_count_changed"] is False
+
+    # Same visible email, but a different OIDC subject cannot read this record.
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
+    assert api.get(path + "/browser-receipt").status_code == 404
+    assert api.post(
+        path + "/report-applied", json={
+            "expected_revision": workspace.revision,
+            "confirmed_external_application": True,
+            "reference": "SYNTHETIC-ACK-1234",
+        }, headers=headers,
+    ).status_code in {403, 404, 409}
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+
+    # Owner explicitly reports a confirmed delivery. This updates ONLY the
+    # local application workspace, never a provider-issued acknowledgment.
+    report = api.post(
+        path + "/report-applied", json={
+            "expected_revision": workspace.revision,
+            "confirmed_external_application": True,
+            "reference": "SYNTHETIC-ACK-1234",
+        }, headers=headers,
+    )
+    assert report.status_code == 200, report.text
+    assert report.json()["workspace"]["status"] == "self_reported_applied"
+    assert report.json()["external_confirmation_verified"] is False
+    saved = api.get(path, headers=headers)
+    assert saved.status_code == 200
+    assert saved.json()["workspace"]["status"] == "self_reported_applied"
+    assert api.get(path + "/browser-receipt").json()["present"] is True
+    assert api.post(case["claim_route"], json=case["body"], headers=headers).status_code == 409
+    # Prior attempt remains in the durable cross-device ledger, not released
+    # by importing an observation or by reporting the applicant's outcome.
+    claim = PostgresEmployerSubmitClaimRepository(DSN).get(
+        case["a"], workspace.canonical_key,
+    )
+    assert claim is not None and claim.claim_id == reserved.json()["claim_id"]
+    with connect(DSN) as conn:
+        row = conn.execute(
+            "SELECT count(*) FROM smartploy_partner_application_receipts WHERE profile_id=%s",
+            (case["a"].profile_id,),
+        ).fetchone()
+        assert row and row[0] == 0

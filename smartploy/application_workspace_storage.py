@@ -152,12 +152,16 @@ class PostgresWorkspaceRepository:
     def _lock_claim_free_draft(
         cur, profile_id: str, workspace_id: str, expected_revision: int,
         *, allow_self_reported: bool = False,
+        allow_browser_receipt_report: bool = False,
     ) -> bool:
         """Share the original locked workspace and SP15a sticky claim boundary.
 
         Perform the claim lookup AFTER the row lock, in a new statement, to
         prevent a concurrent provider attempt committing between a stale
         READ COMMITTED statement snapshot and a manual edit/report update.
+        A recorded browser observation may permit a SELF-REPORTED outcome
+        only for the consumed browser channel; it never releases the claim
+        or authorizes editing/retrying the employer submission.
         """
         cur.execute(
             """SELECT revision,status,canonical_key
@@ -181,9 +185,37 @@ class PostgresWorkspaceRepository:
             (profile_id,workspace_id,str(row[2])),
         )
         if cur.fetchone():
-            raise WorkspaceRevisionConflict(
-                "An employer submission attempt is reserved. Do not edit or re-report."
-            )
+            can_reconcile = False
+            if allow_browser_receipt_report:
+                # Require an actual consumed BROWSER action and an already
+                # validated owner/job/revision/document-bound observation.
+                # An uncertain official PARTNER API attempt remains blocked.
+                from .employer_automation_rights import ACTION
+                cur.execute(
+                    """SELECT 1 FROM smartploy_employer_submit_claims AS c
+                       JOIN smartploy_employer_final_approvals AS f
+                         ON f.user_id=c.user_id AND f.profile_id=c.profile_id
+                        AND f.workspace_id=c.workspace_id
+                        AND f.employer_job_key_sha256=c.employer_job_key_sha256
+                        AND f.document_revision=c.document_revision
+                        AND f.document_sha256=c.document_sha256
+                        AND f.action_scope=%s AND f.state='consumed_unverified'
+                       JOIN smartploy_browser_receipts AS r
+                         ON r.profile_id=c.profile_id AND r.workspace_id=c.workspace_id
+                        AND r.document_revision=c.document_revision
+                        AND r.document_sha256=c.document_sha256
+                        AND r.status='browser_observed_unverified'
+                       WHERE c.profile_id=%s AND c.workspace_id=%s AND c.canonical_key=%s
+                         AND c.state IN ('reserved_unverified','uncertain')
+                       LIMIT 1""",
+                    (ACTION, profile_id, workspace_id, str(row[2])),
+                )
+                can_reconcile = cur.fetchone() is not None
+            if not can_reconcile:
+                raise WorkspaceRevisionConflict(
+                    "An employer submission attempt is reserved. "
+                    "Do not edit or re-report without a reviewed browser receipt."
+                )
         return True
 
     def edit(self, profile_id: str, workspace_id: str, *,
@@ -225,7 +257,8 @@ class PostgresWorkspaceRepository:
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 editable=self._lock_claim_free_draft(
-                    cur,profile_id,workspace_id,expected_revision,allow_self_reported=True
+                    cur,profile_id,workspace_id,expected_revision,
+                    allow_self_reported=True,allow_browser_receipt_report=True
                 )
                 if editable:
                     cur.execute(

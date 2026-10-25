@@ -402,6 +402,89 @@ describe("Application Studio private-read account boundary", () => {
     expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
   });
 
+  it("reconciles a consumed browser attempt with an observed receipt and owner report, never a second send", async () => {
+    vi.mocked(api.getEmployerAttemptStatus).mockResolvedValue({
+      previous_attempt_reserved: true, state: "uncertain",
+      requires_human_reconciliation: true, automatic_employer_submit_authorized: false,
+      external_confirmation_verified: false, cross_device_server_claim_required: true
+    });
+    const observed = {
+      workspace_id: "workspace-A", document_revision: 1,
+      document_sha256: "a".repeat(64),
+      reference: "SYNTHETIC-ACK-1234", status: "browser_observed_unverified",
+      observed_at: "2026-10-25T10:00:00Z", confirmation_page_url: "https://example.invalid/confirmed",
+      confirmation_page_sha256: "b".repeat(64), evidence_digest: "c".repeat(64),
+      independently_verified_by_employer: false, actually_submitted_count_changed: false,
+    } as never;
+    vi.mocked(api.getBrowserReceipt)
+      .mockResolvedValueOnce({ present: false, receipt: null })
+      .mockResolvedValue({ present: true, receipt: observed });
+    vi.mocked(api.importBrowserReceipt).mockResolvedValue({
+      receipt: observed, external_confirmation_verified: false
+    });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(window, "prompt").mockReturnValue("SYNTHETIC-ACK-1234");
+
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const panel = await screen.findByLabelText("Reserved attempt reconciliation");
+    expect(panel.textContent).toContain("Do not submit again");
+    expect(panel.textContent).toContain("import its observed receipt");
+    expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).readOnly).toBe(true);
+    expect((screen.getByRole("textbox", { name: "Editable cover letter text" }) as HTMLTextAreaElement).readOnly).toBe(true);
+    expect((screen.getByRole("button", { name: /Copy approved autofill packet/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /Save changes/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /Confirm outcome of previous attempt/ }) as HTMLButtonElement).disabled).toBe(true);
+
+    // The existing owner-bound receipt import remains available AFTER claim
+    // reservation; it is evidence-only and cannot perform an employer action.
+    fireEvent.click(screen.getByRole("button", { name: /Import observed receipt/ }));
+    const payload = {
+      schema: "smartploy.browser_receipt.v1", workspace_id: "workspace-A",
+      document_revision: 1, confirmed_visible: true,
+    };
+    fireEvent.change(screen.getByRole("textbox", { name: "Paste receipt from the companion" }), {
+      target: { value: JSON.stringify(payload) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Store observed confirmation/ }));
+    await waitFor(() => expect(api.importBrowserReceipt).toHaveBeenCalledWith(
+      "workspace-A", payload, "usr-a"
+    ));
+    expect(await screen.findByText(/confirmation was observed in your browser/)).toBeTruthy();
+
+    const reconcile = screen.getByRole("button", { name: /Confirm outcome of previous attempt/ });
+    expect((reconcile as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(reconcile);
+    await waitFor(() => expect(api.markApplicationManuallySent).toHaveBeenCalledWith(
+      "workspace-A", 1, "SYNTHETIC-ACK-1234", "usr-a"
+    ));
+    expect(confirm.mock.calls.some((c) =>
+      String(c[0]).includes("RECONCILE THIS PREVIOUS EMPLOYER ATTEMPT")
+    )).toBe(true);
+    expect(await screen.findByText(/Recorded as personally reported applied/)).toBeTruthy();
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("does not mark a reserved attempt applied when the owner cannot confirm the result", async () => {
+    vi.mocked(api.getEmployerAttemptStatus).mockResolvedValue({
+      previous_attempt_reserved: true, state: "reserved_unverified",
+      requires_human_reconciliation: true, automatic_employer_submit_authorized: false,
+      external_confirmation_verified: false, cross_device_server_claim_required: true
+    });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const reconcile = await screen.findByRole("button", { name: /Confirm outcome of previous attempt/ });
+    expect((reconcile as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(reconcile);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+    expect(api.importBrowserReceipt).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(screen.getByText(/Previous attempt · outcome needs review/)).toBeTruthy();
+  });
+
   it("shows manual-only guidance if the server attempt status cannot be verified", async () => {
     vi.mocked(api.getEmployerAttemptStatus).mockRejectedValue(new Error("Synthetic database unavailable"));
     studio();
