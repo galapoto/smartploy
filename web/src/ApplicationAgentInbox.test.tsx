@@ -7,7 +7,10 @@ import type {
   ApplicationAgentInboxItem, ApplicationAgentInboxPage,
 } from "./types";
 
-vi.mock("./api", () => ({ getApplicationAgentInbox: vi.fn() }));
+vi.mock("./api", () => ({
+  getApplicationAgentInbox: vi.fn(),
+  checkDueApplicationAgentInbox: vi.fn(),
+}));
 
 const first: ApplicationAgentInboxItem = {
   agent_id: "agent-A", workspace_id: "workspace-A", canonical_key: "fictional-A",
@@ -45,6 +48,12 @@ function deferred<T>() {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(api.getApplicationAgentInbox).mockResolvedValue(page([first]));
+  vi.mocked(api.checkDueApplicationAgentInbox).mockResolvedValue({
+    checked_in_app: true, cases_checked: 1, in_app_reminders: 1,
+    workspace_updates_reconciled: 0, more_actionable_cases: false,
+    external_actions_performed: 0, employer_contacts: 0,
+    background_worker_verified: false,
+  });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -52,7 +61,7 @@ describe("SP35 owner-scoped agent action inbox", () => {
   it("shows the server-prioritized due case and opens its original workspace", async () => {
     const verifyAccount = vi.fn(async () => undefined);
     const onOpen = vi.fn();
-    render(<ApplicationAgentInbox verifyAccount={verifyAccount} onOpen={onOpen}/>);
+    render(<ApplicationAgentInbox expectedUserId="usr-a" verifyAccount={verifyAccount} onOpen={onOpen}/>);
     const action = await screen.findByRole("button", {
       name: "Open Junior QA Tester at Fictional Company A application",
     });
@@ -67,6 +76,98 @@ describe("SP35 owner-scoped agent action inbox", () => {
     expect(screen.queryByRole("button", { name: /submit/i })).toBeNull();
   });
 
+  it("manually checks up to ten due agents, refreshes priorities, and never contacts employers", async () => {
+    const verifyAccount = vi.fn(async () => undefined);
+    const onOpen = vi.fn();
+    vi.mocked(api.getApplicationAgentInbox)
+      .mockResolvedValueOnce(page([first]))
+      .mockResolvedValueOnce(page([{ ...first, attention_state: "draft_review",
+        next_due_at: "2026-11-20T12:00:00Z" }]));
+    render(<ApplicationAgentInbox expectedUserId="usr-a"
+      verifyAccount={verifyAccount} onOpen={onOpen}/>);
+    const check = await screen.findByRole("button", {
+      name: "Check due private agents (up to 10)",
+    });
+    fireEvent.click(check);
+    await waitFor(() => expect(api.checkDueApplicationAgentInbox).toHaveBeenCalledTimes(1));
+    expect(api.checkDueApplicationAgentInbox).toHaveBeenCalledWith("usr-a");
+    expect(await screen.findByText(/1 private application agent\(s\) checked/)).toBeTruthy();
+    expect(screen.getByText(/1 due in-app reminder\(s\) recorded/)).toBeTruthy();
+    expect(screen.getByText(/No employer was contacted/)).toBeTruthy();
+    await waitFor(() => expect(api.getApplicationAgentInbox).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole(
+      "button", { name: "Check due private agents (up to 10)" },
+    )).toBeNull());
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(verifyAccount).toHaveBeenCalledTimes(6); // initial, check, reload: before+after
+  });
+
+  it("does not allow double-clicking to repeat a pending private mutation", async () => {
+    const pending = deferred<Awaited<ReturnType<
+      typeof api.checkDueApplicationAgentInbox
+    >>>();
+    vi.mocked(api.checkDueApplicationAgentInbox).mockReturnValue(pending.promise);
+    const verify = vi.fn(async () => undefined);
+    render(<ApplicationAgentInbox expectedUserId="usr-a"
+      verifyAccount={verify} onOpen={vi.fn()}/>);
+    const button = await screen.findByRole("button", {
+      name: "Check due private agents (up to 10)",
+    });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => expect(api.checkDueApplicationAgentInbox).toHaveBeenCalledTimes(1));
+    expect(button).toHaveProperty("disabled", true);
+    pending.resolve({
+      checked_in_app: true, cases_checked: 1, in_app_reminders: 0,
+      workspace_updates_reconciled: 1, more_actionable_cases: false,
+      external_actions_performed: 0, employer_contacts: 0,
+      background_worker_verified: false,
+    });
+    expect(await screen.findByText(/1 saved status change\(s\) reconciled/)).toBeTruthy();
+    expect(screen.getByText(/No employer was contacted/)).toBeTruthy();
+  });
+
+  it("does not display an old account's batch-check result after a cookie switch", async () => {
+    const pending = deferred<Awaited<ReturnType<
+      typeof api.checkDueApplicationAgentInbox
+    >>>();
+    vi.mocked(api.checkDueApplicationAgentInbox).mockReturnValue(pending.promise);
+    let calls = 0;
+    const verifyAccount = vi.fn(async () => {
+      calls += 1;
+      if (calls >= 4) throw new Error("OIDC user changed");
+    });
+    render(<ApplicationAgentInbox expectedUserId="usr-a"
+      verifyAccount={verifyAccount} onOpen={vi.fn()}/>);
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Check due private agents (up to 10)",
+    }));
+    await waitFor(() => expect(api.checkDueApplicationAgentInbox).toHaveBeenCalledTimes(1));
+    pending.resolve({
+      checked_in_app: true, cases_checked: 1, in_app_reminders: 1,
+      workspace_updates_reconciled: 0, more_actionable_cases: false,
+      external_actions_performed: 0, employer_contacts: 0,
+      background_worker_verified: false,
+    });
+    await waitFor(() => expect(verifyAccount).toHaveBeenCalledTimes(5));
+    expect(screen.queryByText(/private application agent\(s\) checked/)).toBeNull();
+    expect(api.getApplicationAgentInbox).toHaveBeenCalledTimes(1);
+  });
+
+  it("never offers a due mutation when the queue is empty, paused or waiting", async () => {
+    vi.mocked(api.getApplicationAgentInbox).mockResolvedValue(page([
+      { ...first, state: "paused", attention_state: "paused" },
+      { ...other, state: "active", attention_state: "awaiting_response" },
+    ]));
+    render(<ApplicationAgentInbox expectedUserId="usr-a"
+      verifyAccount={vi.fn(async () => undefined)} onOpen={vi.fn()}/>);
+    await screen.findByText("Junior Data Analyst · Fictional Company B");
+    expect(screen.queryByRole("button", {
+      name: "Check due private agents (up to 10)",
+    })).toBeNull();
+    expect(api.checkDueApplicationAgentInbox).not.toHaveBeenCalled();
+  });
+
   it("paginates the original owner-only queue and reload resets stale entries", async () => {
     vi.mocked(api.getApplicationAgentInbox).mockImplementation(
       async (_limit, offset) => offset === 25
@@ -74,7 +175,7 @@ describe("SP35 owner-scoped agent action inbox", () => {
         : page([first], true, 25),
     );
     const verify = vi.fn(async () => undefined);
-    render(<ApplicationAgentInbox verifyAccount={verify} onOpen={vi.fn()}/>);
+    render(<ApplicationAgentInbox expectedUserId="usr-a" verifyAccount={verify} onOpen={vi.fn()}/>);
     expect(await screen.findByText("Junior QA Tester · Fictional Company A")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Load more application agents/i }));
     expect(await screen.findByText("Junior Data Analyst · Fictional Company B")).toBeTruthy();
@@ -97,7 +198,7 @@ describe("SP35 owner-scoped agent action inbox", () => {
       .mockResolvedValueOnce(undefined)
       .mockRejectedValue(new Error("Different OIDC subject"));
     const onOpen = vi.fn();
-    render(<ApplicationAgentInbox verifyAccount={verify} onOpen={onOpen}/>);
+    render(<ApplicationAgentInbox expectedUserId="usr-a" verifyAccount={verify} onOpen={onOpen}/>);
     await waitFor(() => expect(api.getApplicationAgentInbox).toHaveBeenCalledTimes(1));
     pending.resolve(page([first]));
     await waitFor(() => expect(verify).toHaveBeenCalledTimes(3));
@@ -109,7 +210,7 @@ describe("SP35 owner-scoped agent action inbox", () => {
     vi.mocked(api.getApplicationAgentInbox).mockRejectedValue(
       new Error("Application agent inbox unavailable"),
     );
-    render(<ApplicationAgentInbox verifyAccount={vi.fn(async () => {})}
+    render(<ApplicationAgentInbox expectedUserId="usr-a" verifyAccount={vi.fn(async () => {})}
       onOpen={vi.fn()}/>);
     expect(await screen.findByRole("alert")).toHaveProperty(
       "textContent", "Application agent inbox unavailable",
@@ -119,7 +220,7 @@ describe("SP35 owner-scoped agent action inbox", () => {
 
   it("states when no private case exists without claiming an employer send", async () => {
     vi.mocked(api.getApplicationAgentInbox).mockResolvedValue(page([]));
-    render(<ApplicationAgentInbox verifyAccount={vi.fn(async () => {})}
+    render(<ApplicationAgentInbox expectedUserId="usr-a" verifyAccount={vi.fn(async () => {})}
       onOpen={vi.fn()}/>);
     expect(await screen.findByText(/No tracked application agents yet/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /open.*application/i })).toBeNull();
