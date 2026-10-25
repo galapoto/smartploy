@@ -78,4 +78,4 @@ def test_sp42_ashby_manual_confirmation_never_reuses_lever_submission_authority(
     assert "reserveFinalClickOnSmartPloy" not in observed
     assert "external_actions_performed" not in observed
     assert "exactAshbyReceiptPage" in companion
-    assert "previous attempt or manual Ashby confirmation" in html
+    assert "prior Lever attempt or manual Ashby confirmation" in html
