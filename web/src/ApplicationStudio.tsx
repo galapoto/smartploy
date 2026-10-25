@@ -622,6 +622,10 @@ export default function ApplicationStudio(props: {
     if (!selected || selected.status !== "draft" || partnerReceipt) return;
     if (dirty) { setError("Save the document changes before updating its application status."); return; }
     const reserved = employerAttempt?.previous_attempt_reserved === true;
+    if (reserved && !browserReceipt) {
+      setError("Import a matching browser-observed confirmation before reporting a reserved attempt. If no confirmation exists, leave the attempt for human review; do not retry.");
+      return;
+    }
     if (!window.confirm(reserved
       ? "RECONCILE THIS PREVIOUS EMPLOYER ATTEMPT?\n\n" +
         "Only continue if you PERSONALLY CONFIRMED the employer received your application. " +
@@ -856,8 +860,8 @@ export default function ApplicationStudio(props: {
                 Do not submit again or request a new browser packet.</p>
               <p>Check the employer page and confirmation email. If the companion produced
                 a reference-bearing confirmation, import its observed receipt below FIRST.
-                Only choose “I applied on employer site” if you personally confirmed delivery.
-                Otherwise leave the attempt awaiting review; SmartPloy never retries it.</p>
+                After importing it, you may confirm the outcome for this exact job.
+                Without a matching receipt, leave the attempt awaiting review; SmartPloy never retries it.</p>
             </div>
           ) : (
             <p className="muted">
@@ -1042,7 +1046,8 @@ export default function ApplicationStudio(props: {
                 !!partnerReceipt || employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void save()}><Save size={16}/>{busy ? "Working…" : "Save changes"}</button>
             <button type="button" className="navy-btn" disabled={busy ||
-                !!partnerReceipt}
+                !!partnerReceipt ||
+                (employerAttempt?.previous_attempt_reserved === true && !browserReceipt)}
               onClick={() => void markApplied()}>
               {employerAttempt?.previous_attempt_reserved
                 ? "Confirm outcome of previous attempt" : "I applied on employer site"}
