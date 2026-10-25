@@ -24,14 +24,17 @@
       <p id="reviewInfo" role="status"></p>
       <p class="muted">Only for an independently authorized <strong>Lever</strong> posting:
         after reviewing the complete form, return to the signed-in SmartPloy tab
-        to reserve ONE server-controlled attempt. Ashby supports reviewed field
-        filling and PDF attachment only; submit personally on the employer site.
+        to reserve ONE server-controlled attempt. Ashby and hosted Greenhouse jobs
+        support reviewed field filling and PDF help only; submit personally.
         If the outcome is uncertain, do not retry automatically.</p>
       <button id="reserveFinal" type="button" class="danger">Reserve ONE reviewed employer final click (if authorized)</button>
       <p id="finalClaimInfo" role="status"></p>
-      <p class="muted">Open the exact employer's Lever <code>/apply</code> or Ashby
-        <code>/application</code> form, reopen the companion, paste the SAME
-        packet and inspect. Signed-in review verification lasts at most five minutes.</p>
+      <p class="muted">Open the exact employer's Lever <code>/apply</code>, Ashby
+        <code>/application</code>, or hosted Greenhouse
+        <code>/{board}/jobs/{job-id}</code> form. Reopen the companion,
+        paste the SAME packet and inspect. If Greenhouse uses an embedded
+        iframe, custom career page or a nonstandard form, complete it manually.
+        Signed-in review verification lasts at most five minutes.</p>
       <button id="inspect">Inspect verified employer form (no submit)</button>
       <button id="resume" class="secondary">Check a prior Lever attempt or manual Ashby confirmation</button>
     </section>
@@ -69,8 +72,8 @@
         I have reviewed the complete employer form, legal consents and exact CV.
         I authorize this one use only, and understand no automatic retry is possible.</label>
       <button id="submit" class="danger" disabled aria-disabled="true">Submit once (requires verified server claim)</button>
-      <p class="warning">Automatic final browser clicking is unavailable on Ashby,
-        and is off by default on Lever. It is restricted to exact reviewed
+      <p class="warning">Automatic final browser clicking is unavailable on Ashby
+        and Greenhouse, and is off by default on Lever. It is restricted to exact reviewed
         Lever postings with independent employer permission,
         signed-in SmartPloy approval, and an irreversible cross-device claim.
         You may always submit manually using the employer's own button.
