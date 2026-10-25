@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import os
 from uuid import uuid4
@@ -103,6 +104,117 @@ def test_agent_zero_created_once_and_wakes_after_browser_closes(store):
         assert agents.list(owner)[0]["agent_id"] == item["agent_id"]
     finally:
         workspaces.delete(owner, workspace.workspace_id)
+
+
+def test_owner_agent_inbox_prioritizes_real_actions_with_pagination(store):
+    """SP35: first look at owner-only case priority, not fake employer replies."""
+    agents, workspaces = store
+    owner = "agent-inbox-" + uuid4().hex
+    other_owner = "agent-inbox-other-" + uuid4().hex
+    timestamp = datetime.now(timezone.utc).replace(microsecond=0)
+    base = synthetic_case(owner)
+    nonce = uuid4().hex
+    kits = [
+        replace(
+            base,
+            workspace_id=f"kit-inbox-{nonce}-{i}",
+            canonical_key=f"fictional-inbox-{nonce}-{i}",
+            role_title=f"Inbox role {i}",
+        )
+        for i in range(6)
+    ]
+    foreign = synthetic_case(other_owner)
+    try:
+        for i, item in enumerate(kits):
+            saved, created = workspaces.create_or_get(item)
+            assert created and saved.workspace_id == item.workspace_id
+            if i == 3:
+                # The application is already applicant-reported at CASE creation.
+                workspaces.report_applied(
+                    owner, item.workspace_id,
+                    expected_revision=1, reference="synthetic submitted test",
+                )
+            created_at = (
+                timestamp - timedelta(hours=1) if i in {0, 1}
+                else timestamp + timedelta(days=1)
+            )
+            agent, created = agents.create_or_get(
+                owner, item.workspace_id, now=created_at,
+            )
+            assert created and agent
+            if i == 0:
+                # Real workspace status changed but the agent worker has not
+                # yet reconciled it: this needs attention before any due check.
+                workspaces.report_applied(
+                    owner, item.workspace_id,
+                    expected_revision=1, reference="synthetic updated status",
+                )
+            elif i == 4:
+                agents.transition(
+                    owner, agent["agent_id"], action="pause",
+                    expected_revision=1, now=timestamp,
+                )
+            elif i == 5:
+                agents.transition(
+                    owner, agent["agent_id"], action="close",
+                    expected_revision=1, now=timestamp,
+                )
+        workspaces.create_or_get(foreign)
+        foreign_case, _ = agents.create_or_get(
+            other_owner, foreign.workspace_id, now=timestamp,
+        )
+        assert foreign_case
+
+        page1 = agents.inbox(owner, limit=2, offset=0, now=timestamp)
+        assert page1["has_more"] and page1["next_offset"] == 2
+        assert page1["count"] == 2
+        assert page1["external_actions_authorized"] is False
+        assert page1["background_worker_verified"] is False
+        page2 = agents.inbox(owner, limit=2, offset=2, now=timestamp)
+        page3 = agents.inbox(owner, limit=2, offset=4, now=timestamp)
+        assert not page3["has_more"] and page3["next_offset"] is None
+        items = page1["items"] + page2["items"] + page3["items"]
+        assert [item["attention_state"] for item in items] == [
+            "status_changed", "due_review", "draft_review",
+            "awaiting_response", "paused", "closed",
+        ]
+        assert [item["role_title"] for item in items] == [
+            f"Inbox role {i}" for i in range(6)
+        ]
+        assert all(item["employer_contacted"] is False for item in items)
+        assert not any("cv_text" in item or "email" in item for item in items)
+        assert all(item["agent_id"] != foreign_case["agent_id"] for item in items)
+        assert agents.inbox(other_owner, now=timestamp)["count"] == 1
+        assert agents.inbox("someone-else", now=timestamp)["items"] == []
+        assert agents.inbox(owner, offset=999, now=timestamp)["items"] == []
+        with pytest.raises(ValueError, match="owner"):
+            agents.inbox("")
+        with pytest.raises(ValueError, match="page"):
+            agents.inbox(owner, limit=0)
+        with pytest.raises(ValueError, match="page"):
+            agents.inbox(owner, offset=-1)
+
+        # Ownership quarantine also prevents reading aggregate job priorities.
+        request_id = "erase-agent-inbox-" + uuid4().hex
+        with connect(DSN) as conn:
+            conn.execute(
+                """INSERT INTO smartploy_account_erasure_requests
+                   (request_id, user_id, profile_id)
+                   VALUES (%s,%s,%s)""",
+                (request_id, "synthetic-user-" + nonce, owner),
+            )
+        try:
+            assert agents.inbox(owner, now=timestamp)["items"] == []
+        finally:
+            with connect(DSN) as conn:
+                conn.execute(
+                    "DELETE FROM smartploy_account_erasure_requests WHERE request_id=%s",
+                    (request_id,),
+                )
+    finally:
+        for item in kits:
+            workspaces.delete(owner, item.workspace_id)
+        workspaces.delete(other_owner, foreign.workspace_id)
 
 
 def test_owner_initiated_check_wakes_only_exact_case_and_is_idempotent(store):
