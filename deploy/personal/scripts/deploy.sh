@@ -174,6 +174,11 @@ done
 # while the worker is failing its own Docker healthcheck.
 bash "${SCRIPT_DIR}/assert-healthy-stack.sh"
 bash "${SCRIPT_DIR}/assert-running-images.sh" "${DEPLOY_SHA}"
+# SP36: when operator opts in to local-only Agent Zero, require a REAL
+# in-app scheduler task run by this just-recreated worker before admitting
+# a production release SHA. When opted out, fail if an old task stays enabled.
+# The check is read-only and shares the original worker, never an employer send.
+bash "${SCRIPT_DIR}/assert-agent-zero-worker.sh" >/dev/null
 
 # OIDC release must prove the ACTUAL public login -> trusted issuer, public
 # static shell, and signed-out private API before recording the release SHA.

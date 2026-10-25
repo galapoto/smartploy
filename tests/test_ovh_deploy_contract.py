@@ -409,3 +409,74 @@ def test_release_image_health_and_evidence_proofs_select_same_identity_policy():
     assert 'if [[ "${PROFILE}" != "oidc" ]] && (( HTTP_STATUS >= 500 ))' in preflight
     assert "check_oidc_metadata.py" in preflight
     assert " --insecure" not in preflight
+
+
+def test_sp36_agent_zero_worker_flags_reach_only_worker_not_api_web_or_db():
+    """A private host flag alone was previously dropped by Compose."""
+    compose = (ROOT / "deploy/personal/docker-compose.yml").read_text(
+        encoding="utf-8"
+    )
+    worker = _service_block(compose, "worker")
+    values = {
+        "SMARTPLOY_WORKER_AGENT_ZERO_ENABLED": "false",
+        "SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS": "60",
+        "SMARTPLOY_WORKER_AGENT_ZERO_BATCH_LIMIT": "20",
+    }
+    for key, default in values.items():
+        assert f"${{{key}:-{default}}}" in worker
+        for service in ("api", "web", "postgres"):
+            assert key not in _service_block(compose, service)
+    sample = (ROOT / "deploy/personal/env.example").read_text(encoding="utf-8")
+    assert "SMARTPLOY_WORKER_AGENT_ZERO_ENABLED=false" in sample
+    assert "SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS=60" in sample
+    assert "SMARTPLOY_WORKER_AGENT_ZERO_BATCH_LIMIT=20" in sample
+
+    smoke = (PRODUCTION_SCRIPT_DIR / "smoke-env-boundaries.sh").read_text(
+        encoding="utf-8"
+    )
+    assert smoke.count('"SMARTPLOY_WORKER_AGENT_ZERO_ENABLED"') >= 2
+    assert '"SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS"' in smoke
+    assert '"SMARTPLOY_WORKER_AGENT_ZERO_BATCH_LIMIT"' in smoke
+    assert '"SMARTPLOY_WORKER_AGENT_ZERO_"' in smoke
+    assert '"SMARTPLOY_BROWSER_FINAL_SUBMIT_ENABLED"' in smoke
+
+
+def test_sp36_agent_zero_acceptance_uses_actual_worker_process_and_no_private_logs():
+    checker = (PRODUCTION_SCRIPT_DIR / "assert-agent-zero-worker.sh").read_text(
+        encoding="utf-8"
+    )
+    subprocess.run(["bash", "-n", str(PRODUCTION_SCRIPT_DIR /
+                    "assert-agent-zero-worker.sh")], check=True)
+    assert "config --format json" in checker
+    assert "ps -q worker" in checker
+    assert "docker inspect" in checker
+    assert "--require-run --not-before" in checker
+    assert "--wait-seconds 100" in checker
+    assert "python -m smartploy.agent_zero_runtime_acceptance" in checker
+    assert "AGENT_ZERO_OPERATOR_OPT_IN_REQUIRED" not in checker
+    assert "POSTGRES_PASSWORD" not in checker
+    assert "docker compose up" not in checker
+    assert "docker compose down" not in checker
+    assert "docker compose exec" not in checker
+    # The container invocation does not print variables, DB rows, CV or env.
+    assert "printenv" not in checker
+    assert "env |" not in checker
+    assert '"${REPORT}"' in checker
+
+
+def test_sp36_guarded_release_blocks_bad_worker_before_deploy_sha_success():
+    deploy = (PRODUCTION_SCRIPT_DIR / "deploy.sh").read_text(encoding="utf-8")
+    evidence = (PRODUCTION_SCRIPT_DIR / "release-evidence.sh").read_text(
+        encoding="utf-8"
+    )
+    assert deploy.index("python scripts/migrate.py") < deploy.index(
+        'assert-agent-zero-worker.sh"'
+    ) < deploy.index('"${STATE_DIR}/deployed-sha"')
+    assert 'bash "${SCRIPT_DIR}/assert-agent-zero-worker.sh"' in evidence
+    assert "${AGENT_ZERO_FIELDS}" in evidence
+    assert "agent_zero_mode=" in (
+        PRODUCTION_SCRIPT_DIR / "assert-agent-zero-worker.sh"
+    ).read_text(encoding="utf-8")
+    assert "agent_zero_candidate_reminder_verified=false" in (
+        PRODUCTION_SCRIPT_DIR / "assert-agent-zero-worker.sh"
+    ).read_text(encoding="utf-8")

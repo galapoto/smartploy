@@ -182,6 +182,14 @@ jobs:
                   "OBUMAI_BASE_URL=",
               "SMARTPLOY_WEB_HOST_PORT=8091":
                   "SMARTPLOY_WEB_HOST_PORT=18091",
+              # Isolated Docker/Postgres fixture ONLY. Production keeps
+              # operator opt-in OFF until a reviewed release and user cases.
+              "SMARTPLOY_WORKER_AGENT_ZERO_ENABLED=false":
+                  "SMARTPLOY_WORKER_AGENT_ZERO_ENABLED=true",
+              "SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS=60":
+                  "SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS=5",
+              "SMARTPLOY_WORKER_CLAIM_LIMIT=8":
+                  "SMARTPLOY_WORKER_CLAIM_LIMIT=16",
               "SMARTPLOY_BACKUP_DIR=/srv/obum/backups/smartploy":
                   "SMARTPLOY_BACKUP_DIR=/tmp/smartploy-backups",
               "SMARTPLOY_DEPLOY_STATE_DIR=/srv/obum/data/smartploy/deploy-state":
@@ -239,6 +247,21 @@ jobs:
           # The worker image has an API healthcheck by default; a worker-specific
           # override must prove that all four services are actually healthy.
           bash deploy/personal/scripts/assert-healthy-stack.sh
+          # SP36: Unlike /healthz's generic worker count, this read-only gate
+          # verifies the *actual* opted-in Agent Zero task has completed
+          # a scheduled cycle after the current worker container started.
+          bash deploy/personal/scripts/assert-agent-zero-worker.sh
+          # Deliberately wrong future start is a RED negative control:
+          # a stale/past task receipt must never count as a new release run.
+          if "${COMPOSE[@]}" exec -T worker \
+              python -m smartploy.agent_zero_runtime_acceptance \
+              --require-run --not-before 2099-01-01T00:00:00Z \
+              > /tmp/agent-zero-expected-red.log 2>&1; then
+            echo "Agent Zero acceptance falsely accepted a future run" >&2
+            exit 1
+          fi
+          grep -Fq 'AGENT_ZERO_FRESH_RUN_MISSING' /tmp/agent-zero-expected-red.log
+          rm -f /tmp/agent-zero-expected-red.log
           bash deploy/personal/scripts/assert-running-images.sh "${DEPLOY_SHA}"
           # Negative control: tag an unrelated existing image as a fake release;
           # the image-ID gate must detect that the running containers are stale.
@@ -349,6 +372,11 @@ jobs:
           grep -Fxq 'latest_backup_metadata_valid=true' "${EVIDENCE_FILE}"
           grep -Fxq 'preflight_passed=true' "${EVIDENCE_FILE}"
           grep -Fxq 'env_boundary_smoke_passed=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'agent_zero_mode=healthy_scheduled_run' "${EVIDENCE_FILE}"
+          grep -Fxq 'agent_zero_operator_enabled=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'agent_zero_scheduled_run_verified=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'agent_zero_candidate_reminder_verified=false' "${EVIDENCE_FILE}"
+          grep -Fxq 'agent_zero_employer_contacts_authorized=false' "${EVIDENCE_FILE}"
           grep -Fxq 'stack_healthy=true' "${EVIDENCE_FILE}"
           grep -Fxq 'running_release_images_verified=true' "${EVIDENCE_FILE}"
           grep -Fxq 'live_acceptance=skipped' "${EVIDENCE_FILE}"

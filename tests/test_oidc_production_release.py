@@ -171,6 +171,11 @@ def _synthetic_compose(*, profile: str, partner: bool = False) -> dict:
             "JOBMARKET_FINLAND_API_ENABLED": "false",
             "KUNTAREKRY_ALLOWED_HOSTS": "kuntarekry.fi",
             "SMARTPLOY_WORKER_LOOP_SECONDS": "15",
+            # SP36: match real worker-only Compose policy, not old test
+            # fixtures that silently omitted the scheduled-agent flag.
+            "SMARTPLOY_WORKER_AGENT_ZERO_ENABLED": "false",
+            "SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS": "60",
+            "SMARTPLOY_WORKER_AGENT_ZERO_BATCH_LIMIT": "20",
         }, "ports": []},
         "web": {"environment": {}, "ports": [{
             "host_ip": "127.0.0.1", "published": 8091, "target": 8080
@@ -244,6 +249,40 @@ def test_real_preflight_python_blocks_invalid_partner_or_credential_scope(tmp_pa
         result = _run_compose_preflight(tmp_path, candidate, "oidc")
         assert result.returncode != 0
         assert "synthetic-employer-issued" not in result.stdout + result.stderr
+
+
+def test_sp36_real_preflight_does_not_accept_bad_worker_agent_policy(tmp_path):
+    from copy import deepcopy
+
+    baseline = _synthetic_compose(profile="oidc")
+    assert _run_compose_preflight(
+        tmp_path, baseline, "oidc"
+    ).returncode == 0
+    for mutate in (
+        lambda data: data["services"]["worker"]["environment"].update(
+            SMARTPLOY_WORKER_AGENT_ZERO_ENABLED="yes"
+        ),
+        lambda data: data["services"]["worker"]["environment"].update(
+            SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS="0"
+        ),
+        lambda data: data["services"]["worker"]["environment"].update(
+            SMARTPLOY_WORKER_AGENT_ZERO_BATCH_LIMIT="51"
+        ),
+        lambda data: data["services"]["worker"]["environment"].pop(
+            "SMARTPLOY_WORKER_AGENT_ZERO_ENABLED"
+        ),
+        lambda data: data["services"]["api"]["environment"].update(
+            SMARTPLOY_WORKER_AGENT_ZERO_ENABLED="true"
+        ),
+        lambda data: data["services"]["web"]["environment"].update(
+            SMARTPLOY_WORKER_AGENT_ZERO_ENABLED="true"
+        ),
+    ):
+        candidate = deepcopy(baseline)
+        mutate(candidate)
+        result = _run_compose_preflight(tmp_path, candidate, "oidc")
+        assert result.returncode != 0
+        assert "postgresql://" not in result.stdout + result.stderr
 
 
 def test_zitadel_discovery_metadata_requires_real_issuer_and_public_pkce(tmp_path):

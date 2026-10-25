@@ -155,6 +155,12 @@ services:
       # Safe opt-in local job match -> private drafts, no remote AI/employer.
       SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED: ${SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED:-true}
       SMARTPLOY_WORKER_AUTO_DRAFT_CADENCE_SECONDS: ${SMARTPLOY_WORKER_AUTO_DRAFT_CADENCE_SECONDS:-600}
+      # Agent Zero is private in-app case reconciliation ONLY. Separate
+      # operator opt-in, default OFF. These must reach the WORKER container
+      # (a host env setting alone cannot register a worker task).
+      SMARTPLOY_WORKER_AGENT_ZERO_ENABLED: ${SMARTPLOY_WORKER_AGENT_ZERO_ENABLED:-false}
+      SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS: ${SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS:-60}
+      SMARTPLOY_WORKER_AGENT_ZERO_BATCH_LIMIT: ${SMARTPLOY_WORKER_AGENT_ZERO_BATCH_LIMIT:-20}
       # Defaults OFF; enabling can forward approved profile evidence to ObumAI.
       SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED: ${SMARTPLOY_WORKER_AUTO_PREPARE_ENABLED:-false}
       SMARTPLOY_WORKER_PREPARE_CADENCE_SECONDS: ${SMARTPLOY_WORKER_PREPARE_CADENCE_SECONDS:-120}

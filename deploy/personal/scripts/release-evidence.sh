@@ -108,6 +108,15 @@ fi
 if ! bash "${SCRIPT_DIR}/assert-running-images.sh" "${DEPLOYED_SHA}" >/dev/null; then
   fail "running container image IDs do not match deployed Git revision"
 fi
+# A generic healthy worker/database is NOT proof that Agent Zero was
+# registered or actually ran. Require an independent task-level receipt.
+# Values are fixed booleans/status labels only: no applicant/job/secret data.
+if ! AGENT_ZERO_REPORT="$(bash "${SCRIPT_DIR}/assert-agent-zero-worker.sh")"; then
+  fail "Agent Zero worker runtime gate failed"
+fi
+AGENT_ZERO_FIELDS="$(printf '%s\n' "${AGENT_ZERO_REPORT}" | sed -n '/^agent_zero_/p')"
+[[ "$(printf '%s\n' "${AGENT_ZERO_FIELDS}" | grep -c '^agent_zero_mode=')" -eq 1 ]] \
+  || fail "Agent Zero task status missing from release proof"
 
 TMP_DIR="$(mktemp -d)"
 EVIDENCE_TMP=""
@@ -265,6 +274,7 @@ deployed_at=${DEPLOYED_AT}
 runtime_policy_sha256=${POLICY_SHA256}
 compose_file_sha256=${COMPOSE_SHA256}
 ${HEALTH_FIELDS}
+${AGENT_ZERO_FIELDS}
 latest_backup_file=${LATEST_BACKUP_FILE}
 latest_backup_sha256=${LATEST_BACKUP_SHA256}
 latest_backup_metadata_valid=${LATEST_BACKUP_METADATA_VALID}
