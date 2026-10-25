@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  UploadError, MAX_PDF_BYTES, chooseResumeField, exactLeverForm,
+  UploadError, MAX_PDF_BYTES, chooseResumeField, exactLeverForm, exactAssistedForm, isLeverFinalProvider,
   encodePdfBase64, validatePdf
 } from "../upload.mjs";
 
@@ -88,4 +88,29 @@ test("encoding preserves the PDF exactly and never uploads or stores it", () => 
   const encoded = encodePdfBase64(bytes);
   assert.deepEqual(Buffer.from(encoded, "base64"), Buffer.from(bytes));
   assert.throws(() => encodePdfBase64(new Uint8Array(MAX_PDF_BYTES+1)), UploadError);
+});
+
+const ashbyPosting = "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst";
+const ashbyApplication = ashbyPosting + "/application";
+
+test("SP41 reviewed Ashby PDF attachment is scoped to exact same hosted /application route", () => {
+  assert.equal(exactAssistedForm(ashbyApplication, ashbyPosting), true);
+  assert.equal(exactAssistedForm(ashbyApplication + "/", ashbyApplication), true);
+  assert.equal(exactAssistedForm(ashbyPosting, ashbyPosting), false);
+  assert.equal(exactAssistedForm(form, listing), true); // original Lever behavior unchanged.
+  for (const bad of [
+    ashbyPosting + "/other",
+    "https://jobs.ashbyhq.com/another/role/application",
+    "https://jobs.ashbyhq.com/synthetic-fi/another-role/application",
+    "https://jobs.ashbyhq.com.evil.invalid/synthetic-fi/junior-data-analyst/application",
+    "http://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application",
+    ashbyApplication + "?redirect=bad",
+    ashbyApplication + "#bad",
+  ]) {
+    assert.equal(exactAssistedForm(bad, ashbyPosting), false, bad);
+  }
+  assert.equal(isLeverFinalProvider(ashbyApplication), false);
+  assert.equal(isLeverFinalProvider(ashbyPosting), false);
+  assert.equal(isLeverFinalProvider(form), true);
+  assert.equal(isLeverFinalProvider(listing), true);
 });
