@@ -234,6 +234,79 @@ class PostgresApplicationAgentRepository:
                 rows = cur.fetchall()
         return [self._public(row) for row in rows]
 
+    def inbox(
+        self, profile_id: str, *, limit: int = 25, offset: int = 0,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """SP35: prioritized read-only candidate action queue, no agent writes.
+
+        Reuses the original owner-scoped case/workspace join. All ordering is
+        based on actual PostgreSQL case state and saved next_due_at, NEVER on
+        inferred employer replies or a claimed running background worker.
+        Pagination reads one extra row so a long-lived candidate can review
+        more than the legacy 100 most-recently-updated agents.
+        """
+        owner = str(profile_id or "").strip()
+        if not owner:
+            raise ValueError("Verified application agent owner is required")
+        if not 1 <= limit <= 100 or not 0 <= offset <= 100000:
+            raise ValueError("Invalid application-agent inbox page")
+        moment = _now(now)
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    self._COLUMNS + """
+                    WHERE a.profile_id = %s
+                      AND NOT EXISTS (
+                          SELECT 1 FROM smartploy_account_erasure_requests er
+                          WHERE er.profile_id = a.profile_id
+                      )
+                    ORDER BY
+                      CASE
+                        WHEN a.state='active'
+                          AND a.observed_workspace_status <> w.status THEN 0
+                        WHEN a.state='active'
+                          AND a.next_due_at <= %s THEN 1
+                        WHEN a.state='active' AND w.status='draft' THEN 2
+                        WHEN a.state='active' THEN 3
+                        WHEN a.state='paused' THEN 4
+                        ELSE 5
+                      END ASC,
+                      a.next_due_at ASC NULLS LAST,
+                      a.updated_at DESC, a.agent_id ASC
+                    LIMIT %s OFFSET %s""",
+                    (owner, moment, limit + 1, offset),
+                )
+                rows = cur.fetchall()
+        has_more = len(rows) > limit
+        items: list[dict[str, Any]] = []
+        for row in rows[:limit]:
+            item = self._public(row)
+            if item["state"] == "paused":
+                attention = "paused"
+            elif item["state"] == "closed":
+                attention = "closed"
+            elif item["workspace_status"] != item["observed_workspace_status"]:
+                attention = "status_changed"
+            elif item["next_due_at"] and (
+                datetime.fromisoformat(item["next_due_at"]) <= moment
+            ):
+                attention = "due_review"
+            elif item["workspace_status"] == "draft":
+                attention = "draft_review"
+            else:
+                attention = "awaiting_response"
+            item["attention_state"] = attention
+            items.append(item)
+        return {
+            "items": items,
+            "count": len(items),
+            "has_more": has_more,
+            "next_offset": offset + len(items) if has_more else None,
+            "background_worker_verified": False,
+            "external_actions_authorized": False,
+        }
+
     def events(
         self, profile_id: str, agent_id: str, *, after_sequence: int = 0
     ) -> list[dict[str, Any]]:
