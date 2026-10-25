@@ -97,6 +97,129 @@ def test_explicit_approved_it_target_automatically_builds_only_the_matched_priva
     assert len(fx[5].list(fx[0])) == 1
 
 
+def test_background_agents_need_separate_opt_in_and_reuse_existing_case_id():
+    """SP33: the original job shortlist may create only private, opted-in cases."""
+    pid, prefs, jobs, profile, cv, spaces, settings = fixture()
+
+    class AgentStore:
+        def __init__(self):
+            self.cases = {}
+            self.calls = []
+
+        def create_or_get(self, owner, workspace_id):
+            self.calls.append((owner, workspace_id))
+            assert owner == pid
+            key = (owner, workspace_id)
+            if key in self.cases:
+                return self.cases[key], False
+            agent = {
+                "agent_id": "agent-synthetic-private",
+                "state": "active", "external_actions_authorized": False,
+            }
+            self.cases[key] = agent
+            return agent, True
+
+    agents = AgentStore()
+    common = {
+        "preferences_repository": prefs, "job_repository": jobs,
+        "profile_repository": profile, "cv_repository": cv,
+        "workspace_repository": spaces, "application_agent_repository": agents,
+    }
+
+    # Background drafting permission is NOT permission to start tracking.
+    plain = prepare_profile_shortlist(pid, **common)
+    assert plain.created == 1
+    assert plain.agents_started == plain.agents_already_present == 0
+    assert agents.calls == []
+
+    # The candidate explicitly enables private, in-app case tracking in
+    # their existing owner-scoped preference revision. No other job is sent.
+    enabled = prefs.save(pid, {
+        **settings, "auto_agent_tracking_enabled": True,
+    }, expected_revision=1)
+    assert enabled.auto_agent_tracking_enabled is True
+    tracked = prepare_profile_shortlist(pid, **common)
+    assert tracked.created == 0 and tracked.already_prepared == 1
+    assert tracked.agents_started == 1
+    assert tracked.public_counts()["agent_tracking_external_actions_authorized"] is False
+    assert tracked.public_counts()["worker_agent_wakeup_verified"] is False
+    assert tracked.public_counts()["employer_actions_performed"] is False
+    assert len(agents.cases) == len(spaces.list(pid)) == 1
+    repeated = prepare_profile_shortlist(pid, **common)
+    assert repeated.agents_started == 0 and repeated.agents_already_present == 1
+    assert len(agents.cases) == 1
+
+    # Revocation prevents new cases (and drafts), but does not silently
+    # delete an existing case; its lifecycle remains with the owner.
+    disabled = prefs.save(pid, {
+        **settings, "auto_draft_enabled": False,
+        "auto_agent_tracking_enabled": False,
+    }, expected_revision=enabled.revision)
+    assert disabled.auto_agent_tracking_enabled is False
+    count = len(agents.calls)
+    assert prepare_profile_shortlist(pid, **common).status == "disabled"
+    assert len(agents.calls) == count
+    assert len(agents.cases) == 1
+
+
+def test_private_agent_storage_failure_does_not_lose_new_draft():
+    from psycopg import Error as PostgresError
+
+    pid, prefs, jobs, profile, cv, spaces, settings = fixture()
+    prefs.save(pid, {**settings, "auto_agent_tracking_enabled": True},
+               expected_revision=1)
+
+    class UnavailableAgents:
+        def create_or_get(self, owner, workspace_id):
+            assert owner == pid and workspace_id
+            raise PostgresError("synthetic private agent unavailable")
+
+    outcome = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces, application_agent_repository=UnavailableAgents(),
+    )
+    assert outcome.created == 1
+    assert outcome.agents_unavailable == 1
+    assert outcome.agents_started == 0
+    assert outcome.public_counts()["provider_calls"] == 0
+    assert spaces.list(pid)[0].status == "draft"
+    assert "synthetic" not in str(outcome.public_counts())
+
+
+def test_revoked_agent_consent_during_matching_blocks_background_case():
+    fx = fixture()
+    pid, prefs, jobs, profile, cv, spaces, settings = fx
+    prefs.save(pid, {**settings, "auto_agent_tracking_enabled": True},
+               expected_revision=1)
+    from contextlib import contextmanager
+    original = prefs.auto_draft_guard
+
+    @contextmanager
+    def revoke_before_guard(owner, revision):
+        prefs.save(pid, {
+            **settings, "auto_agent_tracking_enabled": False,
+            "auto_draft_enabled": False,
+        }, expected_revision=revision)
+        with original(owner, revision) as allowed:
+            yield allowed
+
+    prefs.auto_draft_guard = revoke_before_guard
+
+    class FailOnCall:
+        def create_or_get(self, *_args):
+            raise AssertionError("No private agent may start after revocation")
+
+    summary = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces, application_agent_repository=FailOnCall(),
+    )
+    assert summary.stopped_on_opt_out
+    assert summary.created == summary.agents_started == 0
+    assert spaces.list(pid) == []
+
+
 def test_general_mode_unapproved_evidence_and_optout_never_create():
     fx=fixture()
     pid,prefs,jobs,profile,cv,spaces,settings=fx
