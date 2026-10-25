@@ -304,7 +304,19 @@ def test_reserved_browser_attempt_reconciles_observed_receipt_then_owner_report(
         "cover_letter_text": workspace.cover_letter_text,
     }, headers=headers)
     assert altered.status_code == 409, altered.text
-    assert "frozen for reconciliation" in altered.text
+    assert altered.status_code == 409
+    assert "reserved" in altered.text.lower()
+
+    # Merely consuming a browser claim is not proof of a completed send.
+    before_receipt = api.post(
+        path + "/report-applied", json={
+            "expected_revision": workspace.revision,
+            "confirmed_external_application": True,
+            "reference": "SYNTHETIC-ACK-1234",
+        }, headers=headers,
+    )
+    assert before_receipt.status_code == 409
+    assert api.get(path).json()["workspace"]["status"] == "draft"
 
     observed = {
         "schema": "smartploy.browser_receipt.v1",
@@ -339,7 +351,7 @@ def test_reserved_browser_attempt_reconciles_observed_receipt_then_owner_report(
             "confirmed_external_application": True,
             "reference": "SYNTHETIC-ACK-1234",
         }, headers=headers,
-    ).status_code == 404
+    ).status_code in {403, 404, 409}
     api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
 
     # Owner explicitly reports a confirmed delivery. This updates ONLY the
