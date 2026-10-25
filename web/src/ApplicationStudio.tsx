@@ -1072,7 +1072,7 @@ export default function ApplicationStudio(props: {
             <p>Self-reported applied {selected.self_reported_applied_at ? new Date(selected.self_reported_applied_at).toLocaleDateString() : ""}{selected.self_reported_reference ? " · " + selected.self_reported_reference : ""}</p>}
         </div>
         {nextDraft ? <div className="row-actions" aria-label="Continue application queue">
-          <button type="button" className="outline-btn"
+          <button type="button" className="outline-btn" aria-label="Next application"
             onClick={() => pick(nextDraft.workspace_id)}>
             Next application: {nextDraft.role_title} <ArrowRight size={16}/>
           </button>
