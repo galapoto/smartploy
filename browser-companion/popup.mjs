@@ -344,7 +344,9 @@ async function onVerifySmartPloyReview() {
     const saved = await recordVerifiedReview(chrome.storage.session, packet, reply.result);
     $("reviewInfo").textContent =
       "Signed-in review verified until " + new Date(saved.expires_at).toLocaleTimeString() +
-      ". Open the exact employer form. Ashby final submission must be done by you.";
+      (isLeverFinalProvider(packet.application_url)
+        ? ". Open the exact employer form. A one-use final click requires separate employer permission."
+        : ". Open the exact Ashby form. Final submission must be done by you.");
     status("Only a short-lived review fingerprint is in extension memory. No login token or CV was saved.", true);
   } catch (error) {
     $("reviewInfo").textContent = "Review not verified. Assisted form filling remains disabled.";
