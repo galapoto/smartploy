@@ -89,6 +89,20 @@ could not be considered a substitute for a reliable basic document.
   existing **Save changes** control; only then can the original
   download/browser/partner review process advance.
 
+## Existing final-action safety gate reused and extended
+
+The original `smartploy/browser_handoff.py:PLACEHOLDERS` blocks unfinished
+English review prompts. The same compiled pattern is also imported by the
+atomic `verified_employer_submit_preflight` used by independent employer
+rights and one-use submit reservations. SP38 extends **that one shared
+guard** to Finnish `[Kerro...]`, `[Lisää...]`, `[Oma nimi]`,
+`[Täydennä...]`, `[Kirjoita...]` and `[Esimerkki...]` prompts.
+An unfinished Finnish letter is now rejected before browser handoff AND
+before an employer submit claim can be reserved, even when its
+applicant has approved genuine job-related skills. A fully edited
+Finnish letter remains eligible for the existing separate rights/review
+checks. This is **not** a new final-action permission.
+
 ## Proof and tests
 
 - Pure Python: job-specific Python/SQL approved evidence selected;
