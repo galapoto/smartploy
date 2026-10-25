@@ -147,8 +147,8 @@ def _cover_letter(
     if finnish:
         facts = (
             "Haluan nostaa esiin seuraavat tehtävään liittyvät, itse "
-            "vahvistamani tiedot:\\n"
-            + "\\n".join(
+            "vahvistamani tiedot:\n"
+            + "\n".join(
                 f"• {_LETTER_FACT_LABELS[kind][1]}: {value}"
                 for kind, value in matched
             )
@@ -157,19 +157,19 @@ def _cover_letter(
             "tai työkokemusesimerkki. Älä ilmoita pätevyyttä ilman näyttöä.]"
         )
         return (
-            "Hei rekrytointitiimi,\\n\\n"
-            f"Haen avoinna olevaa tehtäväänne ({role}) organisaatiossa {company}.\\n\\n"
-            f"{facts}\\n\\n"
+            "Hei rekrytointitiimi,\n\n"
+            f"Haen avoinna olevaa tehtäväänne ({role}) organisaatiossa {company}.\n\n"
+            f"{facts}\n\n"
             "[Kerro omin sanoin, miksi juuri tämä tehtävä ja työnantaja "
             "kiinnostavat sinua. Lisää konkreettinen esimerkki ja tarkista "
-            "kaikki väitteet ennen hakemuksen lähettämistä.]\\n\\n"
+            "kaikki väitteet ennen hakemuksen lähettämistä.]\n\n"
             "Kiitos hakemukseni käsittelystä. Kerron mielelläni lisää "
-            "osaamisestani haastattelussa.\\n\\n"
-            f"Ystävällisin terveisin,\\n{name}"
+            "osaamisestani haastattelussa.\n\n"
+            f"Ystävällisin terveisin,\n{name}"
         )
     facts = (
-        "I would like to highlight these relevant parts of my background:\\n"
-        + "\\n".join(
+        "I would like to highlight these relevant parts of my background:\n"
+        + "\n".join(
             f"• {_LETTER_FACT_LABELS[kind][0]}: {value}"
             for kind, value in matched
         )
@@ -178,15 +178,15 @@ def _cover_letter(
         "this role. Do not claim qualifications you cannot substantiate.]"
     )
     return (
-        "Dear Hiring Team,\\n\\n"
-        f"I am applying for the {role} position at {company}.\\n\\n"
-        f"{facts}\\n\\n"
+        "Dear Hiring Team,\n\n"
+        f"I am applying for the {role} position at {company}.\n\n"
+        f"{facts}\n\n"
         "[Explain in your own words why this employer and role interest you. "
         "Add a specific example and check all factual statements before "
-        "submitting the application.]\\n\\n"
+        "submitting the application.]\n\n"
         "Thank you for considering my application. I would welcome "
-        "the opportunity to discuss the role.\\n\\n"
-        f"Kind regards,\\n{name}"
+        "the opportunity to discuss the role.\n\n"
+        f"Kind regards,\n{name}"
     )
 
 
