@@ -244,6 +244,30 @@ export function getApplicationAgentInbox(
   );
 }
 
+/** Candidate-initiated review of at most 10 due/status-changed private agents.
+ * Same original owner+case Postgres engine as each single-case Check now.
+ * Never invokes a background worker or contacts any external service.
+ */
+export type ApplicationAgentInboxCheckResult = {
+  checked_in_app: true;
+  cases_checked: number;
+  workspace_updates_reconciled: number;
+  in_app_reminders: number;
+  more_actionable_cases: boolean;
+  external_actions_performed: 0;
+  employer_contacts: 0;
+  background_worker_verified: false;
+};
+
+export function checkDueApplicationAgentInbox(
+  expectedUserId: string,
+): Promise<ApplicationAgentInboxCheckResult> {
+  return request<ApplicationAgentInboxCheckResult>(
+    "/api/v1/application-agents/inbox/check-due",
+    { method: "POST" }, expectedUserId,
+  );
+}
+
 export function getApplicationAgentForWorkspace(workspaceId: string): Promise<{
   present: boolean; agent: ApplicationAgent | null; external_actions_authorized: false;
 }> {
