@@ -257,6 +257,7 @@ def test_sp42_ashby_reference_observation_is_private_unverified_and_strips_track
 @pytest.mark.parametrize("wrong_page", [
     "https://jobs.ashbyhq.com/synthetic-fi/other-job/application/confirmation",
     "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst-evil/application",
+    "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application-other",
     "https://jobs.ashbyhq.com/other-board/junior-data-analyst/application",
     "https://jobs.ashbyhq.com.evil.invalid/synthetic-fi/junior-data-analyst/application",
     "https://jobs.lever.co/synthetic-fi/junior-data-analyst/application",
