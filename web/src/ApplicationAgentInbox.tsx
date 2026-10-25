@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, BellRing, Clock3, RefreshCw, ShieldCheck } from "lucide-react";
-import { getApplicationAgentInbox } from "./api";
+import { checkDueApplicationAgentInbox, getApplicationAgentInbox } from "./api";
 import type { ApplicationAgentAttention, ApplicationAgentInboxItem } from "./types";
 
 /** Private, action-oriented view of the original durable Agent Zero ledger.
- * This view NEVER creates cases, sends messages, or wakes background workers.
+ * SP37 can also check a bounded set of due cases ONLY after an explicit
+ * account-verified user click. Never sends messages or wakes workers.
  */
 const PAGE_SIZE = 25;
 
@@ -28,14 +29,19 @@ function scheduleText(item: ApplicationAgentInboxItem): string {
 
 export default function ApplicationAgentInbox(props: {
   verifyAccount: () => Promise<void>;
+  expectedUserId: string;
   onOpen: (workspaceId: string) => void | Promise<void>;
 }) {
   const [items, setItems] = useState<ApplicationAgentInboxItem[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [busy, setBusy] = useState(true);
+  const [checkBusy, setCheckBusy] = useState(false);
+  const [checkNotice, setCheckNotice] = useState("");
   const [error, setError] = useState("");
   const generation = useRef(0);
+  const checkGeneration = useRef(0);
+  const checkInFlight = useRef(false);
 
   const load = useCallback(async (offset: number, replace: boolean) => {
     const ticket = ++generation.current;
@@ -69,8 +75,54 @@ export default function ApplicationAgentInbox(props: {
 
   useEffect(() => {
     void load(0, true);
-    return () => { ++generation.current; };
+    return () => { ++generation.current; ++checkGeneration.current; };
   }, [load]);
+
+  const hasActionable = items.some((item) =>
+    item.state === "active" && (
+      item.attention_state === "due_review" ||
+      item.attention_state === "status_changed"
+    )
+  );
+
+  async function checkDueAgents() {
+    if (busy || checkInFlight.current || !hasActionable) return;
+    checkInFlight.current = true;
+    const ticket = ++checkGeneration.current;
+    setCheckBusy(true);
+    setCheckNotice("");
+    setError("");
+    try {
+      // Preflight and postflight check the SAME initiating account, even if
+      // a sign-in cookie is replaced while PostgreSQL processing occurs.
+      await props.verifyAccount();
+      const result = await checkDueApplicationAgentInbox(props.expectedUserId);
+      await props.verifyAccount();
+      if (ticket !== checkGeneration.current) return;
+      const description = [
+        result.cases_checked + " private application agent(s) checked.",
+        result.in_app_reminders + " due in-app reminder(s) recorded.",
+        result.workspace_updates_reconciled + " saved status change(s) reconciled.",
+        "No employer was contacted.",
+        result.more_actionable_cases
+          ? "More cases still need attention; check again to continue."
+          : "No further due agent checks currently detected.",
+      ];
+      setCheckNotice(description.join(" "));
+      // Always reread server priorities. A processed status change can
+      // reschedule an application without sending an external follow-up.
+      await load(0, true);
+    } catch (exc) {
+      if (ticket !== checkGeneration.current) return;
+      try { await props.verifyAccount(); } catch { return; }
+      if (ticket === checkGeneration.current) {
+        setError(exc instanceof Error ? exc.message : "Could not check due private cases.");
+      }
+    } finally {
+      checkInFlight.current = false;
+      if (ticket === checkGeneration.current) setCheckBusy(false);
+    }
+  }
 
   return <section className="agent-inbox" aria-label="Application agent inbox">
     <div className="agent-inbox-heading">
@@ -80,12 +132,21 @@ export default function ApplicationAgentInbox(props: {
         <p>Review due cases and applications needing attention. This is not an employer
           inbox or proof that background workers have run.</p>
       </div>
-      <button type="button" className="outline-btn compact"
-        onClick={() => void load(0, true)} disabled={busy}
-        aria-label="Refresh agent inbox">
-        <RefreshCw size={15}/> Refresh
-      </button>
+      <div className="agent-inbox-actions">
+        {hasActionable ? <button type="button" className="secondary-btn compact"
+          onClick={() => void checkDueAgents()} disabled={busy || checkBusy}
+          aria-label="Check due private agents (up to 10)">
+          <BellRing size={15}/> {checkBusy ? "Checking private cases…" : "Check due agents"}
+        </button> : null}
+        <button type="button" className="outline-btn compact"
+          onClick={() => { setCheckNotice(""); void load(0, true); }}
+          disabled={busy || checkBusy}
+          aria-label="Refresh agent inbox">
+          <RefreshCw size={15}/> Refresh
+        </button>
+      </div>
     </div>
+    {checkNotice ? <p role="status" className="studio-alert">{checkNotice}</p> : null}
     {error ? <p role="alert" className="studio-alert error">{error}</p> : null}
     {busy && items.length === 0 ? <p role="status"><Clock3 size={14}/>
       Loading private agent priorities…</p> : null}
@@ -110,18 +171,20 @@ export default function ApplicationAgentInbox(props: {
         </div>
         <button type="button" className="outline-btn compact"
           onClick={() => void props.onOpen(item.workspace_id)}
+          disabled={checkBusy}
           aria-label={"Open " + item.role_title + " at " + item.company + " application"}>
           Open application <ArrowRight size={15}/>
         </button>
       </div>)}
     </div> : null}
     {hasMore && nextOffset !== null ? <button type="button"
-      className="outline-btn compact agent-inbox-more" disabled={busy}
+      className="outline-btn compact agent-inbox-more" disabled={busy || checkBusy}
       onClick={() => void load(nextOffset, false)}>
       {busy ? "Loading…" : "Load more application agents"} <ArrowRight size={15}/>
     </button> : null}
     <p className="studio-ai-privacy"><ShieldCheck size={14}/>
       Private case data only. A due review is not a sent email or an employer response.
-      Background worker activation has not been verified by this view.</p>
+      Checks run only when you explicitly select the action and do not enable
+      background workers or contact recruiters.</p>
   </section>;
 }
