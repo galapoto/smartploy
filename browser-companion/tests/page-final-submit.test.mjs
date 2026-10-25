@@ -26,12 +26,15 @@ async function withFakeEmployer({
   cvBytes = pdf, requiredMissing = false, challenge = false, duplicateButton = false,
   formValid = true, letterValue = letter, submitThrows = false,
   noLock = false, extraAttachment = false, hiddenExtraAttachment = false,
+  submitLabel = "Submit application", fullNameLabel = "Full name",
+  emailLabel = "Email", letterLabel = "Cover letter", resumeLabel = "CV / Résumé",
   mutateDuringCvRead = null,
 } = {}) {
   const old = Object.fromEntries(
     ["location","window","document","getComputedStyle"].map(x => [x,globalThis[x]])
   );
-  const state = {clicks: 0, marker: false, challenge, duplicateButton};
+  const state = {clicks: 0, marker: false, challenge, duplicateButton,
+    formAction: "/synthetic/submit", buttonFormAction: ""};
   const file = {
     size: cvBytes.length, name: "candidate-reviewed.pdf",
     type: "application/pdf",
@@ -45,27 +48,33 @@ async function withFakeEmployer({
   };
   const inputs = [
     control({type:"text", value:fullName, autocomplete:"name",
-      labels:[{innerText:"Full name"}]}),
+      labels:[{innerText:fullNameLabel}]}),
     control({type:"email", value:email, autocomplete:"email",
-      labels:[{innerText:"Email"}]}),
+      labels:[{innerText:emailLabel}]}),
     control({type:"textarea",value:letterValue,
-      labels:[{innerText:"Cover letter"}]}),
-    control({type:"file", files:[file], labels:[{innerText:"CV / Résumé"}]}),
+      labels:[{innerText:letterLabel}]}),
+    control({type:"file", files:[file], labels:[{innerText:resumeLabel}]}),
     control({type:"file", files: extraAttachment ? [file] : [],
       labels:[{innerText:"Other supporting document"}]}),
     control({type:"file", files: hiddenExtraAttachment ? [file] : [],
       getClientRects: () => [], labels:[{innerText:"Hidden supporting document"}]}),
     control({type:"checkbox", required:requiredMissing, checked:!requiredMissing,
       labels:[{innerText:"Consent"}]}),
+    control({type:"textarea", value:"I would like to join this team.",
+      labels:[{innerText:"Optional additional information"}]}),
+    control({type:"hidden", value:"initial-csrf-token", name:"csrf_token",
+      getClientRects: () => [], labels:[]}),
   ];
   const form = {
     closest: () => null, getClientRects: () => [{}],
     querySelectorAll: () => inputs,
     checkValidity: () => formValid,
+    getAttribute: (name) => name === "action" ? state.formAction : "",
   };
   const button = {
-    innerText: "Submit application",
-    disabled: false, getAttribute: () => "",
+    innerText: submitLabel,
+    disabled: false,
+    getAttribute: (name) => name === "formaction" ? state.buttonFormAction : "",
     getClientRects: () => [{}],
     closest: (selector) => selector === "form" ? form : null,
     click() { state.clicks++; if (submitThrows) throw Error("Browser failed"); },
@@ -183,6 +192,27 @@ test("changes during async CV hashing cannot bypass final-click review", async (
     ["new employer field", (inputs) => {
       inputs.push(control({type:"text", value:"new data"}));
     }],
+    ["optional answer was rewritten", (inputs) => {
+      inputs[7].value = "An employer-scripted answer I did not review";
+    }],
+    ["optional checkbox was changed", (inputs) => {
+      inputs[6].checked = false;
+    }],
+    ["hidden CSRF token was replaced", (inputs) => {
+      inputs[8].value = "new-token";
+    }],
+    ["question label changed meaning", (inputs) => {
+      inputs[7].labels[0].innerText = "Expected salary";
+    }],
+    ["question field metadata changed", (inputs) => {
+      inputs[7].name = "visa_sponsorship";
+    }],
+    ["employer form action changed", (_inputs, state) => {
+      state.formAction = "https://untrusted.example.invalid/collect";
+    }],
+    ["submit button destination changed", (_inputs, state) => {
+      state.buttonFormAction = "https://untrusted.example.invalid/collect";
+    }],
     ["late CAPTCHA", (inputs, state) => { state.challenge = true; }],
     ["late duplicate submit", (inputs, state) => { state.duplicateButton = true; }],
   ];
@@ -192,5 +222,21 @@ test("changes during async CV hashing cannot bypass final-click review", async (
     assert.equal(r.result.reason, "employer_form_changed", label);
     assert.equal(r.clicks, 0, label);
     assert.equal(r.marker, false, label);
+  }
+});
+
+test("stable Finnish and Swedish Lever job applications permit only one reviewed click", async () => {
+  const examples = [
+    {submitLabel:"Lähetä hakemus",fullNameLabel:"Koko nimi",
+      emailLabel:"Sähköposti",letterLabel:"Saatekirje",resumeLabel:"Ansioluettelo"},
+    {submitLabel:"Skicka ansökan",fullNameLabel:"Namn",
+      emailLabel:"E-post",letterLabel:"Personligt brev",resumeLabel:"Meritförteckning"},
+  ];
+  for (const config of examples) {
+    const r = await withFakeEmployer(config);
+    assert.equal(r.result.attempted, true, JSON.stringify(config));
+    assert.equal(r.result.provider_acknowledged, false);
+    assert.equal(r.clicks, 1);
+    assert.equal(r.repeated.attempted, false);
   }
 });

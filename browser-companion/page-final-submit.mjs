@@ -155,6 +155,39 @@ export async function submitReviewedLeverOnce(expected) {
       (cv.type && cv.type.toLowerCase() !== "application/pdf")) {
     return fail("reviewed_cv_attachment_changed");
   }
+  // Snapshot every employer-controlled answer and the target form action before
+  // the asynchronous CV digest. A reactive Lever page can silently rewrite an
+  // optional answer, hidden token, select option or submit destination while the
+  // browser awaits file bytes. Required-field checks alone cannot detect that.
+  const controlBinding = (item) => JSON.stringify([
+    item.type ?? "", item.name ?? "", item.id ?? "", item.value ?? "",
+    item.checked === true, item.required === true, item.disabled === true,
+    item.readOnly === true, item.autocomplete ?? "", item.selectedIndex ?? null,
+    item.getAttribute?.("aria-required") ?? null,
+    item.getAttribute?.("aria-label") ?? null,
+    item.getAttribute?.("placeholder") ?? null,
+    Array.from(item.labels || [], label => String(label.innerText || "")),
+    item.options ? Array.from(item.options, option => [
+      option.value, option.text, option.disabled, option.selected,
+    ]) : null,
+  ]);
+  const finalDestinationBinding = () => JSON.stringify([
+    form.action ?? "", form.method ?? "", form.enctype ?? "",
+    form.target ?? "", form.noValidate === true,
+    form.getAttribute?.("action") ?? null,
+    form.getAttribute?.("method") ?? null,
+    form.getAttribute?.("enctype") ?? null,
+    form.getAttribute?.("target") ?? null,
+    finalButton.formAction ?? "", finalButton.formMethod ?? "",
+    finalButton.formEnctype ?? "", finalButton.formTarget ?? "",
+    finalButton.type ?? "", finalButton.value ?? "",
+    finalButton.getAttribute?.("formaction") ?? null,
+    finalButton.getAttribute?.("formmethod") ?? null,
+    finalButton.getAttribute?.("formenctype") ?? null,
+    finalButton.getAttribute?.("formtarget") ?? null,
+  ]);
+  const reviewedControls = allElements.map(controlBinding);
+  const reviewedDestination = finalDestinationBinding();
   try {
     const buffer = await cv.arrayBuffer();
     // No CV bytes or file digest leave the employer tab.
@@ -179,6 +212,10 @@ export async function submitReviewedLeverOnce(expected) {
       liveControls.some((item, index) => item !== allElements[index]) ||
       liveVisible.length !== elements.length ||
       liveVisible.some((item, index) => item !== elements[index]) ||
+      finalDestinationBinding() !== reviewedDestination ||
+      liveControls.some((item, index) =>
+        controlBinding(item) !== reviewedControls[index]
+      ) ||
       liveSubmitButtons.length !== 1 || liveSubmitButtons[0] !== finalButton ||
       finalButton.closest("form") !== form || !form.checkValidity() ||
       liveVisible.some(unresolvedEmployerField) ||
