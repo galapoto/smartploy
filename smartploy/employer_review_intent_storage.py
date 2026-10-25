@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 import re
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from psycopg import connect
@@ -86,10 +87,27 @@ class PostgresEmployerReviewIntentRepository:
 
     @staticmethod
     def _employer_key(application_url: str) -> str:
+        """Review-only identity: preserve Lever keys, isolate Ashby from submits.
+
+        The original employer-claim hash ONLY knows Lever's /org/job/apply.
+        Do not extend that submit primitive. Instead give signed-in Ashby
+        reviews a separate, domain-separated key under the same original
+        owner-bound, expiring non-bearer review-intent table.
+        """
         try:
             _assisted_posting_url(application_url)
+            parsed = urlsplit(application_url)
+            if parsed.hostname == "jobs.ashbyhq.com":
+                segments = parsed.path.strip("/").split("/")
+                if len(segments) == 3:
+                    segments = segments[:2]
+                material = (
+                    "ashby-review-only-v1\0" + segments[0].casefold() +
+                    "\0" + segments[1].casefold()
+                )
+                return sha256(material.encode("utf-8")).hexdigest()
             return _employer_job_key_sha256(application_url)
-        except (HandoffError, EmployerSubmitClaimDenied, TypeError) as exc:
+        except (HandoffError, EmployerSubmitClaimDenied, TypeError, IndexError) as exc:
             raise EmployerReviewIntentDenied("Unsupported employer job URL") from exc
 
     def get(
