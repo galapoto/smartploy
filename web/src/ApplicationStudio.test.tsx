@@ -824,6 +824,62 @@ describe("Application Studio per-draft result isolation", () => {
     expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
   }
 
+  it("opens the next queued private draft and preserves the selected job across Refresh", async () => {
+    twoDrafts();
+    render(<ApplicationStudio focusId="workspace-A" expectedUserId="usr-a"
+      expectedAuthSource="oidc" onFindJobs={vi.fn()} />);
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Next application" }));
+    expect(await screen.findByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
+      .toBe("PRIVATE-CV-B");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh drafts" }));
+    await waitFor(() => expect(api.getApplicationWorkspaces).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Editable cover letter text" }) as HTMLTextAreaElement).value)
+      .toBe("PRIVATE-LETTER-B");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("keeps unsaved application changes when Next is cancelled", async () => {
+    twoDrafts();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Editable CV text" }), {
+      target: { value: "A-only unsaved corrections" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next application" }));
+    expect(confirm).toHaveBeenCalledWith("Discard unsaved changes and open another draft?");
+    expect(screen.getByRole("heading", { name: "A private role" })).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
+      .toBe("A-only unsaved corrections");
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Next application" }));
+    expect(await screen.findByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
+      .toBe("PRIVATE-CV-B");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("skips completed applications when advancing the saved-draft review queue", async () => {
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [job("A"), { ...job("B"), status: "provider_acknowledged" }, job("C")],
+      count: 3,
+    });
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const next = screen.getByRole("button", { name: "Next application" });
+    expect(next.textContent).toContain("C private role");
+    fireEvent.click(next);
+    expect(await screen.findByRole("heading", { name: "C private role" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next application" }).textContent)
+      .toContain("A private role");
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
   it("does not switch from B back to A when A's saved draft completes", async () => {
     twoDrafts();
     const pending = deferred<{ workspace: ApplicationWorkspace }>();
