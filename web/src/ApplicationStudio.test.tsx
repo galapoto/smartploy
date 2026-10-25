@@ -14,6 +14,7 @@ vi.mock("./api", () => ({
   getApplicationWorkspaceById: vi.fn(),
   getApplicationAgents: vi.fn(),
   getApplicationAgentInbox: vi.fn(),
+  checkDueApplicationAgentInbox: vi.fn(),
   getApplicationAgentForWorkspace: vi.fn(),
   getApplicationAgent: vi.fn(),
   createApplicationAgent: vi.fn(),
@@ -108,6 +109,12 @@ beforeEach(() => {
   vi.mocked(api.getApplicationAgentInbox).mockResolvedValue({
     items: [], count: 0, has_more: false, next_offset: null,
     background_worker_verified: false, external_actions_authorized: false,
+  });
+  vi.mocked(api.checkDueApplicationAgentInbox).mockResolvedValue({
+    checked_in_app: true, cases_checked: 1, in_app_reminders: 1,
+    workspace_updates_reconciled: 0, more_actionable_cases: false,
+    external_actions_performed: 0, employer_contacts: 0,
+    background_worker_verified: false,
   });
   vi.mocked(api.getApplicationAgents).mockResolvedValue({
     agents: [], count: 0, external_actions_authorized: false,
@@ -850,6 +857,23 @@ describe("Application Studio per-draft result isolation", () => {
     fireEvent.click(screen.getByRole("button", { name: /B private role/ }));
     expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
   }
+
+  it("binds one-click due-agent review to the original Studio OIDC identity", async () => {
+    vi.mocked(api.getApplicationAgentInbox).mockResolvedValue({
+      items: [inboxItem("A")], count: 1, has_more: false, next_offset: null,
+      background_worker_verified: false, external_actions_authorized: false,
+    });
+    studio();
+    const action = await screen.findByRole("button", {
+      name: "Check due private agents (up to 10)",
+    });
+    fireEvent.click(action);
+    await waitFor(() => expect(api.checkDueApplicationAgentInbox).toHaveBeenCalledTimes(1));
+    expect(api.checkDueApplicationAgentInbox).toHaveBeenCalledWith("usr-a");
+    expect(await screen.findByText(/No employer was contacted/)).toBeTruthy();
+    expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
 
   it("opens a prioritized agent-inbox item using the existing draft selection controls", async () => {
     twoDrafts();

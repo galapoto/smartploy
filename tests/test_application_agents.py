@@ -217,6 +217,134 @@ def test_owner_agent_inbox_prioritizes_real_actions_with_pagination(store):
         workspaces.delete(other_owner, foreign.workspace_id)
 
 
+def test_sp37_owner_inbox_check_progresses_only_ten_due_cases_per_click(store):
+    """No unlimited scans; 12 due applicants' cases take two explicit clicks."""
+    agents, workspaces = store
+    owner = "sp37-inbox-a-" + uuid4().hex
+    other = "sp37-inbox-b-" + uuid4().hex
+    start = datetime.now(timezone.utc).replace(microsecond=0)
+    created = start - timedelta(minutes=5)
+    nonce = uuid4().hex
+    base = synthetic_case(owner)
+    owned = [
+        replace(
+            base, workspace_id=f"kit-sp37-{nonce}-{i}",
+            canonical_key=f"sp37-posting-{nonce}-{i}",
+            role_title=f"Fictional Junior QA {i}",
+        )
+        for i in range(12)
+    ]
+    foreign = synthetic_case(other)
+    try:
+        for item in owned:
+            saved, added = workspaces.create_or_get(item)
+            assert added and saved
+            case, started = agents.create_or_get(
+                owner, item.workspace_id, now=created,
+            )
+            assert started and case is not None
+        workspaces.create_or_get(foreign)
+        outsider, _ = agents.create_or_get(
+            other, foreign.workspace_id, now=created,
+        )
+        assert outsider is not None
+
+        first = agents.check_due_inbox(owner, now=start)
+        assert first == {
+            "cases_checked": 10,
+            "workspace_updates_reconciled": 0,
+            "in_app_reminders": 10,
+            "more_actionable_cases": True,
+            "external_actions_performed": 0,
+            "employer_contacts": 0,
+            "background_worker_verified": False,
+        }
+        assert agents.get(other, outsider["agent_id"])["last_woke_at"] == ""
+        second = agents.check_due_inbox(owner, now=start)
+        assert second["cases_checked"] == second["in_app_reminders"] == 2
+        assert second["more_actionable_cases"] is False
+        third = agents.check_due_inbox(owner, now=start)
+        assert third["cases_checked"] == third["in_app_reminders"] == 0
+        assert agents.check_due_inbox(other, now=start)["in_app_reminders"] == 1
+        assert sum(
+            len(agents.events(owner, item["agent_id"]))
+            for item in agents.list(owner, limit=100)
+        ) == 12 * 2
+
+        with pytest.raises(ValueError, match="owner"):
+            agents.check_due_inbox("")
+        for invalid in (0, 11, -1, 99, 1.5):
+            with pytest.raises(ValueError, match="limited"):
+                agents.check_due_inbox(owner, limit=invalid)
+    finally:
+        for item in owned:
+            workspaces.delete(owner, item.workspace_id)
+        workspaces.delete(other, foreign.workspace_id)
+
+
+def test_sp37_inbox_check_reconciles_actual_status_without_early_followup(store):
+    agents, workspaces = store
+    owner = "sp37-status-" + uuid4().hex
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    a = synthetic_case(owner)
+    try:
+        workspaces.create_or_get(a)
+        case, _ = agents.create_or_get(
+            owner, a.workspace_id, now=now - timedelta(minutes=3),
+        )
+        assert case is not None
+        workspaces.report_applied(
+            owner, a.workspace_id, expected_revision=1,
+            reference="synthetic personally submitted",
+        )
+        checked = agents.check_due_inbox(owner, now=now)
+        assert checked["cases_checked"] == 1
+        assert checked["workspace_updates_reconciled"] == 1
+        assert checked["in_app_reminders"] == 0
+        assert checked["more_actionable_cases"] is False
+        latest = agents.get(owner, case["agent_id"])
+        assert latest["observed_workspace_status"] == "self_reported_applied"
+        assert latest["last_woke_at"] == ""
+        assert datetime.fromisoformat(latest["next_due_at"]) >= now + timedelta(days=6)
+        assert agents.check_due_inbox(owner, now=now)["cases_checked"] == 0
+        assert [event["event_type"] for event in agents.events(
+            owner, case["agent_id"],
+        )] == ["case_created", "application_self_reported"]
+        agents.transition(
+            owner, case["agent_id"], action="pause",
+            expected_revision=latest["revision"], now=now,
+        )
+        assert agents.check_due_inbox(owner, now=now)["cases_checked"] == 0
+    finally:
+        workspaces.delete(owner, a.workspace_id)
+
+
+def test_sp37_concurrent_inbox_clicks_do_not_duplicate_in_app_events(store):
+    """The original per-case PostgreSQL SKIP LOCKED row lock still governs."""
+    agents, workspaces = store
+    owner = "sp37-parallel-" + uuid4().hex
+    a = synthetic_case(owner)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    try:
+        workspaces.create_or_get(a)
+        case, _ = agents.create_or_get(
+            owner, a.workspace_id, now=now - timedelta(minutes=5),
+        )
+        assert case is not None
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            reports = list(executor.map(
+                lambda _: agents.check_due_inbox(owner, now=now), range(2),
+            ))
+        assert sum(r["in_app_reminders"] for r in reports) == 1
+        assert all(r["external_actions_performed"] == 0 for r in reports)
+        assert all(r["employer_contacts"] == 0 for r in reports)
+        assert [event["event_type"] for event in agents.events(
+            owner, case["agent_id"],
+        )] == ["case_created", "review_reminder_due"]
+    finally:
+        workspaces.delete(owner, a.workspace_id)
+
+
 def test_owner_initiated_check_wakes_only_exact_case_and_is_idempotent(store):
     """SP34 on-demand path reuses worker SQL but never scans another owner."""
     agents, workspaces = store

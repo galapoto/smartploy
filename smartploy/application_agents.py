@@ -307,6 +307,58 @@ class PostgresApplicationAgentRepository:
             "external_actions_authorized": False,
         }
 
+    def check_due_inbox(
+        self, profile_id: str, *, limit: int = 10,
+        now: datetime | None = None,
+    ) -> dict[str, int | bool]:
+        """SP37: candidate-triggered bounded due queue, never an employer action.
+
+        Reuse the SP35 owner-prioritized inbox to find actionable cases, then
+        reuse SP34's exact owner+agent process_due() for EACH case. This leaves
+        the scheduled worker's global engine, per-case row locks, and strict
+        _case_scope policy unchanged. No client-selected case IDs are trusted.
+        """
+        owner = str(profile_id or "").strip()
+        if not owner:
+            raise ValueError("Verified application agent owner is required")
+        if not isinstance(limit, int) or not 1 <= limit <= 10:
+            raise ValueError("Owner inbox checks are limited to 10 cases")
+        moment = _now(now)
+        page = self.inbox(owner, limit=limit, offset=0, now=moment)
+        due = [
+            item for item in page["items"]
+            if item["state"] == "active"
+            and item["attention_state"] in {"status_changed", "due_review"}
+        ]
+        reconciled = 0
+        reminders = 0
+        for item in due:
+            # The originally reviewed, leased engine independently rechecks
+            # ownership and deletion/erasure before each state mutation.
+            # It never sends email, opens a browser, or contacts employers.
+            result = self.process_due(
+                limit=1, now=moment, profile_id=owner,
+                agent_id=item["agent_id"],
+            )
+            reconciled += int(result["workspace_updates_reconciled"])
+            reminders += int(result["in_app_reminders"])
+
+        next_page = self.inbox(owner, limit=1, offset=0, now=moment)
+        still_actionable = bool(
+            next_page["items"]
+            and next_page["items"][0]["attention_state"]
+                in {"status_changed", "due_review"}
+        )
+        return {
+            "cases_checked": len(due),
+            "workspace_updates_reconciled": reconciled,
+            "in_app_reminders": reminders,
+            "more_actionable_cases": still_actionable,
+            "external_actions_performed": 0,
+            "employer_contacts": 0,
+            "background_worker_verified": False,
+        }
+
     def events(
         self, profile_id: str, agent_id: str, *, after_sequence: int = 0
     ) -> list[dict[str, Any]]:

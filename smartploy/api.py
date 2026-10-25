@@ -1476,6 +1476,27 @@ def create_app(
             result, headers={"Cache-Control": "private, no-store"},
         )
 
+    @app.post("/api/v1/application-agents/inbox/check-due")
+    def check_due_application_agent_inbox(request: Request) -> JSONResponse:
+        """SP37: candidate-requested private reconciliation, 10 cases maximum.
+
+        The existing OIDC expected-user/same-origin mutation gate runs before
+        any case read or write. Only owner-scoped due/status-changed agents
+        are checked; no employer actions, out-of-app sends or worker opt-in.
+        """
+        repo, owner = application_agent_context(request, mutate=True)
+        try:
+            result = repo.check_due_inbox(owner, limit=10)
+        except PostgresError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Private application inbox check unavailable",
+            ) from exc
+        return JSONResponse(
+            {"checked_in_app": True, **result},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     @app.get("/api/v1/application-agents/{agent_id}")
     def read_application_agent(
         agent_id: str, request: Request,
