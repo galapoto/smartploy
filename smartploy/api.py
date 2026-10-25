@@ -1458,6 +1458,24 @@ def create_app(
             headers={"Cache-Control": "private, no-store"},
         )
 
+    @app.get("/api/v1/application-agents/inbox")
+    def read_application_agent_inbox(
+        request: Request,
+        limit: int = Query(default=25, ge=1, le=100),
+        offset: int = Query(default=0, ge=0, le=100000),
+    ) -> JSONResponse:
+        """Owned next-action queue, read only: never imply a worker ran."""
+        repo, owner = application_agent_context(request)
+        try:
+            result = repo.inbox(owner, limit=limit, offset=offset)
+        except PostgresError as exc:
+            raise HTTPException(
+                status_code=503, detail="Application agent inbox unavailable",
+            ) from exc
+        return JSONResponse(
+            result, headers={"Cache-Control": "private, no-store"},
+        )
+
     @app.get("/api/v1/application-agents/{agent_id}")
     def read_application_agent(
         agent_id: str, request: Request,

@@ -194,6 +194,50 @@ def reviewed_case(monkeypatch):
                 )
 
 
+def test_sp35_oidc_agent_inbox_is_read_only_paginated_and_owner_scoped(reviewed_case):
+    """Existing two-subject ZITADEL/OIDC and Postgres fixture; no employer I/O."""
+    case = reviewed_case
+    api, work, headers = case["api"], case["work"], case["headers"]
+    start = api.post(
+        f"/api/v1/application-workspaces/{work.workspace_id}/agent",
+        headers=headers,
+    )
+    assert start.status_code == 201, start.text
+    route = "/api/v1/application-agents/inbox"
+    response = api.get(route + "?limit=25&offset=0")
+    assert response.status_code == 200, response.text
+    assert response.headers["Cache-Control"] == "private, no-store"
+    data = response.json()
+    assert data["count"] == 1 and not data["has_more"]
+    assert data["next_offset"] is None
+    assert data["external_actions_authorized"] is False
+    assert data["background_worker_verified"] is False
+    assert data["items"][0]["workspace_id"] == work.workspace_id
+    assert data["items"][0]["attention_state"] == "due_review"
+    assert data["items"][0]["workspace_status"] == "draft"
+    assert data["items"][0]["employer_contacted"] is False
+    assert "cv_text" not in data["items"][0]
+    assert "email" not in data["items"][0]
+    assert api.get(route + "?limit=0").status_code == 422
+    assert api.get(route + "?limit=101").status_code == 422
+    assert api.get(route + "?offset=-1").status_code == 422
+    assert api.get(route + "?offset=100001").status_code == 422
+    assert api.get(route + "?limit=1&offset=1").json()["items"] == []
+
+    # The same email address is not an identity: no agent or case is leaked
+    # to the second OIDC subject, and a GET never changes the attempt ledger.
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
+    foreign = api.get(route)
+    assert foreign.status_code == 200
+    assert foreign.json()["items"] == [] and foreign.json()["count"] == 0
+    assert foreign.headers["Cache-Control"] == "private, no-store"
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+    assert api.get(route).json()["items"][0]["agent_id"] == start.json()["agent"]["agent_id"]
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(
+        case["a"], work.canonical_key,
+    ) is None
+
+
 def test_sp34_signed_in_oidc_check_now_is_exact_case_only_and_off_platform_safe(reviewed_case):
     """First-party OIDC two-subject check; no external employer traffic."""
     case = reviewed_case

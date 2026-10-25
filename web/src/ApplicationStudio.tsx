@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   applicationDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
-  getApplicationWorkspaces, markApplicationManuallySent,
+  getApplicationWorkspaces, getApplicationWorkspaceById, markApplicationManuallySent,
   getLocalAIStatus, requestLocalAISuggestions,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
   getEmployerAttemptStatus, getEmployerReviewIntent, getEmployerFinalActionReadiness,
@@ -15,6 +15,7 @@ import {
   getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
 import ApplicationAgentCard from "./ApplicationAgentCard";
+import ApplicationAgentInbox from "./ApplicationAgentInbox";
 import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import type { EmployerAttemptState, EmployerReviewIntentState, EmployerFinalActionReadiness, LeverPartnerReadiness, LeverProviderAcknowledgment, LeverPartnerReviewEvidence } from "./api";
@@ -80,6 +81,8 @@ export default function ApplicationStudio(props: {
   const accountBlockedRef = useRef(false);
   const reloadGenerationRef = useRef(0);
   const selectedDraftRef = useRef<DraftTicket>({ key: "", epoch: 0 });
+  const currentSelectedId = useRef(props.focusId);
+  useEffect(() => { currentSelectedId.current = selectedId; }, [selectedId]);
 
   const isCurrentDraft = useCallback((ticket: DraftTicket) =>
     mountedRef.current && !accountBlockedRef.current &&
@@ -171,14 +174,30 @@ export default function ApplicationStudio(props: {
       if (!active()) return;
       await verifyAccount();
       if (!active()) return;
-      setWorkspaces(result.workspaces);
+      // Older owned cases may be beyond the original 100-workspace listing.
+      // Reuse the exact owner-scoped GET rather than silently jumping back
+      // to the first draft when that case is refreshed.
+      const wanted = currentSelectedId.current || props.focusId;
+      let visible = result.workspaces;
+      if (wanted && !visible.some((item) => item.workspace_id === wanted)) {
+        try {
+          const older = await getApplicationWorkspaceById(wanted);
+          await verifyAccount();
+          if (!active()) return;
+          visible = [...visible, older.workspace];
+        } catch {
+          // The old case may have been deleted in another tab. Verify that
+          // a cookie/account switch was not hidden by the failed GET.
+          await verifyAccount();
+          if (!active()) return;
+        }
+      }
+      if (!active()) return;
+      setWorkspaces(visible);
       setSelectedId((current) => {
-        // The parent focusId is an initial navigation hint, not a sticky
-        // selection lock. Refresh must preserve the draft the applicant
-        // opened from the queue or sidebar.
-        const wanted = current || props.focusId;
-        return result.workspaces.some((item) => item.workspace_id === wanted)
-          ? wanted : (result.workspaces[0]?.workspace_id || "");
+        const requested = current || props.focusId;
+        return visible.some((item) => item.workspace_id === requested)
+          ? requested : (visible[0]?.workspace_id || "");
       });
       setError("");
     } catch (exc) {
@@ -294,6 +313,37 @@ export default function ApplicationStudio(props: {
     setSelectedId(id);
     setMessage("");
     setError("");
+  }
+
+  async function openInboxCase(workspaceId: string) {
+    if (workspaces.some((item) => item.workspace_id === workspaceId)) {
+      pick(workspaceId);
+      return;
+    }
+    if (dirty && !window.confirm("Discard unsaved changes and open another draft?")) return;
+    // Opening an older owned workspace is a read-only operation. The server
+    // rechecks ownership, and both session and selection are revalidated
+    // before the response can replace an on-screen private application.
+    const epoch = ++selectedDraftRef.current.epoch;
+    setError(""); setMessage("");
+    try {
+      await verifyAccount();
+      const found = await getApplicationWorkspaceById(workspaceId);
+      await verifyAccount();
+      if (!mountedRef.current || accountBlockedRef.current ||
+          selectedDraftRef.current.epoch !== epoch) return;
+      setWorkspaces((items) => [...items.filter(
+        (item) => item.workspace_id !== found.workspace.workspace_id
+      ), found.workspace]);
+      setSelectedId(found.workspace.workspace_id);
+    } catch (exc) {
+      if (!mountedRef.current || accountBlockedRef.current ||
+          selectedDraftRef.current.epoch !== epoch) return;
+      try { await verifyAccount(); } catch { return; }
+      if (selectedDraftRef.current.epoch === epoch) {
+        setError(exc instanceof Error ? exc.message : "Unable to open this private application.");
+      }
+    }
   }
 
   function updateItem(item: ApplicationWorkspace) {
@@ -716,6 +766,9 @@ export default function ApplicationStudio(props: {
     </div>
     {error ? <div className="studio-alert error" role="alert"><AlertCircle size={16}/>{error}</div> : null}
     {message ? <div className="studio-alert" role="status"><CheckCircle2 size={16}/>{message}</div> : null}
+    {workspaces.length > 0 ? <ApplicationAgentInbox
+      verifyAccount={verifyAccount} onOpen={(id) => void openInboxCase(id)}
+    /> : null}
     {workspaces.length === 0 ? (
       <div className="studio-empty">
         <div className="studio-empty-icon"><FileCheck2 size={25}/></div>

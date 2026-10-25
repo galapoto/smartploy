@@ -110,6 +110,28 @@ describe("browser writes carry a stable initiating-account precondition", () => 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("reads the paged case inbox and older workspace through private GETs only", async () => {
+    await api.getApplicationAgentInbox(25, 50);
+    const [inboxUrl, inboxOptions] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(inboxUrl).toContain("/api/v1/application-agents/inbox?limit=25&offset=50");
+    expect(inboxOptions.method).toBeUndefined();
+    expect(inboxOptions.headers).not.toHaveProperty("X-Smartploy-Expected-User-Id");
+
+    await api.getApplicationWorkspaceById("kit-old/private");
+    const [workspaceUrl, workspaceOptions] = fetchSpy.mock.calls[1] as
+      [string, RequestInit];
+    expect(workspaceUrl).toContain("/api/v1/application-workspaces/kit-old%2Fprivate");
+    expect(workspaceOptions.method).toBeUndefined();
+    expect(workspaceOptions.headers).not.toHaveProperty(
+      "X-Smartploy-Expected-User-Id",
+    );
+
+    await expect(api.getApplicationAgentInbox(0, 0)).rejects.toThrow(/Invalid private agent inbox page/);
+    await expect(api.getApplicationAgentInbox(25, -1)).rejects.toThrow(/Invalid private agent inbox page/);
+    await expect(api.getApplicationAgentInbox(101, 0)).rejects.toThrow(/Invalid private agent inbox page/);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("fails closed before fetch when the initiating account is missing", async () => {
     await expect(api.deleteCV("")).rejects.toThrow(/verified SmartPloy account/);
     await expect(api.deleteCV("   ")).rejects.toThrow(/verified SmartPloy account/);

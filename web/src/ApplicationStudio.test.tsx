@@ -4,12 +4,16 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 
 import * as api from "./api";
 import ApplicationStudio from "./ApplicationStudio";
-import type { ApplicationWorkspace, ApplicationWorkspacesResponse, SessionInfo } from "./types";
+import type {
+  ApplicationAgentInboxItem, ApplicationWorkspace, ApplicationWorkspacesResponse, SessionInfo,
+} from "./types";
 
 vi.mock("./api", () => ({
   getSession: vi.fn(),
   getApplicationWorkspaces: vi.fn(),
+  getApplicationWorkspaceById: vi.fn(),
   getApplicationAgents: vi.fn(),
+  getApplicationAgentInbox: vi.fn(),
   getApplicationAgentForWorkspace: vi.fn(),
   getApplicationAgent: vi.fn(),
   createApplicationAgent: vi.fn(),
@@ -55,6 +59,22 @@ function draft(tag: string): ApplicationWorkspacesResponse {
   return { workspaces: [job(tag)], count: 1 };
 }
 
+function inboxItem(tag: string): ApplicationAgentInboxItem {
+  return {
+    agent_id: "agent-" + tag, workspace_id: "workspace-" + tag,
+    canonical_key: "fictional-" + tag, role_title: tag + " private role",
+    company: "Fictional Employer", state: "active", revision: 1,
+    next_due_at: "2026-10-25T10:00:00Z",
+    last_woke_at: "", created_at: "2026-10-12T00:00:00Z",
+    updated_at: "2026-10-12T00:00:00Z", closed_at: "", close_reason: "",
+    milestone: "none", milestone_source: "none",
+    workspace_status: "draft", observed_workspace_status: "draft",
+    followups_sent: 0, last_followup_at: "", followup_suggestion: "",
+    external_actions_authorized: false, employer_contacted: false,
+    notification_channel: "in_app_only", attention_state: "due_review",
+  };
+}
+
 function session(id: string): SessionInfo {
   return {
     authenticated: true, email: "same-email@example.invalid",
@@ -82,6 +102,13 @@ beforeEach(() => {
   activeUser = "usr-a";
   vi.mocked(api.getSession).mockImplementation(async () => session(activeUser));
   vi.mocked(api.getApplicationWorkspaces).mockResolvedValue(draft("A"));
+  vi.mocked(api.getApplicationWorkspaceById).mockRejectedValue(
+    new Error("No such owned application in this synthetic fixture"),
+  );
+  vi.mocked(api.getApplicationAgentInbox).mockResolvedValue({
+    items: [], count: 0, has_more: false, next_offset: null,
+    background_worker_verified: false, external_actions_authorized: false,
+  });
   vi.mocked(api.getApplicationAgents).mockResolvedValue({
     agents: [], count: 0, external_actions_authorized: false,
   });
@@ -823,6 +850,73 @@ describe("Application Studio per-draft result isolation", () => {
     fireEvent.click(screen.getByRole("button", { name: /B private role/ }));
     expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
   }
+
+  it("opens a prioritized agent-inbox item using the existing draft selection controls", async () => {
+    twoDrafts();
+    vi.mocked(api.getApplicationAgentInbox).mockResolvedValue({
+      items: [inboxItem("B")], count: 1, has_more: false, next_offset: null,
+      background_worker_verified: false, external_actions_authorized: false,
+    });
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const inbox = await screen.findByRole("region", { name: "Application agent inbox" });
+    expect(inbox.textContent).toContain("Review due");
+    fireEvent.click(screen.getByRole("button", {
+      name: "Open B private role at Fictional Employer application",
+    }));
+    expect(await screen.findByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect(api.getApplicationWorkspaceById).not.toHaveBeenCalled();
+    expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("opens an older owned inbox case outside the first listing and keeps it on refresh", async () => {
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [job("A"), job("B")], count: 2,
+    });
+    vi.mocked(api.getApplicationWorkspaceById).mockResolvedValue({
+      workspace: job("OLD"),
+    });
+    vi.mocked(api.getApplicationAgentInbox).mockResolvedValue({
+      items: [inboxItem("OLD")], count: 1, has_more: false, next_offset: null,
+      background_worker_verified: false, external_actions_authorized: false,
+    });
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const action = await screen.findByRole("button", {
+      name: "Open OLD private role at Fictional Employer application",
+    });
+    fireEvent.click(action);
+    await waitFor(() => expect(api.getApplicationWorkspaceById).toHaveBeenCalledWith(
+      "workspace-OLD",
+    ));
+    expect(await screen.findByRole("heading", { name: "OLD private role" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh drafts" }));
+    await waitFor(() => expect(api.getApplicationWorkspaces).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.getApplicationWorkspaceById).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("heading", { name: "OLD private role" })).toBeTruthy();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("keeps an older inbox case and current unsaved CV isolated across an account switch", async () => {
+    const pending = deferred<{workspace:ApplicationWorkspace}>();
+    vi.mocked(api.getApplicationWorkspaceById).mockReturnValue(pending.promise);
+    vi.mocked(api.getApplicationAgentInbox).mockResolvedValue({
+      items: [inboxItem("OLD")], count: 1, has_more: false, next_offset: null,
+      background_worker_verified: false, external_actions_authorized: false,
+    });
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Open OLD private role at Fictional Employer application",
+    }));
+    await waitFor(() => expect(api.getApplicationWorkspaceById).toHaveBeenCalledTimes(1));
+    activeUser = "usr-b";  // same email, different OIDC subject
+    pending.resolve({ workspace: job("OLD") });
+    expect(await screen.findByText(/signed-in SmartPloy account changed/i)).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "OLD private role" })).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
 
   it("opens the next queued private draft and preserves the selected job across Refresh", async () => {
     twoDrafts();

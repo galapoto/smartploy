@@ -15,6 +15,7 @@ import type {
   ApplicationWorkspace,
   ApplicationAgent,
   ApplicationAgentEvent,
+  ApplicationAgentInboxPage,
   ApplicationAgentMilestone,
   ApplicationWorkspacesResponse,
   TrainingProgramsResponse
@@ -228,6 +229,21 @@ export function getApplicationAgents(): Promise<{
   return request("/api/v1/application-agents");
 }
 
+/** Paged read-only priority queue; does not wake agents or contact employers.
+ * Server ownership is enforced by the signed-in OIDC profile, never a query ID.
+ */
+export function getApplicationAgentInbox(
+  limit = 25, offset = 0,
+): Promise<ApplicationAgentInboxPage> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+      !Number.isSafeInteger(offset) || offset < 0 || offset > 100000) {
+    return Promise.reject(new Error("Invalid private agent inbox page"));
+  }
+  return request<ApplicationAgentInboxPage>(
+    "/api/v1/application-agents/inbox?limit=" + limit + "&offset=" + offset
+  );
+}
+
 export function getApplicationAgentForWorkspace(workspaceId: string): Promise<{
   present: boolean; agent: ApplicationAgent | null; external_actions_authorized: false;
 }> {
@@ -321,6 +337,17 @@ export function recordApplicationAgentFollowup(
 
 export function getApplicationWorkspaces(): Promise<ApplicationWorkspacesResponse> {
   return request<ApplicationWorkspacesResponse>("/api/v1/application-workspaces");
+}
+
+/** Reuse original exact owner-scoped workspace GET for older inbox cases
+ * outside the editor's first 100 most recent drafts.
+ */
+export function getApplicationWorkspaceById(
+  workspaceId: string,
+): Promise<{workspace: ApplicationWorkspace}> {
+  return request<{workspace: ApplicationWorkspace}>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
+  );
 }
 
 export function editApplicationWorkspace(

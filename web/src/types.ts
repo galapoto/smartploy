@@ -135,6 +135,24 @@ export interface ApplicationAgent {
   notification_channel: "in_app_only";
 }
 
+/** SP35: server-prioritized private cases, never inferred employer replies. */
+export type ApplicationAgentAttention =
+  "status_changed" | "due_review" | "draft_review" |
+  "awaiting_response" | "paused" | "closed";
+
+export type ApplicationAgentInboxItem = ApplicationAgent & {
+  attention_state: ApplicationAgentAttention;
+};
+
+export interface ApplicationAgentInboxPage {
+  items: ApplicationAgentInboxItem[];
+  count: number;
+  has_more: boolean;
+  next_offset: number | null;
+  background_worker_verified: false;
+  external_actions_authorized: false;
+}
+
 export interface ApplicationAgentEvent {
   sequence: number;
   event_type: "case_created" | "review_reminder_due" | "case_paused" |
