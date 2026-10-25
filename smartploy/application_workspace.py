@@ -17,8 +17,9 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 
-from .domain import JobCandidate, utc_now_iso
+from .domain import JobCandidate, normalize_identity_text, utc_now_iso
 from .profile import CandidateProfile
+from .scoring import score_candidate
 
 MAX_CV_CHARACTERS = 30000
 MAX_LETTER_CHARACTERS = 10000
@@ -71,27 +72,121 @@ def _candidate_document(profile: CandidateProfile) -> str:
     return "\n".join(lines).strip()
 
 
-def _cover_letter(candidate: JobCandidate, profile: CandidateProfile) -> str:
+# The existing applicant evidence scorer already checks declared job
+# requirements and known skills against exact APPROVED profile fact IDs.
+# Reuse it instead of writing a second (less trustworthy) match engine.
+# Profile facts are free text, so show them verbatim rather than inventing
+# achievements, durations or qualification levels around a match.
+_LETTER_FACT_LABELS: dict[str, tuple[str, str]] = {
+    "skill": ("Skill", "Osaaminen"),
+    "experience": ("Experience", "Kokemus"),
+    "education": ("Education", "Koulutus"),
+    "project": ("Project", "Projekti"),
+    "certification": ("Certification", "Sertifikaatti"),
+    "domain": ("Specialisation", "Erityisosaaminen"),
+    "language": ("Language", "Kielitaito"),
+}
+_LETTER_FACT_PRIORITY = {
+    "skill": 0, "experience": 1, "project": 2,
+    "certification": 3, "education": 4, "domain": 5, "language": 6,
+}
+_FINNISH_JOB_LANGUAGES = frozenset({
+    "finnish", "suomi", "suomen kieli", "suomenkielinen",
+    "fi", "fi fi", "finska",
+})
+
+
+def _relevant_approved_letter_facts(
+    candidate: JobCandidate, profile: CandidateProfile,
+) -> tuple[tuple[str, str], ...]:
+    """Choose up to three ORIGINAL approved facts relevant to THIS posting.
+
+    Score IDs are not professional credentials. No language, degree or claim
+    can be inferred from the job description; only exact approved facts are
+    considered for the applicant's draft.
+    """
+    approved = profile.approved_facts
+    matched_ids = set(score_candidate(candidate, profile).matched_evidence_ids)
+    candidates = [
+        (fact.fact_type, fact.value, fact.fact_id)
+        for fact in approved
+        if fact.fact_type in _LETTER_FACT_LABELS
+        and fact.fact_id in matched_ids
+        # Never truncate a factual statement: removing the trailing negation,
+        # limit or date could invert its meaning.
+        and 1 <= len(fact.value) <= 260
+    ]
+    candidates.sort(
+        key=lambda item: (_LETTER_FACT_PRIORITY[item[0]], item[2])
+    )
+    return tuple((kind, value) for kind, value, _ in candidates[:3])
+
+
+def _cover_letter(
+    candidate: JobCandidate, profile: CandidateProfile,
+    *, language: str | None = None,
+) -> str:
+    """Produce a reviewable, job-aligned draft without remote AI or invented claims.
+
+    Only an EXPLICIT published Finnish-language marker or applicant-requested
+    language selects Finnish; unsupported or mixed markers default to English.
+    The name is used only when its original identity fact was approved.
+    """
     role = _job_label(candidate.job.role_title, "the advertised role")
     company = _job_label(candidate.job.company, "your organisation")
+    requested = normalize_identity_text(
+        candidate.job.language if language is None else language
+    )
+    finnish = requested in _FINNISH_JOB_LANGUAGES
     evidence = profile.approved_evidence().get("facts", {})
-    name = next((str(f.get("value")) for f in evidence.get("identity", []) if f.get("value")), "[Your name]")
-    highlighted = []
-    for kind in ("skill", "experience", "education"):
-        highlighted.extend(str(f.get("value")) for f in evidence.get(kind, []) if f.get("value"))
-    intro = (
-        "My background includes " + "; ".join(highlighted[:3]) + "."
-        if highlighted else
-        "[Explain how your relevant experience meets this role's requirements.]"
+    name = next(
+        (str(f.get("value")) for f in evidence.get("identity", []) if f.get("value")),
+        "[Oma nimi]" if finnish else "[Your name]",
+    )
+    matched = _relevant_approved_letter_facts(candidate, profile)
+    if finnish:
+        facts = (
+            "Haluan nostaa esiin seuraavat tehtävään liittyvät, itse "
+            "vahvistamani tiedot:\\n"
+            + "\\n".join(
+                f"• {_LETTER_FACT_LABELS[kind][1]}: {value}"
+                for kind, value in matched
+            )
+            if matched else
+            "[Lisää tähän tehtävään liittyvä, paikkansapitävä osaamis- "
+            "tai työkokemusesimerkki. Älä ilmoita pätevyyttä ilman näyttöä.]"
+        )
+        return (
+            "Hei rekrytointitiimi,\\n\\n"
+            f"Haen avoinna olevaa tehtäväänne ({role}) organisaatiossa {company}.\\n\\n"
+            f"{facts}\\n\\n"
+            "[Kerro omin sanoin, miksi juuri tämä tehtävä ja työnantaja "
+            "kiinnostavat sinua. Lisää konkreettinen esimerkki ja tarkista "
+            "kaikki väitteet ennen hakemuksen lähettämistä.]\\n\\n"
+            "Kiitos hakemukseni käsittelystä. Kerron mielelläni lisää "
+            "osaamisestani haastattelussa.\\n\\n"
+            f"Ystävällisin terveisin,\\n{name}"
+        )
+    facts = (
+        "I would like to highlight these relevant parts of my background:\\n"
+        + "\\n".join(
+            f"• {_LETTER_FACT_LABELS[kind][0]}: {value}"
+            for kind, value in matched
+        )
+        if matched else
+        "[Add a truthful, specific skill or project example relevant to "
+        "this role. Do not claim qualifications you cannot substantiate.]"
     )
     return (
-        f"Dear Hiring Team,\n\n"
-        f"I am writing to apply for the {role} position at {company}.\n\n"
-        f"{intro}\n\n"
-        "[Explain why you are interested in this organisation and give a specific, "
-        "accurate example of your relevant work.]\n\n"
-        "Thank you for considering my application. I would welcome the opportunity to discuss the role.\n\n"
-        f"Kind regards,\n{name}"
+        "Dear Hiring Team,\\n\\n"
+        f"I am applying for the {role} position at {company}.\\n\\n"
+        f"{facts}\\n\\n"
+        "[Explain in your own words why this employer and role interest you. "
+        "Add a specific example and check all factual statements before "
+        "submitting the application.]\\n\\n"
+        "Thank you for considering my application. I would welcome "
+        "the opportunity to discuss the role.\\n\\n"
+        f"Kind regards,\\n{name}"
     )
 
 
