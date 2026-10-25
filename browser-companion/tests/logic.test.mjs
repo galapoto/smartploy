@@ -224,3 +224,43 @@ test("an invalid disguised required contact remains an unresolved manual employe
   assert.deepEqual(outcome.unresolvedRequired,["Email"]);
   assert.equal(outcome.autoSubmitAllowed,false);
 });
+
+const ashbyJob = "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst";
+const ashbyForm = ashbyJob + "/application";
+
+test("SP41 approved Ashby packet recognizes only the exact posted job and its /application form", () => {
+  const source = packet({application_url:ashbyJob});
+  const accepted = [
+    ashbyJob, ashbyJob + "/", ashbyForm, ashbyForm + "/"
+  ];
+  for (const url of accepted) {
+    const parsed = validatePacket(source, url, validNow);
+    assert.equal(parsed.application_url, ashbyJob);
+    assert.equal(parsed.fields.email, "person@example.org");
+  }
+  assert.equal(validatePacket(packet({application_url:ashbyForm}), ashbyForm, validNow).application_url, ashbyForm);
+});
+
+test("SP41 cross-employer Ashby, subdomain, extra path, query or hash fail closed", () => {
+  const source = packet({application_url:ashbyJob});
+  for (const url of [
+    "https://jobs.ashbyhq.com/other-board/junior-data-analyst/application",
+    "https://jobs.ashbyhq.com/synthetic-fi/other-job/application",
+    "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/redirect",
+    "https://jobs.ashbyhq.com.evil.invalid/synthetic-fi/junior-data-analyst/application",
+    "https://evil.invalid/synthetic-fi/junior-data-analyst/application",
+    "http://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application",
+    ashbyForm + "?redirect=attacker",
+    ashbyForm + "#debug",
+  ]) {
+    assert.throws(() => validatePacket(source, url, validNow), PacketError, url);
+  }
+  for (const url of [
+    ashbyJob + "/redirect",
+    ashbyForm + "?src=unreviewed",
+    ashbyForm + "#fragment",
+    ashbyForm.replace("jobs.ashbyhq.com", "jobs.ashbyhq.com.evil.invalid"),
+  ]) {
+    assert.throws(() => validatePacket(packet({application_url:url}), url, validNow), PacketError, url);
+  }
+});

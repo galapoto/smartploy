@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 from psycopg import connect
 
-from .browser_handoff import HandoffError, PLACEHOLDERS, _posting_url
+from .browser_handoff import HandoffError, PLACEHOLDERS, _posting_url, _assisted_posting_url
 from .identity import UserProfileBinding
 
 
@@ -65,6 +65,7 @@ def verified_employer_submit_preflight(
     cur, binding: UserProfileBinding, *,
     workspace_id: str, expected_revision: int,
     expected_application_url: str, expected_job_fingerprint: str,
+    assisted_review_only: bool = False,
 ) -> tuple[str, str, str]:
     """Reuse the SAME transactional owner/job/document checks for claim and review.
 
@@ -80,10 +81,16 @@ def verified_employer_submit_preflight(
         or not 1 <= len(expected_job_fingerprint) <= 128
     ):
         raise EmployerSubmitClaimDenied("Verified owner and saved review revision required")
+    # The original final-claim transport remains Lever-only. The review ledger
+    # may reuse owner/job locking for a strictly NON-SUBMITTING Ashby packet.
+    if type(assisted_review_only) is not bool:
+        raise EmployerSubmitClaimDenied("Reviewed provider mode is invalid")
     try:
-        _posting_url(expected_application_url)
+        (_assisted_posting_url if assisted_review_only else _posting_url)(
+            expected_application_url
+        )
     except (HandoffError, TypeError) as exc:
-        raise EmployerSubmitClaimDenied("Verified HTTPS Lever employer URL required") from exc
+        raise EmployerSubmitClaimDenied("Verified supported employer URL required") from exc
 
     # Same lock order as account erasure: quarantine and claim serialize.
     cur.execute(

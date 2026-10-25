@@ -57,12 +57,24 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
   } catch {
     throw new PacketError("The packet or browser tab has an invalid URL");
   }
+  const lever = ["jobs.lever.co", "jobs.eu.lever.co"].includes(target.hostname) &&
+    /^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+(?:\/apply\/?)?$/.test(target.pathname) &&
+    pathIsSameJob(current, target);
+  // SP41: direct job-board Ashby forms are assisted-fill-only. No redirects,
+  // queries, fragments, cross-board paths or subdomains are accepted.
+  const ashby = target.hostname === "jobs.ashbyhq.com" &&
+    /^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}(?:\/application\/?)?$/.test(target.pathname) &&
+    !target.search && !target.hash && !current.search && !current.hash &&
+    (() => {
+      const base = target.pathname.replace(/\/application\/?$/, "").replace(/\/+$/, "");
+      return [base, base + "/", base + "/application", base + "/application/"]
+        .includes(current.pathname);
+    })();
   if (target.protocol !== "https:" || current.protocol !== "https:" ||
-      !["jobs.lever.co", "jobs.eu.lever.co"].includes(target.hostname) ||
-      !/^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+(?:\/apply\/?)?$/.test(target.pathname) ||
-      target.username || target.password || target.port !== "" ||
-      current.origin !== target.origin || !pathIsSameJob(current, target)) {
-    throw new PacketError("Open the exact employer job/application page linked from SmartPloy");
+      target.username || target.password || current.username || current.password ||
+      target.port !== "" || current.port !== "" ||
+      current.origin !== target.origin || !(lever || ashby)) {
+    throw new PacketError("Open the exact supported employer job/application page linked from SmartPloy");
   }
   const f = packet.fields;
   if (!f || typeof f !== "object") {

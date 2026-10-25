@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1] / "browser-companion"
 
 def test_no_new_browser_background_or_remote_host_capability():
     manifest = json.loads((ROOT / "manifest.json").read_text())
-    assert manifest["version"] == "0.3.0"
+    assert manifest["version"] == "0.4.0"
     assert set(manifest["permissions"]) == {"activeTab", "scripting", "storage"}
     for key in ("host_permissions", "background", "content_scripts"):
         assert key not in manifest
@@ -26,7 +26,11 @@ def test_document_transfer_requires_explicit_owner_selection():
     assert 'const file = $("cvFile").files?.[0]' in popup
     assert "validatePacket(currentPacketToJSON(), rechecked.url)" in popup
     assert "chooseResumeField(inspection.result.elements)" in popup
-    assert "chrome.storage.local.get(attemptKey)" in popup
+    # Ashby is fill-only: do not require a Lever oneAttemptKey for its PDF.
+    # Existing Lever jobs still check the irreversible browser attempt record.
+    assert "await hasPriorLeverAttempt(currentPacket)" in popup
+    assert "if (!isLeverFinalProvider(packet.application_url))" in popup
+    assert "const key = await oneAttemptKey(packet)" in popup
     assert '"SEND REVIEWED PDF TO EMPLOYER?' in popup
     assert popup.index('"SEND REVIEWED PDF TO EMPLOYER?') < popup.index("func: attachReviewedPdf")
     assert 'location.href !== payload.inspected_url' in page

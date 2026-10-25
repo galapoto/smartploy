@@ -93,6 +93,39 @@ def _posting_url(raw: str) -> str:
     return raw
 
 
+def _assisted_posting_url(raw: str) -> str:
+    """Accept exact hosted Lever/Ashby jobs for user-reviewed form HELP only.
+
+    IMPORTANT: the original `_posting_url` remains Lever-only and is reused by
+    `employer_automation_rights.employer_job_key` for independent final-send
+    permissions. An assisted Ashby packet does NOT grant any submit authority.
+    """
+    try:
+        return _posting_url(raw)
+    except HandoffError:
+        pass
+    try:
+        parsed = urlsplit(raw)
+        if (
+            not isinstance(raw, str) or len(raw) > 1500
+            or parsed.scheme != "https"
+            or parsed.hostname != "jobs.ashbyhq.com"
+            or parsed.username or parsed.password
+            or parsed.port not in (None, 443)
+            or parsed.query or parsed.fragment
+            or not re.fullmatch(
+                r"/[A-Za-z0-9_-]{1,100}/[A-Za-z0-9_-]{1,160}(?:/application/?)?",
+                parsed.path,
+            )
+        ):
+            raise ValueError
+    except (ValueError, TypeError) as exc:
+        raise HandoffError(
+            "An exact hosted Lever or Ashby HTTPS application URL is required"
+        ) from exc
+    return raw
+
+
 def review_handoff(
     workspace: ApplicationWorkspace, candidate: JobCandidate | None,
     profile: CandidateProfile,
@@ -111,7 +144,7 @@ def review_handoff(
     ):
         blockers.append("The employer posting has changed; review it before applying")
     try:
-        _posting_url(workspace.application_url)
+        _assisted_posting_url(workspace.application_url)
     except HandoffError:
         blockers.append("A public HTTPS employer application URL is required")
     if not workspace.cv_text.strip():
@@ -181,7 +214,7 @@ def make_browser_packet(
         "schema": SCHEMA,
         "issued_at": stamp.isoformat(),
         "expires_at": (stamp + timedelta(seconds=LIFETIME_SECONDS)).isoformat(),
-        "application_url": _posting_url(workspace.application_url),
+        "application_url": _assisted_posting_url(workspace.application_url),
         "company": workspace.company,
         "role_title": workspace.role_title,
         "workspace_id": workspace.workspace_id,

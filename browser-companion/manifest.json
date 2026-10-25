@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SmartPloy Apply Companion",
-  "version": "0.3.0",
-  "description": "User-reviewed Lever form fill and PDF attachment; optional one-use employer submit with independent server permission and explicit final click, no background submission.",
+  "version": "0.4.0",
+  "description": "Reviewed Lever/Ashby form fill, questions and PDF help; only individually approved Lever jobs permit a one-use final click. No background submission.",
   "permissions": [
     "activeTab",
     "scripting",

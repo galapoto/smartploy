@@ -13,15 +13,22 @@ export async function attachReviewedPdf(payload) {
   } catch {
     return stop("The application URL is invalid.");
   }
-  const posting = approved.pathname.replace(/\/apply\/?$/, "").replace(/\/$/, "");
+  const leverPosting = approved.pathname.replace(/\/apply\/?$/, "").replace(/\/$/, "");
+  const ashbyPosting = approved.pathname.replace(/\/application\/?$/, "").replace(/\/+$/, "");
+  const lever = ["jobs.lever.co", "jobs.eu.lever.co"].includes(page.hostname) &&
+    /^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(leverPosting) &&
+    [leverPosting + "/apply", leverPosting + "/apply/"].includes(page.pathname);
+  const ashby = page.hostname === "jobs.ashbyhq.com" &&
+    /^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}$/.test(ashbyPosting) &&
+    !page.search && !approved.search && !page.hash && !approved.hash &&
+    [ashbyPosting + "/application", ashbyPosting + "/application/"]
+      .includes(page.pathname);
   if (
     page.protocol !== "https:" || approved.protocol !== "https:" ||
-    !["jobs.lever.co", "jobs.eu.lever.co"].includes(page.hostname) ||
     page.origin !== approved.origin || page.username || page.password ||
     approved.username || approved.password || page.port || approved.port ||
-    !/^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(posting) ||
-    ![posting + "/apply", posting + "/apply/"].includes(page.pathname) ||
-    location.href !== payload.inspected_url
+    !(lever || ashby) || location.href !== payload.inspected_url ||
+    (typeof window !== "undefined" && window.top !== window.self)
   ) return stop("The employer job/form changed; reinspect before attaching.");
   if (
     !Number.isInteger(payload.index) || payload.index < 0 || payload.index >= 250 ||
