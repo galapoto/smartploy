@@ -767,7 +767,8 @@ export default function ApplicationStudio(props: {
     {error ? <div className="studio-alert error" role="alert"><AlertCircle size={16}/>{error}</div> : null}
     {message ? <div className="studio-alert" role="status"><CheckCircle2 size={16}/>{message}</div> : null}
     {workspaces.length > 0 ? <ApplicationAgentInbox
-      verifyAccount={verifyAccount} onOpen={(id) => void openInboxCase(id)}
+      verifyAccount={verifyAccount} expectedUserId={props.expectedUserId}
+      onOpen={(id) => void openInboxCase(id)}
     /> : null}
     {workspaces.length === 0 ? (
       <div className="studio-empty">
