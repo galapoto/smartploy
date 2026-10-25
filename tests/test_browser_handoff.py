@@ -282,3 +282,102 @@ def test_cross_language_approved_field_fingerprint_is_stable_and_tamper_evident(
     assert approved_fields_sha256({**values,"email":"other@example.invalid"}) != expected
     with pytest.raises(HandoffError,match="expected approved"):
         approved_fields_sha256({**values,"secret":"do not export"})
+
+
+# SP41 - read-only Ashby job ingestion now has an OWNER-reviewed form-help path.
+ASHBY_FORM = "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application"
+
+
+def test_sp41_ashby_review_packet_is_fingerprinted_and_final_employer_rights_stay_lever_only():
+    from smartploy.browser_handoff import _posting_url, _assisted_posting_url
+    from smartploy.employer_automation_rights import EmployerRightsDenied, employer_job_key
+
+    original = candidate()
+    posting = replace(original, job=replace(original.job, application_url=ASHBY_FORM))
+    workspace = replace(ready_workspace(), application_url=ASHBY_FORM)
+    assert _assisted_posting_url(ASHBY_FORM) == ASHBY_FORM
+    assert review_handoff(workspace, posting, profile())["ready"] is True
+    packet = make_browser_packet(
+        workspace, posting, profile(),
+        now=datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc),
+    )
+    assert packet["application_url"] == ASHBY_FORM
+    assert packet["fields"]["email"] == "test.candidate@example.com"
+    assert packet["privacy"]["employer_submit_allowed_without_new_approval"] is False
+    assert packet["cv_pdf_sha256"] == sha256(render_document(workspace, kind="cv", file_format="pdf")[0]).hexdigest()
+    assert "This is an uploaded CV" not in json.dumps(packet)
+    # Preserve the ORIGINAL Lever-only employer submit-rights boundary.
+    with pytest.raises(HandoffError):
+        _posting_url(ASHBY_FORM)
+    with pytest.raises(EmployerRightsDenied):
+        employer_job_key(ASHBY_FORM)
+
+
+@pytest.mark.parametrize("raw", [
+    "https://jobs.ashbyhq.com.evil.invalid/synthetic-fi/junior-data-analyst/application",
+    "http://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application",
+    "https://jobs.ashbyhq.com/other-fi/another-job/application/subform",
+    "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/redirect",
+    "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application?next=evil",
+    "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application#debug",
+    "https://someone:password@jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application",
+    "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application@other",
+])
+def test_sp41_ashby_handoff_rejects_unapproved_host_or_path(raw):
+    from smartploy.browser_handoff import _assisted_posting_url
+    with pytest.raises(HandoffError):
+        _assisted_posting_url(raw)
+    workspace = replace(ready_workspace(), application_url=raw)
+    posting = replace(candidate(), job=replace(candidate().job, application_url=raw))
+    assert review_handoff(workspace, posting, profile())["ready"] is False
+
+
+def test_sp41_server_ashby_workspace_to_signed_user_review_packet_never_contacts_employer():
+    service = SmartployService()
+    policy = SourcePolicy("manual-import", "Manual", "manual", ("manual",))
+    service.register_source(policy)
+    client = TestClient(create_app(service))
+    ingested = client.post("/api/v1/jobs/ingest", json={
+        "observation": {
+            "source_id": "manual-import", "source_mode": "manual",
+            "source_url": ASHBY_FORM, "raw_text": "Junior Data Analyst at Synthetic Oy",
+            "payload": {
+                "company": "Synthetic Oy",
+                "role_title": "Junior Data Analyst",
+                "description": "Python, SQL, analytics",
+                "location": "Helsinki",
+                "application_url": ASHBY_FORM,
+            },
+        }
+    })
+    assert ingested.status_code == 200, ingested.text
+    key = ingested.json()["candidate"]["canonical_key"]
+    for fact in profile().approved_facts:
+        assert client.post("/api/v1/profile/facts", json={
+            "fact_type": fact.fact_type, "value": fact.value, "approved": True,
+        }).status_code == 201
+    created = client.post("/api/v1/jobs/" + key + "/application-workspace")
+    assert created.status_code == 200, created.text
+    workspace = created.json()["workspace"]
+    wid = workspace["workspace_id"]
+    edited = client.put("/api/v1/application-workspaces/" + wid, json={
+        "expected_revision": workspace["revision"],
+        "cv_text": "Reviewed candidate Python CV",
+        "cover_letter_text": (
+            "Dear Hiring Team, I am interested in this Data Analyst role. "
+            "My Python experience statement has been reviewed for accuracy. "
+            "Kind regards, Test Candidate."
+        ),
+    })
+    assert edited.status_code == 200, edited.text
+    revision = edited.json()["workspace"]["revision"]
+    readiness = client.get("/api/v1/application-workspaces/" + wid + "/handoff-readiness")
+    assert readiness.status_code == 200 and readiness.json()["ready"] is True
+    packet = client.post("/api/v1/application-workspaces/" + wid + "/browser-packet", json={
+        "expected_revision": revision, "confirm_private_data_transfer": True,
+    })
+    assert packet.status_code == 200, packet.text
+    assert packet.json()["packet"]["application_url"] == ASHBY_FORM
+    assert packet.json()["packet"]["privacy"]["employer_submit_allowed_without_new_approval"] is False
+    assert packet.json()["external_actions_performed"] is False
+    assert client.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
