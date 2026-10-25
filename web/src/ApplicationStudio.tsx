@@ -973,7 +973,7 @@ export default function ApplicationStudio(props: {
         {selected.status === "draft" ? <section className="studio-handoff" aria-label="Browser application assistant">
           <div className="studio-handoff-header">
             <div><p className="section-kicker">EMPLOYER APPLICATION</p><h4>Fill the employer's form</h4>
-              <p>Use the optional SmartPloy browser companion to fill approved contact fields on this specific job's website.</p></div>
+              <p>Use the optional SmartPloy browser companion for reviewed contact details, ordinary questions and PDF help on supported Lever or Ashby forms. Ashby submission remains manual.</p></div>
             <ExternalLink size={18} />
           </div>
           {employerAttempt?.previous_attempt_reserved ? (
