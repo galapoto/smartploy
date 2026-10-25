@@ -191,10 +191,30 @@ export function deletePrivateSavedJob(savedJobId: string, expectedUserId: string
 }
 
 
-export function startApplicationWorkspace(canonicalKey: string, expectedUserId: string): Promise<{ workspace: ApplicationWorkspace; created: boolean }> {
-  return request<{ workspace: ApplicationWorkspace; created: boolean }>(
+export type WorkspaceStartResponse = {
+  workspace: ApplicationWorkspace;
+  created: boolean;
+  /** Agent is only requested by an explicit AutoApply selection, never an upload. */
+  agent_tracking?: {
+    requested: true;
+    state: "active" | "paused" | "closed" | "unavailable";
+    created: boolean;
+    external_actions_performed: 0;
+    worker_wake_verified: false;
+  };
+};
+
+export function startApplicationWorkspace(
+  canonicalKey: string, expectedUserId: string, startPrivateAgent = false
+): Promise<WorkspaceStartResponse> {
+  return request<WorkspaceStartResponse>(
     "/api/v1/jobs/" + encodeURIComponent(canonicalKey) + "/application-workspace",
-    { method: "POST" }, expectedUserId
+    startPrivateAgent
+      ? { method: "POST", body: JSON.stringify({
+          start_private_agent: true, confirm_in_app_tracking_only: true
+        }) }
+      : { method: "POST" },
+    expectedUserId
   );
 }
 
