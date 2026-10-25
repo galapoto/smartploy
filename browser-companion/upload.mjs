@@ -24,6 +24,45 @@ export function exactLeverForm(activeUrl, packetUrl) {
   }
 }
 
+
+/* SP41: reuse the same reviewed PDF + original-user confirmation path on an
+   exact Ashby /application route. Pure URL validation; no upload or submit.
+   The existing Lever-only final-click adapter stays unchanged. */
+export function exactAssistedForm(activeUrl, packetUrl) {
+  if (exactLeverForm(activeUrl, packetUrl)) return true;
+  try {
+    const current = new URL(activeUrl);
+    const intended = new URL(packetUrl);
+    if (
+      current.protocol !== "https:" || intended.protocol !== "https:" ||
+      current.hostname !== "jobs.ashbyhq.com" ||
+      intended.hostname !== "jobs.ashbyhq.com" ||
+      current.origin !== intended.origin ||
+      current.username || current.password || intended.username || intended.password ||
+      current.port || intended.port || current.search || intended.search ||
+      current.hash || intended.hash
+    ) return false;
+    const posting = intended.pathname.replace(/\/application\/?$/, "").replace(/\/+$/, "");
+    if (!/^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}$/.test(posting)) return false;
+    return current.pathname === posting + "/application" ||
+      current.pathname === posting + "/application/";
+  } catch {
+    return false;
+  }
+}
+
+export function isLeverFinalProvider(packetUrl) {
+  try {
+    const url = new URL(packetUrl);
+    return url.protocol === "https:" &&
+      ["jobs.lever.co", "jobs.eu.lever.co"].includes(url.hostname) &&
+      /^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+(?:\/apply\/?)?$/.test(url.pathname) &&
+      !url.username && !url.password && !url.port;
+  } catch {
+    return false;
+  }
+}
+
 function normalized(text) {
   return String(text || "").replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/[^\p{L}\p{N}]+/gu, " ").toLowerCase().trim();
