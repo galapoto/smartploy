@@ -264,3 +264,39 @@ test("SP41 cross-employer Ashby, subdomain, extra path, query or hash fail close
     assert.throws(() => validatePacket(packet({application_url:url}), url, validNow), PacketError, url);
   }
 });
+
+const greenhouseModern = "https://job-boards.greenhouse.io/synthetic-it/jobs/123456789";
+const greenhouseLegacy = "https://boards.greenhouse.io/synthetic-it/jobs/123456789";
+
+test("SP43 approved Greenhouse packet matches only official same-board numeric job", () => {
+  const valid = [greenhouseModern,greenhouseLegacy,greenhouseModern+"/"];
+  for(const approved of [greenhouseModern,greenhouseLegacy]){
+    for(const active of valid){
+      const p=validatePacket(packet({application_url:approved}),active,validNow);
+      assert.equal(p.application_url,new URL(approved).href);
+      assert.equal(p.fields.email,"person@example.org");
+    }
+  }
+});
+
+test("SP43 Greenhouse disallows cross-job, embed, redirect, custom host and tracking", () => {
+  for(const active of [
+    "https://job-boards.greenhouse.io/synthetic-it/jobs/123456790",
+    "https://job-boards.greenhouse.io/synthetic-it/jobs/1234567890",
+    "https://job-boards.greenhouse.io/other/jobs/123456789",
+    "https://job-boards.greenhouse.io.evil.invalid/synthetic-it/jobs/123456789",
+    "https://evil.invalid/synthetic-it/jobs/123456789",
+    "http://job-boards.greenhouse.io/synthetic-it/jobs/123456789",
+    greenhouseModern+"/application",
+    greenhouseModern+"?gh_src=other",
+    greenhouseModern+"#private",
+    "https://job-boards.greenhouse.io/embed/job_app?for=synthetic-it&token=123456789",
+  ]) {
+    assert.throws(()=>validatePacket(packet({application_url:greenhouseLegacy}),active,validNow),PacketError,active);
+  }
+  for(const bad of [
+    greenhouseModern+"/application",greenhouseModern+"?gh_src=bogus",
+    "https://job-boards.greenhouse.io/synthetic-it/jobs/notnumeric",
+    "https://careers.example.com/synthetic-it/jobs/123456789",
+  ]) assert.throws(()=>validatePacket(packet({application_url:bad}),bad,validNow),PacketError,bad);
+});
