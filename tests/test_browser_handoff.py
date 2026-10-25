@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from smartploy.api import create_app
-from smartploy.application_workspace import cover_letter_proposal, new_workspace, render_document
+from smartploy.application_workspace import new_workspace, render_document
 from smartploy.browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
 from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
 from smartploy.profile import CandidateProfile, ProfileFact
