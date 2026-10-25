@@ -382,3 +382,86 @@ def test_reserved_browser_attempt_reconciles_observed_receipt_then_owner_report(
             (case["a"].profile_id,),
         ).fetchone()
         assert row and row[0] == 0
+
+
+def test_sp32_explicit_autoapply_queue_creates_one_private_agent_per_selected_job(reviewed_case):
+    """AutoApply opt-in binds a logical case without another user click or send.
+
+    Uses the original signed-in OIDC and real Postgres fixture, a synthetic job
+    and zero employer traffic. Legacy manual/assisted POST stays unchanged.
+    """
+    case = reviewed_case
+    api, work, headers = case["api"], case["work"], case["headers"]
+    start = f"/api/v1/jobs/{work.canonical_key}/application-workspace"
+    route = f"/api/v1/application-workspaces/{work.workspace_id}/agent"
+    repo = api.app.state.application_agent_repository
+
+    # Manual/assisted prepares documents but never silently starts an agent.
+    old_client = api.post(start, headers=headers)
+    assert old_client.status_code == 200, old_client.text
+    assert old_client.json()["created"] is False
+    assert "agent_tracking" not in old_client.json()
+    assert api.get(route).json()["present"] is False
+
+    payload = {
+        "start_private_agent": True,
+        "confirm_in_app_tracking_only": True,
+    }
+    missing_consent = api.post(start, json={
+        "start_private_agent": True,
+        "confirm_in_app_tracking_only": False,
+    }, headers=headers)
+    assert missing_consent.status_code == 422
+    assert repo.get_for_workspace(case["a"].profile_id, work.workspace_id) is None
+    assert api.post(start, json={
+        **payload, "external_send": True,
+    }, headers=headers).status_code == 422
+    assert api.post(start, json={
+        "start_private_agent": "true",
+        "confirm_in_app_tracking_only": True,
+    }, headers=headers).status_code == 422
+    assert api.post(start, json=payload, headers={
+        **headers, "Origin": "https://hostile.example.invalid",
+    }).status_code == 403
+    assert api.post(start, json=payload, headers={
+        **headers, "Sec-Fetch-Site": "cross-site",
+    }).status_code == 403
+
+    started = api.post(start, json=payload, headers=headers)
+    assert started.status_code == 200, started.text
+    assert started.json()["workspace"]["workspace_id"] == work.workspace_id
+    tracking = started.json()["agent_tracking"]
+    assert tracking == {
+        "requested": True, "state": "active", "created": True,
+        "external_actions_performed": 0, "worker_wake_verified": False,
+    }
+    original = api.get(route).json()
+    assert original["present"] is True
+    assert original["agent"]["workspace_id"] == work.workspace_id
+    assert original["agent"]["external_actions_authorized"] is False
+    assert len(repo.events(case["a"].profile_id, original["agent"]["agent_id"])) == 1
+
+    # Batch retries and repeated selections reuse the same durable identity.
+    again = api.post(start, json=payload, headers=headers)
+    assert again.status_code == 200
+    assert again.json()["agent_tracking"]["created"] is False
+    assert api.get(route).json()["agent"]["agent_id"] == original["agent"]["agent_id"]
+    assert len(repo.events(case["a"].profile_id, original["agent"]["agent_id"])) == 1
+    assert api.get(
+        f"/api/v1/application-workspaces/{work.workspace_id}/employer-attempt",
+        headers=headers,
+    ).json()["previous_attempt_reserved"] is False
+
+    # Same display email does not identify the same OIDC subject or case.
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
+    assert api.get(route).json()["present"] is False
+    assert api.post(start, json=payload, headers=headers).status_code in {403, 409}
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+
+    # Agent storage failure does not discard a successfully saved workspace.
+    api.app.state.application_agent_repository = None
+    unavailable = api.post(start, json=payload, headers=headers)
+    assert unavailable.status_code == 200
+    assert unavailable.json()["agent_tracking"]["state"] == "unavailable"
+    assert unavailable.json()["agent_tracking"]["worker_wake_verified"] is False
+    assert unavailable.json()["workspace"]["workspace_id"] == work.workspace_id

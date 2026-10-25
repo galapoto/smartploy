@@ -74,6 +74,25 @@ describe("browser writes carry a stable initiating-account precondition", () => 
     expect(fetchSpy).toHaveBeenCalledTimes(changes.length);
   });
 
+  it("only creates a per-job agent after an explicit AutoApply selection", async () => {
+    await api.startApplicationWorkspace("synthetic-job", USER);
+    const [, manual] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(manual.body).toBeUndefined();
+
+    await api.startApplicationWorkspace("synthetic-job", USER, true);
+    const [url, automatic] = fetchSpy.mock.calls[1] as [string, RequestInit];
+    expect(url).toContain("/api/v1/jobs/synthetic-job/application-workspace");
+    expect(automatic.method).toBe("POST");
+    expect(JSON.parse(String(automatic.body))).toEqual({
+      start_private_agent: true,
+      confirm_in_app_tracking_only: true,
+    });
+    expect(automatic.headers).toMatchObject({
+      "X-Smartploy-Expected-User-Id": USER,
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("fails closed before fetch when the initiating account is missing", async () => {
     await expect(api.deleteCV("")).rejects.toThrow(/verified SmartPloy account/);
     await expect(api.deleteCV("   ")).rejects.toThrow(/verified SmartPloy account/);

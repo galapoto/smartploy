@@ -214,6 +214,17 @@ class SearchPreferencesPayload(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
+class ApplicationWorkspaceStartPayload(BaseModel):
+    """Optional in-app-only agent for an explicitly selected AutoApply job.
+
+    Existing manual/assisted clients send no body and keep their old behavior.
+    No employer action, model call, email, or worker activation is authorized.
+    """
+    model_config = ConfigDict(extra="forbid")
+    start_private_agent: StrictBool = False
+    confirm_in_app_tracking_only: StrictBool = False
+
+
 class WorkspaceEditPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
@@ -1318,8 +1329,31 @@ def create_app(
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.post("/api/v1/jobs/{canonical_key}/application-workspace")
-    def start_application_workspace(canonical_key: str, request: Request) -> dict[str, Any]:
-        tenant, _ = tenant_context(request)
+    def start_application_workspace(
+        canonical_key: str, request: Request,
+        payload: ApplicationWorkspaceStartPayload | None = None,
+    ) -> dict[str, Any]:
+        tenant, binding = tenant_context(request)
+        wants_agent = bool(payload and payload.start_private_agent)
+        # This is an explicit, one-job candidate decision, not inferred from
+        # CV upload or job discovery. Reuse the same origin/user boundary as
+        # the original POST /application-workspaces/{id}/agent action.
+        if wants_agent:
+            if payload is None or payload.confirm_in_app_tracking_only is not True:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Explicit in-app-only application tracking acknowledgement required",
+                )
+            if (
+                binding is None
+                or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+                or request.headers.get("Origin", "") != public_origin
+                or request.headers.get("Sec-Fetch-Site", "").casefold()
+                    not in {"", "same-origin", "none"}
+            ):
+                raise HTTPException(
+                    status_code=403, detail="Verified same-origin application owner required",
+                )
         candidate = tenant.get_job(canonical_key)
         if candidate is None:
             raise HTTPException(status_code=404, detail="Job not found")
@@ -1334,7 +1368,28 @@ def create_app(
         except WorkspaceError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         stored, created = app.state.workspace_repository.create_or_get(proposed)
-        return {"workspace": stored.to_dict(), "created": created}
+        result: dict[str, Any] = {"workspace": stored.to_dict(), "created": created}
+        if wants_agent:
+            # Reuse SP22/31 Postgres case identity, atomic idempotence, and
+            # worker task. A missing migration/DB does not erase the user's
+            # successfully saved draft or fabricate a tracking case.
+            agent = None
+            agent_created = False
+            if app.state.application_agent_repository is not None:
+                try:
+                    agent, agent_created = app.state.application_agent_repository.create_or_get(
+                        profile.profile_id, stored.workspace_id
+                    )
+                except PostgresError:
+                    pass
+            result["agent_tracking"] = {
+                "requested": True,
+                "state": agent["state"] if agent is not None else "unavailable",
+                "created": agent_created,
+                "external_actions_performed": 0,
+                "worker_wake_verified": False,
+            }
+        return result
 
 
     def application_agent_context(

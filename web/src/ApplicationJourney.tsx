@@ -21,7 +21,7 @@ const MODE_INFO: Record<ApplicationFlowMode, { title: string; summary: string }>
   },
   automatic: {
     title: "AutoApply",
-    summary: "Select jobs for automatic private preparation. Employer submission only works with authorized connectors; others wait for you.",
+    summary: "Select jobs to prepare private drafts and start one in-app agent per job. Employer submission still needs separate authorization.",
   },
 };
 
@@ -207,9 +207,11 @@ export default function ApplicationJourney(props: {
       </fieldset> : null}
       {props.mode === "automatic" ? <div className="flow-boundary" role="note">
         <ShieldCheck size={20} aria-hidden="true"/>
-        <p><strong>AutoApply preparation is available.</strong> Select vacancies below to create private drafts.
-          Fully automated employer submission is not yet available for arbitrary websites.
-          A missing employer authorization or uncertain form goes to review—never falsely to “Submitted”.</p>
+        <p><strong>AutoApply preparation and private case agents are available.</strong>
+          Select vacancies below to prepare saved drafts and start one in-app tracking agent per job.
+          The agents cannot contact employers; background reminders depend on the server worker.
+          Final submission still requires a separately authorized employer integration and approval.
+          Missing authorization or uncertain forms always wait for review—not “Submitted”.</p>
       </div> : null}
     </section>
 
@@ -277,10 +279,11 @@ export default function ApplicationJourney(props: {
             </button></div>}
         {props.mode === "automatic" ? <div className="flow-queue">
           <strong>{selected.length} of 15 vacancies selected</strong>
-          <p>Selection prepares saved documents one job at a time. It does not send applications to employers.</p>
+          <p>Each selected job gets its own private application draft and in-app agent.
+            No email, call or employer application is sent. You can pause or close an agent later.</p>
           <button className="primary-btn" type="button" disabled={!selected.length || props.queueBusy}
             onClick={() => void queue()}>
-            {props.queueBusy ? "Preparing selected drafts…" : "Prepare selected applications"}
+            {props.queueBusy ? "Preparing selected drafts and agents…" : "Prepare applications & start agents"}
             <ArrowRight size={16}/>
           </button>
         </div> : null}

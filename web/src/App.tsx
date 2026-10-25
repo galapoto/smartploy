@@ -743,6 +743,8 @@ export default function App() {
     flowQueueInFlight.current = true;
     setFlowQueueBusy(true);
     let prepared = 0;
+    let agentsActive = 0;
+    let agentsUnavailable = 0;
     let firstWorkspace = "";
     let failure = "";
     try {
@@ -750,10 +752,15 @@ export default function App() {
       // No employer POST, extension grant or automatic final browser click.
       for (const key of selected) {
         try {
+          // Each explicitly selected AutoApply job becomes one durable,
+          // in-app-only agent case. Reuse the original idempotent workspace
+          // + Agent Zero APIs; never grant employer submission permission.
           const result = await runPrivateMutation((userId) =>
-            startApplicationWorkspace(key, userId));
+            startApplicationWorkspace(key, userId, true));
           if (!firstWorkspace) firstWorkspace = result.workspace.workspace_id;
           prepared += 1;
+          if (result.agent_tracking?.state === "active") agentsActive += 1;
+          else agentsUnavailable += 1;
         } catch (exc) {
           if (exc instanceof PrivateActionIdentityChanged) return;
           failure = exc instanceof Error ? exc.message : "Unable to prepare the next job";
@@ -765,8 +772,11 @@ export default function App() {
       setSelectedWorkspaceId(firstWorkspace);
       navigate("applications");
       setNotice(prepared + " private application draft(s) ready for review. " +
+        agentsActive + " private per-job agent(s) ready for in-app tracking. " +
+        (agentsUnavailable ? agentsUnavailable +
+          " case(s) not actively tracking; check My applications and worker readiness. " : "") +
         (failure ? "Stopped before the next job: " + failure + ". " : "") +
-        "No applications were sent to employers.");
+        "Agent reminders require the server worker. No applications were sent to employers.");
     } finally {
       flowQueueInFlight.current = false;
       if (lastSessionIdentity.current === identity) setFlowQueueBusy(false);
