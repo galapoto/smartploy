@@ -44,6 +44,7 @@ describe("browser writes carry a stable initiating-account precondition", () => 
       () => api.deletePrivateSavedJob("saved-synthetic", USER),
       () => api.startApplicationWorkspace("fictional-job", USER),
       () => api.checkApplicationAgentNow("agent-synthetic-a", USER),
+      () => api.checkDueApplicationAgentInbox(USER),
       () => api.editApplicationWorkspace("draft-fake", 1, "fictional cv", "fictional letter", USER),
       () => api.markApplicationManuallySent("draft-fake", 1, "fictional-ref", USER),
       () => api.deleteApplicationWorkspace("draft-fake", USER),
@@ -73,6 +74,21 @@ describe("browser writes carry a stable initiating-account precondition", () => 
       });
     }
     expect(fetchSpy).toHaveBeenCalledTimes(changes.length);
+  });
+
+  it("uses a first-party no-body POST with original expected user for ten-case inbox check", async () => {
+    await api.checkDueApplicationAgentInbox(USER);
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/application-agents/inbox/check-due");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeUndefined();
+    expect(init.headers).toMatchObject({
+      "X-Smartploy-Expected-User-Id": USER,
+    });
+    await expect(api.checkDueApplicationAgentInbox("")).rejects.toThrow(
+      /verified SmartPloy account/,
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it("only creates a per-job agent after an explicit AutoApply selection", async () => {
