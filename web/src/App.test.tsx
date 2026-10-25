@@ -215,6 +215,56 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.getByTestId("application-editor").getAttribute("data-workspace")).toMatch(/^kit-/);
   });
 
+  it("creates a private per-job agent only after explicit AutoApply batch selection", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "synthetic-CV.pdf", sha256: "test-cv-only"
+    });
+    vi.mocked(api.startApplicationWorkspace).mockResolvedValue({
+      workspace: { workspace_id: "kit-private-analyst" },
+      created: true,
+      agent_tracking: {
+        requested: true, state: "active", created: true,
+        external_actions_performed: 0, worker_wake_verified: false,
+      },
+    } as never);
+    render(<App />);
+    fireEvent.click((await screen.findAllByRole("button", { name: /^AutoApply$/ }))[0]);
+    expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /select for preparation/i }));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledWith(
+      "test-analyst", "usr-synthetic-1", true
+    ));
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(await screen.findByText(/1 private per-job agent\(s\) ready/)).toBeTruthy();
+    expect(screen.getByText(/No applications were sent to employers/i)).toBeTruthy();
+  });
+
+  it("keeps an AutoApply draft usable when the durable agent worker is unavailable", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "synthetic-CV.pdf", sha256: "test-cv-only"
+    });
+    vi.mocked(api.startApplicationWorkspace).mockResolvedValue({
+      workspace: { workspace_id: "kit-private-analyst" },
+      created: true,
+      agent_tracking: {
+        requested: true, state: "unavailable", created: false,
+        external_actions_performed: 0, worker_wake_verified: false,
+      },
+    } as never);
+    render(<App />);
+    fireEvent.click((await screen.findAllByRole("button", { name: /^AutoApply$/ }))[0]);
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    fireEvent.click(screen.getByRole("checkbox", { name: /select for preparation/i }));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(screen.getByText(/1 case\(s\) not actively tracking/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).toHaveBeenCalledWith(
+      "test-analyst", "usr-synthetic-1", true
+    );
+  });
+
   it("keeps General selected while optional user-profile requests finish in the background", async () => {
     let finishCV = () => {};
     vi.mocked(api.getCV).mockImplementationOnce(() => new Promise((resolve) => {
