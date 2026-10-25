@@ -396,6 +396,94 @@ def test_actual_postgres_only_lists_active_opted_in_accounts_and_persists_one_dr
                     cur.execute("DELETE FROM smartploy_profile_facts WHERE profile_id=%s",(pid,))
 
 
+@pytest.mark.skipif(not DSN, reason="requires real PostgreSQL")
+def test_postgres_auto_draft_opt_in_starts_one_private_agent_and_honors_revocation():
+    """Real OIDC user/profile, JSONB settings, workspace and durable Agent Zero."""
+    from psycopg import connect
+    from smartploy.application_agents import PostgresApplicationAgentRepository
+
+    PostgresJobRepository(DSN).migrate()
+    unique = uuid4().hex
+    identities = PostgresIdentityRepository(DSN)
+    owner = identities.resolve_or_create(AuthenticatedPrincipal(
+        issuer="https://synthetic.example.invalid",
+        subject="auto-agent-" + unique, email="same@example.invalid",
+        auth_source="oidc",
+    ))
+    other = identities.resolve_or_create(AuthenticatedPrincipal(
+        issuer="https://synthetic.example.invalid",
+        subject="unrelated-agent-" + unique, email="same@example.invalid",
+        auth_source="oidc",
+    ))
+    prefs = PostgresSearchPreferenceRepository(DSN)
+    jobs = PostgresJobRepository(DSN)
+    profiles = PostgresProfileRepository(DSN, profile_id=owner.profile_id)
+    spaces = PostgresWorkspaceRepository(DSN)
+    cv = PostgresCVRepository(DSN)
+    agents = PostgresApplicationAgentRepository(DSN)
+    example = candidate("Junior Data Analyst",
+                        url="https://careers.example.fi/jobs/" + unique)
+    config = {
+        "mode": "personalized", "roles": ["Data Analyst"],
+        "auto_draft_enabled": True, "auto_agent_tracking_enabled": True,
+    }
+    try:
+        for skill in ("Python", "SQL", "data analysis"):
+            profiles.upsert_fact(ProfileFact("skill", skill, "user-entered", approved=True))
+        jobs.upsert(example)
+        granted = prefs.save(owner.profile_id, config, expected_revision=0)
+        assert granted.auto_agent_tracking_enabled
+        assert prefs.get(owner.profile_id).auto_agent_tracking_enabled
+        assert prefs.get(other.profile_id).auto_agent_tracking_enabled is False
+        common = dict(
+            preferences_repository=prefs, job_repository=jobs,
+            profile_repository=profiles, cv_repository=cv,
+            workspace_repository=spaces, application_agent_repository=agents,
+            candidates=[example],
+        )
+        first = prepare_profile_shortlist(owner.profile_id, **common)
+        assert first.created == 1 and first.agents_started == 1
+        item = spaces.list(owner.profile_id)[0]
+        agent = agents.get_for_workspace(owner.profile_id, item.workspace_id)
+        assert agent is not None and agent["state"] == "active"
+        assert agent["employer_contacted"] is False
+        assert len(agents.events(owner.profile_id, agent["agent_id"])) == 1
+        assert agents.get_for_workspace(other.profile_id, item.workspace_id) is None
+
+        again = prepare_profile_shortlist(owner.profile_id, **common)
+        assert again.created == 0 and again.agents_already_present == 1
+        assert agents.get_for_workspace(owner.profile_id, item.workspace_id)["agent_id"] == agent["agent_id"]
+        assert len(agents.events(owner.profile_id, agent["agent_id"])) == 1
+
+        disabled = prefs.save(owner.profile_id, {
+            **config, "auto_agent_tracking_enabled": False,
+        }, expected_revision=granted.revision)
+        assert not disabled.auto_agent_tracking_enabled
+        assert prepare_profile_shortlist(owner.profile_id, **common).agents_started == 0
+        assert len(agents.events(owner.profile_id, agent["agent_id"])) == 1
+
+        # Ordinary drafts remain opted in, but no NEW agent case starts
+        # after independent tracking opt-out.
+        assert spaces.get(owner.profile_id, item.workspace_id) is not None
+        assert agents.get_for_workspace(other.profile_id, item.workspace_id) is None
+    finally:
+        with connect(DSN) as conn:
+            with conn.cursor() as cur:
+                for pid in (owner.profile_id, other.profile_id):
+                    cur.execute(
+                        "DELETE FROM smartploy_application_workspaces WHERE profile_id=%s",
+                        (pid,),
+                    )
+                    cur.execute(
+                        "DELETE FROM smartploy_search_preferences WHERE profile_id=%s",
+                        (pid,),
+                    )
+                    cur.execute(
+                        "DELETE FROM smartploy_profile_facts WHERE profile_id=%s",
+                        (pid,),
+                    )
+
+
 def test_worker_cycle_isolates_one_account_failure_and_reports_only_aggregate_counts(monkeypatch):
     """A broken account must not prevent the next user's applications."""
     from types import SimpleNamespace
