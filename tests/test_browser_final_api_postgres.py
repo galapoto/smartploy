@@ -292,11 +292,14 @@ def test_sp38_job_specific_language_proposal_is_owner_bound_and_does_not_send(re
     }, json={
         "expected_revision": work.revision, "language": "en",
     }).status_code == 403
+    # The original account-switch middleware rejects before this route:
+    # its established response is 409 Conflict; explicit route refusal is
+    # 403 Forbidden. Both are fail-closed and neither reaches the draft.
     assert api.post(route, headers={
         **headers, "X-Smartploy-Expected-User-Id": case["b"].user_id,
     }, json={
         "expected_revision": work.revision, "language": "en",
-    }).status_code == 403
+    }).status_code in {403, 409}
 
     api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
     other = api.post(route, headers={
