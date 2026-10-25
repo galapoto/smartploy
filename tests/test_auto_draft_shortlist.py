@@ -512,19 +512,28 @@ def test_worker_cycle_isolates_one_account_failure_and_reports_only_aggregate_co
         lambda dsn: SimpleNamespace(values=lambda: []),
     )
     monkeypatch.setattr(module, "PostgresWorkspaceRepository", lambda dsn: object())
+    sentinel_agent_repo = object()
+    monkeypatch.setattr(module, "PostgresApplicationAgentRepository",
+                        lambda dsn: sentinel_agent_repo)
     monkeypatch.setattr(module, "PostgresCVRepository", lambda dsn: object())
     monkeypatch.setattr(module, "PostgresProfileRepository", lambda dsn, profile_id: object())
 
     def fake_prepare(profile_id, **kwargs):
+        assert kwargs["application_agent_repository"] is sentinel_agent_repo
         if profile_id == "private-broken":
             raise ValueError("private-broken: sensitive CV content")
-        return AutoDraftSummary("prepared", checked=2, eligible=1, created=1)
+        return AutoDraftSummary("prepared", checked=2, eligible=1, created=1,
+                                agents_started=1, agents_unavailable=0)
 
     monkeypatch.setattr(module, "prepare_profile_shortlist", fake_prepare)
     result = module.prepare_worker_shortlists("synthetic", profile_limit=7, total_new_limit=4)
     assert result["profiles_checked"] == 2
     assert result["profiles_failed"] == 1
     assert result["drafts_created"] == 1
+    assert result["agents_started"] == 1
+    assert result["agents_unavailable"] == 0
+    assert result["worker_agent_wakeup_verified"] is False
+    assert result["agent_tracking_external_actions_authorized"] is False
     assert prefs.marked == [("private-broken", 4), ("private-healthy", 4)]
     assert "private-broken" not in str(result)
     assert "sensitive CV" not in str(result)
