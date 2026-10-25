@@ -226,6 +226,9 @@ api_forbidden = {
     "SMARTPLOY_PUBLIC_ATS_SOURCES_JSON",
     "SMARTPLOY_PUBLIC_ATS_SOURCES_FILE",
     "SMARTPLOY_WORKER_LOOP_SECONDS",
+    "SMARTPLOY_WORKER_AGENT_ZERO_ENABLED",
+    "SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS",
+    "SMARTPLOY_WORKER_AGENT_ZERO_BATCH_LIMIT",
 }
 worker_forbidden = {
     "SMARTPLOY_ACCESS_ISSUER",
@@ -241,6 +244,7 @@ worker_forbidden = {
     "SMARTPLOY_LEVER_PARTNER_KEY_TERTIARY",
 }
 web_forbidden_prefixes = (
+    "SMARTPLOY_WORKER_AGENT_ZERO_",
     "POSTGRES_",
     "SMARTPLOY_DATABASE_",
     "SMARTPLOY_ACCESS_",
@@ -251,6 +255,7 @@ web_forbidden_prefixes = (
     "KUNTAREKRY_",
 )
 postgres_forbidden_prefixes = (
+    "SMARTPLOY_WORKER_AGENT_ZERO_",
     "SMARTPLOY_ACCESS_",
     "SMARTPLOY_LEVER_PARTNER_",
     "OBUMAI_",
@@ -341,7 +346,22 @@ required_worker = {
     "JOBMARKET_FINLAND_API_ENABLED",
     "KUNTAREKRY_ALLOWED_HOSTS",
     "SMARTPLOY_WORKER_LOOP_SECONDS",
+    "SMARTPLOY_WORKER_AGENT_ZERO_ENABLED",
+    "SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS",
+    "SMARTPLOY_WORKER_AGENT_ZERO_BATCH_LIMIT",
 }
+# Fail before backup, migrations or Docker recreation.  A private host
+# env flag is not a valid activation until Compose actually passes it
+# to the worker. No credentials or private values appear in errors.
+if worker_env.get("SMARTPLOY_WORKER_AGENT_ZERO_ENABLED") not in {"true", "false"}:
+    raise SystemExit("Agent Zero worker activation must be a literal boolean")
+for key, maximum in (
+    ("SMARTPLOY_WORKER_AGENT_ZERO_CADENCE_SECONDS", 86400),
+    ("SMARTPLOY_WORKER_AGENT_ZERO_BATCH_LIMIT", 50),
+):
+    raw = worker_env.get(key)
+    if not isinstance(raw, str) or not raw.isdigit() or not 1 <= int(raw) <= maximum:
+        raise SystemExit("Agent Zero worker cadence/batch policy invalid")
 if not required_api <= api_env.keys():
     raise SystemExit("API environment is missing required allowlisted keys")
 if not required_worker <= worker_env.keys():
