@@ -27,7 +27,10 @@ from .ai_processing_consent import (
 from .auto_draft_shortlist import prepare_profile_shortlist
 from .training_directory import TrainingDirectoryError, load_training_programs
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
-from .application_workspace import WorkspaceError, WorkspaceRevisionConflict, new_workspace, render_document
+from .application_workspace import (
+    WorkspaceError, WorkspaceRevisionConflict, cover_letter_proposal,
+    new_workspace, render_document,
+)
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from .application_agents import ApplicationAgentConflict, PostgresApplicationAgentRepository
 from .browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
@@ -257,6 +260,12 @@ class LocalAISuggestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     acknowledge_local_ai_processing: bool
+
+
+class EvidenceLetterPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1, le=2147483647)
+    language: Literal["fi", "en"]
 
 
 class BrowserHandoffPayload(BaseModel):
@@ -1647,6 +1656,81 @@ def create_app(
     def local_ai_status(request: Request) -> dict[str, Any]:
         tenant_context(request)
         return app.state.local_ai.status()
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/letter-proposal")
+    def preview_evidence_letter(
+        workspace_id: str, payload: EvidenceLetterPayload, request: Request,
+    ) -> JSONResponse:
+        """Applicant-selected Finnish/English draft, no AI or document write.
+
+        Reuses the exact original workspace owner, posting-fingerprint and
+        approved-facts boundaries used by existing Application Studio drafts.
+        This is NOT an employer send or a model action.
+        """
+        tenant, binding = tenant_context(request)
+        if binding is None or (
+            request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Origin", public_origin) != public_origin
+            or request.headers.get("Sec-Fetch-Site", "").casefold()
+                not in {"", "same-origin", "none"}
+        ):
+            raise HTTPException(
+                status_code=403, detail="Verified same-origin account action required",
+            )
+        pid = tenant.profile_repository.profile_id
+        current = app.state.workspace_repository.get(pid, workspace_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        if current.status != "draft" or current.revision != payload.expected_revision:
+            raise HTTPException(
+                status_code=409, detail="Review the current saved draft before changing its language",
+            )
+        if app.state.browser_receipts.get(pid, workspace_id) is not None:
+            raise HTTPException(
+                status_code=409, detail="Submitted application already has a browser receipt",
+            )
+        candidate = tenant.get_job(current.canonical_key)
+        if candidate is None or not candidate.source_current:
+            raise HTTPException(status_code=409, detail="Employer posting is no longer current")
+        if candidate.description_fingerprint != current.job_fingerprint:
+            raise HTTPException(
+                status_code=409, detail="The employer posting changed; review it first",
+            )
+        profile = tenant.profile()
+        approved_before = tuple(
+            sorted((f.fact_id, f.fact_type, f.value) for f in profile.approved_facts)
+        )
+        proposed = cover_letter_proposal(
+            candidate, profile, language=payload.language,
+        )
+        # Do not return old approved facts after a deletion/approval change or
+        # another tab's edit while a private proposal was being generated.
+        latest = app.state.workspace_repository.get(pid, workspace_id)
+        latest_profile = tenant.profile()
+        approved_after = tuple(
+            sorted((f.fact_id, f.fact_type, f.value) for f in latest_profile.approved_facts)
+        )
+        if (
+            latest is None or latest.status != "draft"
+            or latest.revision != payload.expected_revision
+            or approved_after != approved_before
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Draft or approved profile changed; reload and retry",
+            )
+        return JSONResponse(
+            {
+                "cover_letter": proposed,
+                "language": payload.language,
+                "workspace_revision": latest.revision,
+                "review_required": True,
+                "saved": False,
+                "external_actions_performed": 0,
+                "employer_contacts": 0,
+            },
+            headers={"Cache-Control": "private, no-store"},
+        )
 
     @app.post("/api/v1/application-workspaces/{workspace_id}/ai-suggestions")
     def application_ai_suggestions(
