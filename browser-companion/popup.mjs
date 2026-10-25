@@ -2,7 +2,7 @@
    No background automation, no external API calls, no raw profile persistence.
    The final action is only possible after an exact one-job approval. */
 import { PacketError, planFields, validatePacket } from "./logic.mjs";
-import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
+import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, exactAssistedForm, isLeverFinalProvider, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
 import { attachReviewedPdf } from "./page-attachment.mjs";
 import { QuestionError, planReviewedQuestions, validateReviewedAnswers } from "./questions.mjs";
 import { fillReviewedAnswers } from "./page-questions.mjs";
@@ -122,10 +122,18 @@ function fillPlanned(actions, exactUrl) {
     try {
       const x = new URL(a), y = new URL(b);
       const prefix = y.pathname.replace(/\/+$/, "");
-      return x.origin === y.origin && (
-        x.pathname === prefix || x.pathname === prefix + "/" ||
-        x.pathname.startsWith(prefix + "/")
-      );
+      if (x.origin !== y.origin || x.protocol !== "https:" ||
+          x.username || x.password || y.username || y.password) return false;
+      // Ashby forms are accepted ONLY for the exact reviewed job's
+      // /application route; never a sibling or arbitrary job subpath.
+      if (y.hostname === "jobs.ashbyhq.com") {
+        const posting = prefix.replace(/\/application$/, "");
+        return !x.search && !y.search && !x.hash && !y.hash &&
+          /^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}$/.test(posting) &&
+          [posting + "/application", posting + "/application/"].includes(x.pathname);
+      }
+      return x.pathname === prefix || x.pathname === prefix + "/" ||
+        x.pathname.startsWith(prefix + "/");
     } catch { return false; }
   }
   if (!sameJob(location.href, exactUrl)) {
@@ -336,7 +344,7 @@ async function onVerifySmartPloyReview() {
     const saved = await recordVerifiedReview(chrome.storage.session, packet, reply.result);
     $("reviewInfo").textContent =
       "Signed-in review verified until " + new Date(saved.expires_at).toLocaleTimeString() +
-      ". Now open the employer form. Final submission remains manual.";
+      ". Open the exact employer form. Ashby final submission must be done by you.";
     status("Only a short-lived review fingerprint is in extension memory. No login token or CV was saved.", true);
   } catch (error) {
     $("reviewInfo").textContent = "Review not verified. Assisted form filling remains disabled.";
@@ -348,6 +356,9 @@ async function onReserveFinalAttempt() {
   $("finalClaimInfo").textContent = "";
   try {
     const packet = validateReviewPacket($("packet").value);
+    if (!isLeverFinalProvider(packet.application_url)) {
+      throw new PacketError("Ashby is assisted-fill ONLY. Submit manually on the employer's form; no browser final claim is available.");
+    }
     const tab = await activeTab();
     if (!isSmartPloyTab(tab.url)) {
       throw new PacketError(
@@ -416,6 +427,9 @@ async function onInspect() {
     const tab = await activeTab();
     const pkt = validatePacket($("packet").value, tab.url);
     await requireVerifiedReview(chrome.storage?.session, pkt);
+    if (!exactAssistedForm(tab.url, pkt.application_url)) {
+      throw new PacketError("Open the exact approved employer application form, not its job description.");
+    }
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: inspectForm
@@ -440,6 +454,15 @@ async function onInspect() {
     attemptReserved = false;
     $("plan").hidden = false;
     $("submission").hidden = candidate.actions.length > 0;
+    const leverSubmit = isLeverFinalProvider(pkt.application_url);
+    $("reserveFinal").disabled = !leverSubmit;
+    $("check").disabled = !leverSubmit;
+    $("approve").disabled = !leverSubmit;
+    $("resume").disabled = !leverSubmit;
+    $("receipt").disabled = !leverSubmit;
+    $("finalClaimInfo").textContent = leverSubmit ? "" :
+      "Ashby: reviewed contacts, questions and PDF attachment only. " +
+      "Finish and submit personally on the employer site; no automatic final click.";
     $("uploadInfo").textContent = "";
     $("cvFile").value = "";
     $("attach").disabled = false;
@@ -473,8 +496,9 @@ async function onFill() {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
-    if (tab.id !== targetTabId || tab.url !== inspectedUrl) {
-      throw new PacketError("Reinspect after changing employer tab or URL.");
+    if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
+        !exactAssistedForm(tab.url, currentPacket.application_url)) {
+      throw new PacketError("Reinspect after changing employer tab, URL, or application form.");
     }
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
@@ -510,8 +534,8 @@ async function onAttach() {
     validatePacket(currentPacketToJSON(), tab.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
-        !exactLeverForm(tab.url, currentPacket.application_url)) {
-      throw new PacketError("Open and reinspect the exact Lever /apply form before attaching.");
+        !exactAssistedForm(tab.url, currentPacket.application_url)) {
+      throw new PacketError("Open and reinspect the exact reviewed employer form before attaching.");
     }
     const attemptKey = await oneAttemptKey(currentPacket);
     if ((await chrome.storage.local.get(attemptKey))[attemptKey]) {
@@ -605,8 +629,8 @@ async function onReviewQuestions() {
     validatePacket(currentPacketToJSON(), tab.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
-        !exactLeverForm(tab.url, currentPacket.application_url)) {
-      throw new QuestionError("Open and reinspect the matching Lever application before reviewing questions.");
+        !exactAssistedForm(tab.url, currentPacket.application_url)) {
+      throw new QuestionError("Open and reinspect the matching employer application before reviewing questions.");
     }
     const key = await oneAttemptKey(currentPacket);
     if ((await chrome.storage.local.get(key))[key]) {
@@ -665,7 +689,7 @@ async function onFillQuestions() {
     validatePacket(currentPacketToJSON(), tab.url);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
         currentQuestionPlan.url !== tab.url ||
-        !exactLeverForm(tab.url, currentPacket.application_url)) {
+        !exactAssistedForm(tab.url, currentPacket.application_url)) {
       throw new QuestionError("The employer page changed. Reinspect the questions.");
     }
     if (!window.confirm(
@@ -704,6 +728,11 @@ async function onPreflight() {
   if (!currentPacket || targetTabId === null) return;
   preflightPassed = false;
   $("submit").disabled = true;
+  if (!isLeverFinalProvider(currentPacket.application_url)) {
+    $("preflight").textContent = "Ashby automatic final submission is unavailable. Review all fields and submit yourself on the employer site.";
+    status("Assisted form preparation only. No employer submit action authorized.");
+    return;
+  }
   try {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
@@ -746,7 +775,8 @@ async function onPreflight() {
 
 async function onSubmit() {
   if (!currentPacket || !preflightPassed || !$("approve").checked ||
-      attemptReserved || targetTabId === null) return;
+      attemptReserved || targetTabId === null ||
+      !isLeverFinalProvider(currentPacket.application_url)) return;
   if (!window.confirm(
     "FINAL CONFIRMATION: CLICK THE EMPLOYER'S SUBMIT BUTTON ONCE?\n\n" +
     currentPacket.company + " — " + currentPacket.role_title + "\n\n" +
@@ -825,6 +855,9 @@ async function onResumeReceipt() {
     // canonical job URL, then separately require matching employer+account.
     const original = JSON.parse($("packet").value);
     const pkt = validatePacket(original, original.application_url);
+    if (!isLeverFinalProvider(pkt.application_url)) {
+      throw new PacketError("Only approved Lever one-use attempts have browser-managed receipts. Ashby submissions are user-reported.");
+    }
     const initial = new URL(pkt.application_url);
     const here = new URL(tab.url);
     const account = initial.pathname.split("/")[1];
@@ -851,6 +884,10 @@ async function onResumeReceipt() {
 
 async function onReceipt() {
   if (!currentPacket || targetTabId === null) return;
+  if (!isLeverFinalProvider(currentPacket.application_url)) {
+    status("Ashby browser receipts are not supported. After submitting manually, report the result in SmartPloy.");
+    return;
+  }
   try {
     const tab = await activeTab();
     if (tab.id !== targetTabId) throw new PacketError("Return to the employer page where you applied.");
@@ -925,6 +962,9 @@ $("packet").addEventListener("input", () => {
   preflightPassed = false; attemptReserved = false;
   $("plan").hidden = true; $("submission").hidden = true; $("receiptPanel").hidden = true;
   $("cvFile").value = ""; $("uploadInfo").textContent = ""; $("attach").disabled = false;
+  $("reserveFinal").disabled = false; $("check").disabled = false;
+  $("approve").disabled = false; $("resume").disabled = false;
+  $("receipt").disabled = false;
   $("questionList").replaceChildren(); $("questionPanel").hidden = true;
   $("questionInfo").textContent = ""; $("fillQuestions").disabled = true;
   $("receiptExport").value = "";
