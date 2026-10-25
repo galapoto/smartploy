@@ -84,15 +84,15 @@ const pdfPayload = {
 test("real reviewed contact and ordinary-question executors fill Ashby without submitting",async ({page})=>{
   const outside=await setup(page);
   const contacts=await page.evaluate(
-    args=>(window as any).fillPlanned(args,JOB),
-    [nameField,emailField]
+    ({actions,url})=>(window as any).fillPlanned(actions,url),
+    {actions:[nameField,emailField],url:JOB}
   );
   expect(contacts).toEqual({filled:2,skipped:0,blocker:""});
   expect(await page.locator("#name").inputValue()).toBe("Reviewed Test Candidate");
   expect(await page.locator("#email").inputValue()).toBe("reviewed@example.invalid");
   const q=await page.evaluate(
-    args=>(window as any).fillReviewedAnswers(args,JOB,JOB),
-    [question]
+    ({actions,url})=>(window as any).fillReviewedAnswers(actions,url,url),
+    {actions:[question],url:JOB}
   );
   expect(q.status).toBe("filled_for_review");
   expect(q.filled).toBe(1);
@@ -130,9 +130,9 @@ test("cross-job Ashby PDF, changed labels and hidden legal metadata cannot be au
   );
   expect(altered.status).toBe("blocked");
   const legal=await page.evaluate(
-    args=>(window as any).fillPlanned(args,JOB),
-    [{...nameField,index:3,label:"Work authorization",
-      expected_id:"visa",expected_name:"visaStatus",value:"yes"}]
+    ({actions,url})=>(window as any).fillPlanned(actions,url),
+    {actions:[{...nameField,index:3,label:"Work authorization",
+      expected_id:"visa",expected_name:"visaStatus",value:"yes"}],url:JOB}
   );
   expect(legal.filled).toBe(0);
   expect(legal.blocker).toMatch(/identity|metadata/i);
@@ -151,8 +151,8 @@ test("Ashby dynamic form re-render stops the original contact executor without r
     },{once:true});
   });
   const result=await page.evaluate(
-    args=>(window as any).fillPlanned(args,JOB),
-    [nameField,emailField]
+    ({actions,url})=>(window as any).fillPlanned(actions,url),
+    {actions:[nameField,emailField],url:JOB}
   );
   expect(result.filled).toBe(1);
   expect(result.blocker).toMatch(/changed after contact field input/i);
