@@ -497,6 +497,10 @@ def test_preference_validation_limits_bad_inputs():
         {"seniority": "superexpert"},
         {"auto_draft_enabled": "yes"},
         {"auto_draft_enabled": 1},
+        {"auto_agent_tracking_enabled": "true"},
+        {"auto_agent_tracking_enabled": 1},
+        {"auto_agent_tracking_enabled": True},
+        {"auto_draft_enabled": False, "auto_agent_tracking_enabled": True},
         {"mode": "general", "auto_draft_enabled": True},
         {"roles": [], "keywords": ["Python"], "auto_draft_enabled": True},
         {"keywords": ["one"] * 13},
@@ -617,6 +621,49 @@ def test_inline_brand_mark_and_favicon_have_separate_static_assets():
     assert "src=\"/smartploy-mark.png\"" not in app
     assert "<svg" in brand
 
+
+
+def test_background_agent_consent_is_independent_owner_scoped_and_default_off():
+    from smartploy.api import SearchPreferencesPayload
+    from pydantic import ValidationError
+
+    repo = MemorySearchPreferenceRepository()
+    old = repo.save("first", search_settings(
+        auto_draft_enabled=True,
+    ), expected_revision=0)
+    assert old.auto_draft_enabled is True
+    assert old.auto_agent_tracking_enabled is False
+    assert old.to_dict()["auto_agent_tracking_enabled"] is False
+    assert old.to_dict()["auto_agent_external_actions_authorized"] is False
+    assert repo.get("other").auto_agent_tracking_enabled is False
+
+    new = repo.save("first", search_settings(
+        auto_draft_enabled=True, auto_agent_tracking_enabled=True,
+    ), expected_revision=old.revision)
+    assert new.auto_agent_tracking_enabled is True
+    assert new.to_dict()["auto_agent_tracking_enabled"] is True
+    assert repo.get("other").auto_agent_tracking_enabled is False
+    with repo.auto_draft_guard("first", new.revision) as allowed:
+        assert allowed
+
+    # Independent revocation leaves ordinary local draft permission in place.
+    stopped = repo.save("first", search_settings(
+        auto_draft_enabled=True, auto_agent_tracking_enabled=False,
+    ), expected_revision=new.revision)
+    assert stopped.auto_draft_enabled is True
+    assert stopped.auto_agent_tracking_enabled is False
+    with repo.auto_draft_guard("first", new.revision) as allowed:
+        assert not allowed
+
+    # API payload uses Pydantic strict bool: no truthy string/int coercion.
+    for wrong in ("true", 1, "false", 0):
+        with pytest.raises(ValidationError):
+            SearchPreferencesPayload(
+                mode="personalized", roles=["Data Analyst"],
+                auto_draft_enabled=True,
+                auto_agent_tracking_enabled=wrong,
+                expected_revision=0,
+            )
 
 
 def test_auto_draft_opt_in_is_profile_scoped_and_revocable_at_next_revision():
