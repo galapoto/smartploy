@@ -107,7 +107,7 @@ test("real Ashby reviewed-PDF adapter attaches only the exact fingerprint withou
   const out=await page.evaluate(
     args=>(window as any).attachReviewedPdf(args),pdfPayload
   );
-  expect(out.status).toBe("attached_locally");
+  expect(out.status,JSON.stringify(out)).toBe("attached_locally");
   expect(await page.locator("#cv").evaluate(
     el=>(el as HTMLInputElement).files?.[0]?.name
   )).toBe("synthetic-reviewed.pdf");
