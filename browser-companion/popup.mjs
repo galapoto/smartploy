@@ -2,7 +2,7 @@
    No background automation, no external API calls, no raw profile persistence.
    The final action is only possible after an exact one-job approval. */
 import { PacketError, planFields, validatePacket } from "./logic.mjs";
-import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, exactAssistedForm, exactAshbyReceiptPage, isLeverFinalProvider, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
+import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactAshbyReceiptPage, isLeverFinalProvider, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
 import { attachReviewedPdf } from "./page-attachment.mjs";
 import { QuestionError, planReviewedQuestions, validateReviewedAnswers } from "./questions.mjs";
 import { fillReviewedAnswers } from "./page-questions.mjs";
@@ -122,6 +122,7 @@ function fillPlanned(actions, exactUrl) {
     try {
       const x = new URL(a), y = new URL(b);
       const prefix = y.pathname.replace(/\/+$/, "");
+      if (exactGreenhouseForm(a, b)) return true;
       if (x.origin !== y.origin || x.protocol !== "https:" ||
           x.username || x.password || y.username || y.password) return false;
       // Ashby forms are accepted ONLY for the exact reviewed job's
@@ -487,11 +488,15 @@ async function onInspect() {
     $("reserveFinal").disabled = !leverSubmit;
     $("check").disabled = !leverSubmit;
     $("approve").disabled = !leverSubmit;
-    $("resume").disabled = false;
-    $("receipt").disabled = false;
+    const ashbyReceipt = new URL(pkt.application_url).hostname === "jobs.ashbyhq.com";
+    $("resume").disabled = !leverSubmit && !ashbyReceipt;
+    $("receipt").disabled = !leverSubmit && !ashbyReceipt;
     $("finalClaimInfo").textContent = leverSubmit ? "" :
-      "Ashby: reviewed contacts, questions and PDF attachment only. " +
-      "Finish and submit personally on the employer site; no automatic final click.";
+      (ashbyReceipt ? "Ashby" : "Greenhouse") +
+      ": reviewed contacts, ordinary questions and CV PDF assistance only. " +
+      "Submit personally on the employer website; no automatic final click. " +
+      (ashbyReceipt ? "You may import a manual reference-bearing confirmation." :
+        "Use I applied on employer site to track the outcome.");
     $("uploadInfo").textContent = "";
     $("cvFile").value = "";
     $("attach").disabled = false;
