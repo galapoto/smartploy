@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { BellRing, CheckCircle2, Clock3, PauseCircle, PlayCircle, RefreshCw, ShieldCheck, StopCircle } from "lucide-react";
 import {
-  changeApplicationAgent, createApplicationAgent,
+  changeApplicationAgent, checkApplicationAgentNow, createApplicationAgent,
   getApplicationAgent, getApplicationAgentForWorkspace,
   recordApplicationAgentMilestone, recordApplicationAgentFollowup
 } from "./api";
@@ -19,11 +19,16 @@ export default function ApplicationAgentCard(props: {
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState("");
+  const [checkNotice, setCheckNotice] = useState("");
   const [milestone, setMilestone] = useState<ApplicationAgentMilestone>("recruiter_replied");
   const [outcomeConfirmed, setOutcomeConfirmed] = useState(false);
   const [reload, setReload] = useState(0);
 
   const refresh = useCallback(() => setReload((previous) => previous + 1), []);
+
+  // Preserve a just-issued check result during reload, but never carry it
+  // across another applicant's workspace selection.
+  useEffect(() => { setCheckNotice(""); }, [props.workspaceId]);
 
   useEffect(() => {
     let active = true;
@@ -78,6 +83,30 @@ export default function ApplicationAgentCard(props: {
       refresh();
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Unable to start the agent.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function checkNow() {
+    if (!agent || busy || loading || unavailable || agent.state !== "active") return;
+    setBusy(true);
+    setError("");
+    setCheckNotice("");
+    try {
+      await props.verifyAccount();
+      const result = await checkApplicationAgentNow(
+        agent.agent_id, props.expectedUserId
+      );
+      await props.verifyAccount();
+      setCheckNotice(result.in_app_reminders > 0
+        ? "One due in-app reminder was recorded for this application. No employer was contacted."
+        : result.workspace_updates_reconciled > 0
+          ? "Application status reconciled with this case. No employer was contacted."
+          : "This application is up to date. No new due in-app reminder. Background scheduling is not verified by this check.");
+      refresh();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Could not check this application agent.");
     } finally {
       setBusy(false);
     }
@@ -163,7 +192,8 @@ export default function ApplicationAgentCard(props: {
     </div>
     {loading ? <p role="status"><Clock3 size={15} /> Checking application agent…</p> : null}
     {unavailable && !loading ? <p role="status">
-      Agent tracking requires the durable-agent database migration and worker activation.
+      Agent tracking requires the durable-agent database migration.
+      Scheduled background reminders separately require worker activation.
       Your application editor still works normally.
     </p> : null}
     {!agent && !loading && !unavailable ? (
@@ -177,6 +207,11 @@ export default function ApplicationAgentCard(props: {
         {agent.last_woke_at ? " · Last reminder " + new Date(agent.last_woke_at).toLocaleString() : ""}
       </p>
       {agent.state !== "closed" ? <div className="studio-actions">
+        {agent.state === "active" ? <button type="button"
+          className="outline-btn compact" disabled={busy}
+          onClick={() => void checkNow()}>
+          <RefreshCw size={15}/> Check agent now
+        </button> : null}
         {agent.state === "active" ? (
           <button type="button" className="outline-btn compact"
             disabled={busy} onClick={() => void act("pause")}>
@@ -193,6 +228,7 @@ export default function ApplicationAgentCard(props: {
           <StopCircle size={15} /> End case
         </button>
       </div> : <p><CheckCircle2 size={15} /> Case ended. Existing documents remain available.</p>}
+      {checkNotice ? <p role="status">{checkNotice}</p> : null}
       <div className="studio-info">
         <ShieldCheck size={16}/>
         <div>
