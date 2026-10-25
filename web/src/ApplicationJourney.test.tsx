@@ -99,9 +99,10 @@ describe("SP21 application journey", () => {
     const p = { ...props(), mode: "automatic" as const };
     render(<ApplicationJourney {...p} />);
     await screen.findByText("IT-suunnittelija");
-    expect(screen.getByText(/does not send applications to employers/i)).toBeTruthy();
+    expect(screen.getByText(/No email, call or employer application is sent/i)).toBeTruthy();
+    expect(screen.getByText(/Each selected job gets its own private application draft and in-app agent/i)).toBeTruthy();
     fireEvent.click(screen.getAllByRole("checkbox", { name: /select for preparation/i })[0]);
-    fireEvent.click(screen.getByRole("button", { name: /prepare selected applications/i }));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
     await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(["current-planner"]));
     expect(screen.queryByRole("button", { name: /submit application/i })).toBeNull();
   });
