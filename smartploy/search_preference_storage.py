@@ -29,6 +29,7 @@ def _stored(profile_id: str, row: tuple[Any, ...] | None) -> SearchPreferences:
         skills=tuple(criteria.get("skills") or ()),
         seniority=str(criteria.get("seniority") or "any"),
         auto_draft_enabled=criteria.get("auto_draft_enabled") is True,
+        auto_agent_tracking_enabled=criteria.get("auto_agent_tracking_enabled") is True,
         revision=int(revision),
         updated_at=updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at),
     )
@@ -41,6 +42,7 @@ def _criteria(item: SearchPreferences) -> dict[str, Any]:
         "keywords": list(item.keywords), "skills": list(item.skills),
         "seniority": item.seniority,
         "auto_draft_enabled": item.auto_draft_enabled,
+        "auto_agent_tracking_enabled": item.auto_agent_tracking_enabled,
     }
 
 

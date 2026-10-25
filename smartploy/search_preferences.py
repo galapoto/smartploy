@@ -110,6 +110,9 @@ class SearchPreferences:
     skills: tuple[str, ...] = ()
     seniority: str = "any"
     auto_draft_enabled: bool = False
+    # Independent candidate opt-in: a private tracking case is NOT implied by
+    # automatic draft consent. No employer actions or model calls are enabled.
+    auto_agent_tracking_enabled: bool = False
     revision: int = 0
     updated_at: str = ""
 
@@ -121,7 +124,9 @@ class SearchPreferences:
             "keywords": list(self.keywords), "skills": list(self.skills),
             "seniority": self.seniority,
             "auto_draft_enabled": self.auto_draft_enabled,
+            "auto_agent_tracking_enabled": self.auto_agent_tracking_enabled,
             "auto_draft_external_actions_authorized": False,
+            "auto_agent_external_actions_authorized": False,
             "revision": self.revision, "updated_at": self.updated_at,
             "verified_qualification_fit": False,
         }
@@ -153,13 +158,18 @@ def revise_preferences(
         raise SearchPreferenceError("Automatic drafts require personalized role targets")
     if auto_draft and not roles:
         raise SearchPreferenceError("Automatic drafts require explicit target job roles")
+    auto_agent = data.get("auto_agent_tracking_enabled", False)
+    if type(auto_agent) is not bool:
+        raise SearchPreferenceError("Private automatic agent tracking requires an explicit boolean choice")
+    if auto_agent and not auto_draft:
+        raise SearchPreferenceError("Automatic agent tracking requires separate automatic draft opt-in")
     if revision < 0:
         raise SearchPreferenceError("Preference revision cannot be negative")
     return SearchPreferences(
         profile_id=profile_id, completed=True, mode=mode, roles=roles,
         locations=locations, languages=languages, work_modes=work_modes,
         keywords=keywords, skills=skills, seniority=seniority,
-        auto_draft_enabled=auto_draft,
+        auto_draft_enabled=auto_draft, auto_agent_tracking_enabled=auto_agent,
         revision=revision + 1, updated_at=utc_now_iso(),
     )
 

@@ -560,6 +560,11 @@ export type AutoDraftResult = {
   stale_skipped?: number;
   /** Manually entered/unreviewed job feeds are never used for unattended drafts. */
   unverified_source_skipped?: number;
+  agents_started?: number;
+  agents_already_present?: number;
+  agents_unavailable?: number;
+  agent_tracking_external_actions_authorized?: false;
+  worker_agent_wakeup_verified?: false;
   provider_calls: 0;
   employer_actions_performed: false;
   automatic_submission_authorized: false;

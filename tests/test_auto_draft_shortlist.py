@@ -97,6 +97,129 @@ def test_explicit_approved_it_target_automatically_builds_only_the_matched_priva
     assert len(fx[5].list(fx[0])) == 1
 
 
+def test_background_agents_need_separate_opt_in_and_reuse_existing_case_id():
+    """SP33: the original job shortlist may create only private, opted-in cases."""
+    pid, prefs, jobs, profile, cv, spaces, settings = fixture()
+
+    class AgentStore:
+        def __init__(self):
+            self.cases = {}
+            self.calls = []
+
+        def create_or_get(self, owner, workspace_id):
+            self.calls.append((owner, workspace_id))
+            assert owner == pid
+            key = (owner, workspace_id)
+            if key in self.cases:
+                return self.cases[key], False
+            agent = {
+                "agent_id": "agent-synthetic-private",
+                "state": "active", "external_actions_authorized": False,
+            }
+            self.cases[key] = agent
+            return agent, True
+
+    agents = AgentStore()
+    common = {
+        "preferences_repository": prefs, "job_repository": jobs,
+        "profile_repository": profile, "cv_repository": cv,
+        "workspace_repository": spaces, "application_agent_repository": agents,
+    }
+
+    # Background drafting permission is NOT permission to start tracking.
+    plain = prepare_profile_shortlist(pid, **common)
+    assert plain.created == 1
+    assert plain.agents_started == plain.agents_already_present == 0
+    assert agents.calls == []
+
+    # The candidate explicitly enables private, in-app case tracking in
+    # their existing owner-scoped preference revision. No other job is sent.
+    enabled = prefs.save(pid, {
+        **settings, "auto_agent_tracking_enabled": True,
+    }, expected_revision=1)
+    assert enabled.auto_agent_tracking_enabled is True
+    tracked = prepare_profile_shortlist(pid, **common)
+    assert tracked.created == 0 and tracked.already_prepared == 1
+    assert tracked.agents_started == 1
+    assert tracked.public_counts()["agent_tracking_external_actions_authorized"] is False
+    assert tracked.public_counts()["worker_agent_wakeup_verified"] is False
+    assert tracked.public_counts()["employer_actions_performed"] is False
+    assert len(agents.cases) == len(spaces.list(pid)) == 1
+    repeated = prepare_profile_shortlist(pid, **common)
+    assert repeated.agents_started == 0 and repeated.agents_already_present == 1
+    assert len(agents.cases) == 1
+
+    # Revocation prevents new cases (and drafts), but does not silently
+    # delete an existing case; its lifecycle remains with the owner.
+    disabled = prefs.save(pid, {
+        **settings, "auto_draft_enabled": False,
+        "auto_agent_tracking_enabled": False,
+    }, expected_revision=enabled.revision)
+    assert disabled.auto_agent_tracking_enabled is False
+    count = len(agents.calls)
+    assert prepare_profile_shortlist(pid, **common).status == "disabled"
+    assert len(agents.calls) == count
+    assert len(agents.cases) == 1
+
+
+def test_private_agent_storage_failure_does_not_lose_new_draft():
+    from psycopg import Error as PostgresError
+
+    pid, prefs, jobs, profile, cv, spaces, settings = fixture()
+    prefs.save(pid, {**settings, "auto_agent_tracking_enabled": True},
+               expected_revision=1)
+
+    class UnavailableAgents:
+        def create_or_get(self, owner, workspace_id):
+            assert owner == pid and workspace_id
+            raise PostgresError("synthetic private agent unavailable")
+
+    outcome = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces, application_agent_repository=UnavailableAgents(),
+    )
+    assert outcome.created == 1
+    assert outcome.agents_unavailable == 1
+    assert outcome.agents_started == 0
+    assert outcome.public_counts()["provider_calls"] == 0
+    assert spaces.list(pid)[0].status == "draft"
+    assert "synthetic" not in str(outcome.public_counts())
+
+
+def test_revoked_agent_consent_during_matching_blocks_background_case():
+    fx = fixture()
+    pid, prefs, jobs, profile, cv, spaces, settings = fx
+    prefs.save(pid, {**settings, "auto_agent_tracking_enabled": True},
+               expected_revision=1)
+    from contextlib import contextmanager
+    original = prefs.auto_draft_guard
+
+    @contextmanager
+    def revoke_before_guard(owner, revision):
+        prefs.save(pid, {
+            **settings, "auto_agent_tracking_enabled": False,
+            "auto_draft_enabled": False,
+        }, expected_revision=revision)
+        with original(owner, revision) as allowed:
+            yield allowed
+
+    prefs.auto_draft_guard = revoke_before_guard
+
+    class FailOnCall:
+        def create_or_get(self, *_args):
+            raise AssertionError("No private agent may start after revocation")
+
+    summary = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces, application_agent_repository=FailOnCall(),
+    )
+    assert summary.stopped_on_opt_out
+    assert summary.created == summary.agents_started == 0
+    assert spaces.list(pid) == []
+
+
 def test_general_mode_unapproved_evidence_and_optout_never_create():
     fx=fixture()
     pid,prefs,jobs,profile,cv,spaces,settings=fx
@@ -273,6 +396,97 @@ def test_actual_postgres_only_lists_active_opted_in_accounts_and_persists_one_dr
                     cur.execute("DELETE FROM smartploy_profile_facts WHERE profile_id=%s",(pid,))
 
 
+@pytest.mark.skipif(not DSN, reason="requires real PostgreSQL")
+def test_postgres_auto_draft_opt_in_starts_one_private_agent_and_honors_revocation():
+    """Real OIDC user/profile, JSONB settings, workspace and durable Agent Zero."""
+    from psycopg import connect
+    from smartploy.application_agents import PostgresApplicationAgentRepository
+
+    PostgresJobRepository(DSN).migrate()
+    unique = uuid4().hex
+    identities = PostgresIdentityRepository(DSN)
+    owner = identities.resolve_or_create(AuthenticatedPrincipal(
+        issuer="https://synthetic.example.invalid",
+        subject="auto-agent-" + unique, email="same@example.invalid",
+        auth_source="oidc",
+    ))
+    other = identities.resolve_or_create(AuthenticatedPrincipal(
+        issuer="https://synthetic.example.invalid",
+        subject="unrelated-agent-" + unique, email="same@example.invalid",
+        auth_source="oidc",
+    ))
+    prefs = PostgresSearchPreferenceRepository(DSN)
+    jobs = PostgresJobRepository(DSN)
+    profiles = PostgresProfileRepository(DSN, profile_id=owner.profile_id)
+    spaces = PostgresWorkspaceRepository(DSN)
+    cv = PostgresCVRepository(DSN)
+    agents = PostgresApplicationAgentRepository(DSN)
+    # The canonical job identity includes title/company/location. Give this
+    # fixture its own title to avoid merging with earlier tests' same-role
+    # Postgres job while changing the reviewed application URL.
+    example = candidate("Junior Data Analyst " + unique[:10],
+                        url="https://careers.example.fi/jobs/" + unique)
+    config = {
+        "mode": "personalized", "roles": ["Data Analyst"],
+        "auto_draft_enabled": True, "auto_agent_tracking_enabled": True,
+    }
+    try:
+        for skill in ("Python", "SQL", "data analysis"):
+            profiles.upsert_fact(ProfileFact("skill", skill, "user-entered", approved=True))
+        jobs.upsert(example)
+        granted = prefs.save(owner.profile_id, config, expected_revision=0)
+        assert granted.auto_agent_tracking_enabled
+        assert prefs.get(owner.profile_id).auto_agent_tracking_enabled
+        assert prefs.get(other.profile_id).auto_agent_tracking_enabled is False
+        common = dict(
+            preferences_repository=prefs, job_repository=jobs,
+            profile_repository=profiles, cv_repository=cv,
+            workspace_repository=spaces, application_agent_repository=agents,
+            candidates=[example],
+        )
+        first = prepare_profile_shortlist(owner.profile_id, **common)
+        assert first.created == 1 and first.agents_started == 1
+        item = spaces.list(owner.profile_id)[0]
+        agent = agents.get_for_workspace(owner.profile_id, item.workspace_id)
+        assert agent is not None and agent["state"] == "active"
+        assert agent["employer_contacted"] is False
+        assert len(agents.events(owner.profile_id, agent["agent_id"])) == 1
+        assert agents.get_for_workspace(other.profile_id, item.workspace_id) is None
+
+        again = prepare_profile_shortlist(owner.profile_id, **common)
+        assert again.created == 0 and again.agents_already_present == 1
+        assert agents.get_for_workspace(owner.profile_id, item.workspace_id)["agent_id"] == agent["agent_id"]
+        assert len(agents.events(owner.profile_id, agent["agent_id"])) == 1
+
+        disabled = prefs.save(owner.profile_id, {
+            **config, "auto_agent_tracking_enabled": False,
+        }, expected_revision=granted.revision)
+        assert not disabled.auto_agent_tracking_enabled
+        assert prepare_profile_shortlist(owner.profile_id, **common).agents_started == 0
+        assert len(agents.events(owner.profile_id, agent["agent_id"])) == 1
+
+        # Ordinary drafts remain opted in, but no NEW agent case starts
+        # after independent tracking opt-out.
+        assert spaces.get(owner.profile_id, item.workspace_id) is not None
+        assert agents.get_for_workspace(other.profile_id, item.workspace_id) is None
+    finally:
+        with connect(DSN) as conn:
+            with conn.cursor() as cur:
+                for pid in (owner.profile_id, other.profile_id):
+                    cur.execute(
+                        "DELETE FROM smartploy_application_workspaces WHERE profile_id=%s",
+                        (pid,),
+                    )
+                    cur.execute(
+                        "DELETE FROM smartploy_search_preferences WHERE profile_id=%s",
+                        (pid,),
+                    )
+                    cur.execute(
+                        "DELETE FROM smartploy_profile_facts WHERE profile_id=%s",
+                        (pid,),
+                    )
+
+
 def test_worker_cycle_isolates_one_account_failure_and_reports_only_aggregate_counts(monkeypatch):
     """A broken account must not prevent the next user's applications."""
     from types import SimpleNamespace
@@ -301,19 +515,28 @@ def test_worker_cycle_isolates_one_account_failure_and_reports_only_aggregate_co
         lambda dsn: SimpleNamespace(values=lambda: []),
     )
     monkeypatch.setattr(module, "PostgresWorkspaceRepository", lambda dsn: object())
+    sentinel_agent_repo = object()
+    monkeypatch.setattr(module, "PostgresApplicationAgentRepository",
+                        lambda dsn: sentinel_agent_repo)
     monkeypatch.setattr(module, "PostgresCVRepository", lambda dsn: object())
     monkeypatch.setattr(module, "PostgresProfileRepository", lambda dsn, profile_id: object())
 
     def fake_prepare(profile_id, **kwargs):
+        assert kwargs["application_agent_repository"] is sentinel_agent_repo
         if profile_id == "private-broken":
             raise ValueError("private-broken: sensitive CV content")
-        return AutoDraftSummary("prepared", checked=2, eligible=1, created=1)
+        return AutoDraftSummary("prepared", checked=2, eligible=1, created=1,
+                                agents_started=1, agents_unavailable=0)
 
     monkeypatch.setattr(module, "prepare_profile_shortlist", fake_prepare)
     result = module.prepare_worker_shortlists("synthetic", profile_limit=7, total_new_limit=4)
     assert result["profiles_checked"] == 2
     assert result["profiles_failed"] == 1
     assert result["drafts_created"] == 1
+    assert result["agents_started"] == 1
+    assert result["agents_unavailable"] == 0
+    assert result["worker_agent_wakeup_verified"] is False
+    assert result["agent_tracking_external_actions_authorized"] is False
     assert prefs.marked == [("private-broken", 4), ("private-healthy", 4)]
     assert "private-broken" not in str(result)
     assert "sensitive CV" not in str(result)

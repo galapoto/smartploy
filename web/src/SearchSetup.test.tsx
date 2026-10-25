@@ -132,6 +132,73 @@ describe("first-use choice and saved settings", () => {
     expect(save.mock.calls[1][0].auto_draft_enabled).toBe(false);
   });
 
+  it("requires separate in-app-only agent opt-in and revokes it with automatic drafting", async () => {
+    const save = vi.fn(async (_value: SearchPreferencesUpdate) => undefined);
+    render(<SearchSetup initial={firstVisit} onSave={save}/>);
+    fireEvent.click(screen.getByRole("button", {
+      name: "Use nationwide junior IT & planning targets"
+    }));
+    const auto = screen.getByRole("checkbox", {
+      name: /Automatically prepare suitable job drafts/i,
+    }) as HTMLInputElement;
+    const tracking = screen.getByRole("checkbox", {
+      name: /Also start a private application-tracking agent for each suitable draft/i,
+    }) as HTMLInputElement;
+    expect(auto.checked).toBe(false);
+    expect(tracking.checked).toBe(false);
+    expect(tracking.disabled).toBe(true);
+
+    fireEvent.click(auto);
+    expect(tracking.disabled).toBe(false);
+    // Draft opt-in alone must not imply tracking consent.
+    fireEvent.click(screen.getByRole("button", { name: /Show my matched jobs/ }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0]).toMatchObject({
+      auto_draft_enabled: true, auto_agent_tracking_enabled: false,
+    });
+
+    fireEvent.click(tracking);
+    expect(tracking.checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /Show my matched jobs/ }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save.mock.calls[1][0]).toMatchObject({
+      auto_draft_enabled: true, auto_agent_tracking_enabled: true,
+    });
+
+    fireEvent.click(auto);
+    expect(tracking.checked).toBe(false);
+    expect(tracking.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /Show my matched jobs/ }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(3));
+    expect(save.mock.calls[2][0]).toMatchObject({
+      auto_draft_enabled: false, auto_agent_tracking_enabled: false,
+    });
+  });
+
+  it("rehydrates saved independent agent permission on a newer preference revision", async () => {
+    const save = vi.fn(async (_value: SearchPreferencesUpdate) => undefined);
+    const { rerender } = render(<SearchSetup initial={{
+      ...firstVisit, completed: true, mode: "personalized", roles: ["Data Analyst"],
+      auto_draft_enabled: true, auto_agent_tracking_enabled: true, revision: 3,
+    }} onSave={save}/>);
+    const tracking = screen.getByRole("checkbox", {
+      name: /Also start a private application-tracking agent/i,
+    }) as HTMLInputElement;
+    expect(tracking.checked).toBe(true);
+    rerender(<SearchSetup initial={{
+      ...firstVisit, completed: true, mode: "personalized", roles: ["IT Tester"],
+      auto_draft_enabled: true, auto_agent_tracking_enabled: false, revision: 4,
+    }} onSave={save}/>);
+    await waitFor(() => expect(tracking.checked).toBe(false));
+    fireEvent.click(screen.getByRole("radio", { name: /general job search/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Browse all jobs/ }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0]).toMatchObject({
+      mode: "general", auto_draft_enabled: false,
+      auto_agent_tracking_enabled: false,
+    });
+  });
+
   it("preserves previously configured targets when switching modes and allows edits", async () => {
     const save = vi.fn(async (_value: SearchPreferencesUpdate) => undefined);
     render(<SearchSetup settings onSave={save} initial={{

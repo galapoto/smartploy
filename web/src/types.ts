@@ -456,7 +456,10 @@ export interface SearchPreferences {
   seniority: string;
   /** Must be explicitly enabled for per-account local automatic draft preparation. */
   auto_draft_enabled?: boolean;
+  /** Independent opt-in to a case per background-matched application, OFF by default. */
+  auto_agent_tracking_enabled?: boolean;
   auto_draft_external_actions_authorized?: false;
+  auto_agent_external_actions_authorized?: false;
   revision: number;
   updated_at: string;
   verified_qualification_fit: false;

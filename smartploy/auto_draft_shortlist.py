@@ -13,6 +13,9 @@ from ipaddress import ip_address
 import re
 from urllib.parse import urlsplit
 
+from psycopg import Error as PostgresError
+
+from .application_agents import PostgresApplicationAgentRepository
 from .application_workspace import WorkspaceError, new_workspace
 from .application_workspace_storage import PostgresWorkspaceRepository
 from .cv_storage import PostgresCVRepository
@@ -52,6 +55,9 @@ class AutoDraftSummary:
     stopped_on_opt_out: bool = False
     stale_skipped: int = 0
     unverified_source_skipped: int = 0
+    agents_started: int = 0
+    agents_already_present: int = 0
+    agents_unavailable: int = 0
 
     def public_counts(self) -> dict[str, object]:
         return {
@@ -61,6 +67,11 @@ class AutoDraftSummary:
             "stopped_on_opt_out": self.stopped_on_opt_out,
             "stale_skipped": self.stale_skipped,
             "unverified_source_skipped": self.unverified_source_skipped,
+            "agents_started": self.agents_started,
+            "agents_already_present": self.agents_already_present,
+            "agents_unavailable": self.agents_unavailable,
+            "agent_tracking_external_actions_authorized": False,
+            "worker_agent_wakeup_verified": False,
             "provider_calls": 0, "employer_actions_performed": False,
             "automatic_submission_authorized": False,
         }
@@ -198,6 +209,7 @@ def prepare_profile_shortlist(
     profile_repository,
     cv_repository,
     workspace_repository,
+    application_agent_repository=None,
     max_new: int = MAX_DRAFTS_PER_USER,
     candidates=None,
 ) -> AutoDraftSummary:
@@ -226,6 +238,7 @@ def prepare_profile_shortlist(
     ranked = search_jobs(current, pref)["recommendations"]
     checked = len(ranked)
     eligible = created = existing = stale_skipped = unverified_skipped = 0
+    agents_started = agents_already = agents_unavailable = 0
     for match in ranked:
         if created >= bound:
             break
@@ -260,6 +273,9 @@ def prepare_profile_shortlist(
                     existing, stopped_on_opt_out=True,
                     stale_skipped=stale_skipped,
                     unverified_source_skipped=unverified_skipped,
+                    agents_started=agents_started,
+                    agents_already_present=agents_already,
+                    agents_unavailable=agents_unavailable,
                 )
             # Job may have been retired between initial matching and the
             # owner approval guard; re-fetch and enforce exact same content.
@@ -301,9 +317,35 @@ def prepare_profile_shortlist(
                 )
             except WorkspaceError:
                 continue
-            _, added = workspace_repository.create_or_get(proposed)
+            saved, added = workspace_repository.create_or_get(proposed)
             created += int(added)
             existing += int(not added)
+            # SP33: This is an INDEPENDENT, default-off permission stored in
+            # the original owner criteria JSONB. Use the same revocation-locked
+            # scope as draft creation, NOT a background agent scheduler or a
+            # fresh employer-submit authority. Never exceed this scan's bound.
+            if (
+                pref.auto_agent_tracking_enabled and
+                agents_started + agents_already + agents_unavailable < bound
+            ):
+                if application_agent_repository is None:
+                    agents_unavailable += 1
+                else:
+                    try:
+                        agent, agent_created = application_agent_repository.create_or_get(
+                            profile_id, saved.workspace_id
+                        )
+                    except PostgresError:
+                        # A private draft was already saved; don't report a
+                        # successful tracking agent if its storage is down.
+                        agents_unavailable += 1
+                    else:
+                        if agent is None:
+                            agents_unavailable += 1
+                        else:
+                            # Paused and closed cases stay as-is, never resume.
+                            agents_started += int(agent_created)
+                            agents_already += int(not agent_created)
     return AutoDraftSummary(
         status=(
             "needs_source_refresh" if stale_skipped and not created and not existing
@@ -313,6 +355,8 @@ def prepare_profile_shortlist(
         checked=checked, eligible=eligible, created=created,
         already_prepared=existing, stale_skipped=stale_skipped,
         unverified_source_skipped=unverified_skipped,
+        agents_started=agents_started, agents_already_present=agents_already,
+        agents_unavailable=agents_unavailable,
     )
 
 
@@ -323,9 +367,13 @@ def prepare_worker_shortlists(
     prefs = PostgresSearchPreferenceRepository(dsn)
     jobs = PostgresJobRepository(dsn)
     workspace = PostgresWorkspaceRepository(dsn)
+    # Reuse the existing shared Agent Zero ledger. The optional case is
+    # dormant until the operator independently enables its worker task.
+    agents = PostgresApplicationAgentRepository(dsn)
     cv = PostgresCVRepository(dsn)
     current = jobs.values()
     checked_users = new_count = already = opted_out = failed_profiles = 0
+    agents_started = agents_existing = agents_unavailable = 0
     for pid in prefs.list_auto_draft_profiles(limit=profile_limit):
         if new_count >= total_new_limit:
             break
@@ -342,11 +390,15 @@ def prepare_worker_shortlists(
                 profile_repository=PostgresProfileRepository(dsn, profile_id=pid),
                 cv_repository=cv,
                 workspace_repository=workspace,
+                application_agent_repository=agents,
                 max_new=min(MAX_DRAFTS_PER_USER, total_new_limit - new_count),
                 candidates=current,
             )
             new_count += result.created
             already += result.already_prepared
+            agents_started += result.agents_started
+            agents_existing += result.agents_already_present
+            agents_unavailable += result.agents_unavailable
             opted_out += int(result.stopped_on_opt_out)
         except Exception:
             # A faulty CV/profile must not starve the next opted-in account.
@@ -364,6 +416,11 @@ def prepare_worker_shortlists(
         "profiles_checked": checked_users, "profiles_failed": failed_profiles,
         "drafts_created": new_count,
         "already_prepared": already, "revocations_honored": opted_out,
+        "agents_started": agents_started,
+        "agents_already_present": agents_existing,
+        "agents_unavailable": agents_unavailable,
+        "agent_tracking_external_actions_authorized": False,
+        "worker_agent_wakeup_verified": False,
         "model_calls": 0, "employer_actions_performed": False,
         "automatic_submission_authorized": False,
     }

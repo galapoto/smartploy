@@ -211,6 +211,7 @@ class SearchPreferencesPayload(BaseModel):
     skills: list[str] = Field(default_factory=list, max_length=16)
     seniority: str = "any"
     auto_draft_enabled: StrictBool = False
+    auto_agent_tracking_enabled: StrictBool = False
     expected_revision: int = Field(ge=0)
 
 
@@ -1264,6 +1265,7 @@ def create_app(
                 profile_repository=tenant.profile_repository,
                 cv_repository=cv_repo,
                 workspace_repository=app.state.workspace_repository,
+                application_agent_repository=app.state.application_agent_repository,
             )
         except Exception:
             # Do not leak candidate CV, source URLs, DB secrets or private IDs.

@@ -43,6 +43,7 @@ export default function SearchSetup(props: {
   const [workModes, setWorkModes] = useState(props.initial.work_modes);
   const [seniority, setSeniority] = useState(props.initial.seniority);
   const [autoDraft, setAutoDraft] = useState(props.initial.auto_draft_enabled === true);
+  const [autoAgents, setAutoAgents] = useState(props.initial.auto_agent_tracking_enabled === true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   // The initial form state was already hydrated by useState. A redundant
@@ -63,6 +64,7 @@ export default function SearchSetup(props: {
     setWorkModes(props.initial.work_modes);
     setSeniority(props.initial.seniority);
     setAutoDraft(props.initial.auto_draft_enabled === true);
+    setAutoAgents(props.initial.auto_agent_tracking_enabled === true);
   }, [props.initial.revision]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -88,6 +90,7 @@ export default function SearchSetup(props: {
         keywords: chosenKeywords, skills: list(skills),
         languages, work_modes: workModes, seniority,
         auto_draft_enabled: mode === "personalized" && autoDraft,
+        auto_agent_tracking_enabled: mode === "personalized" && autoDraft && autoAgents,
         expected_revision: props.initial.revision
       });
     } catch (exc) {
@@ -120,7 +123,7 @@ export default function SearchSetup(props: {
         </label>
         <label className={"setup-choice" + (mode === "general" ? " chosen" : "")}>
           <input type="radio" name="job-mode" checked={mode === "general"}
-            onChange={() => { setMode("general"); setAutoDraft(false); }} />
+            onChange={() => { setMode("general"); setAutoDraft(false); setAutoAgents(false); }} />
           <span className="setup-choice-icon"><Globe2 size={21} /></span>
           <strong>General job search</strong>
           <small>Explore every current job. No profile, CV, or search preferences required.</small>
@@ -191,13 +194,25 @@ export default function SearchSetup(props: {
         <fieldset className="setup-check-options">
           <legend><BriefcaseBusiness size={15}/> Automatic IT application drafts</legend>
           <label><input type="checkbox" checked={autoDraft}
-            onChange={(event) => setAutoDraft(event.target.checked)}/>
+            onChange={(event) => {
+              setAutoDraft(event.target.checked);
+              if (!event.target.checked) setAutoAgents(false);
+            }}/>
             Automatically prepare suitable job drafts from my saved target roles
           </label>
           <small>Opt-in, reversible. SmartPloy checks current jobs against your approved career evidence and
             saves up to three private drafts per background run. It does not contact employers,
             send your CV to an AI service, submit applications or imply you qualify.
             Review and approve every application before sending.</small>
+          <label><input type="checkbox" checked={autoAgents} disabled={!autoDraft}
+            onChange={(event) => setAutoAgents(event.target.checked)}/>
+            Also start a private application-tracking agent for each suitable draft
+          </label>
+          <small>Separate, reversible opt-in. Each agent keeps an in-app case and potential reminder
+            for the job. It cannot submit applications, email recruiters, call anyone, or
+            run ObumAI. Background reminders run only when the operator has independently
+            enabled and verified the Agent Zero worker. Turning this off prevents new
+            background agents; it does not delete or close agents already created.</small>
         </fieldset>
         <p className="setup-fineprint">The results are ranked by your stated search preferences, not a guarantee that you meet every employer requirement. You can upload a CV and approve career evidence separately for stronger qualification checks.</p>
       </div> : <div className="setup-general-note">
