@@ -296,15 +296,14 @@ def test_reserved_browser_attempt_reconciles_observed_receipt_then_owner_report(
     assert reserved.status_code == 200, reserved.text
     assert reserved.json()["provider_acknowledged"] is False
 
-    # A direct API request cannot alter reviewed documents while a one-use
-    # employer claim is outstanding. This was previously UI-only protection.
+    # Reuse the original transactional PostgreSQL claim guard: no CV or
+    # letter change is permitted while an employer attempt remains reserved.
     altered = api.put(path, json={
         "expected_revision": workspace.revision,
         "cv_text": workspace.cv_text + "\\nUnreviewed later edits",
         "cover_letter_text": workspace.cover_letter_text,
     }, headers=headers)
     assert altered.status_code == 409, altered.text
-    assert altered.status_code == 409
     assert "reserved" in altered.text.lower()
 
     # Merely consuming a browser claim is not proof of a completed send.
