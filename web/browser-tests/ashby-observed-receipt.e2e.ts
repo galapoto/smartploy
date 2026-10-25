@@ -15,8 +15,10 @@ async function setup(page:Page,url=confirmation,{
   submit=false,
 }={}){
   let attemptedTraffic=0;
+  const requested=new URL(url);
+  requested.hash=""; // URL fragments are never included in HTTP requests.
   await page.route("**/*",async route=>{
-    if (route.request().url() !== url) {
+    if (route.request().url() !== requested.href) {
       attemptedTraffic++;
       await route.abort();
       return;
