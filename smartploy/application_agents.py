@@ -41,6 +41,26 @@ def _now(value: datetime | None = None) -> datetime:
     return result.astimezone(timezone.utc)
 
 
+def _case_scope(
+    profile_id: str | None, agent_id: str | None,
+) -> tuple[str, tuple[str, ...]]:
+    """Optional exact ONE-case SQL scope for signed-in, user-triggered checks.
+
+    Keep the original shared worker's ALL-case query unchanged when absent.
+    The SQL fragment is a fixed code constant; both user-supplied identifiers
+    are always values bound through psycopg, never interpolated into SQL.
+    """
+    if (profile_id is None) != (agent_id is None):
+        raise ValueError("An exact owner and case are required together")
+    if profile_id is None:
+        return "", ()
+    if not isinstance(profile_id, str) or not profile_id.strip() or (
+        not isinstance(agent_id, str) or not agent_id.strip()
+    ):
+        raise ValueError("An exact owner and case are required")
+    return " AND a.profile_id = %s AND a.agent_id = %s", (profile_id, agent_id)
+
+
 class PostgresApplicationAgentRepository:
     """A logical worker per case, no extra daemon/process per application."""
 
@@ -442,6 +462,7 @@ class PostgresApplicationAgentRepository:
 
     def reconcile_workspace_updates(
         self, *, limit: int = 20, now: datetime | None = None,
+        profile_id: str | None = None, agent_id: str | None = None,
     ) -> int:
         """Atomically consume original workspace submission events, no sends.
 
@@ -452,6 +473,7 @@ class PostgresApplicationAgentRepository:
         """
         moment = _now(now)
         size = max(1, min(int(limit), 50))
+        scope_sql, scope_values = _case_scope(profile_id, agent_id)
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -469,9 +491,10 @@ class PostgresApplicationAgentRepository:
                            SELECT 1 FROM smartploy_account_erasure_requests er
                            WHERE er.profile_id = a.profile_id
                          )
+                       """ + scope_sql + """
                        ORDER BY w.updated_at, a.agent_id
                        LIMIT %s FOR UPDATE OF a, w SKIP LOCKED""",
-                    (size,),
+                    (*scope_values, size),
                 )
                 changed = cur.fetchall()
                 for (
@@ -545,7 +568,8 @@ class PostgresApplicationAgentRepository:
         return len(changed)
 
     def process_due(
-        self, *, limit: int = 20, now: datetime | None = None
+        self, *, limit: int = 20, now: datetime | None = None,
+        profile_id: str | None = None, agent_id: str | None = None,
     ) -> dict[str, int | bool]:
         """Idempotent owner-scoped in-app wakeups; never external notifications.
 
@@ -554,7 +578,10 @@ class PostgresApplicationAgentRepository:
         """
         moment = _now(now)
         size = max(1, min(int(limit), 50))
-        reconciled = self.reconcile_workspace_updates(limit=size, now=moment)
+        scope_sql, scope_values = _case_scope(profile_id, agent_id)
+        reconciled = self.reconcile_workspace_updates(
+            limit=size, now=moment, profile_id=profile_id, agent_id=agent_id,
+        )
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -568,9 +595,10 @@ class PostgresApplicationAgentRepository:
                              SELECT 1 FROM smartploy_account_erasure_requests er
                              WHERE er.profile_id = a.profile_id
                          )
+                       """ + scope_sql + """
                        ORDER BY a.next_due_at, a.agent_id
                        LIMIT %s FOR UPDATE OF a SKIP LOCKED""",
-                    (moment, size),
+                    (moment, *scope_values, size),
                 )
                 claimed = cur.fetchall()
                 for agent_id, revision, milestone, count, workspace_status in claimed:

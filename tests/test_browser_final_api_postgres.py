@@ -194,6 +194,75 @@ def reviewed_case(monkeypatch):
                 )
 
 
+def test_sp34_signed_in_oidc_check_now_is_exact_case_only_and_off_platform_safe(reviewed_case):
+    """First-party OIDC two-subject check; no external employer traffic."""
+    case = reviewed_case
+    api, headers, work = case["api"], case["headers"], case["work"]
+    base = f"/api/v1/application-workspaces/{work.workspace_id}/agent"
+    start = api.post(base, headers=headers)
+    assert start.status_code == 201, start.text
+    agent = start.json()["agent"]
+    route = f"/api/v1/application-agents/{agent['agent_id']}"
+    check = route + "/check-now"
+    assert agent["state"] == "active"
+
+    # Same email is not the same OIDC subject. An arbitrary user's case
+    # cannot be reconciled or awakened, even if its agent ID is known.
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
+    foreign_headers = {**headers,
+                       "X-Smartploy-Expected-User-Id": case["b"].user_id}
+    assert api.post(check, headers=foreign_headers).status_code == 404
+    assert api.get(route).status_code == 404
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+
+    # The original signed-in account, origin and CSRF boundary applies.
+    assert api.post(check, headers={
+        **headers, "Origin": "https://attacker.example.invalid",
+    }).status_code == 403
+    assert api.post(check, headers={
+        **headers, "Sec-Fetch-Site": "cross-site",
+    }).status_code == 403
+    assert api.post(check, headers={
+        "Origin": headers["Origin"],
+        "Sec-Fetch-Site": "same-origin",
+    }).status_code == 403
+    assert api.post(check, headers={
+        **headers, "X-Smartploy-Expected-User-Id": case["b"].user_id,
+    }).status_code in {403, 409}
+
+    checked = api.post(check, headers=headers)
+    assert checked.status_code == 200, checked.text
+    assert checked.headers["Cache-Control"] == "private, no-store"
+    body = checked.json()
+    assert body["checked_in_app"] is True
+    assert body["in_app_reminders"] == 1
+    assert body["workspace_updates_reconciled"] == 0
+    assert body["external_actions_performed"] == body["employer_contacts"] == 0
+    assert body["background_worker_verified"] is False
+    assert body["agent"]["last_woke_at"]
+    assert body["agent"]["revision"] == 2
+
+    # Repeated clicks do not create another reminder or employer attempt.
+    twice = api.post(check, headers=headers)
+    assert twice.status_code == 200
+    assert twice.json()["in_app_reminders"] == 0
+    assert twice.json()["agent"]["revision"] == 2
+    timeline = api.get(route).json()["events"]
+    assert [event["event_type"] for event in timeline] == [
+        "case_created", "review_reminder_due",
+    ]
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(
+        case["a"], work.canonical_key,
+    ) is None
+
+    paused = api.post(route + "/pause", headers=headers,
+                      json={"expected_revision": 2})
+    assert paused.status_code == 200
+    assert paused.json()["agent"]["state"] == "paused"
+    assert api.post(check, headers=headers).status_code == 409
+    assert api.get(route).json()["agent"]["revision"] == 3
+
+
 def authorize_review_and_employer(case):
     api = case["api"]
     review = api.post(

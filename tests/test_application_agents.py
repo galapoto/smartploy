@@ -105,6 +105,113 @@ def test_agent_zero_created_once_and_wakes_after_browser_closes(store):
         workspaces.delete(owner, workspace.workspace_id)
 
 
+def test_owner_initiated_check_wakes_only_exact_case_and_is_idempotent(store):
+    """SP34 on-demand path reuses worker SQL but never scans another owner."""
+    agents, workspaces = store
+    owner_a = "agent-on-demand-a-" + uuid4().hex
+    owner_b = "agent-on-demand-b-" + uuid4().hex
+    a, b = synthetic_case(owner_a), synthetic_case(owner_b)
+    workspaces.create_or_get(a)
+    workspaces.create_or_get(b)
+    start = datetime.now(timezone.utc).replace(microsecond=0)
+    try:
+        first, _ = agents.create_or_get(owner_a, a.workspace_id, now=start)
+        second, _ = agents.create_or_get(owner_b, b.workspace_id, now=start)
+        assert first and second and first["agent_id"] != second["agent_id"]
+
+        # User A can never wake B, even if A guesses B's agent ID.
+        wrong = agents.process_due(
+            profile_id=owner_a, agent_id=second["agent_id"],
+            now=start + timedelta(seconds=1), limit=1,
+        )
+        assert wrong["woken"] == wrong["workspace_updates_reconciled"] == 0
+        assert agents.get(owner_b, second["agent_id"])["last_woke_at"] == ""
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            checks = list(executor.map(
+                lambda _: agents.process_due(
+                    profile_id=owner_a, agent_id=first["agent_id"],
+                    now=start + timedelta(seconds=1), limit=1,
+                ),
+                range(2),
+            ))
+        assert sum(result["woken"] for result in checks) == 1
+        assert all(result["external_actions_performed"] == 0 for result in checks)
+        assert all(result["employer_contacts"] == 0 for result in checks)
+        assert [event["event_type"] for event in agents.events(
+            owner_a, first["agent_id"],
+        )] == ["case_created", "review_reminder_due"]
+        assert [event["event_type"] for event in agents.events(
+            owner_b, second["agent_id"],
+        )] == ["case_created"]
+        assert agents.process_due(
+            profile_id=owner_a, agent_id=first["agent_id"],
+            now=start + timedelta(seconds=1),
+        )["woken"] == 0
+
+        # Original global scheduled worker remains unmodified and can wake B.
+        global_result = agents.process_due(now=start + timedelta(seconds=1), limit=50)
+        assert global_result["external_actions_performed"] == 0
+        assert [event["event_type"] for event in agents.events(
+            owner_b, second["agent_id"],
+        )] == ["case_created", "review_reminder_due"]
+        assert len(agents.events(owner_a, first["agent_id"])) == 2
+
+        with pytest.raises(ValueError, match="owner and case"):
+            agents.process_due(profile_id=owner_a, now=start)
+        with pytest.raises(ValueError, match="owner and case"):
+            agents.process_due(agent_id=first["agent_id"], now=start)
+        with pytest.raises(ValueError, match="owner and case"):
+            agents.reconcile_workspace_updates(
+                profile_id=owner_a, agent_id="", now=start,
+            )
+    finally:
+        workspaces.delete(owner_a, a.workspace_id)
+        workspaces.delete(owner_b, b.workspace_id)
+
+
+def test_owner_check_reconciles_real_submission_without_premature_followup(store):
+    """Browser-visible user check preserves the existing applied-first clock."""
+    agents, workspaces = store
+    owner = "agent-on-demand-submit-" + uuid4().hex
+    workspace = synthetic_case(owner)
+    workspaces.create_or_get(workspace)
+    start = datetime.now(timezone.utc).replace(microsecond=0)
+    try:
+        agent, _ = agents.create_or_get(owner, workspace.workspace_id, now=start)
+        assert agent
+        applied = workspaces.report_applied(
+            owner, workspace.workspace_id, expected_revision=1,
+            reference="synthetic personally confirmed application",
+        )
+        assert applied and applied.status == "self_reported_applied"
+        result = agents.process_due(
+            limit=1, profile_id=owner, agent_id=agent["agent_id"],
+            now=start + timedelta(minutes=1),
+        )
+        assert result == {
+            "workspace_updates_reconciled": 1,
+            "woken": 0, "in_app_reminders": 0,
+            "external_actions_performed": 0, "employer_contacts": 0,
+        }
+        updated = agents.get(owner, agent["agent_id"])
+        assert updated and updated["observed_workspace_status"] == "self_reported_applied"
+        assert updated["workspace_status"] == "self_reported_applied"
+        assert updated["last_woke_at"] == ""
+        assert [event["event_type"] for event in agents.events(
+            owner, agent["agent_id"],
+        )] == ["case_created", "application_self_reported"]
+        next_due = datetime.fromisoformat(updated["next_due_at"])
+        assert next_due >= start + timedelta(days=6)
+        assert agents.process_due(
+            limit=1, profile_id=owner, agent_id=agent["agent_id"],
+            now=start + timedelta(minutes=2),
+        )["workspace_updates_reconciled"] == 0
+        assert len(agents.events(owner, agent["agent_id"])) == 2
+    finally:
+        workspaces.delete(owner, workspace.workspace_id)
+
+
 def test_pause_resume_close_and_stale_state_never_reawaken(store):
     agents, workspaces = store
     owner = "agent-lifecycle-" + uuid4().hex

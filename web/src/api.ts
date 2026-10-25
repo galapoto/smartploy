@@ -248,6 +248,29 @@ export function getApplicationAgent(agentId: string, afterSequence = 0): Promise
     + "?after_sequence=" + cursor);
 }
 
+/** User-initiated, owner-scoped Agent Zero check.
+ * Runs only the existing private PostgreSQL reconciliation and due event.
+ * Does NOT enable the background worker, send email or contact an employer.
+ */
+export type ApplicationAgentCheckResult = {
+  agent: ApplicationAgent;
+  checked_in_app: true;
+  workspace_updates_reconciled: number;
+  in_app_reminders: number;
+  external_actions_performed: 0;
+  employer_contacts: 0;
+  background_worker_verified: false;
+};
+
+export function checkApplicationAgentNow(
+  agentId: string, expectedUserId: string
+): Promise<ApplicationAgentCheckResult> {
+  return request<ApplicationAgentCheckResult>(
+    "/api/v1/application-agents/" + encodeURIComponent(agentId) + "/check-now",
+    { method: "POST" }, expectedUserId,
+  );
+}
+
 export function createApplicationAgent(
   workspaceId: string, expectedUserId: string
 ): Promise<{ agent: ApplicationAgent; created: boolean; external_actions_performed: 0 }> {

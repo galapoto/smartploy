@@ -1478,6 +1478,48 @@ def create_app(
             headers={"Cache-Control": "private, no-store"},
         )
 
+    @app.post("/api/v1/application-agents/{agent_id}/check-now")
+    def check_application_agent_now(agent_id: str, request: Request) -> JSONResponse:
+        """User-initiated, owner-scoped in-app reconciliation; never employer I/O.
+
+        Reuses the original leased worker's idempotent PostgreSQL case engine,
+        but scopes both the status reconciliation AND due event to precisely
+        this signed-in owner's agent. This is not proof a background task ran.
+        """
+        repo, owner = application_agent_context(request, mutate=True)
+        try:
+            current = repo.get(owner, agent_id)
+            if current is None:
+                raise HTTPException(status_code=404, detail="Application agent not found")
+            if current["state"] != "active":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Only an active private application agent can be checked",
+                )
+            outcome = repo.process_due(
+                limit=1, profile_id=owner, agent_id=agent_id,
+            )
+            latest = repo.get(owner, agent_id)
+        except PostgresError as exc:
+            raise HTTPException(
+                status_code=503, detail="Application agent check unavailable",
+            ) from exc
+        if latest is None:
+            # A concurrent account erasure or deletion cannot leak case data.
+            raise HTTPException(status_code=404, detail="Application agent not found")
+        return JSONResponse(
+            {
+                "agent": latest,
+                "checked_in_app": True,
+                "workspace_updates_reconciled": outcome["workspace_updates_reconciled"],
+                "in_app_reminders": outcome["in_app_reminders"],
+                "external_actions_performed": 0,
+                "employer_contacts": 0,
+                "background_worker_verified": False,
+            },
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     @app.post("/api/v1/application-agents/{agent_id}/milestone")
     def report_candidate_milestone(
         agent_id: str, payload: ApplicationAgentMilestonePayload,

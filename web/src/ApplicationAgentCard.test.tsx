@@ -8,6 +8,7 @@ import type { ApplicationAgent } from "./types";
 vi.mock("./api", () => ({
   getApplicationAgentForWorkspace: vi.fn(),
   getApplicationAgent: vi.fn(),
+  checkApplicationAgentNow: vi.fn(),
   createApplicationAgent: vi.fn(),
   changeApplicationAgent: vi.fn(),
   recordApplicationAgentMilestone: vi.fn(),
@@ -48,6 +49,12 @@ beforeEach(() => {
   });
   vi.mocked(api.createApplicationAgent).mockResolvedValue({
     agent: caseAgent, created: true, external_actions_performed: 0,
+  });
+  vi.mocked(api.checkApplicationAgentNow).mockResolvedValue({
+    agent: { ...caseAgent, revision: 2, last_woke_at: "2026-10-25T13:00:00Z" },
+    checked_in_app: true, workspace_updates_reconciled: 0,
+    in_app_reminders: 1, external_actions_performed: 0,
+    employer_contacts: 0, background_worker_verified: false,
   });
   vi.mocked(api.changeApplicationAgent).mockResolvedValue({
     agent: { ...caseAgent, state: "paused", revision: 2 },
@@ -153,6 +160,70 @@ describe("Agent Zero in the existing application studio", () => {
     expect(card.textContent).toContain("No emails, calls or employer applications");
     expect(card.textContent).toContain("model calls and external actions are disabled");
     expect(verifyAccount).toHaveBeenCalled();
+  });
+
+  it("checks one active application on applicant click without sending anything", async () => {
+    vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue(response([caseAgent]));
+    const verifyAccount = vi.fn(async () => {});
+    render(<ApplicationAgentCard workspaceId="workspace-A"
+      expectedUserId="user-a" verifyAccount={verifyAccount}/>);
+    const check = await screen.findByRole("button", { name: /Check agent now/i });
+    expect((check as HTMLButtonElement).disabled).toBe(false);
+    expect(api.checkApplicationAgentNow).not.toHaveBeenCalled();
+    fireEvent.click(check);
+    await waitFor(() => expect(api.checkApplicationAgentNow).toHaveBeenCalledWith(
+      "agent-fixture-a", "user-a"
+    ));
+    expect(await screen.findByText(/One due in-app reminder was recorded/)).toBeTruthy();
+    expect(screen.getByText(/No employer was contacted/)).toBeTruthy();
+    expect(verifyAccount).toHaveBeenCalled();
+    expect(api.createApplicationAgent).not.toHaveBeenCalled();
+    expect(api.recordApplicationAgentFollowup).not.toHaveBeenCalled();
+    expect(api.recordApplicationAgentMilestone).not.toHaveBeenCalled();
+  });
+
+  it("shows no-due update honestly and never claims scheduled background activation", async () => {
+    vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue(response([caseAgent]));
+    vi.mocked(api.checkApplicationAgentNow).mockResolvedValue({
+      agent: caseAgent, checked_in_app: true,
+      workspace_updates_reconciled: 0, in_app_reminders: 0,
+      external_actions_performed: 0, employer_contacts: 0,
+      background_worker_verified: false,
+    });
+    render(<ApplicationAgentCard workspaceId="workspace-A"
+      expectedUserId="user-a" verifyAccount={vi.fn(async () => {})}/>);
+    fireEvent.click(await screen.findByRole("button", { name: /Check agent now/ }));
+    expect(await screen.findByText(/Background scheduling is not verified/)).toBeTruthy();
+    expect(api.checkApplicationAgentNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("never checks a paused or closed agent, or retries after identity verification fails", async () => {
+    const paused: ApplicationAgent = { ...caseAgent, state: "paused" };
+    vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue(response([paused]));
+    vi.mocked(api.getApplicationAgent).mockResolvedValue({
+      agent: paused, events, count: 1, next_cursor: 1,
+      external_actions_authorized: false,
+    });
+    const verifyAccount = vi.fn(async () => {});
+    const { rerender } = render(<ApplicationAgentCard workspaceId="workspace-A"
+      expectedUserId="user-a" verifyAccount={verifyAccount}/>);
+    expect(await screen.findByRole("button", { name: /Resume/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Check agent now/ })).toBeNull();
+    expect(api.checkApplicationAgentNow).not.toHaveBeenCalled();
+
+    const nextCase: ApplicationAgent = { ...caseAgent, workspace_id: "workspace-B" };
+    vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue(response([nextCase]));
+    vi.mocked(api.getApplicationAgent).mockResolvedValue({
+      agent: nextCase, events, count: 1, next_cursor: 1,
+      external_actions_authorized: false,
+    });
+    rerender(<ApplicationAgentCard workspaceId="workspace-B"
+      expectedUserId="user-a" verifyAccount={verifyAccount}/>);
+    const check = await screen.findByRole("button", { name: /Check agent now/ });
+    verifyAccount.mockRejectedValueOnce(new Error("The signed-in account changed"));
+    fireEvent.click(check);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(api.checkApplicationAgentNow).not.toHaveBeenCalled();
   });
 
   it("sends one expected-revision pause, never a silent employer message", async () => {
