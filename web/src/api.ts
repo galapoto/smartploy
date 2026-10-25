@@ -339,6 +339,17 @@ export function getApplicationWorkspaces(): Promise<ApplicationWorkspacesRespons
   return request<ApplicationWorkspacesResponse>("/api/v1/application-workspaces");
 }
 
+/** Reuse original exact owner-scoped workspace GET for older inbox cases
+ * outside the editor's first 100 most recent drafts.
+ */
+export function getApplicationWorkspaceById(
+  workspaceId: string,
+): Promise<{workspace: ApplicationWorkspace}> {
+  return request<{workspace: ApplicationWorkspace}>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
+  );
+}
+
 export function editApplicationWorkspace(
   workspaceId: string, expectedRevision: number, cvText: string, coverLetterText: string,
   expectedUserId: string
