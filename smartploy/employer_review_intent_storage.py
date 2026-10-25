@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from psycopg import connect
 
-from .browser_handoff import HandoffError, _posting_url
+from .browser_handoff import HandoffError, _assisted_posting_url
 from .employer_submit_claim_storage import (
     EmployerSubmitClaimDenied, _employer_job_key_sha256,
     verified_employer_submit_preflight,
@@ -87,7 +87,7 @@ class PostgresEmployerReviewIntentRepository:
     @staticmethod
     def _employer_key(application_url: str) -> str:
         try:
-            _posting_url(application_url)
+            _assisted_posting_url(application_url)
             return _employer_job_key_sha256(application_url)
         except (HandoffError, EmployerSubmitClaimDenied, TypeError) as exc:
             raise EmployerReviewIntentDenied("Unsupported employer job URL") from exc
@@ -138,6 +138,7 @@ class PostgresEmployerReviewIntentRepository:
                         expected_revision=expected_revision,
                         expected_application_url=expected_application_url,
                         expected_job_fingerprint=expected_job_fingerprint,
+                        assisted_review_only=True,
                     )
                 except EmployerSubmitClaimDenied as exc:
                     raise EmployerReviewIntentDenied(str(exc)) from exc
@@ -259,6 +260,7 @@ class PostgresEmployerReviewIntentRepository:
                         expected_revision=expected_revision,
                         expected_application_url=expected_application_url,
                         expected_job_fingerprint=expected_job_fingerprint,
+                        assisted_review_only=True,
                     )
                 except EmployerSubmitClaimDenied as exc:
                     raise EmployerReviewIntentDenied(str(exc)) from exc
