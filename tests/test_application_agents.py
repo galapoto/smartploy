@@ -68,10 +68,13 @@ def test_agent_zero_created_once_and_wakes_after_browser_closes(store):
     workspaces.create_or_get(workspace)
     start = datetime(2026, 10, 22, 14, 0, tzinfo=timezone.utc)
     try:
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        # Multiple tabs and worker wakeups can race for the same agent.
+        # Exercise BOTH deterministic agent-id PK and workspace uniqueness:
+        # the losing insert must return the already-created case, not throw.
+        with ThreadPoolExecutor(max_workers=12) as executor:
             results = list(executor.map(
                 lambda _: agents.create_or_get(owner, workspace.workspace_id, now=start),
-                range(5),
+                range(12),
             ))
         assert sum(created for _, created in results) == 1
         item = results[0][0]
