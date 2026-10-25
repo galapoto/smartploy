@@ -115,12 +115,12 @@ def test_sp38_finnish_initial_letter_uses_only_relevant_approved_facts():
 def test_sp38_explicit_language_preview_is_local_and_never_changes_cv_or_workspace():
     profile = example_profile()
     job = example_candidate()
-    original_cv = "Original approved uploaded CV content\\nPython only"
+    original_cv = "Original approved uploaded CV content\nPython only"
     work = new_workspace(job, profile, original_cv, source_cv_sha256="a" * 64)
     english = cover_letter_proposal(job, profile, language="en")
     finnish = cover_letter_proposal(job, profile, language="fi")
-    assert english.startswith("Dear Hiring Team,\\n\\n")
-    assert finnish.startswith("Hei rekrytointitiimi,\\n\\n")
+    assert english.startswith("Dear Hiring Team,\n\n")
+    assert finnish.startswith("Hei rekrytointitiimi,\n\n")
     assert "Osaaminen: Python" in finnish
     assert "Skill: Python" in english
     assert work.cv_text == original_cv
