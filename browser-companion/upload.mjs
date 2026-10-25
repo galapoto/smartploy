@@ -51,6 +51,32 @@ export function exactAssistedForm(activeUrl, packetUrl) {
   }
 }
 
+
+/* SP42: observation-only exact same-job Ashby confirmation scope. This is a
+   read-only browser affordance, NOT provider evidence or a submit grant.
+   Queries/fragments on the visible employer page are deliberately not copied. */
+export function exactAshbyReceiptPage(activeUrl, packetUrl) {
+  try {
+    const here = new URL(activeUrl);
+    const postingUrl = new URL(packetUrl);
+    if (here.protocol !== "https:" || postingUrl.protocol !== "https:" ||
+        here.hostname !== "jobs.ashbyhq.com" ||
+        postingUrl.hostname !== "jobs.ashbyhq.com" ||
+        here.origin !== postingUrl.origin ||
+        here.username || here.password || postingUrl.username || postingUrl.password ||
+        here.port || postingUrl.port || postingUrl.search || postingUrl.hash) return false;
+    const posting = postingUrl.pathname.replace(/\/application\/?$/, "").replace(/\/+$/, "");
+    if (!/^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}$/.test(posting)) return false;
+    return here.pathname === posting || here.pathname === posting + "/" ||
+      here.pathname === posting + "/application" ||
+      here.pathname === posting + "/application/" ||
+      here.pathname.startsWith(posting + "/application/");
+  } catch {
+    return false;
+  }
+}
+
+
 export function isLeverFinalProvider(packetUrl) {
   try {
     const url = new URL(packetUrl);

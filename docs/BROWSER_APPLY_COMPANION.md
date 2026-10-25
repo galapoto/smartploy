@@ -1,5 +1,18 @@
 # SmartPloy Apply Companion — reviewed Lever and Ashby form assistance
 
+> **SP42 MANUALLY SUBMITTED ASHBY OBSERVATIONS (source only, 25 Oct):**
+> After YOU personally submit an Ashby application, the same companion
+> can inspect a reference-bearing confirmation on the **same exact job**
+> and export the private observation into SmartPloy's existing receipt
+> workflow. It requires the same fresh signed-in reviewed packet and explicit
+> personal confirmation. No new browser final click, employer POST, or
+> one-use submit attempt is granted. All such receipts remain
+> `browser_observed_unverified` and do NOT increase independently
+> verified submission counts. See
+> [SP42 manual Ashby observation contract](SP42_ASHBY_MANUAL_RECEIPT.md).
+> If no reference appears or verification expires, record **I applied on
+> employer site** and keep the email; never automatically retry.
+>
 > **SP41 CURRENT SUPPORTED FORMS (25 October 2026, source only):**
 > Exact hosted Lever `/apply` and exact Ashby `/application` forms may
 > receive user-approved contact-field, ordinary reviewed-question and reviewed

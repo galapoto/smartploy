@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  UploadError, MAX_PDF_BYTES, chooseResumeField, exactLeverForm, exactAssistedForm, isLeverFinalProvider,
+  UploadError, MAX_PDF_BYTES, chooseResumeField, exactLeverForm, exactAssistedForm, exactAshbyReceiptPage, isLeverFinalProvider,
   encodePdfBase64, validatePdf
 } from "../upload.mjs";
 
@@ -113,4 +113,28 @@ test("SP41 reviewed Ashby PDF attachment is scoped to exact same hosted /applica
   assert.equal(isLeverFinalProvider(ashbyPosting), false);
   assert.equal(isLeverFinalProvider(form), true);
   assert.equal(isLeverFinalProvider(listing), true);
+});
+
+
+test("SP42 Ashby manual receipt observation stays on the exact posted job", () => {
+  const current = "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst";
+  const confirmation = current + "/application/confirmation?ref=private#secret";
+  assert.equal(exactAshbyReceiptPage(confirmation, current + "/application"), true);
+  assert.equal(exactAshbyReceiptPage(current, current + "/application"), true);
+  assert.equal(exactAshbyReceiptPage(current + "/application/success", current), true);
+  for (const wrong of [
+    current + "-other/application/confirmation",
+    "https://jobs.ashbyhq.com/synthetic-fi/another-job/application/confirmation",
+    "https://jobs.ashbyhq.com/another-board/junior-data-analyst/application",
+    "https://jobs.ashbyhq.com.evil.invalid/synthetic-fi/junior-data-analyst/application",
+    "https://evil.invalid/synthetic-fi/junior-data-analyst/application",
+    "http://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application",
+    current + "/application-other",
+  ]) {
+    assert.equal(exactAshbyReceiptPage(wrong,current + "/application"), false,wrong);
+  }
+  assert.equal(exactAshbyReceiptPage(
+    confirmation,current + "/application?unreviewed=1"
+  ),false);
+  assert.equal(isLeverFinalProvider(current + "/application"),false);
 });

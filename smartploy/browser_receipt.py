@@ -58,17 +58,38 @@ def _verified_url(value: str, expected: str) -> str:
     try:
         parsed = urlsplit(value)
         accepted = urlsplit(expected)
+        # Reuse SP41's exact reviewed Lever/Ashby posting boundary. A browser
+        # observation is NOT a provider-issued receipt or submit permission.
+        from .browser_handoff import HandoffError, _assisted_posting_url
+        _assisted_posting_url(expected)
         if (
-            parsed.scheme != "https"
-            or parsed.hostname not in {"jobs.lever.co", "jobs.eu.lever.co"}
-            or parsed.netloc != accepted.netloc
+            parsed.scheme != "https" or parsed.netloc != accepted.netloc
             or parsed.username or parsed.password
             or parsed.port not in (None, 443)
-            or not parsed.path.startswith("/")
-            or not parsed.path.startswith("/" + accepted.path.split("/")[1] + "/")
         ):
-            raise ReceiptError("Receipt must be observed on the original Lever employer host and account")
-    except (ValueError, IndexError) as exc:
+            raise ReceiptError("Receipt must remain on the original employer host")
+        if parsed.hostname == "jobs.ashbyhq.com":
+            # Unlike Lever's historical tenant-wide observed URL rule, exact
+            # Ashby job identity must survive the confirmation navigation.
+            # Reject another job on the SAME board with a path-boundary check.
+            parts = accepted.path.strip("/").split("/")
+            posting = "/" + "/".join(parts[:2])
+            if len(parts) not in (2, 3) or not (
+                parsed.path == posting or
+                parsed.path == posting + "/" or
+                parsed.path == posting + "/application" or
+                parsed.path == posting + "/application/" or
+                parsed.path.startswith(posting + "/application/")
+            ):
+                raise ReceiptError("Ashby confirmation belongs to another job")
+        elif parsed.hostname in {"jobs.lever.co", "jobs.eu.lever.co"}:
+            if not parsed.path.startswith(
+                "/" + accepted.path.strip("/").split("/")[0] + "/"
+            ):
+                raise ReceiptError("Receipt must remain on the original Lever account")
+        else:
+            raise ReceiptError("Unsupported employer confirmation host")
+    except (ValueError, IndexError, HandoffError, TypeError) as exc:
         raise ReceiptError("Receipt URL cannot be verified against the original job") from exc
     # Drop query/fragment even if the page included credentials or tracking params.
     return "https://" + parsed.netloc + parsed.path

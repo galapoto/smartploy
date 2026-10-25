@@ -231,3 +231,125 @@ def test_postgres_ledger_persistence_and_tenant_separation():
     finally:
         workspaces.delete(w.profile_id, w.workspace_id)
     assert store.get(w.profile_id, w.workspace_id) is None
+
+
+# SP42 — The user submitted to Ashby manually; capture only the visible,
+# reference-bearing, *same-job* browser observation. Never an employer ACK.
+ASHBY = "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application"
+
+
+def test_sp42_ashby_reference_observation_is_private_unverified_and_strips_tracking():
+    w = replace(kit(), application_url=ASHBY)
+    raw = import_value(w)
+    raw["confirmation_page_url"] = (
+        ASHBY + "/confirmation?tracking=secret#access-token"
+    )
+    receipt = validate_browser_receipt(w, raw, now=TIME)
+    assert receipt.reference == "RECEIPT-123456"
+    assert receipt.confirmation_page_url == ASHBY + "/confirmation"
+    assert "secret" not in str(receipt.to_dict())
+    assert receipt.to_dict()["status"] == "browser_observed_unverified"
+    assert receipt.to_dict()["independently_verified_by_employer"] is False
+    assert receipt.to_dict()["actually_submitted_count_changed"] is False
+    assert len(receipt.to_dict()["evidence_digest"]) == 64
+
+
+@pytest.mark.parametrize("wrong_page", [
+    "https://jobs.ashbyhq.com/synthetic-fi/other-job/application/confirmation",
+    "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst-evil/application",
+    "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application-other",
+    "https://jobs.ashbyhq.com/other-board/junior-data-analyst/application",
+    "https://jobs.ashbyhq.com.evil.invalid/synthetic-fi/junior-data-analyst/application",
+    "https://jobs.lever.co/synthetic-fi/junior-data-analyst/application",
+    "https://evil.invalid/synthetic-fi/junior-data-analyst/application",
+    "http://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application",
+    "https://user:password@jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application",
+])
+def test_sp42_ashby_receipt_refuses_cross_job_or_untrusted_host(wrong_page):
+    w = replace(kit(), application_url=ASHBY)
+    raw = import_value(w)
+    raw["confirmation_page_url"] = wrong_page
+    with pytest.raises(ReceiptError):
+        validate_browser_receipt(w, raw, now=TIME)
+
+
+def test_sp42_ashby_receipt_never_bypasses_reviewed_revision_or_existing_status():
+    w = replace(kit(), application_url=ASHBY)
+    raw = import_value(w)
+    raw["confirmation_page_url"] = ASHBY
+    assert validate_browser_receipt(w, raw, now=TIME).status == "browser_observed_unverified"
+    for changed in (
+        replace(w, cv_text=w.cv_text + "stale"),
+        replace(w, status="self_reported_applied"),
+        replace(w, revision=w.revision + 1),
+    ):
+        with pytest.raises(ReceiptError):
+            validate_browser_receipt(changed, raw, now=TIME)
+
+
+def test_sp42_ashby_private_api_observation_does_not_claim_provider_acknowledgment():
+    """Existing owner-bound API persists manual Ashby evidence, no new tables."""
+    svc = SmartployService()
+    svc.register_source(SourcePolicy("manual-import", "Manual", "manual", ("manual",)))
+    api = TestClient(create_app(svc))
+    posted = api.post("/api/v1/jobs/ingest", json={
+        "observation": {
+            "source_id": "manual-import", "source_mode": "manual",
+            "source_url": ASHBY, "raw_text": "Synthetic IT analyst Helsinki",
+            "payload": {
+                "company": "Synthetic IT", "role_title": "Junior Data Analyst",
+                "description": "SQL Python", "application_url": ASHBY,
+                "location": "Helsinki",
+            },
+        }
+    })
+    assert posted.status_code == 200, posted.text
+    key = posted.json()["candidate"]["canonical_key"]
+    assert api.post("/api/v1/profile/facts", json={
+        "fact_type": "identity", "value": "Test Candidate", "approved": True,
+    }).status_code == 201
+    prepared = api.post(f"/api/v1/jobs/{key}/application-workspace")
+    assert prepared.status_code == 200, prepared.text
+    w = prepared.json()["workspace"]
+    now = datetime.now(timezone.utc)
+    raw = {
+        "schema": "smartploy.browser_receipt.v1",
+        "workspace_id": w["workspace_id"],
+        "document_revision": w["revision"],
+        "document_sha256": sha256(
+            (w["cv_text"] + "\0" + w["cover_letter_text"]).encode()
+        ).hexdigest(),
+        "application_url": ASHBY,
+        "confirmation_page_url": ASHBY + "/confirmation?private=discard#secret",
+        "reference": "ASHBY-SYNTH-2026",
+        "confirmation_page_sha256": "e" * 64,
+        "observed_at": now.isoformat(),
+        "confirmed_visible": True,
+    }
+    endpoint = f'/api/v1/application-workspaces/{w["workspace_id"]}/browser-receipt'
+    no_consent = api.post(endpoint, json={
+        "confirm_user_observed": False, "receipt": raw,
+    })
+    assert no_consent.status_code == 422
+    stored = api.post(endpoint, json={
+        "confirm_user_observed": True, "receipt": raw,
+    })
+    assert stored.status_code == 200, stored.text
+    payload = stored.json()
+    assert payload["external_confirmation_verified"] is False
+    assert payload["receipt"]["status"] == "browser_observed_unverified"
+    assert payload["receipt"]["independently_verified_by_employer"] is False
+    assert payload["receipt"]["confirmation_page_url"] == ASHBY + "/confirmation"
+    assert "private=discard" not in stored.text
+    assert "secret" not in stored.text
+    assert api.post(endpoint, json={
+        "confirm_user_observed": True, "receipt": raw,
+    }).status_code == 200
+    sibling = {**raw,
+        "confirmation_page_url":
+        "https://jobs.ashbyhq.com/synthetic-fi/other-job/application"}
+    assert api.post(endpoint, json={
+        "confirm_user_observed": True, "receipt": sibling,
+    }).status_code == 422
+    assert api.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
+    assert api.get(endpoint).json()["receipt"]["status"] == "browser_observed_unverified"

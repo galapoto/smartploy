@@ -1142,8 +1142,11 @@ export default function ApplicationStudio(props: {
             <p><strong>Observed:</strong> {new Date(browserReceipt.observed_at).toLocaleString()}</p>
             <p><strong>Status:</strong> Browser-observed and awaiting your review</p>
           </div> : <>
-            <p className="muted">If the companion displayed a reference-bearing employer confirmation,
-              copy the private receipt packet and import it here. An attempt alone is not success.</p>
+            <p className="muted">After an approved Lever attempt or a manually submitted
+              Ashby application, the companion may capture a visible, same-job,
+              reference-bearing employer confirmation. Copy its private receipt packet
+              and import it here. An attempted click or browser observation is never
+              independently verified employer acknowledgment.</p>
             <button className="outline-btn compact" type="button"
               onClick={() => setReceiptOpen((current) => !current)}
               disabled={selected.status !== "draft" || !!partnerReceipt}>

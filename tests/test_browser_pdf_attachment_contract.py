@@ -56,3 +56,26 @@ def test_cv_identity_preserved_but_final_click_fail_closed_without_server_claim(
     assert 'func: reserveFinalClickOnSmartPloy' in popup
     assert "func: submitOnce" not in popup
     assert "live[0].click()" not in popup
+
+
+def test_sp42_ashby_manual_confirmation_never_reuses_lever_submission_authority():
+    """Static final-action boundary complements real Node/Chromium receipt tests."""
+    popup = (ROOT / "popup.mjs").read_text(encoding="utf-8")
+    html = (ROOT / "popup.html").read_text(encoding="utf-8")
+    companion = (ROOT / "upload.mjs").read_text(encoding="utf-8")
+
+    observed = popup.split("async function onReceipt() {", 1)[1].split(
+        '$("verifyReview").addEventListener', 1
+    )[0]
+    assert "exactAshbyReceiptPage(tab.url, currentPacket.application_url)" in observed
+    assert "await requireVerifiedReview(chrome.storage?.session, currentPacket)" in observed
+    assert "window.confirm(" in observed
+    assert "You confirm you personally clicked the employer's Submit button" in observed
+    assert "args: [original.origin, account, ashbyPosting]" in observed
+    assert "if (lever) {" in observed
+    assert "await oneAttemptKey(currentPacket)" in observed
+    assert "submitReviewedLeverOnce" not in observed
+    assert "reserveFinalClickOnSmartPloy" not in observed
+    assert "external_actions_performed" not in observed
+    assert "exactAshbyReceiptPage" in companion
+    assert "prior Lever attempt or manual Ashby confirmation" in html
