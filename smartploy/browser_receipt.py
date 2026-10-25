@@ -77,7 +77,9 @@ def _verified_url(value: str, expected: str) -> str:
             if len(parts) not in (2, 3) or not (
                 parsed.path == posting or
                 parsed.path == posting + "/" or
-                parsed.path.startswith(posting + "/")
+                parsed.path == posting + "/application" or
+                parsed.path == posting + "/application/" or
+                parsed.path.startswith(posting + "/application/")
             ):
                 raise ReceiptError("Ashby confirmation belongs to another job")
         elif parsed.hostname in {"jobs.lever.co", "jobs.eu.lever.co"}:
