@@ -173,7 +173,10 @@ export default function ApplicationStudio(props: {
       if (!active()) return;
       setWorkspaces(result.workspaces);
       setSelectedId((current) => {
-        const wanted = props.focusId || current;
+        // The parent focusId is an initial navigation hint, not a sticky
+        // selection lock. Refresh must preserve the draft the applicant
+        // opened from the queue or sidebar.
+        const wanted = current || props.focusId;
         return result.workspaces.some((item) => item.workspace_id === wanted)
           ? wanted : (result.workspaces[0]?.workspace_id || "");
       });
@@ -274,6 +277,16 @@ export default function ApplicationStudio(props: {
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
   ));
+
+  // Reuse the already saved owner-scoped workspace list. Moving between
+  // applications never creates another draft, agent, or employer attempt.
+  // Wrap in list order, but skip acknowledged and self-reported outcomes.
+  const nextDraft = useMemo(() => {
+    const current = workspaces.findIndex((item) => item.workspace_id === selectedId);
+    if (current < 0) return null;
+    return [...workspaces.slice(current + 1), ...workspaces.slice(0, current)]
+      .find((item) => item.status === "draft") || null;
+  }, [workspaces, selectedId]);
 
   function pick(id: string) {
     if (dirty && !window.confirm("Discard unsaved changes and open another draft?")) return;
@@ -1058,6 +1071,13 @@ export default function ApplicationStudio(props: {
               Documents are locked to preserve the submitted version.</p> :
             <p>Self-reported applied {selected.self_reported_applied_at ? new Date(selected.self_reported_applied_at).toLocaleDateString() : ""}{selected.self_reported_reference ? " · " + selected.self_reported_reference : ""}</p>}
         </div>
+        {nextDraft ? <div className="row-actions" aria-label="Continue application queue">
+          <button type="button" className="outline-btn"
+            onClick={() => pick(nextDraft.workspace_id)}>
+            Next application: {nextDraft.role_title} <ArrowRight size={16}/>
+          </button>
+          <small>Opens another saved draft only; nothing is sent.</small>
+        </div> : null}
         <div className="studio-delete-row">
           <button type="button" className="text-btn studio-delete" disabled={busy} onClick={() => void remove()}>
             <Trash2 size={14}/> Delete this application workspace
