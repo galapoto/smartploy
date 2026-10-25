@@ -122,7 +122,7 @@ def _relevant_approved_letter_facts(
     return tuple((kind, value) for kind, value, _ in candidates[:3])
 
 
-def _cover_letter(
+def cover_letter_proposal(
     candidate: JobCandidate, profile: CandidateProfile,
     *, language: str | None = None,
 ) -> str:
@@ -252,7 +252,10 @@ def new_workspace(
         )
     cv_text = source if source else _candidate_document(profile)
     cv_text = _clean_text(cv_text, limit=MAX_CV_CHARACTERS, label="CV")
-    letter = _clean_text(_cover_letter(candidate, profile), limit=MAX_LETTER_CHARACTERS, label="Cover letter")
+    letter = _clean_text(
+        cover_letter_proposal(candidate, profile),
+        limit=MAX_LETTER_CHARACTERS, label="Cover letter",
+    )
     pid = profile.profile_id
     identity = sha256((pid + "\0" + candidate.canonical_key).encode("utf-8")).hexdigest()[:30]
     approved = profile.approved_evidence().get("facts", {})
