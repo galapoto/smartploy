@@ -1,4 +1,25 @@
-# SmartPloy Apply Companion — reviewed Lever form assistance
+# SmartPloy Apply Companion — reviewed Lever and Ashby form assistance
+
+> **SP41 CURRENT SUPPORTED FORMS (25 October 2026, source only):**
+> Exact hosted Lever `/apply` and exact Ashby `/application` forms may
+> receive user-approved contact-field, ordinary reviewed-question and reviewed
+> PDF assistance after the **same existing signed-in SmartPloy review**.
+> On Ashby, final employer submission and browser receipt export are
+> **always manual/unavailable**. The independent one-use browser final click
+> and provider-issued ACK stay Lever-only, strictly permission-gated and
+> OFF by default. A form fill or local PDF attachment is NOT a submitted
+> application. See [SP41 change and QA contract](SP41_ASHBY_REVIEWED_BROWSER_ASSIST.md).
+>
+> **Ashby path:** save the current Finnish posting in SmartPloy, approve
+> exact CV/contact/letter facts, record the review in *My applications*,
+> verify the packet from the signed-in first-party SmartPloy tab, then open
+> `https://jobs.ashbyhq.com/{employer}/{job-id}/application` for the **same
+> job**. Inspect and explicitly approve ordinary fields/questions, optionally
+> attach the exact PDF after its SHA-256 is verified, personally finish legal,
+> salary, eligibility and other sensitive questions, and click the employer's
+> own Submit button. Use *I applied on employer site* to track the result.
+> Unknown or nonstandard employer forms remain fully manual.
+>
 
 > **SP26 CURRENT FLOW — 24 October 2026 (source only):** Chrome companion 0.3.0
 > supports ONE user-confirmed final browser click on an exact Lever job, but
