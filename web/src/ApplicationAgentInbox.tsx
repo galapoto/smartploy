@@ -184,7 +184,7 @@ export default function ApplicationAgentInbox(props: {
     </button> : null}
     <p className="studio-ai-privacy"><ShieldCheck size={14}/>
       Private case data only. A due review is not a sent email or an employer response.
-      Checks run only when you explicitly select the action and do not enable
-      background workers or contact recruiters.</p>
+      Background worker activation has not been verified by this view. Explicit
+      checks never enable background workers or contact recruiters.</p>
   </section>;
 }
