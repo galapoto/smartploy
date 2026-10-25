@@ -231,3 +231,56 @@ def test_postgres_ledger_persistence_and_tenant_separation():
     finally:
         workspaces.delete(w.profile_id, w.workspace_id)
     assert store.get(w.profile_id, w.workspace_id) is None
+
+
+# SP42 — The user submitted to Ashby manually; capture only the visible,
+# reference-bearing, *same-job* browser observation. Never an employer ACK.
+ASHBY = "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application"
+
+
+def test_sp42_ashby_reference_observation_is_private_unverified_and_strips_tracking():
+    w = replace(kit(), application_url=ASHBY)
+    raw = import_value(w)
+    raw["confirmation_page_url"] = (
+        ASHBY + "/confirmation?tracking=secret#access-token"
+    )
+    receipt = validate_browser_receipt(w, raw, now=TIME)
+    assert receipt.reference == "RECEIPT-123456"
+    assert receipt.confirmation_page_url == ASHBY + "/confirmation"
+    assert "secret" not in str(receipt.to_dict())
+    assert receipt.to_dict()["status"] == "browser_observed_unverified"
+    assert receipt.to_dict()["independently_verified_by_employer"] is False
+    assert receipt.to_dict()["actually_submitted_count_changed"] is False
+    assert len(receipt.to_dict()["evidence_digest"]) == 64
+
+
+@pytest.mark.parametrize("wrong_page", [
+    "https://jobs.ashbyhq.com/synthetic-fi/other-job/application/confirmation",
+    "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst-evil/application",
+    "https://jobs.ashbyhq.com/other-board/junior-data-analyst/application",
+    "https://jobs.ashbyhq.com.evil.invalid/synthetic-fi/junior-data-analyst/application",
+    "https://jobs.lever.co/synthetic-fi/junior-data-analyst/application",
+    "https://evil.invalid/synthetic-fi/junior-data-analyst/application",
+    "http://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application",
+    "https://user:password@jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application",
+])
+def test_sp42_ashby_receipt_refuses_cross_job_or_untrusted_host(wrong_page):
+    w = replace(kit(), application_url=ASHBY)
+    raw = import_value(w)
+    raw["confirmation_page_url"] = wrong_page
+    with pytest.raises(ReceiptError):
+        validate_browser_receipt(w, raw, now=TIME)
+
+
+def test_sp42_ashby_receipt_never_bypasses_reviewed_revision_or_existing_status():
+    w = replace(kit(), application_url=ASHBY)
+    raw = import_value(w)
+    raw["confirmation_page_url"] = ASHBY
+    assert validate_browser_receipt(w, raw, now=TIME).status == "browser_observed_unverified"
+    for changed in (
+        replace(w, cv_text=w.cv_text + "stale"),
+        replace(w, status="self_reported_applied"),
+        replace(w, revision=w.revision + 1),
+    ):
+        with pytest.raises(ReceiptError):
+            validate_browser_receipt(changed, raw, now=TIME)
