@@ -238,6 +238,69 @@ def test_sp35_oidc_agent_inbox_is_read_only_paginated_and_owner_scoped(reviewed_
     ) is None
 
 
+def test_sp37_oidc_inbox_bulk_check_is_only_this_account_and_no_employer_io(reviewed_case):
+    """Same-email separate OIDC subjects: the bulk POST never scans globally."""
+    case = reviewed_case
+    api, work, headers = case["api"], case["work"], case["headers"]
+    start = api.post(
+        f"/api/v1/application-workspaces/{work.workspace_id}/agent",
+        headers=headers,
+    )
+    assert start.status_code == 201, start.text
+    agent = start.json()["agent"]
+    route = "/api/v1/application-agents/inbox/check-due"
+
+    # Mutating endpoints require the original signed-in same-origin account
+    # proof. Passing somebody else's expected-user ID is never authority.
+    assert api.post(route, headers={
+        **headers, "Origin": "https://attacker.example.invalid",
+    }).status_code == 403
+    assert api.post(route, headers={
+        **headers, "Sec-Fetch-Site": "cross-site",
+    }).status_code == 403
+    assert api.post(route, headers={
+        "Origin": headers["Origin"], "Sec-Fetch-Site": "same-origin",
+    }).status_code == 403
+    assert api.post(route, headers={
+        **headers,
+        "X-Smartploy-Expected-User-Id": case["b"].user_id,
+    }).status_code in {403, 409}
+
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
+    b_headers = {
+        **headers, "X-Smartploy-Expected-User-Id": case["b"].user_id,
+    }
+    other = api.post(route, headers=b_headers)
+    assert other.status_code == 200 and other.json()["cases_checked"] == 0
+    assert other.json()["in_app_reminders"] == 0
+    assert other.headers["Cache-Control"] == "private, no-store"
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+    assert api.get(
+        "/api/v1/application-agents/" + agent["agent_id"],
+    ).json()["agent"]["last_woke_at"] == ""
+
+    first = api.post(route, headers=headers)
+    assert first.status_code == 200 and first.headers["Cache-Control"] == "private, no-store"
+    body = first.json()
+    assert body["checked_in_app"] is True
+    assert body["cases_checked"] == 1
+    assert body["in_app_reminders"] == 1
+    assert body["workspace_updates_reconciled"] == 0
+    assert body["external_actions_performed"] == body["employer_contacts"] == 0
+    assert body["background_worker_verified"] is False
+    assert body["more_actionable_cases"] is False
+    again = api.post(route, headers=headers)
+    assert again.status_code == 200
+    assert again.json()["cases_checked"] == 0
+    assert again.json()["in_app_reminders"] == 0
+    assert [event["event_type"] for event in api.get(
+        "/api/v1/application-agents/" + agent["agent_id"],
+    ).json()["events"]] == ["case_created", "review_reminder_due"]
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(
+        case["a"], work.canonical_key,
+    ) is None
+
+
 def test_sp34_signed_in_oidc_check_now_is_exact_case_only_and_off_platform_safe(reviewed_case):
     """First-party OIDC two-subject check; no external employer traffic."""
     case = reviewed_case
