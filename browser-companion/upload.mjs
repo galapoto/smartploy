@@ -25,11 +25,33 @@ export function exactLeverForm(activeUrl, packetUrl) {
 }
 
 
+/* SP43: only the official Greenhouse-hosted standard job page is
+   eligible for applicant-reviewed form assistance. The old boards host
+   may redirect to the official job-boards host with the same board and job.
+   No embedded iframe, custom employer domain, query, fragment or other path.
+   This function NEVER grants employer final-click rights. */
+export function exactGreenhouseForm(activeUrl, packetUrl) {
+  try {
+    const page = new URL(activeUrl), intended = new URL(packetUrl);
+    const hosts = ["boards.greenhouse.io", "job-boards.greenhouse.io"];
+    return page.protocol === "https:" && intended.protocol === "https:" &&
+      hosts.includes(page.hostname) && hosts.includes(intended.hostname) &&
+      !page.username && !page.password && !intended.username && !intended.password &&
+      !page.port && !intended.port &&
+      !page.search && !page.hash && !intended.search && !intended.hash &&
+      /^\/[A-Za-z0-9_-]{1,100}\/jobs\/[0-9]{1,20}\/?$/.test(intended.pathname) &&
+      page.pathname.replace(/\/+$/, "") === intended.pathname.replace(/\/+$/, "");
+  } catch {
+    return false;
+  }
+}
+
 /* SP41: reuse the same reviewed PDF + original-user confirmation path on an
    exact Ashby /application route. Pure URL validation; no upload or submit.
    The existing Lever-only final-click adapter stays unchanged. */
 export function exactAssistedForm(activeUrl, packetUrl) {
-  if (exactLeverForm(activeUrl, packetUrl)) return true;
+  if (exactLeverForm(activeUrl, packetUrl) ||
+      exactGreenhouseForm(activeUrl, packetUrl)) return true;
   try {
     const current = new URL(activeUrl);
     const intended = new URL(packetUrl);
