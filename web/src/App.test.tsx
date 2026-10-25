@@ -228,7 +228,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       },
     } as never);
     render(<App />);
-    fireEvent.click((await screen.findAllByRole("button", { name: /^AutoApply$/ }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /AutoApply Select jobs for automated preparation/i }));
     expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("checkbox", { name: /select for preparation/i }));
@@ -254,7 +254,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       },
     } as never);
     render(<App />);
-    fireEvent.click((await screen.findAllByRole("button", { name: /^AutoApply$/ }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /AutoApply Select jobs for automated preparation/i }));
     await screen.findByRole("heading", { name: "Jobs from your CV" });
     fireEvent.click(screen.getByRole("checkbox", { name: /select for preparation/i }));
     fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
