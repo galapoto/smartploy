@@ -211,9 +211,10 @@ describe("Agent Zero in the existing application studio", () => {
     expect(screen.queryByRole("button", { name: /Check agent now/ })).toBeNull();
     expect(api.checkApplicationAgentNow).not.toHaveBeenCalled();
 
-    vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue(response([caseAgent]));
+    const nextCase: ApplicationAgent = { ...caseAgent, workspace_id: "workspace-B" };
+    vi.mocked(api.getApplicationAgentForWorkspace).mockResolvedValue(response([nextCase]));
     vi.mocked(api.getApplicationAgent).mockResolvedValue({
-      agent: caseAgent, events, count: 1, next_cursor: 1,
+      agent: nextCase, events, count: 1, next_cursor: 1,
       external_actions_authorized: false,
     });
     rerender(<ApplicationAgentCard workspaceId="workspace-B"
