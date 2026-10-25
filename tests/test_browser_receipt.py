@@ -284,3 +284,71 @@ def test_sp42_ashby_receipt_never_bypasses_reviewed_revision_or_existing_status(
     ):
         with pytest.raises(ReceiptError):
             validate_browser_receipt(changed, raw, now=TIME)
+
+
+def test_sp42_ashby_private_api_observation_does_not_claim_provider_acknowledgment():
+    """Existing owner-bound API persists manual Ashby evidence, no new tables."""
+    svc = SmartployService()
+    svc.register_source(SourcePolicy("manual-import", "Manual", "manual", ("manual",)))
+    api = TestClient(create_app(svc))
+    posted = api.post("/api/v1/jobs/ingest", json={
+        "observation": {
+            "source_id": "manual-import", "source_mode": "manual",
+            "source_url": ASHBY, "raw_text": "Synthetic IT analyst Helsinki",
+            "payload": {
+                "company": "Synthetic IT", "role_title": "Junior Data Analyst",
+                "description": "SQL Python", "application_url": ASHBY,
+                "location": "Helsinki",
+            },
+        }
+    })
+    assert posted.status_code == 200, posted.text
+    key = posted.json()["candidate"]["canonical_key"]
+    assert api.post("/api/v1/profile/facts", json={
+        "fact_type": "identity", "value": "Test Candidate", "approved": True,
+    }).status_code == 201
+    prepared = api.post(f"/api/v1/jobs/{key}/application-workspace")
+    assert prepared.status_code == 200, prepared.text
+    w = prepared.json()["workspace"]
+    now = datetime.now(timezone.utc)
+    raw = {
+        "schema": "smartploy.browser_receipt.v1",
+        "workspace_id": w["workspace_id"],
+        "document_revision": w["revision"],
+        "document_sha256": sha256(
+            (w["cv_text"] + "\0" + w["cover_letter_text"]).encode()
+        ).hexdigest(),
+        "application_url": ASHBY,
+        "confirmation_page_url": ASHBY + "/confirmation?private=discard#secret",
+        "reference": "ASHBY-SYNTH-2026",
+        "confirmation_page_sha256": "e" * 64,
+        "observed_at": now.isoformat(),
+        "confirmed_visible": True,
+    }
+    endpoint = f'/api/v1/application-workspaces/{w["workspace_id"]}/browser-receipt'
+    no_consent = api.post(endpoint, json={
+        "confirm_user_observed": False, "receipt": raw,
+    })
+    assert no_consent.status_code == 422
+    stored = api.post(endpoint, json={
+        "confirm_user_observed": True, "receipt": raw,
+    })
+    assert stored.status_code == 200, stored.text
+    payload = stored.json()
+    assert payload["external_confirmation_verified"] is False
+    assert payload["receipt"]["status"] == "browser_observed_unverified"
+    assert payload["receipt"]["independently_verified_by_employer"] is False
+    assert payload["receipt"]["confirmation_page_url"] == ASHBY + "/confirmation"
+    assert "private=discard" not in stored.text
+    assert "secret" not in stored.text
+    assert api.post(endpoint, json={
+        "confirm_user_observed": True, "receipt": raw,
+    }).status_code == 200
+    sibling = {**raw,
+        "confirmation_page_url":
+        "https://jobs.ashbyhq.com/synthetic-fi/other-job/application"}
+    assert api.post(endpoint, json={
+        "confirm_user_observed": True, "receipt": sibling,
+    }).status_code == 422
+    assert api.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
+    assert api.get(endpoint).json()["receipt"]["status"] == "browser_observed_unverified"
