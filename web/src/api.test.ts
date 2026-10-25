@@ -43,6 +43,7 @@ describe("browser writes carry a stable initiating-account precondition", () => 
       }, USER),
       () => api.deletePrivateSavedJob("saved-synthetic", USER),
       () => api.startApplicationWorkspace("fictional-job", USER),
+      () => api.checkApplicationAgentNow("agent-synthetic-a", USER),
       () => api.editApplicationWorkspace("draft-fake", 1, "fictional cv", "fictional letter", USER),
       () => api.markApplicationManuallySent("draft-fake", 1, "fictional-ref", USER),
       () => api.deleteApplicationWorkspace("draft-fake", USER),
@@ -91,6 +92,22 @@ describe("browser writes carry a stable initiating-account precondition", () => 
       "X-Smartploy-Expected-User-Id": USER,
     });
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("posts one owner-bound in-app check without employer data or outgoing payload", async () => {
+    await api.checkApplicationAgentNow("agent-synthetic-a", USER);
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/application-agents/agent-synthetic-a/check-now");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeUndefined();
+    expect(init.headers).toMatchObject({
+      "X-Smartploy-Expected-User-Id": USER,
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    await expect(api.checkApplicationAgentNow("agent-other", "")).rejects.toThrow(
+      /verified SmartPloy account/
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it("fails closed before fetch when the initiating account is missing", async () => {
