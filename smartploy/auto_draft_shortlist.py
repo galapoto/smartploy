@@ -19,6 +19,7 @@ from .application_agents import PostgresApplicationAgentRepository
 from .application_workspace import WorkspaceError, new_workspace
 from .application_workspace_storage import PostgresWorkspaceRepository
 from .cv_storage import PostgresCVRepository
+from .domain import sha256_text
 from .profile import CandidateProfile
 from .profile_storage import PostgresProfileRepository
 from .scoring import score_candidate
@@ -124,6 +125,56 @@ def _deadline_open(value: str, *, now: datetime | None = None) -> bool:
         return False
 
 
+def _original_ashby_source_for_auto_draft(candidate, source_id: str) -> bool:
+    """Admit an actual listed Ashby board job, not merely an ATS-like prefix.
+
+    SP20 already imports Ashby through its reviewed read-only public API.
+    A local background draft needs a stricter gate than search display: its
+    original board URL, optional application path, stable external ID and
+    provider/tenant evidence must all describe the SAME exact employer job.
+    This creates only a private reviewable draft, never submission rights.
+    """
+    tenant = source_id.removeprefix("ashby-")
+    if not re.fullmatch(r"[a-z0-9-]{1,100}", tenant):
+        return False
+    details = candidate.job.raw.get("source_details")
+    if (
+        not isinstance(details, dict)
+        or details.get("provider") != "ashby"
+        or str(details.get("tenant") or "").casefold() != tenant
+        or candidate.metadata.get("terms_review_status") != "approved"
+    ):
+        return False
+    source_url = str(candidate.job.raw.get("source_url") or "")
+    if candidate.job.raw.get("source_external_id") != sha256_text(source_url):
+        # Reuse Ashby's existing source identity: SHA-256 of the canonical
+        # published board URL, NOT a title-derived or user-supplied ID.
+        return False
+    try:
+        source = urlsplit(source_url)
+        application = urlsplit(candidate.job.application_url)
+        for address in (source, application):
+            if (
+                address.scheme != "https"
+                or address.hostname != "jobs.ashbyhq.com"
+                or address.username or address.password
+                or address.port not in (None, 443)
+                or address.fragment
+            ):
+                return False
+    except ValueError:
+        return False
+    board_path = source.path.strip("/").split("/")
+    apply_path = application.path.strip("/").split("/")
+    return (
+        len(board_path) == 2
+        and board_path[0].casefold() == tenant
+        and bool(board_path[1])
+        and len(board_path[1]) <= 160
+        and apply_path in (board_path, [*board_path, "application"])
+    )
+
+
 def _approved_source_for_auto_draft(candidate) -> bool:
     """Only source-policy-approved employer/public feeds may create drafts.
 
@@ -158,6 +209,14 @@ def _approved_source_for_auto_draft(candidate) -> bool:
         return source_ids == ("job-market-finland",)
     if job_class == "public_sector_jobs":
         return source_ids == ("kuntarekry",)
+    # SP40: Ashby's existing public adapter previously discovered Finnish
+    # vacancies but its source ID was absent here, so they NEVER advanced to
+    # opted-in AutoApply drafts. Use the real adapter's exact provenance;
+    # mixed-origin merged records remain in the manual review lane.
+    if any(sid.startswith("ashby-") for sid in source_ids):
+        return len(source_ids) == 1 and _original_ashby_source_for_auto_draft(
+            candidate, source_ids[0]
+        )
     return all(
         sid.startswith(("lever-global-", "lever-eu-", "greenhouse-",
                         "smartrecruiters-"))
