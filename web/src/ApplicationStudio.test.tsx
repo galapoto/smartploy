@@ -434,6 +434,7 @@ describe("Application Studio private-read account boundary", () => {
     expect((screen.getByRole("textbox", { name: "Editable cover letter text" }) as HTMLTextAreaElement).readOnly).toBe(true);
     expect((screen.getByRole("button", { name: /Copy approved autofill packet/ }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: /Save changes/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /Confirm outcome of previous attempt/ }) as HTMLButtonElement).disabled).toBe(true);
 
     // The existing owner-bound receipt import remains available AFTER claim
     // reservation; it is evidence-only and cannot perform an employer action.
@@ -475,8 +476,9 @@ describe("Application Studio private-read account boundary", () => {
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
     const reconcile = await screen.findByRole("button", { name: /Confirm outcome of previous attempt/ });
+    expect((reconcile as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(reconcile);
-    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
     expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
     expect(api.importBrowserReceipt).not.toHaveBeenCalled();
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
