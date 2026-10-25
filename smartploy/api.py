@@ -2297,29 +2297,15 @@ def create_app(
     def edit_application_workspace(
         workspace_id: str, payload: WorkspaceEditPayload, request: Request
     ) -> dict[str, Any]:
-        tenant, binding = tenant_context(request)
-        profile_id = tenant.profile_repository.profile_id
-        # A one-use employer attempt burns an immutable review of THIS CV and
-        # cover letter. Editing through a direct API call must not bypass the
-        # browser's disabled Save button while the outcome is unresolved.
-        # Reuse the existing owner-bound cross-device claim ledger; this is
-        # only a read, and never authorizes another employer submission.
-        workspace = app.state.workspace_repository.get(profile_id, workspace_id)
-        if workspace is None:
-            raise HTTPException(status_code=404, detail="Application workspace not found")
-        if binding and existing_employer_claim(binding, workspace) is not None:
-            raise HTTPException(
-                status_code=409,
-                detail="A previous employer attempt is reserved; documents are frozen for reconciliation",
-            )
-        if app.state.browser_receipts.get(profile_id, workspace_id) is not None:
+        tenant, _ = tenant_context(request)
+        if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:
             raise HTTPException(
                 status_code=409,
                 detail="This application has an observed employer receipt and its submitted documents are frozen",
             )
         try:
             item = app.state.workspace_repository.edit(
-                profile_id, workspace_id,
+                tenant.profile_repository.profile_id, workspace_id,
                 expected_revision=payload.expected_revision,
                 cv_text=payload.cv_text, cover_letter_text=payload.cover_letter_text,
             )
