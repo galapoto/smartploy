@@ -220,6 +220,37 @@ export function startApplicationWorkspace(
 }
 
 
+/** Original evidence-only SmartPloy templates, not an external AI provider.
+ * Returns a proposed letter for the current private workspace revision.
+ * It is neither saved nor sent to an employer.
+ */
+export type EvidenceLetterProposal = {
+  cover_letter: string;
+  language: "fi" | "en";
+  workspace_revision: number;
+  review_required: true;
+  saved: false;
+  external_actions_performed: 0;
+  employer_contacts: 0;
+};
+
+export function proposeEvidenceLetter(
+  workspaceId: string, expectedRevision: number, language: "fi" | "en",
+  expectedUserId: string,
+): Promise<EvidenceLetterProposal> {
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {
+    return Promise.reject(new Error("Save and refresh this application before redrafting"));
+  }
+  return request<EvidenceLetterProposal>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
+      + "/letter-proposal",
+    { method: "POST", body: JSON.stringify({
+      expected_revision: expectedRevision, language,
+    }) },
+    expectedUserId,
+  );
+}
+
 /** Agent Zero never sends, calls, submits, or grants external actions. */
 export function getApplicationAgents(): Promise<{
   agents: ApplicationAgent[];
