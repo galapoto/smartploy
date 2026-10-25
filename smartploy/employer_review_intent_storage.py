@@ -87,7 +87,7 @@ class PostgresEmployerReviewIntentRepository:
 
     @staticmethod
     def _employer_key(application_url: str) -> str:
-        """Review-only identity: preserve Lever keys, isolate Ashby from submits.
+        """Review-only identity: preserve Lever keys, isolate Ashby/Greenhouse from submits.
 
         The original employer-claim hash ONLY knows Lever's /org/job/apply.
         Do not extend that submit primitive. Instead give signed-in Ashby
@@ -104,6 +104,16 @@ class PostgresEmployerReviewIntentRepository:
                 material = (
                     "ashby-review-only-v1\0" + segments[0].casefold() +
                     "\0" + segments[1].casefold()
+                )
+                return sha256(material.encode("utf-8")).hexdigest()
+            if parsed.hostname in {"boards.greenhouse.io", "job-boards.greenhouse.io"}:
+                segments = parsed.path.strip("/").split("/")
+                # Same Greenhouse-owned job under the old and new official
+                # board hosts shares one non-bearer review key, never Lever's
+                # employer final-click identity.
+                material = (
+                    "greenhouse-review-only-v1\0" + segments[0].casefold()
+                    + "\0" + segments[2]
                 )
                 return sha256(material.encode("utf-8")).hexdigest()
             return _employer_job_key_sha256(application_url)
