@@ -1363,3 +1363,55 @@ def test_partner_lever_revoked_permission_and_invalid_consent_cannot_call_api(si
     assert api.post(route+"/partner-lever-apply",json=payload,headers=headers).status_code==409
     assert requests==[]
     assert PostgresEmployerSubmitClaimRepository(DSN).get_for_employer_url(a,url) is None
+
+
+def test_sp41_real_postgres_ashby_review_verifies_owner_without_employer_submit_claim(scoped):
+    """Use original owner/job PostgreSQL locks, but NEVER extend Lever claim rights."""
+    a, b, wa, wb, key, _, fingerprint, letter, ledger, _ = scoped
+    url = "https://jobs.ashbyhq.com/synthetic-fi/junior-data-analyst/application"
+    with connect(DSN) as conn:
+        conn.execute(
+            "UPDATE smartploy_jobs SET candidate=%s WHERE canonical_key=%s",
+            (Jsonb({
+                "description_fingerprint": fingerprint,
+                "job": {"application_url": url},
+            }), key),
+        )
+        conn.execute(
+            """UPDATE smartploy_application_workspaces
+               SET application_url=%s WHERE workspace_id IN (%s,%s)""",
+            (url, wa, wb),
+        )
+    repo = PostgresEmployerReviewIntentRepository(DSN)
+    digest = sha256((
+        "Reviewed synthetic resume with sufficient content" + "\0" + letter
+    ).encode()).hexdigest()
+    args = dict(
+        workspace_id=wa, expected_revision=1,
+        expected_application_url=url, expected_job_fingerprint=fingerprint,
+        expected_document_sha256=digest, expected_cv_pdf_sha256="e" * 64,
+    )
+    with pytest.raises(EmployerReviewIntentDenied, match="signed-in review"):
+        repo.verify_for_companion(a, **args)
+    prepared, created = repo.prepare(
+        a, **args, explicit_user_review=True,
+        acknowledge_no_automatic_submit=True,
+    )
+    assert created and prepared.state == "pending"
+    assert prepared.public_status(workspace_id=wa, revision=1)["browser_grant_issued"] is False
+    assert repo.get(b, url) is None
+    verified = repo.verify_for_companion(a, **args)
+    assert verified.intent_id == prepared.intent_id
+    assert repo._employer_key(url) == repo._employer_key(url.replace("/application", ""))
+    # Original cross-device final claim still accepts ONLY Lever; no row
+    # can be reserved for an Ashby application via a review marker.
+    with pytest.raises(EmployerSubmitClaimDenied):
+        ledger.reserve(
+            a, workspace_id=wa, expected_revision=1,
+            expected_application_url=url, expected_job_fingerprint=fingerprint,
+            explicit_final_user_approval=True, employer_submission_permitted=True,
+        )
+    assert ledger.get(a, key) is None
+    repo.cancel(a, application_url=url)
+    with pytest.raises(EmployerReviewIntentDenied, match="cancelled"):
+        repo.verify_for_companion(a, **args)
