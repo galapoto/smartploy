@@ -9,14 +9,21 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
   try {
     here = new URL(location.href); intended = new URL(approvedUrl);
   } catch { return stop("An application URL is invalid."); }
-  const posting = intended.pathname.replace(/\/apply\/?$/, "").replace(/\/+$/, "");
+  const leverPosting = intended.pathname.replace(/\/apply\/?$/, "").replace(/\/+$/, "");
+  const ashbyPosting = intended.pathname.replace(/\/application\/?$/, "").replace(/\/+$/, "");
+  const lever = ["jobs.lever.co", "jobs.eu.lever.co"].includes(here.hostname) &&
+    /^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/u.test(leverPosting) &&
+    [leverPosting + "/apply", leverPosting + "/apply/"].includes(here.pathname);
+  const ashby = here.hostname === "jobs.ashbyhq.com" &&
+    /^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}$/u.test(ashbyPosting) &&
+    !here.search && !intended.search && !here.hash && !intended.hash &&
+    [ashbyPosting + "/application", ashbyPosting + "/application/"]
+      .includes(here.pathname);
   if (here.protocol !== "https:" || intended.protocol !== "https:" ||
-      !["jobs.lever.co", "jobs.eu.lever.co"].includes(here.hostname) ||
       here.origin !== intended.origin ||
       here.username || here.password || intended.username || intended.password ||
-      here.port || intended.port ||
-      !/^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/u.test(posting) ||
-      ![posting + "/apply", posting + "/apply/"].includes(here.pathname) ||
+      here.port || intended.port || !(lever || ashby) ||
+      (typeof window !== "undefined" && window.top !== window.self) ||
       location.href !== inspectedUrl) {
     return stop("The employer or application form changed.");
   }
