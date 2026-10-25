@@ -49,6 +49,7 @@ describe("browser writes carry a stable initiating-account precondition", () => 
       () => api.markApplicationManuallySent("draft-fake", 1, "fictional-ref", USER),
       () => api.deleteApplicationWorkspace("draft-fake", USER),
       () => api.requestLocalAISuggestions("draft-fake", 1, USER),
+      () => api.proposeEvidenceLetter("draft-fake", 1, "fi", USER),
       () => api.createBrowserHandoffPacket("draft-fake", 1, USER),
       () => api.importBrowserReceipt("draft-fake", {
         schema: "smartploy.browser_receipt.v1",
@@ -88,6 +89,31 @@ describe("browser writes carry a stable initiating-account precondition", () => 
     await expect(api.checkDueApplicationAgentInbox("")).rejects.toThrow(
       /verified SmartPloy account/,
     );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("requests an approved-evidence letter only for one owner and document revision", async () => {
+    await api.proposeEvidenceLetter("workspace/private", 7, "fi", USER);
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(
+      "/api/v1/application-workspaces/workspace%2Fprivate/letter-proposal",
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      expected_revision: 7, language: "fi",
+    });
+    expect(init.headers).toMatchObject({
+      "X-Smartploy-Expected-User-Id": USER,
+    });
+    await expect(api.proposeEvidenceLetter(
+      "workspace/private", 0, "fi", USER
+    )).rejects.toThrow(/Save and refresh/);
+    await expect(api.proposeEvidenceLetter(
+      "workspace/private", -1, "en", USER
+    )).rejects.toThrow(/Save and refresh/);
+    await expect(api.proposeEvidenceLetter(
+      "workspace/private", 7, "fi", ""
+    )).rejects.toThrow(/verified SmartPloy account/);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
