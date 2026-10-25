@@ -34,6 +34,7 @@ vi.mock("./api", () => ({
   deleteApplicationWorkspace: vi.fn(),
   markApplicationManuallySent: vi.fn(),
   requestLocalAISuggestions: vi.fn(),
+  proposeEvidenceLetter: vi.fn(),
   createBrowserHandoffPacket: vi.fn(),
   importBrowserReceipt: vi.fn(),
   applicationDownloadUrl: vi.fn(() => "/synthetic-download"),
@@ -189,6 +190,14 @@ beforeEach(() => {
   vi.mocked(api.editApplicationWorkspace).mockImplementation(async (_, __, cvText, coverLetterText) =>
     ({ workspace: { ...job("A"), cv_text: cvText, cover_letter_text: coverLetterText, revision: 2 } })
   );
+  vi.mocked(api.proposeEvidenceLetter).mockImplementation(async (_, revision, language) => ({
+    cover_letter: language === "fi"
+      ? "Hei rekrytointitiimi,\\n\\nOsaaminen: Python\\n[Kerro omin sanoin]"
+      : "Dear Hiring Team,\\n\\nSkill: Python\\n[Explain in your own words]",
+    language, workspace_revision: revision,
+    review_required: true, saved: false,
+    external_actions_performed: 0, employer_contacts: 0,
+  }));
   vi.mocked(api.requestLocalAISuggestions).mockResolvedValue({
     workspace_revision: 1,
     suggestion: {
@@ -527,6 +536,88 @@ describe("Application Studio private-read account boundary", () => {
     expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
   });
 
+
+  it("previews approved-evidence Finnish text without changing uploaded CV or saving automatically", async () => {
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const originalCV = (screen.getByRole("textbox", {
+      name: "Editable CV text",
+    }) as HTMLTextAreaElement).value;
+    const initialLetter = (screen.getByRole("textbox", {
+      name: "Editable cover letter text",
+    }) as HTMLTextAreaElement).value;
+    expect(initialLetter).toBe("PRIVATE-LETTER-A");
+    fireEvent.click(screen.getByRole("button", { name: "Finnish draft" }));
+    await waitFor(() => expect(api.proposeEvidenceLetter).toHaveBeenCalledWith(
+      "workspace-A", 1, "fi", "usr-a",
+    ));
+    const letter = screen.getByRole("textbox", {
+      name: "Editable cover letter text",
+    }) as HTMLTextAreaElement;
+    await waitFor(() => expect(letter.value).toContain("Hei rekrytointitiimi"));
+    expect((screen.getByRole("textbox", {
+      name: "Editable CV text",
+    }) as HTMLTextAreaElement).value).toBe(originalCV);
+    expect(screen.getByText(/Nothing was sent to an employer/)).toBeTruthy();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", 1, originalCV, expect.stringContaining("Hei rekrytointitiimi"), "usr-a",
+    ));
+  });
+
+  it("never overwrites unsaved applicant wording after declined language confirmation", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const letter = screen.getByRole("textbox", {
+      name: "Editable cover letter text",
+    }) as HTMLTextAreaElement;
+    fireEvent.change(letter, { target: { value: "Personally authored and not yet saved" } });
+    fireEvent.click(screen.getByRole("button", { name: "English draft" }));
+    expect(letter.value).toBe("Personally authored and not yet saved");
+    expect(window.confirm).toHaveBeenCalled();
+    expect(api.proposeEvidenceLetter).not.toHaveBeenCalled();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("does not publish stale language text after same-email sign-in changes", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.proposeEvidenceLetter>>>();
+    vi.mocked(api.proposeEvidenceLetter).mockReturnValue(pending.promise);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Finnish draft" }));
+    await waitFor(() => expect(api.proposeEvidenceLetter).toHaveBeenCalledTimes(1));
+    activeUser = "usr-b";
+    pending.resolve({
+      cover_letter: "PRIVATE-PREVIOUS-ACCOUNT-FINNISH-LETTER",
+      language: "fi", workspace_revision: 1,
+      review_required: true, saved: false,
+      external_actions_performed: 0, employer_contacts: 0,
+    });
+    expect(await screen.findByRole("heading", {
+      name: "Account verification required",
+    })).toBeTruthy();
+    expect(screen.queryByText(/PRIVATE-PREVIOUS-ACCOUNT-FINNISH-LETTER/)).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("cannot redraft once a cross-device employer final attempt is reserved", async () => {
+    vi.mocked(api.getEmployerAttemptStatus).mockResolvedValue({
+      previous_attempt_reserved: true, state: "uncertain",
+      requires_human_reconciliation: true,
+      automatic_employer_submit_authorized: false,
+      external_confirmation_verified: false,
+      cross_device_server_claim_required: true,
+    });
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    await screen.findByLabelText("Reserved attempt reconciliation");
+    expect((screen.getByRole("button", { name: "Finnish draft" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "English draft" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(api.proposeEvidenceLetter).not.toHaveBeenCalled();
+  });
 
   it("keeps normal same-account loading, edits and refresh available", async () => {
     studio();

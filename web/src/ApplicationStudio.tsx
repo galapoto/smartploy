@@ -7,7 +7,7 @@ import {
 import {
   applicationDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
   getApplicationWorkspaces, getApplicationWorkspaceById, markApplicationManuallySent,
-  getLocalAIStatus, requestLocalAISuggestions,
+  getLocalAIStatus, requestLocalAISuggestions, proposeEvidenceLetter,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
   getEmployerAttemptStatus, getEmployerReviewIntent, getEmployerFinalActionReadiness,
   getLeverPartnerReadiness, getLeverPartnerReceipt, sendLeverPartnerApplication,
@@ -57,6 +57,7 @@ export default function ApplicationStudio(props: {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAIBusy] = useState(false);
+  const [letterBusy, setLetterBusy] = useState(false);
   const [aiStatus, setAIStatus] = useState<LocalAIStatus | null>(null);
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
   const [handoff, setHandoff] = useState<BrowserHandoffReadiness | null>(null);
@@ -108,7 +109,7 @@ export default function ApplicationStudio(props: {
     setPartnerReadiness(null); setPartnerReceipt(null); setPartnerBusy(false); setHandoffPacketText("");
     setBrowserReceipt(null); setReceiptOpen(false); setReceiptInput("");
     setMessage(""); setError(ACCOUNT_CHANGED_NOTICE);
-    setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
+    setBusy(false); setAIBusy(false); setLetterBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
     setAccountBlocked(true); setLoading(false);
   }, []);
 
@@ -239,7 +240,7 @@ export default function ApplicationStudio(props: {
     const key = selected ? JSON.stringify([selected.workspace_id, selected.revision]) : "";
     if (selectedDraftRef.current.key !== key) {
       selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
-      setBusy(false); setAIBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
+      setBusy(false); setAIBusy(false); setLetterBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
       setAISuggestion(null);
       setCvText(selected?.cv_text || "");
       setLetterText(selected?.cover_letter_text || "");
@@ -366,6 +367,46 @@ export default function ApplicationStudio(props: {
     } catch (exc) {
       reportActionError(exc, "Draft could not be saved.");
     } finally { if (isCurrentDraft(ticket)) setBusy(false); }
+  }
+
+  async function redraftLetter(language: "fi" | "en") {
+    if (!selected || selected.status !== "draft" || busy || letterBusy ||
+        aiBusy || !!browserReceipt || !!partnerReceipt ||
+        employerAttempt?.previous_attempt_reserved) return;
+    if (dirty && !window.confirm(
+      "Replace your current unsaved cover-letter changes with a new " +
+      (language === "fi" ? "Finnish" : "English") +
+      " draft? Unsaved CV edits will remain in the editor, but neither " +
+      "document will be saved automatically."
+    )) return;
+    const ticket = captureDraft(selected);
+    setLetterBusy(true); setError(""); setMessage("");
+    try {
+      // Reuse the same account- and saved-revision checks that guard edits.
+      const proposal = await runPrivateAction(
+        () => proposeEvidenceLetter(
+          selected.workspace_id, selected.revision, language,
+          props.expectedUserId,
+        ), ticket,
+      );
+      if (!isCurrentDraft(ticket)) return;
+      if (proposal.workspace_revision !== selected.revision ||
+          !proposal.review_required || proposal.saved ||
+          proposal.employer_contacts !== 0 ||
+          proposal.external_actions_performed !== 0) {
+        throw new Error("The private cover-letter proposal was not safe to use");
+      }
+      setLetterText(proposal.cover_letter);
+      setMessage(
+        (language === "fi" ? "Finnish" : "English") +
+        " evidence-backed draft inserted. Review every claim, fill the personal " +
+        "motivation prompt and click Save changes. Nothing was sent to an employer."
+      );
+    } catch (exc) {
+      reportActionError(exc, "Unable to create a private evidence-backed draft.");
+    } finally {
+      setLetterBusy(false);
+    }
   }
 
   async function askLocalAI() {
@@ -899,12 +940,27 @@ export default function ApplicationStudio(props: {
         </div>
         <div className="studio-document">
           <div className="studio-document-head"><strong><FileCheck2 size={17}/> Cover letter draft</strong><span>{letterText.length.toLocaleString()} / 10,000 characters</span></div>
+          {selected.status === "draft" ? <div className="studio-letter-language" aria-label="Cover letter language">
+            <span>Draft using approved experience:</span>
+            <button className="outline-btn compact" type="button"
+              onClick={() => void redraftLetter("fi")}
+              disabled={busy || aiBusy || letterBusy || !!browserReceipt ||
+                !!partnerReceipt || !!employerAttempt?.previous_attempt_reserved}>
+              {letterBusy ? "Preparing…" : "Finnish draft"}
+            </button>
+            <button className="outline-btn compact" type="button"
+              onClick={() => void redraftLetter("en")}
+              disabled={busy || aiBusy || letterBusy || !!browserReceipt ||
+                !!partnerReceipt || !!employerAttempt?.previous_attempt_reserved}>
+              {letterBusy ? "Preparing…" : "English draft"}
+            </button>
+          </div> : null}
           <textarea aria-label="Editable cover letter text" rows={13} maxLength={10000}
             readOnly={selected.status !== "draft" || !!browserReceipt ||
               employerAttempt?.previous_attempt_reserved === true} value={letterText}
             onChange={(event) => setLetterText(event.target.value)}
             placeholder="Your reviewed cover letter" />
-          <small>Edit the draft to include specific, accurate examples. Draft language is not an AI quality guarantee.</small>
+          <small>Only approved job-relevant facts are proposed. Add your personal motivation and verify every claim; replacing the text never saves or submits it automatically.</small>
           <div className="studio-export">
             <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "letter", "docx")}
               className={"outline-btn compact" + (dirty ? " disabled" : "")}

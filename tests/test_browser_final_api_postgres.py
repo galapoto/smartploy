@@ -238,6 +238,82 @@ def test_sp35_oidc_agent_inbox_is_read_only_paginated_and_owner_scoped(reviewed_
     ) is None
 
 
+def test_sp38_job_specific_language_proposal_is_owner_bound_and_does_not_send(reviewed_case):
+    """Real Postgres + same-email OIDC; preview is never a model or send."""
+    case = reviewed_case
+    api, work, headers = case["api"], case["work"], case["headers"]
+    route = f"/api/v1/application-workspaces/{work.workspace_id}/letter-proposal"
+    before = api.get(
+        f"/api/v1/application-workspaces/{work.workspace_id}",
+    ).json()["workspace"]
+    for language, prefix, evidence in (
+        ("fi", "Hei rekrytointitiimi", "Osaaminen: Python SQL"),
+        ("en", "Dear Hiring Team", "Skill: Python SQL"),
+    ):
+        result = api.post(
+            route, headers=headers,
+            json={"expected_revision": work.revision, "language": language},
+        )
+        assert result.status_code == 200, result.text
+        assert result.headers["Cache-Control"] == "private, no-store"
+        data = result.json()
+        assert data["language"] == language
+        assert data["cover_letter"].startswith(prefix)
+        assert evidence in data["cover_letter"]
+        assert data["review_required"] is True
+        assert data["saved"] is False
+        assert data["workspace_revision"] == work.revision
+        assert data["external_actions_performed"] == 0
+        assert data["employer_contacts"] == 0
+        assert "contact@other-applicant.invalid" not in data["cover_letter"]
+
+    after = api.get(
+        f"/api/v1/application-workspaces/{work.workspace_id}",
+    ).json()["workspace"]
+    assert after["revision"] == before["revision"] == work.revision
+    assert after["cv_text"] == before["cv_text"]
+    assert after["cover_letter_text"] == before["cover_letter_text"]
+    assert api.post(route, headers=headers, json={
+        "expected_revision": work.revision + 1, "language": "en",
+    }).status_code == 409
+    assert api.post(route, headers=headers, json={
+        "expected_revision": work.revision, "language": "de",
+    }).status_code == 422
+    assert api.post(route, headers=headers, json={
+        "expected_revision": work.revision, "language": "en", "send": True,
+    }).status_code == 422
+    assert api.post(route, headers={
+        **headers, "Origin": "https://attacker.example.invalid",
+    }, json={
+        "expected_revision": work.revision, "language": "en",
+    }).status_code == 403
+    assert api.post(route, headers={
+        **headers, "Sec-Fetch-Site": "cross-site",
+    }, json={
+        "expected_revision": work.revision, "language": "en",
+    }).status_code == 403
+    # The original account-switch middleware rejects before this route:
+    # its established response is 409 Conflict; explicit route refusal is
+    # 403 Forbidden. Both are fail-closed and neither reaches the draft.
+    assert api.post(route, headers={
+        **headers, "X-Smartploy-Expected-User-Id": case["b"].user_id,
+    }, json={
+        "expected_revision": work.revision, "language": "en",
+    }).status_code in {403, 409}
+
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
+    other = api.post(route, headers={
+        **headers, "X-Smartploy-Expected-User-Id": case["b"].user_id,
+    }, json={
+        "expected_revision": work.revision, "language": "fi",
+    })
+    assert other.status_code == 404
+    api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(
+        case["a"], work.canonical_key,
+    ) is None
+
+
 def test_sp37_oidc_inbox_bulk_check_is_only_this_account_and_no_employer_io(reviewed_case):
     """Same-email separate OIDC subjects: the bulk POST never scans globally."""
     case = reviewed_case

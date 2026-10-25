@@ -121,6 +121,51 @@ def test_missing_contact_or_unreviewed_letter_prevents_handoff():
     assert not review_handoff(ready_workspace(), candidate(), without_email)["ready"]
 
 
+@pytest.mark.parametrize("prompt", [
+    "[Kerro omin sanoin, miksi tehtävä kiinnostaa.]",
+    "[Lisää tehtävään liittyvä kokemus.]",
+    "[Oma nimi]",
+    "[Täydennä kokemus]",
+    "[Kirjoita oma esimerkki]",
+    "[Explain why you are interested]",
+])
+def test_sp38_finnish_and_english_placeholders_block_employer_handoff(prompt):
+    item = replace(
+        ready_workspace(),
+        cover_letter_text=(
+            "Hei, olen kiinnostunut tehtävästä. Minulla on Python-osaamista. "
+            + prompt +
+            " Ystävällisin terveisin, Test Candidate."
+        ),
+    )
+    readiness = review_handoff(item, candidate(), profile())
+    assert readiness["ready"] is False
+    assert any("placeholders" in text for text in readiness["blockers"])
+    with pytest.raises(HandoffError, match="not ready"):
+        make_browser_packet(item, candidate(), profile())
+
+
+def test_sp38_real_finnish_initial_letter_never_counts_as_reviewed_handoff():
+    p, job = profile(), candidate()
+    initial = new_workspace(
+        replace(job, job=replace(job.job, language="Finnish")), p,
+    )
+    assert initial.cover_letter_text.startswith("Hei rekrytointitiimi")
+    assert "[Kerro omin sanoin" in initial.cover_letter_text
+    assert "Osaaminen: Python" in initial.cover_letter_text
+    readiness = review_handoff(initial, job, p)
+    assert readiness["ready"] is False
+    assert any("placeholders" in text for text in readiness["blockers"])
+    # An approved fact is not permission to bypass personal review.
+    completed = replace(initial, cover_letter_text=(
+        "Hei rekrytointitiimi,\\n\\n"
+        "Haen Junior Data Analyst -tehtävää. Osaamiseni sisältää Pythonin. "
+        "Olen perehtynyt työnkuvaan ja tarkistanut väitteeni.\\n\\n"
+        "Ystävällisin terveisin, Test Candidate"
+    ))
+    assert review_handoff(completed, job, p)["ready"] is True
+
+
 def test_changed_job_expired_listing_or_url_mismatch_blocks():
     item = ready_workspace()
     assert not review_handoff(item, replace(candidate(), source_current=False), profile())["ready"]

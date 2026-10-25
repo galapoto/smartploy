@@ -19,8 +19,12 @@ from .profile import CandidateProfile
 
 SCHEMA = "smartploy.browser_handoff.v2"
 LIFETIME_SECONDS = 15 * 60
+# Review markers are intentionally present in both language templates.
+# Existing browser handoff AND the server-atomic employer preflight reuse
+# this single regex. Finnish markers must NEVER bypass completion checks.
 PLACEHOLDERS = re.compile(
-    r"\[(?:explain|your name|insert|add|describe|fill in|why|placeholder)\b[^]]*]",
+    r"\[(?:explain|your name|insert|add|describe|fill in|why|placeholder|"
+    r"kerro|lisää|oma nimi|täydennä|kirjoita|esimerkki)\b[^]]*]",
     re.IGNORECASE,
 )
 
