@@ -102,10 +102,26 @@ test("real reviewed contact and ordinary-question executors fill Ashby without s
   expect(outside()).toBe(0);
 });
 
+// Reuse the original Lever Chromium harness's exact inspected-label
+// extraction. Headless Chromium can expose CSS-associated labels differently
+// from the source markup, and extension transfer must bind to the OBSERVED
+// field label rather than our assumption about HTML source text.
+async function observedResumeLabel(page: Page): Promise<string> {
+  return page.locator("#cv").evaluate((el: HTMLInputElement) => {
+    const found = el.labels?.[0]?.innerText ||
+      el.getAttribute("aria-label") ||
+      (el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.innerText : "") ||
+      el.getAttribute("placeholder") || el.name || el.id || "";
+    return String(found).trim().slice(0,150);
+  });
+}
+
 test("real Ashby reviewed-PDF adapter attaches only the exact fingerprint without submitting",async ({page})=>{
   const outside=await setup(page);
+  const label = await observedResumeLabel(page);
   const out=await page.evaluate(
-    args=>(window as any).attachReviewedPdf(args),pdfPayload
+    args=>(window as any).attachReviewedPdf(args),
+    {...pdfPayload,expected_label:label}
   );
   expect(out.status,JSON.stringify(out)).toBe("attached_locally");
   expect(await page.locator("#cv").evaluate(
@@ -126,7 +142,7 @@ test("cross-job Ashby PDF, changed labels and hidden legal metadata cannot be au
   expect(offsite.status).toBe("blocked");
   const altered=await page.evaluate(
     args=>(window as any).attachReviewedPdf(args),
-    {...pdfPayload,sha256:"0".repeat(64)}
+    {...pdfPayload,expected_label:await observedResumeLabel(page),sha256:"0".repeat(64)}
   );
   expect(altered.status).toBe("blocked");
   const legal=await page.evaluate(
