@@ -216,3 +216,55 @@ def test_greenhouse_foreign_location_is_not_overridden_by_finnish_office():
         assert adapter.last_total_postings == 2
     finally:
         client.close()
+
+
+def test_sp43_real_greenhouse_public_finnish_job_reaches_reviewed_browser_handoff():
+    """Reuse the actual SP20 read-only adapter, source policy, CV workspace and packet."""
+    from dataclasses import replace
+    from datetime import datetime, timezone
+    from smartploy.application_workspace import new_workspace
+    from smartploy.browser_handoff import make_browser_packet, review_handoff
+    from smartploy.domain import normalize_observation
+    from smartploy.profile import CandidateProfile, ProfileFact
+
+    source = posting(123456789, "Junior Data Engineer", "Helsinki, Finland")
+    foreign = posting(123456790, "QA Tester", "Stockholm",country="Sweden")
+    unseen = posting(123456791, "Talent pool", "Helsinki",internal_id=None)
+    calls = []
+    def respond(request):
+        calls.append((request.method,str(request.url)))
+        return httpx.Response(200,json={
+            "jobs":[source,foreign,unseen],"meta":{"total":3},
+        })
+    adapter,client=adapter_for(respond)
+    try:
+        observations=adapter.fetch_all(
+            observed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        )
+        assert len(observations)==1
+        candidate=normalize_observation(observations[0],adapter.policy()).candidate
+        assert candidate is not None and candidate.source_current
+        assert candidate.job.application_url==source["absolute_url"]
+        assert candidate.source_ids==("greenhouse-acme",)
+        person=CandidateProfile("sp43-synthetic-user",(
+            ProfileFact("identity","Reviewed Candidate","user-entered",approved=True).normalized(),
+            ProfileFact("email","reviewed@example.invalid","user-entered",approved=True).normalized(),
+            ProfileFact("skill","SQL","user-entered",approved=True).normalized(),
+        ))
+        space=new_workspace(candidate,person,source_cv_text=(
+            "Reviewed Candidate, SQL and Python experience, Helsinki."
+        ))
+        space=replace(space,cover_letter_text=(
+            "Dear Hiring Team, I reviewed this Junior Data Engineer position. "
+            "My SQL and Python experience supports its requirements. "
+            "Kind regards, Reviewed Candidate."
+        ))
+        assert review_handoff(space,candidate,person)["ready"] is True
+        packet=make_browser_packet(space,candidate,person)
+        assert packet["application_url"]==source["absolute_url"]
+        assert packet["privacy"]["employer_submit_allowed_without_new_approval"] is False
+        assert packet["fields"]["email"]=="reviewed@example.invalid"
+        assert "SQL and Python experience, Helsinki" not in str(packet)
+        assert calls==[("GET","https://boards-api.greenhouse.io/v1/boards/Acme/jobs?content=true")]
+    finally:
+        client.close()
