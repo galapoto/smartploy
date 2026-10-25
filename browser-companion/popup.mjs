@@ -122,7 +122,16 @@ function fillPlanned(actions, exactUrl) {
     try {
       const x = new URL(a), y = new URL(b);
       const prefix = y.pathname.replace(/\/+$/, "");
-      if (exactGreenhouseForm(a, b)) return true;
+      // Executed inside the employer tab via chrome.scripting: standalone,
+      // no imports or popup closure. Reuse the same exact hosted-job policy.
+      const ghHosts = ["boards.greenhouse.io", "job-boards.greenhouse.io"];
+      if (x.protocol === "https:" && y.protocol === "https:" &&
+          ghHosts.includes(x.hostname) && ghHosts.includes(y.hostname) &&
+          /^\/[A-Za-z0-9_-]{1,100}\/jobs\/[0-9]{1,20}\/?$/.test(y.pathname) &&
+          x.pathname.replace(/\/+$/, "") === y.pathname.replace(/\/+$/, "") &&
+          !x.search && !y.search && !x.hash && !y.hash &&
+          !x.username && !x.password && !y.username && !y.password &&
+          !x.port && !y.port) return true;
       if (x.origin !== y.origin || x.protocol !== "https:" ||
           x.username || x.password || y.username || y.password) return false;
       // Ashby forms are accepted ONLY for the exact reviewed job's
