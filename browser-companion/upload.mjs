@@ -68,7 +68,9 @@ export function exactAshbyReceiptPage(activeUrl, packetUrl) {
     const posting = postingUrl.pathname.replace(/\/application\/?$/, "").replace(/\/+$/, "");
     if (!/^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}$/.test(posting)) return false;
     return here.pathname === posting || here.pathname === posting + "/" ||
-      here.pathname.startsWith(posting + "/");
+      here.pathname === posting + "/application" ||
+      here.pathname === posting + "/application/" ||
+      here.pathname.startsWith(posting + "/application/");
   } catch {
     return false;
   }
