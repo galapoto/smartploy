@@ -33,7 +33,7 @@
         <code>/application</code> form, reopen the companion, paste the SAME
         packet and inspect. Signed-in review verification lasts at most five minutes.</p>
       <button id="inspect">Inspect verified employer form (no submit)</button>
-      <button id="resume" class="secondary">Check confirmation after a previous attempt</button>
+      <button id="resume" class="secondary">Check a prior Lever attempt or manual Ashby confirmation</button>
     </section>
 
     <section id="plan" hidden>
@@ -76,13 +76,15 @@
         You may always submit manually using the employer's own button.
         A browser click is not proof that the employer accepted your application.
         Never retry when the previous outcome is uncertain.</p>
-      <button id="receipt" class="secondary">Check visible confirmation &amp; export receipt</button>
+      <button id="receipt" class="secondary">Check reference-bearing confirmation (no submit)</button>
     </section>
 
     <section id="receiptPanel" hidden>
       <h2>4. Import your observed receipt to SmartPloy</h2>
-      <p class="warning">A visible browser confirmation is not cryptographic proof
-        that the employer accepted the application. Keep your confirmation email.</p>
+      <p class="warning">Lever or Ashby browser confirmations are unverified observations,
+        never official provider acknowledgments. Only a recent, same-job,
+        reference-bearing employer page qualifies. You must have personally
+        submitted Ashby yourself. Keep any confirmation email.</p>
       <label for="receiptExport">Copy this private observation into My applications</label>
       <textarea id="receiptExport" rows="5" readonly spellcheck="false"></textarea>
       <button id="copyReceipt">Copy observed receipt</button>
