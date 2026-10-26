@@ -329,6 +329,19 @@ export default function ApplicationJourney(props: {
         <p className="section-kicker">STEP 3 OF 4</p><h2>Jobs from your CV</h2>
         <p>These are current jobs in SmartPloy's own database, not web results invented for your CV.</p>
       </div></div>
+      {props.cv.present ? <div className="flow-filter">
+        <label><Search size={17} aria-hidden="true"/>
+          <input aria-label="Filter matching jobs" type="search" value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            maxLength={120}
+            placeholder="Search all current jobs by title, employer or location"/>
+        </label>
+        <button className="outline-btn compact" type="button"
+          onClick={() => setShowOther(current => !current)}>
+          {showOther ? "Hide other jobs" : "Include other current jobs (" +
+            (results?.other_jobs_count ?? results?.other_jobs.length ?? 0) + ")"}
+        </button>
+      </div> : null}
       {!props.cv.present ? <div className="empty-state">
         <UploadCloud size={28}/><h3>Your matching jobs appear here</h3>
         <p>Upload your CV above to continue. If you just want to browse, use Find Jobs without uploading anything.</p>
@@ -347,26 +360,16 @@ export default function ApplicationJourney(props: {
         {results.detected_roles.length > 0 || results.detected_topics.length > 0 ?
           <p className="flow-signal-summary">Search cues detected in CV: {[...results.detected_roles, ...results.detected_topics].slice(0,10).join(", ")}.
             <span> Review these before applying; the upload did not approve them as profile facts.</span></p> : null}
-        <div className="flow-filter">
-          <label><Search size={17} aria-hidden="true"/>
-            <input aria-label="Filter matching jobs" type="search" value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              maxLength={120}
-              placeholder="Search all current jobs by title, employer or location"/>
-          </label>
-          <button className="outline-btn compact" type="button" onClick={() => setShowOther(current => !current)}>
-            {showOther ? "Hide other jobs" : "Include other current jobs (" + results.other_jobs.length + ")"}
-          </button>
-        </div>
         <p className="muted">Search filters the entire current job database. Load more to reach later results; a vacancy chosen from Search stays available above the pages.</p>
         {props.selectedJobKey && !results.selected_job &&
           !jobs.some((row) => row.canonical_key === props.selectedJobKey) ?
           <p className="flow-boundary" role="status">The selected vacancy is no longer current or available for CV matching. Choose another job from Search.</p> : null}
         {jobs.length ? <>
           <div className="flow-job-list">{jobs.map(resultCard)}</div>
-          <p className="muted" role="status">Showing {jobs.length} of {results.recommended_count +
-            (showOther ? (results.other_jobs_count ?? results.other_jobs.length) : 0)}
-            {results.selected_job ? " matching or directly selected" : " matching"} vacancies.</p>
+          <p className="muted" role="status">Showing {jobs.length} current job cards.
+            {" " + results.recommended_count + " CV-text matches"}
+            {" · " + (showOther ? (results.other_jobs_count ?? results.other_jobs.length) : 0) + " exploratory matches"}.
+            {results.selected_job ? " Your Search-selected vacancy is pinned above." : ""}</p>
           {hasMore ? <button className="secondary-btn" type="button"
             disabled={paging} onClick={() => void loadMore()}>
             {paging ? "Loading more jobs…" : "Load more current jobs"}
