@@ -366,7 +366,8 @@ class AshbyPartnerTransport:
                 result = body.get("results") if isinstance(body, dict) else None
                 form_instance = result.get("submittedFormInstance") if isinstance(result, dict) else None
                 messages = result.get("formMessages") if isinstance(result, dict) else None
-                if (body.get("success") is not True
+                if (not isinstance(body, dict)
+                        or body.get("success") is not True
                         or not isinstance(form_instance, dict)
                         or not isinstance(messages, dict)
                         or messages.get("blocked") is not False
@@ -395,7 +396,8 @@ class AshbyPartnerTransport:
                     raise AshbyPartnerUncertain()
                 resolved = verified.json()
                 app = resolved.get("results") if isinstance(resolved, dict) else None
-                if (resolved.get("success") is not True
+                if (not isinstance(resolved, dict)
+                        or resolved.get("success") is not True
                         or not isinstance(app, dict)
                         or not _valid_uuid(app.get("id"))):
                     raise AshbyPartnerUncertain()
