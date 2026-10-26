@@ -173,6 +173,8 @@ export default function App() {
   const uploadRef = useRef<HTMLInputElement>(null);
   // A run token prevents an old account's finally block unlocking a new batch.
   const flowQueueInFlight = useRef<symbol | null>(null);
+  const activeCVSelection = useRef("");
+  activeCVSelection.current = JSON.stringify([cv.present, cv.sha256 || ""]);
 
   // Old in-flight requests must not repopulate another account's workspace.
   const loadGeneration = useRef(0);
@@ -768,6 +770,12 @@ export default function App() {
     if (!selected.length) return empty;
     const identity = lastSessionIdentity.current;
     if (!identity) throw new Error("Sign in to prepare private applications.");
+    const initialCVSelection = activeCVSelection.current;
+    const ensureCVUnchanged = () => {
+      if (activeCVSelection.current !== initialCVSelection) {
+        throw new Error("Your CV changed during job preparation. Review the new CV and reselect jobs.");
+      }
+    };
     const token = Symbol("account-scoped-autoapply-batch");
     flowQueueInFlight.current = token;
     setFlowQueueBusy(true);
@@ -783,6 +791,7 @@ export default function App() {
             flowQueueInFlight.current !== token) {
           throw new PrivateActionIdentityChanged();
         }
+        ensureCVUnchanged();
         // Stop is cooperative and never interrupts a potentially committed
         // private workspace request. All remaining jobs are unattempted.
         if (shouldStop()) {
@@ -829,7 +838,8 @@ export default function App() {
         }
         completed += 1;
         if (flowQueueInFlight.current === token &&
-            lastSessionIdentity.current === identity) {
+            lastSessionIdentity.current === identity &&
+            activeCVSelection.current === initialCVSelection) {
           onProgress(completed, selected.length);
         }
       }
@@ -837,6 +847,7 @@ export default function App() {
           flowQueueInFlight.current !== token) {
         throw new PrivateActionIdentityChanged();
       }
+      ensureCVUnchanged();
       const prepared = outcome.preparedKeys.length;
       const failed = outcome.failedKeys.length;
       const pending = outcome.skippedKeys!.length;
