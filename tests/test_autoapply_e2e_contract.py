@@ -415,7 +415,7 @@ def test_sp46_autoapply_e2e_contract_exact_user_job_and_outcome(contract, outcom
     assert api.get(path + "/agent").json()["present"] is False
     assert api.post(
         path + "/partner-lever-apply",json=payload,headers=headers,
-    ).status_code in {403, 404}
+    ).status_code in {403, 404, 409}  # Existing owner-preflight conflict also denies safely.
     api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["owner"])
     assert calls == []
 
