@@ -9,17 +9,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from hashlib import sha256
+from urllib.parse import urlsplit
 
 from psycopg import connect
 
-from .browser_handoff import HandoffError, _posting_url
+from .browser_handoff import HandoffError, _posting_url, _assisted_posting_url
 from .employer_submit_claim_storage import (
     EmployerSubmitClaimDenied, _employer_job_key_sha256,
 )
 
 ACTION = "single_user_initiated_browser_final_submit"
 LEVER_API_ACTION = "partner_lever_postings_api_submit"
-ALLOWED_ACTIONS = frozenset({ACTION, LEVER_API_ACTION})
+ASHBY_API_ACTION = "partner_ashby_application_form_submit"
+ALLOWED_ACTIONS = frozenset({ACTION, LEVER_API_ACTION, ASHBY_API_ACTION})
 BASES = frozenset({
     "explicit_employer_authorization", "documented_partner_integration",
 })
@@ -48,11 +51,36 @@ class ReviewedEmployerRights:
         }
 
 
-def employer_job_key(application_url: str) -> str:
+def employer_job_key(application_url: str, *, action_scope: str = ACTION) -> str:
+    """Channel-isolated key. Lever browser rights NEVER authorize Ashby POST.
+
+    Ashby reuses the exact existing expiring review-intent identity, including
+    /application and plain job URLs for the SAME posting. Do not extend the
+    legacy Lever-only claim identity helper to arbitrary ATS hosts.
+    """
     try:
+        if action_scope == ASHBY_API_ACTION:
+            _assisted_posting_url(application_url)
+            parsed = urlsplit(application_url)
+            parts = parsed.path.strip("/").split("/")
+            if (
+                parsed.hostname != "jobs.ashbyhq.com"
+                or parsed.query or parsed.fragment or parsed.username
+                or len(parts) not in (2, 3)
+                or (len(parts) == 3 and parts[2] != "application")
+                or not all(parts[:2])
+            ):
+                raise HandoffError("Unsupported Ashby partner posting")
+            material = (
+                "ashby-review-only-v1\0" + parts[0].casefold() +
+                "\0" + parts[1].casefold()
+            )
+            return sha256(material.encode("utf-8")).hexdigest()
+        if action_scope not in {ACTION, LEVER_API_ACTION}:
+            raise EmployerRightsDenied("Unsupported employer submission channel")
         _posting_url(application_url)
         return _employer_job_key_sha256(application_url)
-    except (HandoffError, EmployerSubmitClaimDenied, TypeError) as exc:
+    except (HandoffError, EmployerSubmitClaimDenied, TypeError, ValueError) as exc:
         raise EmployerRightsDenied("Verified HTTPS employer application URL required") from exc
 
 
@@ -116,7 +144,7 @@ class PostgresEmployerAutomationRightsRepository:
             raise ValueError("PostgreSQL required for independent rights attestations")
 
     def inspect(self, application_url: str, *, action_scope: str = ACTION) -> dict[str, object]:
-        key = employer_job_key(application_url)
+        key = employer_job_key(application_url, action_scope=action_scope)
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 try:
