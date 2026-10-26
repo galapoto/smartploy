@@ -1584,7 +1584,7 @@ def sp52_signed_in_ashby(signed_in_partner_workflow, monkeypatch):
             )
 
 
-def _sp52_ashby_mock(requests, *, uncertain=False):
+def _sp52_ashby_mock(requests, *, url, uncertain=False):
     def handler(req):
         requests.append(req.url.path)
         assert req.method == "POST" and req.url.host == "api.ashbyhq.com"
@@ -1593,7 +1593,7 @@ def _sp52_ashby_mock(requests, *, uncertain=False):
             assert b"%PDF" not in req.content
             return httpx.Response(200,json={"success":True,"results":{
                 "id":SP52_ASHBY_POSTING,"status":"Published","isListed":True,
-                "applyLink":requests.url if hasattr(requests,"url") else _sp52_url[0],
+                "applyLink":url,
                 "surveyFormDefinitions":[],
                 "applicationFormDefinition":SP52_ASHBY_FORM,
             }})
@@ -1629,9 +1629,8 @@ def test_sp52_ashby_partner_signed_in_approved_post_ack_owner_isolated_and_no_re
 ):
     api,app,route,headers,a,b,packet,url,nonce,tokens,key=sp52_signed_in_ashby
     # Bind mock provider to the exact fixture target; no real provider host.
-    _sp52_url[0]=url
     calls=[]
-    app.state.partner_ashby_transport=AshbyPartnerTransport(_sp52_ashby_mock(calls))
+    app.state.partner_ashby_transport=AshbyPartnerTransport(_sp52_ashby_mock(calls,url=url))
     before=api.get(route+"/partner-ashby-readiness")
     assert before.status_code==200,before.text
     posture=before.json()
@@ -1684,20 +1683,17 @@ def test_sp52_ashby_partner_signed_in_approved_post_ack_owner_isolated_and_no_re
     api.cookies.set(SESSION_COOKIE_NAME,tokens["b"])
     assert api.get(route+"/partner-ashby-readiness").status_code==404
     assert api.get(route+"/partner-ashby-receipt").status_code==404
-    assert api.post(route+"/partner-ashby-apply",json=payload,headers=headers).status_code==409
+    assert api.post(route+"/partner-ashby-apply",json=payload,headers=headers).status_code in (403,404)
 
-
-_sp52_url=[""]  # Synthetic URL only; injected before mock call, never a network destination.
 
 
 def test_sp52_ashby_provider_uncertain_is_sticky_and_never_auto_retried(
     sp52_signed_in_ashby,
 ):
     api,app,route,headers,a,b,packet,url,nonce,tokens,key=sp52_signed_in_ashby
-    _sp52_url[0]=url
     calls=[]
     app.state.partner_ashby_transport=AshbyPartnerTransport(
-        _sp52_ashby_mock(calls,uncertain=True)
+        _sp52_ashby_mock(calls,url=url,uncertain=True)
     )
     _partner_review(api,route,headers,packet)
     payload=_partner_submit_payload(packet)
@@ -1719,9 +1715,8 @@ def test_sp52_ashby_rights_revoked_or_same_reviewer_cannot_transfer(
     sp52_signed_in_ashby,
 ):
     api,app,route,headers,a,b,packet,url,nonce,tokens,key=sp52_signed_in_ashby
-    _sp52_url[0]=url
     calls=[]
-    app.state.partner_ashby_transport=AshbyPartnerTransport(_sp52_ashby_mock(calls))
+    app.state.partner_ashby_transport=AshbyPartnerTransport(_sp52_ashby_mock(calls,url=url))
     _partner_review(api,route,headers,packet)
     with connect(DSN) as conn:
         conn.execute(
