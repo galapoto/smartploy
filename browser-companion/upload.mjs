@@ -102,7 +102,7 @@ export function exactReceiptPage(activeUrl, packetUrl) {
     if (["jobs.lever.co", "jobs.eu.lever.co"].includes(intended.hostname)) {
       if (!/^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+(?:\/apply\/?)?$/.test(intended.pathname)) return false;
       posting = intended.pathname.replace(/\/apply\/?$/, "");
-      suffix = /^\/(?:apply(?:\/[A-Za-z0-9_-]+)*|thanks)\/?$/;
+      suffix = /^\/(?:apply(?:\/[A-Za-z0-9_-]+)*|thanks|confirmation)\/?$/;
     } else if (intended.hostname === "jobs.ashbyhq.com") {
       if (!/^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}(?:\/application\/?)?$/.test(intended.pathname)) return false;
       posting = intended.pathname.replace(/\/application\/?$/, "");

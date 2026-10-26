@@ -399,6 +399,8 @@ test("SP47 exact receipt URL policy recognizes only supported same-job confirmat
   for (const [applicationUrl, activeUrl] of [
     [LEVER, "https://jobs.lever.co/synthetic-fi/analyst-123"],
     [LEVER, "https://jobs.lever.co/synthetic-fi/analyst-123/thanks/"],
+    [LEVER, "https://jobs.lever.co/synthetic-fi/analyst-123/confirmation"],
+    [LEVER, "https://jobs.lever.co/synthetic-fi/analyst-123/confirmation/"],
     [LEVER, LEVER + "/confirmation?private=discard#secret"],
     [LEVER.replace("jobs.lever.co", "jobs.eu.lever.co"),
       "https://jobs.eu.lever.co/synthetic-fi/analyst-123/thanks"],

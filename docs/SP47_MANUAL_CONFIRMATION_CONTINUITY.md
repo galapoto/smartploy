@@ -21,7 +21,7 @@ It reuses the existing private receipt import and application history.
 
 | Provider | Accepted observed page scope | Final employer action |
 | --- | --- | --- |
-| Lever, global or EU | Same provider region, employer and job; exact posting, `/apply` with bounded child paths, or `/thanks` | Existing separately authorized one-use action, or applicant manually submits |
+| Lever, global or EU | Same provider region, employer and job; exact posting, `/apply` with bounded child paths, or `/thanks` / `/confirmation` | Existing separately authorized one-use action, or applicant manually submits |
 | Ashby | Same employer and job; exact posting or `/application` with bounded child paths | Applicant manually submits |
 | Hosted Greenhouse | Same board and numeric job ID; exact posting or `/confirmation`; official legacy/current host equivalence only | Applicant manually submits |
 
@@ -104,14 +104,14 @@ both races through the real popup event handlers.
 
 The feature's local validation includes:
 
-- 94 passing receipt tests and one PostgreSQL-only case deferred locally to
+- 96 passing receipt tests and one PostgreSQL-only case deferred locally to
   the repository's real PostgreSQL CI. This includes three actual OIDC
   middleware API cases with different users sharing the same email, no
   automated claims, and a fail-on-use employer transport.
 - 18 real-popup Node cases covering the supported providers, current review,
   manual confirmation, prior automated attempt recovery, no claim writes,
   malformed URLs, stale export clearing, subframes and the two UI races.
-- 20 targeted Chromium cases: 11 new receipt-inspector cases, five existing
+- 21 targeted Chromium cases: 12 new receipt-inspector cases, five existing
   Ashby/Lever receipt cases and four existing Greenhouse form/PDF cases.
 - All 172 existing React tests and the production web build pass.
 - Ruff and whitespace checks pass. The existing Python static contracts
@@ -119,8 +119,11 @@ The feature's local validation includes:
 
 These tests use synthetic local pages and application data. No employer was
 contacted and no real application or live provider acknowledgment is claimed.
-The PR must also pass the existing full five-job source CI, including real
-PostgreSQL and Docker smoke, before expected-head merge. Independent merged
+The real PostgreSQL CI also exercises existing reserved-attempt
+reconciliation on the exact Lever `/confirmation` route, retained alongside
+`/thanks`; an employer-wide confirmation still fails. The PR must pass the
+existing full five-job source CI, including real PostgreSQL and Docker smoke,
+before expected-head merge. Independent merged
 main CI is a separate source check. Neither is native deployment evidence.
 
 ## Production audit and remaining work

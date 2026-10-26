@@ -372,6 +372,8 @@ GREENHOUSE_MODERN = GREENHOUSE.replace("boards.greenhouse.io", "job-boards.green
     (JOB, JOB + "/confirmation/", JOB + "/confirmation/"),
     (JOB, LEVER_POSTING + "/thanks", LEVER_POSTING + "/thanks"),
     (JOB, LEVER_POSTING + "/thanks/", LEVER_POSTING + "/thanks/"),
+    (JOB, LEVER_POSTING + "/confirmation", LEVER_POSTING + "/confirmation"),
+    (JOB, LEVER_POSTING + "/confirmation/", LEVER_POSTING + "/confirmation/"),
     (
         JOB.replace("jobs.lever.co", "jobs.eu.lever.co"),
         JOB.replace("jobs.lever.co", "jobs.eu.lever.co") + "/confirmation",

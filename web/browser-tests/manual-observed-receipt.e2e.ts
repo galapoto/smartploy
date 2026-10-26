@@ -37,8 +37,8 @@ async function observe(page:Page,applicationUrl:string){
   return page.evaluate(expectedUrl=>(window as any).inspectReceipt(expectedUrl),applicationUrl);
 }
 
-test("SP47 manual Lever confirmation retains exact posting identity and drops private URL data",async ({page})=>{
-  const confirmation="https://jobs.lever.co/synthetic-fi/analyst-123/thanks";
+for (const suffix of ["thanks", "confirmation"]) test("SP47 manual Lever " + suffix + " retains exact posting identity and drops private URL data",async ({page})=>{
+  const confirmation="https://jobs.lever.co/synthetic-fi/analyst-123/" + suffix;
   const traffic=await fixture(page,confirmation+"?private=discard#secret");
   const result=await observe(page,LEVER);
   expect(result.confirmed).toBe(true);

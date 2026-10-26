@@ -114,6 +114,7 @@ def _verified_url(value: str, expected: str) -> str:
                 parsed.path in {
                     posting, posting + "/", posting + "/apply",
                     posting + "/apply/", posting + "/thanks", posting + "/thanks/",
+                    posting + "/confirmation", posting + "/confirmation/",
                 }
                 or re.fullmatch(
                     re.escape(posting) + r"/apply(?:/[A-Za-z0-9_-]+)*/?",
