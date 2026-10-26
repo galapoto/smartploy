@@ -2089,6 +2089,10 @@ def create_app(
                 else receipts.get(binding, workspace.application_url)
             )
             prior = existing_employer_claim(binding, workspace)
+            if prior is None and provider == "ashby":
+                prior = app.state.employer_claims.get_for_employer_url(
+                    binding,workspace.application_url,action_scope=ASHBY_API_ACTION
+                )
         except HTTPException:
             raise
         except Exception as exc:
