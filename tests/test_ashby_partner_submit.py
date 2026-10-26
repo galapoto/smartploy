@@ -119,9 +119,9 @@ def valid_mock(requests, *, info=None, submitted=None, lookup=None):
             assert b'_systemfield_email' in body
             assert b'_systemfield_cover_letter' in body
             assert b'Synthetic Applicant' in body
-            assert b'"allowSubmissionForUnpublishedJobPosting"' not in body
             assert b'name="allowSubmissionForUnpublishedJobPosting"' in body
-            assert b'false' in body
+            assert b'\r\n\r\nfalse\r\n' in body
+            assert b'\r\n\r\ntrue\r\n' not in body
             assert b'data_compliance' not in body
             assert b'surveySubmission.create' not in body
             return httpx.Response(200, json=submit_response() if submitted is None else submitted)
