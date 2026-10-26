@@ -848,7 +848,8 @@ export default function ApplicationStudio(props: {
         >
           <span className="studio-list-icon"><BriefcaseBusiness size={17}/></span>
           <span className="studio-list-copy"><strong>{item.role_title}</strong><small>{item.company}</small>
-            <em>{item.status === "provider_acknowledged" ? "Sent · Lever acknowledged" :
+            <em>{item.status === "provider_acknowledged"
+              ? "Sent · " + (partnerKind(item.application_url) === "ashby" ? "Ashby" : "Lever") + " acknowledged" :
               item.status === "self_reported_applied" ? "Applied · self-reported" :
               item.workspace_id === selectedId && browserReceipt
                 ? "Confirmation observed · not verified" :
@@ -888,7 +889,7 @@ export default function ApplicationStudio(props: {
           <ShieldCheck size={18}/>
           <div><strong>Your content, your decision.</strong>
             <p>{selected.status === "provider_acknowledged"
-                  ? "Lever confirmed creation of this application. Your approved CV/letter were sent. This is not a hiring decision."
+                  ? "The authorized employer ATS confirmed creation of this application. Your approved CV/letter were sent. This is not a hiring decision."
                   : "SmartPloy has not independently verified submission of this draft. Review every CV and cover-letter claim before sending."}</p></div>
         </div>
         <ApplicationAgentCard
@@ -992,7 +993,7 @@ export default function ApplicationStudio(props: {
         {selected.status === "draft" ? <section className="studio-handoff" aria-label="Browser application assistant">
           <div className="studio-handoff-header">
             <div><p className="section-kicker">EMPLOYER APPLICATION</p><h4>Fill the employer's form</h4>
-              <p>Use the optional SmartPloy companion for reviewed contact details, ordinary answers and PDF assistance on supported Lever, Ashby and hosted Greenhouse forms. Ashby and Greenhouse final submission remain manual.</p></div>
+              <p>Use the optional SmartPloy companion for reviewed contact details, ordinary answers and PDF assistance on supported Lever, Ashby and hosted Greenhouse forms. Greenhouse submission remains manual; Ashby requires separately authorized partner API rights and your fresh final approval.</p></div>
             <ExternalLink size={18} />
           </div>
           {employerAttempt?.previous_attempt_reserved ? (
@@ -1158,7 +1159,8 @@ export default function ApplicationStudio(props: {
           </p>
         </section> : null}
         {selected.status === "provider_acknowledged" ? <section
-          className="studio-receipt" aria-label="Official provider acknowledgement">
+          className="studio-receipt" aria-label={partnerKind(selected.application_url) === "ashby"
+            ? "Official Ashby provider acknowledgement" : "Official Lever provider acknowledgement"}>
           <div className="studio-receipt-header">
             <strong><CheckCircle2 size={16}/> {
               partnerReceipt?.provider === "ashby" ? "Ashby" : "Lever"
