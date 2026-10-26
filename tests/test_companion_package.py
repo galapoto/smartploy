@@ -141,7 +141,7 @@ def test_sp44_web_build_contains_same_first_party_download_and_fail_closed_route
     assert package["scripts"]["prebuild"] == "python3 scripts/package_companion.py"
     assert package["scripts"]["predev"] == package["scripts"]["prebuild"]
     docker = (ROOT / "web/Dockerfile").read_text(encoding="utf-8")
-    assert "COPY browser-companion/ ../browser-companion/" in docker
+    assert "COPY browser-companion/ /workspace/browser-companion/" in docker
     assert "RUN npm run build" in docker
     assert "COPY --from=build /workspace/web/dist /srv" in docker
     assert "COPY --from=build /workspace/browser-companion" not in docker
