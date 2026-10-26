@@ -282,6 +282,7 @@ runtime_policy_sha256=${POLICY_SHA256}
 compose_file_sha256=${COMPOSE_SHA256}
 ${HEALTH_FIELDS}
 ${AGENT_ZERO_FIELDS}
+${COMPANION_FIELDS}
 latest_backup_file=${LATEST_BACKUP_FILE}
 latest_backup_sha256=${LATEST_BACKUP_SHA256}
 latest_backup_metadata_valid=${LATEST_BACKUP_METADATA_VALID}
