@@ -2083,7 +2083,11 @@ def create_app(
                 workspace.application_url, action_scope=scope
             )
             review = app.state.employer_review_intents.get(binding, workspace.application_url)
-            receipt = receipts.get(binding, workspace.application_url, provider=provider)
+            receipt = (
+                receipts.get(binding, workspace.application_url, provider="ashby")
+                if provider == "ashby"
+                else receipts.get(binding, workspace.application_url)
+            )
             prior = existing_employer_claim(binding, workspace)
         except HTTPException:
             raise
@@ -2239,22 +2243,23 @@ def create_app(
             },
         )
 
-    @app.get("/api/v1/application-workspaces/{workspace_id}/partner-lever-readiness")
-    def partner_lever_readiness(workspace_id: str, request: Request) -> JSONResponse:
-        _, _, _, readiness = _partner_lever_ready(workspace_id, request)
-        return JSONResponse(
-            readiness,
-            headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},
-        )
-
-    @app.get("/api/v1/application-workspaces/{workspace_id}/partner-lever-receipt")
-    def partner_lever_receipt(workspace_id: str, request: Request) -> JSONResponse:
+    def _read_partner_receipt(
+        workspace_id: str, request: Request, *, provider: str,
+    ) -> JSONResponse:
         binding = signed_in_employer_review(request)
         workspace = _review_workspace(workspace_id, binding)
-        if app.state.partner_lever_receipts is None:
+        receipts = (
+            app.state.partner_ashby_receipts if provider == "ashby"
+            else app.state.partner_lever_receipts
+        )
+        if receipts is None:
             raise HTTPException(status_code=503, detail="Provider receipt storage unavailable")
         try:
-            receipt = app.state.partner_lever_receipts.get(binding, workspace.application_url)
+            receipt = (
+                receipts.get(binding, workspace.application_url, provider="ashby")
+                if provider == "ashby"
+                else receipts.get(binding, workspace.application_url)
+            )
         except Exception as exc:
             raise HTTPException(status_code=503, detail="Provider receipt unavailable") from exc
         return JSONResponse(
@@ -2263,15 +2268,38 @@ def create_app(
             headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},
         )
 
-    @app.post("/api/v1/application-workspaces/{workspace_id}/partner-lever-apply")
-    def submit_to_authorized_lever_partner(
-        workspace_id: str, payload: LeverPartnerApplicationPayload, request: Request,
-    ) -> JSONResponse:
-        """The only supported REAL submission endpoint, gated by partner key.
+    @app.get("/api/v1/application-workspaces/{workspace_id}/partner-lever-readiness")
+    def partner_lever_readiness(workspace_id: str, request: Request) -> JSONResponse:
+        return JSONResponse(
+            _partner_ready(workspace_id, request, provider="lever")[3],
+            headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},
+        )
 
-        Never invokes this endpoint from background jobs or the Chrome
-        companion. The actual user must deliberately click and confirm a
-        reviewed application on the signed-in SmartPloy first-party origin.
+    @app.get("/api/v1/application-workspaces/{workspace_id}/partner-ashby-readiness")
+    def partner_ashby_readiness(workspace_id: str, request: Request) -> JSONResponse:
+        return JSONResponse(
+            _partner_ready(workspace_id, request, provider="ashby")[3],
+            headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},
+        )
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/partner-lever-receipt")
+    def partner_lever_receipt(workspace_id: str, request: Request) -> JSONResponse:
+        return _read_partner_receipt(workspace_id, request, provider="lever")
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/partner-ashby-receipt")
+    def partner_ashby_receipt(workspace_id: str, request: Request) -> JSONResponse:
+        return _read_partner_receipt(workspace_id, request, provider="ashby")
+
+    def _submit_to_authorized_partner(
+        workspace_id: str, payload: LeverPartnerApplicationPayload,
+        request: Request, *, provider: str,
+    ) -> JSONResponse:
+        """One explicit signed-in applicant gesture per exact approved employer.
+
+        No background caller, preview, browser extension or agent can invoke
+        this first-party POST without the original OIDC/CSRF/expected owner
+        checks. Original 90s approval and sticky PostgreSQL attempt must
+        COMMIT before any provider HTTP request or applicant data transfer.
         """
         binding = signed_in_employer_review(request)
         if (
@@ -2284,8 +2312,12 @@ def create_app(
             or payload.approve_employer_data_transfer is not True
             or payload.affirm_reviewed_employer_form is not True
         ):
-            raise HTTPException(status_code=422, detail="Fresh explicit user review and transfer consent required")
-        binding, workspace, tenant, readiness = _partner_lever_ready(workspace_id, request)
+            raise HTTPException(
+                status_code=422, detail="Fresh explicit user review and transfer consent required"
+            )
+        binding, workspace, tenant, readiness = _partner_ready(
+            workspace_id, request, provider=provider
+        )
         if not readiness["eligible_for_explicit_partner_submit"]:
             raise HTTPException(
                 status_code=409,
@@ -2293,13 +2325,17 @@ def create_app(
             )
         if payload.expected_revision != workspace.revision:
             raise HTTPException(status_code=409, detail="Saved application revision changed")
+        registry = (
+            app.state.partner_ashby_registry if provider == "ashby"
+            else app.state.partner_lever_registry
+        )
         try:
-            posting = app.state.partner_lever_registry.match(workspace.application_url)
+            posting = registry.match(workspace.application_url)
             packet = make_browser_packet(
                 workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
             )
             cv_pdf, _, _ = render_document(workspace, kind="cv", file_format="pdf")
-        except (LeverPartnerUnavailable, HandoffError, WorkspaceError) as exc:
+        except (LeverPartnerUnavailable, AshbyPartnerUnavailable, HandoffError, WorkspaceError) as exc:
             raise HTTPException(status_code=409, detail="Approved partner packet unavailable") from exc
         if (
             packet["document_sha256"] != payload.expected_document_sha256
@@ -2308,7 +2344,10 @@ def create_app(
             or approved_fields_sha256(packet["fields"]) != payload.expected_fields_sha256
             or sha256(cv_pdf).hexdigest() != payload.expected_cv_pdf_sha256
         ):
-            raise HTTPException(status_code=409, detail="Approved PDF, contact or job snapshot drifted")
+            raise HTTPException(
+                status_code=409, detail="Approved PDF, contact or job snapshot drifted"
+            )
+        scope = ASHBY_API_ACTION if provider == "ashby" else LEVER_API_ACTION
         try:
             approval, _ = app.state.employer_final_actions.approve(
                 binding,workspace_id=workspace_id,
@@ -2320,7 +2359,7 @@ def create_app(
                 expected_fields_sha256=payload.expected_fields_sha256,
                 explicit_final_user_approval=True,
                 acknowledge_external_employer_transfer=True,
-                action_scope=LEVER_API_ACTION,
+                action_scope=scope,
             )
             reserved = app.state.employer_final_actions.consume_once_for_trusted_adapter(
                 binding,approval_id=approval.approval_id,workspace_id=workspace_id,
@@ -2330,20 +2369,27 @@ def create_app(
                 expected_document_sha256=packet["document_sha256"],
                 expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
                 expected_fields_sha256=payload.expected_fields_sha256,
-                action_scope=LEVER_API_ACTION,
+                action_scope=scope,
             )
         except EmployerFinalActionDenied as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=503, detail="Final submission reservation unavailable") from exc
-        # Sticky attempt COMMITTED before any external request; another device
-        # can never POST the same employer job, even on timeout or crash.
+        # Reservation persisted before external transfer. A timeout, unknown
+        # form response, read-only app-lookup failure or receipt write failure
+        # cannot automatically initiate a second POST for this employer job.
         try:
-            ack = app.state.partner_lever_transport.send(
-                posting,application_url=workspace.application_url,
-                fields=packet["fields"],pdf=cv_pdf,
-            )
-        except LeverPartnerUncertain as exc:
+            if provider == "ashby":
+                ack = app.state.partner_ashby_transport.send_after_external_claim(
+                    posting,application_url=workspace.application_url,
+                    fields=packet["fields"],pdf=cv_pdf,
+                )
+            else:
+                ack = app.state.partner_lever_transport.send(
+                    posting,application_url=workspace.application_url,
+                    fields=packet["fields"],pdf=cv_pdf,
+                )
+        except (LeverPartnerUncertain, AshbyPartnerUncertain) as exc:
             try:
                 app.state.employer_claims.mark_uncertain(
                     binding,reserved.claim.claim_id,code=exc.code
@@ -2355,35 +2401,55 @@ def create_app(
                 ) from None
             return JSONResponse(
                 {
-                    "state":"outcome_uncertain","provider_acknowledged":False,
-                    "automatic_retry_authorized":False,
-                    "employer_hiring_decision_verified":False,
-                    "requires_human_reconciliation":True,
+                    "state": "outcome_uncertain", "provider_acknowledged": False,
+                    "automatic_retry_authorized": False,
+                    "employer_hiring_decision_verified": False,
+                    "requires_human_reconciliation": True,
                 },status_code=202,headers={"Cache-Control":"private, no-store"},
             )
         except Exception:
-            # Unanticipated transport error after the durable reservation:
-            # NEVER try the external call again. No secrets in client detail.
             raise HTTPException(
                 status_code=503,
                 detail="Employer outcome cannot be confirmed; reserved attempt requires reconciliation",
             ) from None
+        receipts = (
+            app.state.partner_ashby_receipts if provider == "ashby"
+            else app.state.partner_lever_receipts
+        )
         try:
-            confirmed = app.state.partner_lever_receipts.record(
-                binding,reserved.claim,ack
+            confirmed = (
+                receipts.record(binding,reserved.claim,ack,provider="ashby")
+                if provider == "ashby"
+                else receipts.record(binding,reserved.claim,ack)
             )
         except Exception:
             raise HTTPException(
                 status_code=503,
-                detail="Lever may have acknowledged the application but local receipt is unavailable",
+                detail="Provider may have acknowledged application but local receipt is unavailable",
             ) from None
         return JSONResponse(
             {
-                "state":"provider_acknowledged",
+                "state": "provider_acknowledged",
                 **confirmed.public_status(),
-                "external_actions_performed":True,
+                "external_actions_performed": True,
             },
             headers={"Cache-Control":"private, no-store", "Referrer-Policy":"no-referrer"},
+        )
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/partner-lever-apply")
+    def submit_to_authorized_lever_partner(
+        workspace_id: str, payload: LeverPartnerApplicationPayload, request: Request,
+    ) -> JSONResponse:
+        return _submit_to_authorized_partner(
+            workspace_id, payload, request, provider="lever"
+        )
+
+    @app.post("/api/v1/application-workspaces/{workspace_id}/partner-ashby-apply")
+    def submit_to_authorized_ashby_partner(
+        workspace_id: str, payload: LeverPartnerApplicationPayload, request: Request,
+    ) -> JSONResponse:
+        return _submit_to_authorized_partner(
+            workspace_id, payload, request, provider="ashby"
         )
 
     @app.post("/api/v1/application-workspaces/{workspace_id}/verify-reviewed-packet")
