@@ -62,7 +62,7 @@ export default function ApplicationJourney(props: {
   const [selected, setSelected] = useState<string[]>([]);
   const [batchResult, setBatchResult] = useState<AutoApplyBatchOutcome | null>(null);
   const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
-  const queueInFlight = useRef(false);
+  const queueInFlight = useRef<symbol | null>(null);
   const stopRequestedRef = useRef(false);
   const [stopRequested, setStopRequested] = useState(false);
   // In-flight batch results cannot restore choices from a replaced CV or
@@ -225,7 +225,8 @@ export default function ApplicationJourney(props: {
     if (!runnableSelection.length || props.queueBusy || queueInFlight.current) return;
     const keys = [...runnableSelection]; // immutable exact selection for this run
     const scope = queueScope.current;
-    queueInFlight.current = true;
+    const batchToken = Symbol("one-private-autoapply-selection");
+    queueInFlight.current = batchToken;
     stopRequestedRef.current = false;
     setStopRequested(false);
     setError("");
@@ -246,10 +247,14 @@ export default function ApplicationJourney(props: {
         setError(exc instanceof Error ? exc.message : "Could not prepare the selected drafts.");
       }
     } finally {
-      queueInFlight.current = false;
-      if (queueScope.current === scope) {
-        setBatchProgress(null);
-        setStopRequested(false);
+      // Do not let an old CV/account batch clear the in-flight flag for
+      // another selected run that started after its scope was replaced.
+      if (queueInFlight.current === batchToken) {
+        queueInFlight.current = null;
+        if (queueScope.current === scope) {
+          setBatchProgress(null);
+          setStopRequested(false);
+        }
       }
     }
   }
