@@ -9,7 +9,7 @@ RUN npm install --global npm@10.9.2 --no-audit --no-fund
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
-COPY browser-companion/ ../browser-companion/
+COPY browser-companion/ /workspace/browser-companion/
 RUN npm run build
 
 FROM caddy:2.10.2-alpine
