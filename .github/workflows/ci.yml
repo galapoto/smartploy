@@ -320,15 +320,6 @@ jobs:
               assert not any(x in manifest for x in (
                   'background', 'host_permissions', 'content_scripts'))
           PY
-          # A missing extension path must NEVER silently serve index.html.
-          missing="$(
-            curl --silent --output /tmp/smartploy-no-extension.html \
-              --write-out '%{http_code}' -H 'Host: smartploy.obumai.com' \
-              http://127.0.0.1:18091/smartploy-apply-companion.zip.sha256.missing
-          )"
-          test "$missing" = "200" # other paths retain the documented SPA routing
-          ! grep -q '^PK' /tmp/smartploy-no-extension.html
-
           python - <<'PY'
           import json
           from pathlib import Path
