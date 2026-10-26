@@ -421,7 +421,7 @@ jobs:
           grep -Fxq 'stack_healthy=true' "${EVIDENCE_FILE}"
           grep -Fxq 'running_release_images_verified=true' "${EVIDENCE_FILE}"
           grep -Fxq 'companion_release_verified=true' "${EVIDENCE_FILE}"
-          grep -Eq '^companion_zip_sha256=[a-f0-9]{64}
+          grep -Eq '^companion_zip_sha256=[a-f0-9]{64}$' "${EVIDENCE_FILE}"
           # Evidence must never contain fixture secret/private configuration values.
           ! grep -Fq 'ci-url-safe-random-password-1234567890' "${EVIDENCE_FILE}"
           ! grep -Fq 'ci.cloudflareaccess.com' "${EVIDENCE_FILE}"
