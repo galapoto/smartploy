@@ -17,7 +17,7 @@ from psycopg import connect
 
 from .browser_handoff import _approved_contact, approved_fields_sha256
 from .employer_automation_rights import (
-    ACTION, ALLOWED_ACTIONS, EmployerRightsDenied, approved_employer_rights_locked, employer_job_key,
+    ACTION, ALLOWED_ACTIONS, ASHBY_API_ACTION, EmployerRightsDenied, approved_employer_rights_locked, employer_job_key,
 )
 from .employer_review_intent_storage import PostgresEmployerReviewIntentRepository
 from .employer_submit_claim_storage import (
@@ -91,7 +91,7 @@ def _request_checks(
     binding: UserProfileBinding, workspace_id: str,
     expected_revision: int, expected_document_sha256: str,
     expected_cv_pdf_sha256: str, expected_fields_sha256: str,
-    expected_application_url: str,
+    expected_application_url: str, *, action_scope: str = ACTION,
 ) -> str:
     if (
         not isinstance(binding, UserProfileBinding)
@@ -110,7 +110,7 @@ def _request_checks(
     ):
         raise EmployerFinalActionDenied("Exact owner, document, PDF and final review required")
     try:
-        return employer_job_key(expected_application_url)
+        return employer_job_key(expected_application_url, action_scope=action_scope)
     except EmployerRightsDenied as exc:
         raise EmployerFinalActionDenied(str(exc)) from exc
 
@@ -229,6 +229,7 @@ class PostgresEmployerFinalActionGate:
         employer_hash = _request_checks(
             binding,workspace_id,expected_revision,expected_document_sha256,
             expected_cv_pdf_sha256,expected_fields_sha256,expected_application_url,
+            action_scope=action_scope,
         )
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
@@ -239,6 +240,7 @@ class PostgresEmployerFinalActionGate:
                         expected_revision=expected_revision,
                         expected_application_url=expected_application_url,
                         expected_job_fingerprint=expected_job_fingerprint,
+                        assisted_review_only=(action_scope == ASHBY_API_ACTION),
                     )
                     rights = approved_employer_rights_locked(cur,employer_hash, action_scope=action_scope)
                 except (EmployerSubmitClaimDenied,EmployerRightsDenied) as exc:
@@ -377,6 +379,7 @@ class PostgresEmployerFinalActionGate:
         employer_hash=_request_checks(
             binding,workspace_id,expected_revision,expected_document_sha256,
             expected_cv_pdf_sha256,expected_fields_sha256,expected_application_url,
+            action_scope=action_scope,
         )
         if (
             not isinstance(approval_id,str)
@@ -392,6 +395,7 @@ class PostgresEmployerFinalActionGate:
                         expected_revision=expected_revision,
                         expected_application_url=expected_application_url,
                         expected_job_fingerprint=expected_job_fingerprint,
+                        assisted_review_only=(action_scope == ASHBY_API_ACTION),
                     )
                     rights=approved_employer_rights_locked(cur,employer_hash, action_scope=action_scope)
                 except (EmployerSubmitClaimDenied,EmployerRightsDenied) as exc:
