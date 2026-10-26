@@ -1387,4 +1387,19 @@ describe("Application Studio draft-scoped pending indicators", () => {
     expect(screen.queryByRole("button", { name: /Generating with the local model/ })).toBeNull();
     expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
   });
+
+  it("offers the first-party Chrome companion ZIP beside reviewed packet controls",async()=>{
+    studio();
+    expect(await screen.findByRole("heading",{name:"A private role"})).toBeTruthy();
+    const link=screen.getByRole("link",{name:"Download Chrome companion ZIP from SmartPloy"});
+    expect(link.getAttribute("href")).toBe("/smartploy-apply-companion.zip");
+    expect(link.getAttribute("download")).toBe("smartploy-apply-companion.zip");
+    expect(link.getAttribute("target")).toBeNull();
+    expect(screen.getByText(/Desktop Chrome or Chromium: download and extract/)).toBeTruthy();
+    expect(screen.getByText(/does not submit jobs in the background/)).toBeTruthy();
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+  });
+
 });
