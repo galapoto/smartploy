@@ -87,8 +87,37 @@ async function request<T>(path: string, init?: RequestInit, expectedUserId?: str
   return (await response.json()) as T;
 }
 
-export function getCVJobMatches(): Promise<CVJobMatches> {
-  return request<CVJobMatches>("/api/v1/profile/cv/matches");
+export interface CVJobPageRequest {
+  limit?: number;
+  recommended_offset?: number;
+  other_offset?: number;
+  query?: string;
+  selected_job_key?: string;
+}
+
+/** Search the entire source-current ledger through bounded private pages. */
+export function getCVJobMatches(options: CVJobPageRequest = {}): Promise<CVJobMatches> {
+  const params = new URLSearchParams();
+  for (const name of ["limit", "recommended_offset", "other_offset"] as const) {
+    const value = options[name];
+    if (value === undefined) continue;
+    const valid = Number.isSafeInteger(value) &&
+      (name === "limit" ? value >= 1 && value <= 100 : value >= 0 && value <= 100000);
+    if (!valid) return Promise.reject(new Error("Invalid CV match page"));
+    params.set(name, String(value));
+  }
+  for (const name of ["query", "selected_job_key"] as const) {
+    const value = options[name];
+    if (value === undefined) continue;
+    if (typeof value !== "string" ||
+        value.length > (name === "query" ? 120 : 160) ||
+        [...value].some((char) => char.charCodeAt(0) < 32)) {
+      return Promise.reject(new Error("Invalid CV match search"));
+    }
+    if (value) params.set(name, value);
+  }
+  const suffix = params.toString();
+  return request<CVJobMatches>("/api/v1/profile/cv/matches" + (suffix ? "?" + suffix : ""));
 }
 
 export function getTrainingPrograms(): Promise<TrainingProgramsResponse> {
