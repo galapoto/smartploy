@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ApplicationJourney from "./ApplicationJourney";
 import StartChoices from "./StartChoices";
 import * as api from "./api";
@@ -286,11 +286,16 @@ describe("SP21 application journey", () => {
     fireEvent.click(screen.getAllByRole("checkbox", { name: /select for preparation/i })[0]);
     fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
     expect(await screen.findByText(/Checked 1 of 1 selected jobs/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /preparing selected drafts and agents/i }));
+    // This isolated component mock does not toggle the parent's queueBusy
+    // prop. Clicking its still-visible label must nevertheless be ignored by
+    // the component's synchronous local in-flight guard.
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
     expect(p.onPrepareSelected).toHaveBeenCalledTimes(1);
-    complete({
-      preparedKeys: ["current-planner"], failedKeys: [],
-      agentsActive: 1, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+    await act(async () => {
+      complete({
+        preparedKeys: ["current-planner"], failedKeys: [],
+        agentsActive: 1, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+      });
     });
     await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledTimes(1));
   });
