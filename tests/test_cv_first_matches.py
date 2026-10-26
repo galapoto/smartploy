@@ -214,8 +214,8 @@ def test_sp48_paginated_other_jobs_without_recognized_cv_signals():
     {"max_items": 0}, {"max_items": 301}, {"max_items": True},
     {"recommended_offset": -1}, {"other_offset": 100001},
     {"other_offset": True}, {"query": "x" * 121},
-    {"query": "planner\\nadmin"}, {"selected_job_key": "x" * 161},
-    {"selected_job_key": "job\\x00secret"},
+    {"query": "planner\nadmin"}, {"selected_job_key": "x" * 161},
+    {"selected_job_key": "job\x00secret"},
 ])
 def test_sp48_invalid_cv_search_windows_refuse(options):
     with pytest.raises(ValueError, match="Invalid"):
