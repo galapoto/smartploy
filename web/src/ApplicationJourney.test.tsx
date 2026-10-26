@@ -129,4 +129,107 @@ describe("SP21 application journey", () => {
     fireEvent.click(screen.getByRole("button", { name: /just find jobs/i }));
     expect(onBrowse).toHaveBeenCalledTimes(1);
   });
+
+  it("loads later ranked vacancies instead of hiding everything beyond the first page", async () => {
+    const later: SearchJobCard = {
+      ...listing, canonical_key: "late-recommended",
+      job: { ...listing.job, role_title: "Junior Data Analyst at distant employer" },
+    };
+    vi.mocked(api.getCVJobMatches)
+      .mockResolvedValueOnce({ ...data, recommended_count: 2, other_jobs_count: 1 })
+      .mockResolvedValueOnce({
+        ...data, recommended: [later], other_jobs: [],
+        recommended_count: 2, other_jobs_count: 1,
+      });
+    render(<ApplicationJourney {...props()} />);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getByRole("button", { name: /load more current jobs/i }));
+    await screen.findByText("Junior Data Analyst at distant employer");
+    expect(vi.mocked(api.getCVJobMatches)).toHaveBeenNthCalledWith(2, {
+      limit: 40, query: "", selected_job_key: "",
+      recommended_offset: 1, other_offset: 1,
+    });
+    expect(screen.getAllByRole("button", { name: /save application draft/i })).toHaveLength(3);
+  });
+
+  it("pins the exact job selected from main Search even when it is outside the first matching window", async () => {
+    const pinned: SearchJobCard = {
+      ...listing, canonical_key: "selected-page-8", lane: "broader",
+      job: { ...listing.job, role_title: "Selected vacancy on a later page" },
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValueOnce({
+      ...data, selected_job: pinned, other_jobs_count: 181,
+    });
+    const p = { ...props(), selectedJobKey: "selected-page-8" };
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("Selected vacancy on a later page");
+    expect(screen.getByText("IT-suunnittelija")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: /save application draft/i })[0]);
+    await waitFor(() => expect(p.onPrepare).toHaveBeenCalledWith("selected-page-8"));
+    expect(api.getCVJobMatches).toHaveBeenCalledWith({
+      limit: 40, query: "", selected_job_key: "selected-page-8",
+    });
+  });
+
+  it("searches the complete backend ledger instead of filtering only already loaded rows", async () => {
+    const hidden: SearchJobCard = {
+      ...listing, canonical_key: "far-past-first-page",
+      job: { ...listing.job, company: "UnseenEmployer", role_title: "Faraway QA Trainee" },
+    };
+    vi.mocked(api.getCVJobMatches).mockImplementation(async (options) =>
+      options?.query === "UnseenEmployer" ? {
+        ...data, recommended: [hidden], other_jobs: [],
+        recommended_count: 1, other_jobs_count: 0,
+      } : data);
+    render(<ApplicationJourney {...props()}/>);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.change(screen.getByRole("searchbox", { name: /filter matching jobs/i }),
+      { target: { value: "UnseenEmployer" } });
+    await screen.findByText("Faraway QA Trainee");
+    expect(screen.queryByText("IT-suunnittelija")).toBeNull();
+    expect(api.getCVJobMatches).toHaveBeenCalledWith({
+      limit: 40, query: "UnseenEmployer", selected_job_key: "",
+    });
+  });
+
+  it("never publishes a late page from another signed-in account", async () => {
+    let release!: (value: CVJobMatches) => void;
+    const delayed = new Promise<CVJobMatches>((resolve) => { release = resolve; });
+    const late: SearchJobCard = {
+      ...listing, canonical_key: "wrong-account-page",
+      job: { ...listing.job, role_title: "Different account hidden vacancy" },
+    };
+    vi.mocked(api.getCVJobMatches)
+      .mockResolvedValueOnce({ ...data, recommended_count: 2, other_jobs_count: 1 })
+      .mockReturnValueOnce(delayed);
+    render(<ApplicationJourney {...props()}/>);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getByRole("button", { name: /load more current jobs/i }));
+    await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(2));
+    vi.mocked(api.getSession).mockResolvedValue({
+      authenticated: true, user_id: "other-account", auth_source: "oidc",
+    });
+    release({ ...data, recommended: [late], other_jobs: [], recommended_count: 2 });
+    expect((await screen.findByRole("alert")).textContent).toMatch(/signed-in account.*changed/i);
+    expect(screen.queryByText("Different account hidden vacancy")).toBeNull();
+  });
+
+
+  it("keeps the whole-ledger search field focused while a debounced private read is pending", async () => {
+    let release!: (value: CVJobMatches) => void;
+    const delayed = new Promise<CVJobMatches>((resolve) => { release = resolve; });
+    vi.mocked(api.getCVJobMatches).mockImplementation((options) =>
+      options?.query === "Unseen" ? delayed : Promise.resolve(data));
+    render(<ApplicationJourney {...props()}/>);
+    await screen.findByText("IT-suunnittelija");
+    const input = screen.getByRole("searchbox", { name: /filter matching jobs/i });
+    input.focus();
+    fireEvent.change(input, { target: { value: "Unseen" } });
+    await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("searchbox", { name: /filter matching jobs/i })).toBe(input);
+    expect(document.activeElement).toBe(input);
+    release(data);
+    await screen.findByText("IT-suunnittelija");
+  });
+
 });

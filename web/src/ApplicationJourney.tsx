@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight, ArrowUpRight, CheckCircle2, FileText, Loader2, Search, UploadCloud,
   WandSparkles, Bot, ShieldCheck, CircleHelp, ExternalLink, RefreshCw
@@ -9,6 +9,8 @@ import type {
   ApplicationAssistanceLevel, ApplicationFlowMode,
   CVDocument, CVJobMatches, SearchJobCard
 } from "./types";
+
+const CV_PAGE_SIZE = 40;
 
 const MODE_INFO: Record<ApplicationFlowMode, { title: string; summary: string }> = {
   manual: {
@@ -46,16 +48,33 @@ export default function ApplicationJourney(props: {
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const [filter, setFilter] = useState("");
+  const [activeQuery, setActiveQuery] = useState("");
+  const [paging, setPaging] = useState(false);
+  const [pagingError, setPagingError] = useState("");
+  const requestEpoch = useRef(0);
   // Show weaker but potentially important planner-adjacent vacancies by
   // default, clearly distinguished from direct CV-text matches.
   const [showOther, setShowOther] = useState(true);
   const [assistance, setAssistance] = useState<ApplicationAssistanceLevel>("documents");
   const [selected, setSelected] = useState<string[]>([]);
 
-  // No CV or profile contents are persisted in browser storage.
-  // An account switch unmounts this keyed component in the parent.
+  // Debounce only the read-only query. Ranking and filtering happen on the
+  // entire current job ledger, NOT just the rows already in this browser.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setActiveQuery(filter.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [filter]);
+
+  useEffect(() => { setSelected([]); }, [props.cv.sha256, props.userId]);
+
+  // No CV, session tokens, or profile contents are persisted in browser storage.
+  // An account switch unmounts this keyed component in the parent. Epoch and
+  // authenticated-user checks also protect delayed page and search responses.
   useEffect(() => {
     let active = true;
+    const epoch = ++requestEpoch.current;
+    setPaging(false);
+    setPagingError("");
     if (!props.cv.present) {
       setResults(null);
       setLoading(false);
@@ -65,37 +84,104 @@ export default function ApplicationJourney(props: {
     setLoading(true);
     setError("");
     void (async () => {
-      const data = await getCVJobMatches();
+      const data = await getCVJobMatches({
+        limit: CV_PAGE_SIZE, query: activeQuery,
+        selected_job_key: props.selectedJobKey,
+      });
       const account = await getSession();
-      if (!active) return;
+      if (!active || epoch !== requestEpoch.current) return;
       if (!account.authenticated || account.user_id !== props.userId ||
           !props.userId) {
         throw new Error("Your signed-in account changed. Reload before using private matches.");
       }
       setResults(data);
     })().catch((exc: unknown) => {
-      if (!active) return;
+      if (!active || epoch !== requestEpoch.current) return;
       setError(exc instanceof Error ? exc.message : "Could not compare your CV with current jobs.");
-    }).finally(() => { if (active) setLoading(false); });
+    }).finally(() => {
+      if (active && epoch === requestEpoch.current) setLoading(false);
+    });
     return () => { active = false; };
-  }, [props.cv.present, props.cv.sha256, props.userId, revision]);
+  }, [props.cv.present, props.cv.sha256, props.userId,
+      props.selectedJobKey, activeQuery, revision]);
 
   useEffect(() => {
-    if (props.selectedJobKey && results?.other_jobs.some((row) =>
+    if (props.selectedJobKey && results?.selected_job?.canonical_key === props.selectedJobKey) {
+      setShowOther(true);
+    } else if (props.selectedJobKey && results?.other_jobs.some((row) =>
       row.canonical_key === props.selectedJobKey)) {
       setShowOther(true);
     }
   }, [props.selectedJobKey, results]);
 
   const jobs = useMemo(() => {
-    const rows = [...(results?.recommended || []), ...(showOther ? results?.other_jobs || [] : [])];
-    const query = filter.trim().toLocaleLowerCase();
+    const rows = [
+      ...(results?.selected_job ? [results.selected_job] : []),
+      ...(results?.recommended || []),
+      ...(showOther ? results?.other_jobs || [] : []),
+    ];
+    const seen = new Set<string>();
     return rows.filter((row) => {
-      if (!query) return true;
-      return [row.job.company, row.job.role_title, row.job.location]
-        .join(" ").toLocaleLowerCase().includes(query);
+      if (seen.has(row.canonical_key)) return false;
+      seen.add(row.canonical_key);
+      return true;
     });
-  }, [results, showOther, filter]);
+  }, [results, showOther]);
+
+  const hasMore = !!results && (
+    results.recommended.length < results.recommended_count ||
+    (showOther && results.other_jobs.length <
+      (results.other_jobs_count ?? results.other_jobs.length))
+  );
+
+  async function loadMore() {
+    if (!results || paging || !props.cv.present || !hasMore) return;
+    const epoch = requestEpoch.current;
+    setPaging(true);
+    setPagingError("");
+    try {
+      const next = await getCVJobMatches({
+        limit: CV_PAGE_SIZE,
+        recommended_offset: results.recommended.length,
+        other_offset: results.other_jobs.length,
+        query: activeQuery,
+        selected_job_key: props.selectedJobKey,
+      });
+      const account = await getSession();
+      if (epoch !== requestEpoch.current) return;
+      if (!account.authenticated || account.user_id !== props.userId ||
+          !props.userId || next.cv_filename !== results.cv_filename ||
+          next.match_mode !== results.match_mode) {
+        throw new Error("Your signed-in account or CV changed. Refresh private matches.");
+      }
+      const previousKeys = new Set([
+        ...results.recommended.map((row) => row.canonical_key),
+        ...results.other_jobs.map((row) => row.canonical_key),
+      ]);
+      if ([...next.recommended, ...next.other_jobs].length &&
+          [...next.recommended, ...next.other_jobs].every((row) =>
+            previousKeys.has(row.canonical_key))) {
+        throw new Error("The job feed changed while loading. Retry matching for current results.");
+      }
+      setResults((current) => {
+        if (epoch !== requestEpoch.current || !current) return current;
+        return {
+          ...current,
+          recommended: [...current.recommended, ...next.recommended],
+          other_jobs: [...current.other_jobs, ...next.other_jobs],
+          recommended_count: next.recommended_count,
+          other_jobs_count: next.other_jobs_count,
+          current_jobs_count: next.current_jobs_count,
+          selected_job: next.selected_job,
+        };
+      });
+    } catch (exc) {
+      if (epoch === requestEpoch.current) setPagingError(
+        exc instanceof Error ? exc.message : "Could not load more current jobs.");
+    } finally {
+      if (epoch === requestEpoch.current) setPaging(false);
+    }
+  }
 
   function toggleSelected(key: string) {
     setSelected((current) => current.includes(key)
@@ -243,6 +329,19 @@ export default function ApplicationJourney(props: {
         <p className="section-kicker">STEP 3 OF 4</p><h2>Jobs from your CV</h2>
         <p>These are current jobs in SmartPloy's own database, not web results invented for your CV.</p>
       </div></div>
+      {props.cv.present ? <div className="flow-filter">
+        <label><Search size={17} aria-hidden="true"/>
+          <input aria-label="Filter matching jobs" type="search" value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            maxLength={120}
+            placeholder="Search all current jobs by title, employer or location"/>
+        </label>
+        <button className="outline-btn compact" type="button"
+          onClick={() => setShowOther(current => !current)}>
+          {showOther ? "Hide other jobs" : "Include other current jobs (" +
+            (results?.other_jobs_count ?? results?.other_jobs.length ?? 0) + ")"}
+        </button>
+      </div> : null}
       {!props.cv.present ? <div className="empty-state">
         <UploadCloud size={28}/><h3>Your matching jobs appear here</h3>
         <p>Upload your CV above to continue. If you just want to browse, use Find Jobs without uploading anything.</p>
@@ -261,22 +360,27 @@ export default function ApplicationJourney(props: {
         {results.detected_roles.length > 0 || results.detected_topics.length > 0 ?
           <p className="flow-signal-summary">Search cues detected in CV: {[...results.detected_roles, ...results.detected_topics].slice(0,10).join(", ")}.
             <span> Review these before applying; the upload did not approve them as profile facts.</span></p> : null}
-        <div className="flow-filter">
-          <label><Search size={17} aria-hidden="true"/>
-            <input aria-label="Filter matching jobs" type="search" value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              placeholder="Job title, employer or location"/>
-          </label>
-          <button className="outline-btn compact" type="button" onClick={() => setShowOther(current => !current)}>
-            {showOther ? "Hide other jobs" : "Include other current jobs (" + results.other_jobs.length + ")"}
-          </button>
-        </div>
-        {jobs.length ? <div className="flow-job-list">{jobs.slice(0,80).map(resultCard)}</div> :
-          <div className="empty-state"><CircleHelp size={27}/><h3>No jobs match these filters</h3>
-            <p>Include other current jobs, remove the text filter or check again after source refresh.</p>
-            <button className="secondary-btn" type="button" onClick={props.onFindJobs}>
-              Browse all jobs <ArrowRight size={16}/>
-            </button></div>}
+        <p className="muted">Search filters the entire current job database. Load more to reach later results; a vacancy chosen from Search stays available above the pages.</p>
+        {props.selectedJobKey && !results.selected_job &&
+          !jobs.some((row) => row.canonical_key === props.selectedJobKey) ?
+          <p className="flow-boundary" role="status">The selected vacancy is no longer current or available for CV matching. Choose another job from Search.</p> : null}
+        {jobs.length ? <>
+          <div className="flow-job-list">{jobs.map(resultCard)}</div>
+          <p className="muted" role="status">Showing {jobs.length} current job cards.
+            {" " + results.recommended_count + " ranked results"}
+            {" · " + (showOther ? (results.other_jobs_count ?? results.other_jobs.length) : 0) + " exploratory results"}.
+            {results.selected_job ? " Your Search-selected vacancy is pinned above." : ""}</p>
+          {hasMore ? <button className="secondary-btn" type="button"
+            disabled={paging} onClick={() => void loadMore()}>
+            {paging ? "Loading more jobs…" : "Load more current jobs"}
+            {paging ? <Loader2 size={15} className="rotate"/> : <ArrowRight size={15}/>}
+          </button> : null}
+          {pagingError ? <p role="alert" className="flow-error">{pagingError}</p> : null}
+        </> : <div className="empty-state"><CircleHelp size={27}/><h3>No jobs match these filters</h3>
+          <p>Include other current jobs, change the search or check again after source refresh.</p>
+          <button className="secondary-btn" type="button" onClick={props.onFindJobs}>
+            Browse all jobs <ArrowRight size={16}/>
+          </button></div>}
         {props.mode === "automatic" ? <div className="flow-queue">
           <strong>{selected.length} of 15 vacancies selected</strong>
           <p>Each selected job gets its own private application draft and in-app agent.
