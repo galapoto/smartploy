@@ -20,6 +20,7 @@ import {
 } from "./lib";
 import ApplicationStudio from "./ApplicationStudio";
 import ApplicationJourney from "./ApplicationJourney";
+import { describeAutoApplyBatchIssue } from "./autoapply_batch_errors";
 import StartChoices from "./StartChoices";
 import SearchSetup from "./SearchSetup";
 import SearchResultsPanel from "./SearchResultsPanel";
@@ -752,15 +753,17 @@ export default function App() {
   }
 
   async function onPrepareSelectedJobs(
-    keys: string[], onProgress: (completed: number, total: number) => void
+    keys: string[], onProgress: (completed: number, total: number) => void,
+    shouldStop: () => boolean = () => false,
   ): Promise<AutoApplyBatchOutcome> {
     if (flowQueueInFlight.current) {
       throw new Error("An AutoApply preparation batch is already running.");
     }
     const selected = [...new Set(keys.filter(Boolean))].slice(0, 15);
     const empty: AutoApplyBatchOutcome = {
-      preparedKeys: [], failedKeys: [], agentsActive: 0,
-      agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+      preparedKeys: [], failedKeys: [], skippedKeys: [],
+      stopRequested: false, issues: [],
+      agentsActive: 0, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
     };
     if (!selected.length) return empty;
     const identity = lastSessionIdentity.current;
@@ -775,11 +778,19 @@ export default function App() {
       // SP49: one bad or retired posting must not starve subsequent chosen
       // jobs. Every request still passes the original private identity guard
       // and original idempotent workspace/Agent Zero create-or-get endpoints.
-      for (const key of selected) {
+      for (let index = 0; index < selected.length; index += 1) {
         if (lastSessionIdentity.current !== identity ||
             flowQueueInFlight.current !== token) {
           throw new PrivateActionIdentityChanged();
         }
+        // Stop is cooperative and never interrupts a potentially committed
+        // private workspace request. All remaining jobs are unattempted.
+        if (shouldStop()) {
+          outcome.stopRequested = true;
+          outcome.skippedKeys!.push(...selected.slice(index));
+          break;
+        }
+        const key = selected[index];
         try {
           const result = await runPrivateMutation((userId) =>
             startApplicationWorkspace(key, userId, true));
@@ -802,10 +813,19 @@ export default function App() {
               flowQueueInFlight.current !== token) {
             throw new PrivateActionIdentityChanged();
           }
-          // A failed request may have saved a draft before a network error.
-          // create-or-get makes an explicit later retry idempotent; never
-          // treat failure as an employer submission or blindly retry now.
+          // A login/permission failure applies to the whole batch. Never
+          // attempt the next job under an unauthorized identity.
+          const status = exc && typeof exc === "object" && "status" in exc
+            ? (exc as { status?: unknown }).status : 0;
+          if (status === 401 || status === 403) {
+            throw new Error("Private preparation access is unavailable. " +
+              "Check your signed-in account and permissions before attempting other jobs.");
+          }
+          // A request may have committed its draft before a network error.
+          // Existing create-or-get makes an explicit later retry idempotent.
+          // Never copy raw API errors or personal details into the batch UI.
           outcome.failedKeys.push(key);
+          outcome.issues!.push(describeAutoApplyBatchIssue(key, exc));
         }
         completed += 1;
         if (flowQueueInFlight.current === token &&
@@ -819,7 +839,8 @@ export default function App() {
       }
       const prepared = outcome.preparedKeys.length;
       const failed = outcome.failedKeys.length;
-      if (prepared && !failed) {
+      const pending = outcome.skippedKeys!.length;
+      if (prepared && !failed && !pending) {
         setSelectedWorkspaceId(firstWorkspace);
         navigate("applications");
       }
@@ -831,11 +852,13 @@ export default function App() {
         (outcome.agentsUnavailable ? outcome.agentsUnavailable +
           " case(s) not actively tracking; check My applications and worker readiness. " : "") +
         "Agent reminders require the server worker. No applications were sent to employers.";
-      if (prepared && !failed) {
+      if (prepared && !failed && !pending) {
         setNotice(prepared + " private application draft(s) ready for review. " + agentSummary);
-      } else if (prepared) {
+      } else if (prepared || pending) {
         setNotice(prepared + " private application draft(s) ready; " + failed +
-          " job(s) need a retry. " + agentSummary);
+          " failed, " + pending + " unattempted. " +
+          (outcome.stopRequested ? "Stopped after the current job. " : "") +
+          agentSummary);
       } else {
         setNotice("No selected drafts could be prepared. Review your CV, " +
           "current job source and account settings, then retry selected jobs. " +
