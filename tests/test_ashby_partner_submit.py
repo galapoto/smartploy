@@ -260,6 +260,7 @@ def test_employer_adds_optional_custom_question_before_send_blocks_every_upload(
 
 
 @pytest.mark.parametrize("body", [
+    [], "not-an-acknowledgment", 
     {"success": False, "errors": [{"message": "test rejection"}]},
     {"success": True, "results": {
         "formMessages": {"blocked": True},
@@ -302,7 +303,7 @@ def test_form_accepted_but_application_info_not_verified_requires_reconciliation
     requests = []
     with pytest.raises(AshbyPartnerUncertain):
         AshbyPartnerTransport(
-            valid_mock(requests, lookup={"success": False}),
+            valid_mock(requests, lookup=[]),
         ).send_after_external_claim(
             posting, application_url=URL, fields=FIELDS, pdf=PDF,
         )
