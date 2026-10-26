@@ -42,6 +42,9 @@ steps:
       - python3 -B -m scripts.ci_wait_postgres
       - python3 -m compileall smartploy scripts tests
       - python3 -m pytest -q
+      # SP46: independent re-run of the FULL owner CV-to-provider-to-agent
+      # acceptance contract, with local mock transport and original Postgres.
+      - python3 -m pytest -q tests/test_autoapply_e2e_contract.py
       - python3 -m scripts.evaluate_search_quality
       - python3 -m scripts.evaluate_human_relevance
       - ruff check smartploy scripts tests
