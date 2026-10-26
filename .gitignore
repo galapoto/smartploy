@@ -23,3 +23,7 @@ web/dist/
 
 # Redacted per-stage CI receipts are local execution evidence, not source.
 .ci-out/
+
+# SP44 build-only first-party browser companion delivery artifact.
+web/public/smartploy-apply-companion.zip
+web/public/smartploy-apply-companion.zip.sha256
