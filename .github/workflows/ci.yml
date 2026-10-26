@@ -147,9 +147,24 @@ jobs:
       - name: Install web dependencies
         working-directory: web
         run: npm ci --no-audit --no-fund
-      - name: Install Chromium and OS libraries
+      - name: Install pinned Chromium and verify runtime libraries
         working-directory: web
-        run: npx playwright install --with-deps chromium
+        run: |
+          set -Eeuo pipefail
+          # Hosted Ubuntu already includes Chromium's Linux libraries.
+          # Do not run an unbounded apt upgrade on every browser check.
+          # The real launch below fails closed if required libraries are missing.
+          npx playwright install chromium
+          node - <<'NODE'
+          const { chromium } = require('@playwright/test');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            await browser.close();
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
       - name: Build exact production web assets
         working-directory: web
         run: npm run build
