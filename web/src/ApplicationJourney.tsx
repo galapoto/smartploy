@@ -42,7 +42,8 @@ export default function ApplicationJourney(props: {
   onOpenApplications: () => void;
   onPrepare: (canonicalKey: string) => Promise<void>;
   onPrepareSelected: (
-    canonicalKeys: string[], onProgress: (completed: number, total: number) => void
+    canonicalKeys: string[], onProgress: (completed: number, total: number) => void,
+    shouldStop?: () => boolean
   ) => Promise<AutoApplyBatchOutcome>;
 }) {
   const [results, setResults] = useState<CVJobMatches | null>(null);
@@ -62,6 +63,8 @@ export default function ApplicationJourney(props: {
   const [batchResult, setBatchResult] = useState<AutoApplyBatchOutcome | null>(null);
   const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
   const queueInFlight = useRef(false);
+  const stopRequestedRef = useRef(false);
+  const [stopRequested, setStopRequested] = useState(false);
   // In-flight batch results cannot restore choices from a replaced CV or
   // different account, even if their server calls already completed.
   const queueScope = useRef("");
@@ -78,6 +81,8 @@ export default function ApplicationJourney(props: {
     setSelected([]);
     setBatchResult(null);
     setBatchProgress(null);
+    setStopRequested(false);
+    stopRequestedRef.current = true; // old job loop must not continue on new CV
   }, [props.cv.sha256, props.cv.present, props.userId]);
 
   // No CV, session tokens, or profile contents are persisted in browser storage.
@@ -210,18 +215,26 @@ export default function ApplicationJourney(props: {
     catch (exc) { setError(exc instanceof Error ? exc.message : "Unable to open your draft."); }
   }
 
+  const blockedKeys = new Set(
+    (batchResult?.issues || []).filter((issue) => !issue.retryable)
+      .map((issue) => issue.canonicalKey)
+  );
+  const runnableSelection = selected.filter((key) => !blockedKeys.has(key));
+
   async function queue() {
-    if (!selected.length || props.queueBusy || queueInFlight.current) return;
-    const keys = [...selected]; // immutable exact selection for this one run
+    if (!runnableSelection.length || props.queueBusy || queueInFlight.current) return;
+    const keys = [...runnableSelection]; // immutable exact selection for this run
     const scope = queueScope.current;
     queueInFlight.current = true;
+    stopRequestedRef.current = false;
+    setStopRequested(false);
     setError("");
     setBatchResult(null);
     setBatchProgress({ completed: 0, total: keys.length });
     try {
       const outcome = await props.onPrepareSelected(keys, (completed, total) => {
         if (queueScope.current === scope) setBatchProgress({ completed, total });
-      });
+      }, () => stopRequestedRef.current || queueScope.current !== scope);
       if (queueScope.current !== scope) return;
       // A successful private draft is durable. Keep ONLY failed keys checked
       // so "Retry" never needlessly asks the server for already saved jobs.
@@ -234,8 +247,17 @@ export default function ApplicationJourney(props: {
       }
     } finally {
       queueInFlight.current = false;
-      if (queueScope.current === scope) setBatchProgress(null);
+      if (queueScope.current === scope) {
+        setBatchProgress(null);
+        setStopRequested(false);
+      }
     }
+  }
+
+  function stopAfterCurrentJob() {
+    if (!queueInFlight.current || stopRequestedRef.current) return;
+    stopRequestedRef.current = true;
+    setStopRequested(true);
   }
 
   function resultCard(row: SearchJobCard) {
@@ -420,26 +442,62 @@ export default function ApplicationJourney(props: {
           <strong>{selected.length} of 15 vacancies selected</strong>
           <p>Each selected job gets its own private application draft and in-app agent.
             No email, call or employer application is sent. You can pause or close an agent later.</p>
-          {batchProgress ? <p role="status" aria-live="polite">
-            Checked {batchProgress.completed} of {batchProgress.total} selected jobs.
-            A failed posting will not stop the remaining selections.
-          </p> : null}
-          {batchResult && batchResult.failedKeys.length > 0 ? <div className="flow-boundary" role="status">
+          {batchProgress ? <div className="row-actions">
+            <p role="status" aria-live="polite">
+              Checked {batchProgress.completed} of {batchProgress.total} selected jobs.
+              {stopRequested ? " Stop requested; current job may still complete." :
+                " A failed posting will not stop other jobs."}
+            </p>
+            <button className="outline-btn compact" type="button"
+              disabled={stopRequested} onClick={stopAfterCurrentJob}>
+              {stopRequested ? "Stopping after current job…" : "Stop after current job"}
+            </button>
+          </div> : null}
+          {batchResult && (batchResult.failedKeys.length > 0 ||
+            (batchResult.skippedKeys?.length ?? 0) > 0) ? <div className="flow-boundary" role="status">
             <strong>{batchResult.preparedKeys.length} private draft(s) ready;
-              {" " + batchResult.failedKeys.length} job(s) need a retry.</strong>
-            <p>Successful jobs were removed from this selection. Only failed jobs remain
-              checked, and none were submitted to an employer.</p>
+              {batchResult.failedKeys.length ? " " + batchResult.failedKeys.length +
+                (blockedKeys.size ? " job(s) require attention." : " job(s) need a retry.") :
+                " no job failures."}</strong>
+            <p>Successful jobs were removed from this selection.
+              {batchResult.skippedKeys?.length
+                ? " " + batchResult.skippedKeys.length +
+                  " job(s) were not started after Stop and remain selected." : ""}
+              {" "}No application was submitted to an employer.</p>
+            {(batchResult.issues || []).length > 0 ? <ul aria-label="Job preparation issues">
+              {batchResult.issues!.map((issue) => {
+                const matching = jobs.find((row) => row.canonical_key === issue.canonicalKey);
+                return <li key={issue.canonicalKey}>
+                  <strong>{matching?.job.role_title || "Previously selected job"}</strong>
+                  {" — " + issue.guidance}
+                </li>;
+              })}
+            </ul> : null}
+            {blockedKeys.size > 0 ? <p>
+              {blockedKeys.size} job(s) require review or a fresh posting;
+              they will not be retried without a new selection.
+              <button className="outline-btn compact" type="button" onClick={props.onFindJobs}>
+                Find current vacancies <ArrowRight size={14}/>
+              </button>
+            </p> : null}
             {batchResult.preparedKeys.length ? <button className="outline-btn compact"
               type="button" onClick={props.onOpenApplications}>
               Open prepared applications <ArrowRight size={14}/>
             </button> : null}
           </div> : null}
-          <button className="primary-btn" type="button" disabled={!selected.length || props.queueBusy}
+          <button className="primary-btn" type="button"
+            disabled={!runnableSelection.length || props.queueBusy}
             onClick={() => void queue()}>
             {props.queueBusy ? "Preparing selected drafts and agents…" :
+              !runnableSelection.length && blockedKeys.size
+                ? "Review blocked jobs first" :
+              batchResult?.skippedKeys?.length
+                ? "Continue " + runnableSelection.length + " remaining job" +
+                  (runnableSelection.length === 1 ? "" : "s") :
               batchResult?.failedKeys.length &&
-                selected.every((key) => batchResult.failedKeys.includes(key))
-                ? "Retry " + selected.length + " failed job" + (selected.length === 1 ? "" : "s")
+                runnableSelection.every((key) => batchResult.failedKeys.includes(key))
+                ? "Retry " + runnableSelection.length + " failed job" +
+                  (runnableSelection.length === 1 ? "" : "s")
                 : "Prepare applications & start agents"}
             <ArrowRight size={16}/>
           </button>
