@@ -39,11 +39,10 @@ async function setup(page:Page,url=confirmation,{
     "\nwindow.inspectReceipt=inspectReceipt;"});
   return ()=>attemptedTraffic;
 }
-async function observe(page:Page,jobPath=posting,account="synthetic-fi"){
+async function observe(page:Page,jobPath=posting){
   return page.evaluate(
-    ({expectedOrigin,expectedAccount,expectedPosting})=>
-      (window as any).inspectReceipt(expectedOrigin,expectedAccount,expectedPosting),
-    {expectedOrigin:origin,expectedAccount:account,expectedPosting:jobPath}
+    expectedUrl=>(window as any).inspectReceipt(expectedUrl),
+    origin+jobPath+"/application"
   );
 }
 
@@ -77,8 +76,7 @@ test("SP42 an unfinished Ashby application form cannot masquerade as a completed
   expect((await observe(page)).confirmed).toBe(false);
 });
 
-test("SP42 historical Lever observation path still accepts only tenant scope",async ({page})=>{
-  const host="https://jobs.lever.co";
+test("SP47 historical Lever observation remains available on the exact reviewed job",async ({page})=>{
   await page.route("**/*",async route=>{
     if(route.request().url()!==originalLever) return route.abort();
     await route.fulfill({status:200,contentType:"text/html",
@@ -90,8 +88,8 @@ test("SP42 historical Lever observation path still accepts only tenant scope",as
   const stop=source.indexOf("\n/* Ashby has NO",start);
   await page.addScriptTag({content:source.slice(start,stop)+"\nwindow.inspectReceipt=inspectReceipt;"});
   const finding=await page.evaluate(
-    ({host,account})=>(window as any).inspectReceipt(host,account),
-    {host,account:"synthetic"}
+    expectedUrl=>(window as any).inspectReceipt(expectedUrl),
+    originalLever
   );
   expect(finding.confirmed).toBe(true);
   expect(finding.reference).toBe("LEVER-12345");

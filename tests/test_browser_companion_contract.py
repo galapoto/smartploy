@@ -27,8 +27,8 @@ def test_companion_cannot_click_without_server_claim_and_final_confirmation():
     assert "browser companion" in source.lower()
     assert 'autoSubmitAllowed: false' in policy
     assert 'onResumeReceipt' in source
-    assert 'const stored = await chrome.storage.local.get(key)' in source
-    assert 'here.pathname.startsWith("/" + account + "/")' in source
+    assert 'await hasPriorLeverAttempt(pkt)' in source
+    assert 'exactReceiptPage(tab.url, pkt.application_url)' in source
     assert 'smartploy.browser_receipt.v1' in source
     assert 'confirmed_visible: true' in source
     assert 'confirmation_page_sha256:' in source

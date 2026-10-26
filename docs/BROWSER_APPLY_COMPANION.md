@@ -1,48 +1,43 @@
-# SmartPloy Apply Companion — reviewed Lever and Ashby form assistance
+# SmartPloy Apply Companion — reviewed Lever, Ashby and Greenhouse assistance
 
-> **SP43 GREENHOUSE HOSTED FORM HELP (source only, 25 Oct):**
-> The same verified first-party review and MV3 companion can help fill
-> ordinary, personally approved contact fields, ordinary reviewed questions
-> and a matching CV PDF on `job-boards.greenhouse.io/{board}/jobs/{id}`
-> (or the equivalent legacy `boards.greenhouse.io` URL with the SAME
-> board+job). It does not support custom employer sites or iframe-only forms.
-> Greenhouse **final submission and browser receipt export remain MANUAL**.
-> Use *I applied on employer site* after personally sending it.
-> See [SP43 boundaries and acceptance](SP43_GREENHOUSE_REVIEWED_BROWSER_HANDOFF.md).
+> **SP47 CURRENT CONFIRMATION FLOW (26 October 2026, source release):**
+> Companion **0.5.1** can observe a personally submitted Lever, Ashby or hosted
+> Greenhouse application without requiring an automatic submission attempt.
+> Verify the same short-lived packet on your signed-in SmartPloy tab, return
+> to the employer confirmation and select **Check a Lever, Ashby or Greenhouse
+> confirmation**. Confirm that you personally submitted this exact job.
+> A visible reference, confirmation text and the exact employer/job address
+> are required. Then copy the observation into **My applications → Import
+> observed receipt**. Importing does not contact the employer.
 >
-> **SP42 MANUALLY SUBMITTED ASHBY OBSERVATIONS (source only, 25 Oct):**
-> After YOU personally submit an Ashby application, the same companion
-> can inspect a reference-bearing confirmation on the **same exact job**
-> and export the private observation into SmartPloy's existing receipt
-> workflow. It requires the same fresh signed-in reviewed packet and explicit
-> personal confirmation. No new browser final click, employer POST, or
-> one-use submit attempt is granted. All such receipts remain
-> `browser_observed_unverified` and do NOT increase independently
-> verified submission counts. See
-> [SP42 manual Ashby observation contract](SP42_ASHBY_MANUAL_RECEIPT.md).
-> If no reference appears or verification expires, record **I applied on
-> employer site** and keep the email; never automatically retry.
+> Lever observations now require the **same job**, not merely the same
+> employer account. Greenhouse permits the existing official
+> `boards.greenhouse.io` / `job-boards.greenhouse.io` transition only with
+> identical board and numeric job ID. A general thank-you page, missing
+> reference, different job, expired review or changing browser state cannot
+> produce an export. Keep any confirmation email and use **I applied on
+> employer site** for your personal report when those checks cannot pass.
 >
-> **SP41 CURRENT SUPPORTED FORMS (25 October 2026, source only):**
-> Exact hosted Lever `/apply` and exact Ashby `/application` forms may
-> receive user-approved contact-field, ordinary reviewed-question and reviewed
-> PDF assistance after the **same existing signed-in SmartPloy review**.
-> On Ashby, final employer submission and browser receipt export are
-> **always manual/unavailable**. The independent one-use browser final click
-> and provider-issued ACK stay Lever-only, strictly permission-gated and
-> OFF by default. A form fill or local PDF attachment is NOT a submitted
-> application. See [SP41 change and QA contract](SP41_ASHBY_REVIEWED_BROWSER_ASSIST.md).
+> Every browser receipt remains **browser_observed_unverified**. It does not
+> increase the provider-verified submission count or authorize another attempt.
+> Prior authorized Lever attempt recovery still works, and never retries.
+> [SP47 implementation and evidence](SP47_MANUAL_CONFIRMATION_CONTINUITY.md).
 >
-> **Ashby path:** save the current Finnish posting in SmartPloy, approve
-> exact CV/contact/letter facts, record the review in *My applications*,
-> verify the packet from the signed-in first-party SmartPloy tab, then open
-> `https://jobs.ashbyhq.com/{employer}/{job-id}/application` for the **same
-> job**. Inspect and explicitly approve ordinary fields/questions, optionally
-> attach the exact PDF after its SHA-256 is verified, personally finish legal,
-> salary, eligibility and other sensitive questions, and click the employer's
-> own Submit button. Use *I applied on employer site* to track the result.
-> Unknown or nonstandard employer forms remain fully manual.
+> **Supported form assistance:** exact hosted Lever `/apply`, Ashby
+> `/application`, and Greenhouse `/{board}/jobs/{numeric-id}` forms reuse
+> the same signed-in review, approved contact/ordinary-question controls
+> and matching CV PDF checks. Complete sensitive questions and legal
+> consents personally. Custom career sites and iframe-only forms stay manual.
+> Ashby and Greenhouse final submission remains the applicant's action.
+> Only independently authorized Lever jobs can use the separate one-use
+> final-click path when its operator flag and server approval are present.
+> A form fill or PDF attachment is not a submitted application.
 >
+> Source history: [SP41 Ashby form assistance](SP41_ASHBY_REVIEWED_BROWSER_ASSIST.md),
+> [SP42 Ashby observations](SP42_ASHBY_MANUAL_RECEIPT.md),
+> [SP43 Greenhouse form assistance](SP43_GREENHOUSE_REVIEWED_BROWSER_HANDOFF.md).
+> Their original receipt limitations are superseded by SP47. Production
+> acceptance still requires a verified deployment and signed-in live testing.
 
 > **SP26 CURRENT FLOW — 24 October 2026 (source only):** Chrome companion 0.3.0
 > supports ONE user-confirmed final browser click on an exact Lever job, but
@@ -210,14 +205,15 @@ required before claiming full production browser acceptance.
     the employer website yourself. This is outside SmartPloy's automated
     submission flow. Inspect the result before deciding on any next step.
 11. Save any genuine employer confirmation email/reference. Do **not** retry
-    an uncertain application. If a prior release of the companion had already
-    reserved a local attempt, **Check confirmation after a previous attempt**
-    may still inspect that earlier employer page. A current manual submission
-    does not generate a new SmartPloy companion attempt marker.
-12. For a prior eligible browser-observed confirmation only, the companion
-    may offer **Copy observed receipt** with a reference and page fingerprint.
-    Import this in **My applications → Import observed receipt**. For a new
-    manual application, use SmartPloy's **I applied on employer site** flow.
+    an uncertain application. Select **Check a Lever, Ashby or Greenhouse
+    confirmation** with the same reviewed packet. Manual observations require
+    a current signed-in review and your explicit confirmation of the action
+    you already performed. No automatic attempt marker is created.
+12. When a visible reference-bearing confirmation remains on the exact job,
+    use **Copy observed receipt** and import it in **My applications → Import
+    observed receipt**. Otherwise use **I applied on employer site** to record
+    your personal report. An existing authorized Lever attempt may also be
+    inspected, without repeating its final click.
 13. SmartPloy keeps browser-observed evidence and applicant self-reports
     distinct from independently employer-verified acceptance. Neither is
     cryptographic or authoritative proof the employer received an application.

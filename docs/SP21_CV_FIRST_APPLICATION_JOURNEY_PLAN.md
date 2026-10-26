@@ -62,3 +62,26 @@ The main navigation and first-use start must show clear distinct entry paths:
 ## Evidence and deployment truth
 Baseline deployed and verified by operator log: SP20 `2bc677e3d5b9b9e0cfdfd6fd0295a0fda86ce2b0` (healthy API/worker/web/Postgres, local Ollama bridge PASS, full ObumAI integration disabled).
 This document is implementation plan, NOT proof of a merged feature or OVH rollout. Each run must report file changes, source reuse, scratch changes, verified CI SHA and production SHA separately. No generic browser final-send claims until a real employer ACK is verified.
+
+
+## SP47 progress — 26 October 2026
+
+**Part implemented:** P0-C browser outcome tracking and the shared
+application → receipt → case continuity, building on SP42/SP43 and SP46.
+Manual Lever, Ashby and hosted Greenhouse confirmations can enter the same
+owner-bound receipt workflow. Lever attribution is tightened from employer
+account to exact job. Current signed-in review, explicit manual confirmation,
+unchanged document identity and browser-state rechecks apply; receipt mode
+cannot fill, upload, reserve or submit. Browser evidence remains unverified.
+
+**Reused:** existing companion, SP43 provider hosts, SP42 manual observation,
+review bridge, receipt schema/API/store, workspace locking and personal
+applied reporting. No new application engine, database migration, browser
+permission, provider credential or outbound communication channel.
+
+**Production remains blocked:** a fresh 26 October audit found the live site
+healthy and its ZITADEL redirect working, but no `release_revision` in health.
+Delivery's reviewed inventory still has SmartPloy disabled; this session has
+no authenticated controller/OVH execution route. Native qualification,
+exact-SHA deployment and genuine owner/employer acceptance are outstanding.
+See [SP47 evidence and next work](SP47_MANUAL_CONFIRMATION_CONTINUITY.md).

@@ -74,28 +74,58 @@ export function exactAssistedForm(activeUrl, packetUrl) {
 }
 
 
-/* SP42: observation-only exact same-job Ashby confirmation scope. This is a
-   read-only browser affordance, NOT provider evidence or a submit grant.
-   Queries/fragments on the visible employer page are deliberately not copied. */
-export function exactAshbyReceiptPage(activeUrl, packetUrl) {
+/* SP47: observation-only scope for the existing three supported providers.
+   No caller may infer final-click rights from this result. Reject ambiguous
+   raw paths BEFORE URL() can normalize another posting into the selected one.
+   Query/fragment values on a visible confirmation are never copied. */
+export function exactReceiptPage(activeUrl, packetUrl) {
   try {
+    for (const raw of [activeUrl, packetUrl]) {
+      if (typeof raw !== "string" || raw.length < 14 || raw.length > 1500 ||
+          /[\\\u0000-\u0020\u007f]/.test(raw)) return false;
+      const address = raw.match(/^[A-Za-z][A-Za-z0-9+.-]*:\/\/([^/?#]*)([^?#]*)/);
+      const path = address?.[2];
+      if (!address || /[%\u0080-\uffff]/.test(address[1])) return false;
+      if (path === undefined || path.includes("%") || path.includes("//") ||
+          path.split("/").some(part => part === "." || part === "..")) return false;
+    }
     const here = new URL(activeUrl);
-    const postingUrl = new URL(packetUrl);
-    if (here.protocol !== "https:" || postingUrl.protocol !== "https:" ||
-        here.hostname !== "jobs.ashbyhq.com" ||
-        postingUrl.hostname !== "jobs.ashbyhq.com" ||
-        here.origin !== postingUrl.origin ||
-        here.username || here.password || postingUrl.username || postingUrl.password ||
-        here.port || postingUrl.port || postingUrl.search || postingUrl.hash) return false;
-    const posting = postingUrl.pathname.replace(/\/application\/?$/, "").replace(/\/+$/, "");
-    if (!/^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}$/.test(posting)) return false;
+    const intended = new URL(packetUrl);
+    if (here.protocol !== "https:" || intended.protocol !== "https:" ||
+        here.username || here.password || intended.username || intended.password ||
+        here.port || intended.port || intended.search || intended.hash) return false;
+    const greenhouseHosts = ["boards.greenhouse.io", "job-boards.greenhouse.io"];
+    const greenhouse = greenhouseHosts.includes(intended.hostname) &&
+      greenhouseHosts.includes(here.hostname);
+    if (!greenhouse && here.origin !== intended.origin) return false;
+    let posting, suffix;
+    if (["jobs.lever.co", "jobs.eu.lever.co"].includes(intended.hostname)) {
+      if (!/^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+(?:\/apply\/?)?$/.test(intended.pathname)) return false;
+      posting = intended.pathname.replace(/\/apply\/?$/, "");
+      suffix = /^\/(?:apply(?:\/[A-Za-z0-9_-]+)*|thanks)\/?$/;
+    } else if (intended.hostname === "jobs.ashbyhq.com") {
+      if (!/^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}(?:\/application\/?)?$/.test(intended.pathname)) return false;
+      posting = intended.pathname.replace(/\/application\/?$/, "");
+      suffix = /^\/application(?:\/[A-Za-z0-9_-]+)*\/?$/;
+    } else if (greenhouse) {
+      if (!/^\/[A-Za-z0-9_-]{1,100}\/jobs\/[0-9]{1,20}\/?$/.test(intended.pathname)) return false;
+      posting = intended.pathname.replace(/\/$/, "");
+      suffix = /^\/confirmation\/?$/;
+    } else return false;
     return here.pathname === posting || here.pathname === posting + "/" ||
-      here.pathname === posting + "/application" ||
-      here.pathname === posting + "/application/" ||
-      here.pathname.startsWith(posting + "/application/");
+      (here.pathname.startsWith(posting + "/") &&
+        suffix.test(here.pathname.slice(posting.length)));
   } catch {
     return false;
   }
+}
+
+// Retain the SP42 public helper for existing form/receipt callers.
+export function exactAshbyReceiptPage(activeUrl, packetUrl) {
+  try {
+    return new URL(packetUrl).hostname === "jobs.ashbyhq.com" &&
+      exactReceiptPage(activeUrl, packetUrl);
+  } catch { return false; }
 }
 
 

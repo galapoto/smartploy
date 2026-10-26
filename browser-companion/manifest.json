@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SmartPloy Apply Companion",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Reviewed Lever, Ashby and hosted Greenhouse form/PDF help. Only individually approved Lever jobs permit one-use final click. No background sending.",
   "permissions": [
     "activeTab",

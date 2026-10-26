@@ -56,43 +56,87 @@ def _verified_url(value: str, expected: str) -> str:
     if not isinstance(value, str) or not (14 <= len(value) <= 1500):
         raise ReceiptError("A bounded HTTPS employer confirmation URL is required")
     try:
+        # Browser URL parsers normalize dot segments, escaped dot segments,
+        # backslashes and some whitespace before exposing location.href.
+        # Reject those ambiguous raw forms on BOTH sides so a receipt cannot
+        # name a different job after parsing or normalization elsewhere.
+        for raw in (value, expected):
+            if (
+                not isinstance(raw, str) or not 14 <= len(raw) <= 1500
+                or re.search(r"[\x00-\x20\x7f\\]", raw)
+            ):
+                raise ReceiptError("Receipt URL contains ambiguous characters")
         parsed = urlsplit(value)
         accepted = urlsplit(expected)
-        # Reuse SP41's exact reviewed Lever/Ashby posting boundary. A browser
+        for address in (parsed, accepted):
+            if (
+                "%" in address.netloc or not address.netloc.isascii()
+                or "%" in address.path or "//" in address.path
+                or any(part in {".", ".."} for part in address.path.split("/"))
+            ):
+                raise ReceiptError("Receipt URL contains an ambiguous job path")
+        # Reuse SP43's exact reviewed hosted-provider posting boundary. A browser
         # observation is NOT a provider-issued receipt or submit permission.
-        from .browser_handoff import HandoffError, _assisted_posting_url
+        from .browser_handoff import _assisted_posting_url
         _assisted_posting_url(expected)
         if (
-            parsed.scheme != "https" or parsed.netloc != accepted.netloc
+            parsed.scheme != "https" or accepted.query or accepted.fragment
             or parsed.username or parsed.password
             or parsed.port not in (None, 443)
         ):
+            raise ReceiptError("Receipt must remain on an exact HTTPS employer job")
+        greenhouse_hosts = {"boards.greenhouse.io", "job-boards.greenhouse.io"}
+        greenhouse = (
+            accepted.hostname in greenhouse_hosts
+            and parsed.hostname in greenhouse_hosts
+        )
+        if parsed.hostname != accepted.hostname and not greenhouse:
             raise ReceiptError("Receipt must remain on the original employer host")
-        if parsed.hostname == "jobs.ashbyhq.com":
-            # Unlike Lever's historical tenant-wide observed URL rule, exact
-            # Ashby job identity must survive the confirmation navigation.
-            # Reject another job on the SAME board with a path-boundary check.
+        if accepted.hostname == "jobs.ashbyhq.com":
+            # Exact Ashby job identity must survive confirmation navigation.
             parts = accepted.path.strip("/").split("/")
             posting = "/" + "/".join(parts[:2])
             if len(parts) not in (2, 3) or not (
                 parsed.path == posting or
                 parsed.path == posting + "/" or
-                parsed.path == posting + "/application" or
-                parsed.path == posting + "/application/" or
-                parsed.path.startswith(posting + "/application/")
+                re.fullmatch(
+                    re.escape(posting) + r"/application(?:/[A-Za-z0-9_-]+)*/?",
+                    parsed.path,
+                )
             ):
                 raise ReceiptError("Ashby confirmation belongs to another job")
-        elif parsed.hostname in {"jobs.lever.co", "jobs.eu.lever.co"}:
-            if not parsed.path.startswith(
-                "/" + accepted.path.strip("/").split("/")[0] + "/"
+        elif accepted.hostname in {"jobs.lever.co", "jobs.eu.lever.co"}:
+            # SP47: an employer account can contain MANY applications. A
+            # sibling job or a tenant-wide thank-you page proves nothing
+            # about the selected posting, even when a prior attempt exists.
+            posting = "/" + "/".join(accepted.path.strip("/").split("/")[:2])
+            if not (
+                parsed.path in {
+                    posting, posting + "/", posting + "/apply",
+                    posting + "/apply/", posting + "/thanks", posting + "/thanks/",
+                }
+                or re.fullmatch(
+                    re.escape(posting) + r"/apply(?:/[A-Za-z0-9_-]+)*/?",
+                    parsed.path,
+                )
             ):
-                raise ReceiptError("Receipt must remain on the original Lever account")
+                raise ReceiptError("Lever confirmation belongs to another job")
+        elif greenhouse:
+            # SP43 already permits only this official-host transition for
+            # reviewed form assistance. Keep the board AND numeric job ID;
+            # generic employer thank-you redirects remain manual reporting.
+            posting = accepted.path.rstrip("/")
+            if parsed.path not in {
+                posting, posting + "/", posting + "/confirmation",
+                posting + "/confirmation/",
+            }:
+                raise ReceiptError("Greenhouse confirmation belongs to another job")
         else:
             raise ReceiptError("Unsupported employer confirmation host")
-    except (ValueError, IndexError, HandoffError, TypeError) as exc:
+    except (ValueError, IndexError, TypeError) as exc:
         raise ReceiptError("Receipt URL cannot be verified against the original job") from exc
     # Drop query/fragment even if the page included credentials or tracking params.
-    return "https://" + parsed.netloc + parsed.path
+    return "https://" + str(parsed.hostname) + parsed.path
 
 
 def validate_browser_receipt(
