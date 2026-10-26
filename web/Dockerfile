@@ -14,5 +14,5 @@ RUN npm run build
 
 FROM caddy:2.10.2-alpine
 COPY deploy/personal/web.Caddyfile /etc/caddy/Caddyfile
-COPY --from=build /app/dist /srv
+COPY --from=build /workspace/web/dist /srv
 EXPOSE 8080
