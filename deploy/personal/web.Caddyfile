@@ -19,6 +19,15 @@
         }
     }
 
+    # Do not let the SPA fallback pretend a missing/outdated extension ZIP
+    # exists: direct download must return a real ZIP or a genuine HTTP 404.
+    @companion path /smartploy-apply-companion.zip /smartploy-apply-companion.zip.sha256
+    handle @companion {
+        header Cache-Control "no-store"
+        root * /srv
+        file_server
+    }
+
     handle {
         root * /srv
         try_files {path} /index.html

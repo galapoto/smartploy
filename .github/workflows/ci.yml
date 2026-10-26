@@ -60,6 +60,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      # SP44: the verified browser ZIP is built with Python stdlib as a
+      # mandatory npm prebuild step in both unit and Chromium image builds.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -121,6 +126,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      # SP44: the verified browser ZIP is built with Python stdlib as a
+      # mandatory npm prebuild step in both unit and Chromium image builds.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -282,6 +292,34 @@ jobs:
             sleep 2
           done
 
+          # SP44: the packaged extension must really be shipped by the
+          # exact immutable Caddy image, not just compiled in source CI.
+          curl --fail --silent --show-error \
+            -H 'Host: smartploy.obumai.com' \
+            http://127.0.0.1:18091/smartploy-apply-companion.zip \
+            --output /tmp/smartploy-apply-companion.zip
+          curl --fail --silent --show-error \
+            -H 'Host: smartploy.obumai.com' \
+            http://127.0.0.1:18091/smartploy-apply-companion.zip.sha256 \
+            --output /tmp/smartploy-apply-companion.zip.sha256
+          (cd /tmp && sha256sum -c smartploy-apply-companion.zip.sha256)
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from zipfile import ZipFile
+          path = Path('/tmp/smartploy-apply-companion.zip')
+          with ZipFile(path) as extension:
+              assert extension.testzip() is None
+              names = set(extension.namelist())
+              assert {'manifest.json', 'popup.mjs', 'icon128.png',
+                      'INSTALL.txt', 'SHA256SUMS.txt'} <= names
+              assert all('..' not in name and '/' not in name for name in names)
+              manifest = json.loads(extension.read('manifest.json'))
+              assert manifest['manifest_version'] == 3
+              assert manifest['permissions'] == ['activeTab', 'scripting', 'storage']
+              assert not any(x in manifest for x in (
+                  'background', 'host_permissions', 'content_scripts'))
+          PY
           python - <<'PY'
           import json
           from pathlib import Path
