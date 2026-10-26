@@ -5,13 +5,18 @@
  * Never put raw response details, account identifiers, job URLs or candidate
  * data into a batch diagnostic.
  */
-import { SmartployHttpError } from "./api";
 import type { AutoApplyBatchIssue } from "./types";
 
 export function describeAutoApplyBatchIssue(
   canonicalKey: string, failure: unknown,
 ): AutoApplyBatchIssue {
-  const status = failure instanceof SmartployHttpError ? failure.status : 0;
+  // Only the typed SmartployHttpError from api.ts is expected in the app.
+  // Structural status lookup also keeps isolated React tests independent of
+  // the mocked API module. Invalid or synthetic values fall back to unknown.
+  const reported = failure && typeof failure === "object" && "status" in failure
+    ? (failure as { status?: unknown }).status : null;
+  const status = typeof reported === "number" && Number.isInteger(reported) &&
+    reported >= 400 && reported <= 599 ? reported : 0;
   if (status === 404 || status === 410) {
     return {
       canonicalKey, kind: "job_missing", retryable: false,
