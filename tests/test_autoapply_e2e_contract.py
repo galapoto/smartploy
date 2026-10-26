@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from base64 import b64encode
 from datetime import datetime, timezone
-from hashlib import sha256
 from io import BytesIO
 import json
 import os
