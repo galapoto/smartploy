@@ -1155,10 +1155,13 @@ export default function ApplicationStudio(props: {
             <p><strong>Status:</strong> Browser-observed and awaiting your review</p>
           </div> : <>
             <p className="muted">After an approved Lever attempt or a manually submitted
-              Ashby application, the companion may capture a visible, same-job,
+              Lever, Ashby or hosted Greenhouse application, the companion may capture a visible, same-job,
               reference-bearing employer confirmation. Copy its private receipt packet
               and import it here. An attempted click or browser observation is never
               independently verified employer acknowledgment.</p>
+            <p className="muted">If the employer shows no reference or redirects away from
+              the exact job, keep its confirmation email and use I applied on employer site
+              to record your own report.</p>
             <button className="outline-btn compact" type="button"
               onClick={() => setReceiptOpen((current) => !current)}
               disabled={selected.status !== "draft" || !!partnerReceipt}>

@@ -16,6 +16,8 @@ from smartploy.browser_receipt_storage import (
     MemoryBrowserReceiptRepository, PostgresBrowserReceiptRepository, ReceiptConflict,
 )
 from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
+from smartploy.identity import AuthenticatedPrincipal, MemoryIdentityRepository
+from smartploy.oidc import MemorySessionRepository, SESSION_COOKIE_NAME
 from smartploy.profile import CandidateProfile, ProfileFact
 from smartploy.service import SmartployService
 from smartploy.storage import PostgresJobRepository
@@ -353,3 +355,192 @@ def test_sp42_ashby_private_api_observation_does_not_claim_provider_acknowledgme
     }).status_code == 422
     assert api.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
     assert api.get(endpoint).json()["receipt"]["status"] == "browser_observed_unverified"
+
+
+# SP47 closes the original Lever tenant-wide attribution hole and adds
+# manual hosted-Greenhouse observations through the SAME private store.
+LEVER_POSTING = JOB.removesuffix("/apply")
+GREENHOUSE = "https://boards.greenhouse.io/synthetic-fi/jobs/123456"
+GREENHOUSE_MODERN = GREENHOUSE.replace("boards.greenhouse.io", "job-boards.greenhouse.io")
+
+
+@pytest.mark.parametrize("posting,confirmation,stored", [
+    (JOB, LEVER_POSTING, LEVER_POSTING),
+    (JOB, LEVER_POSTING + "/", LEVER_POSTING + "/"),
+    (JOB, JOB, JOB),
+    (LEVER_POSTING, JOB + "/", JOB + "/"),
+    (JOB, JOB + "/confirmation/", JOB + "/confirmation/"),
+    (JOB, LEVER_POSTING + "/thanks", LEVER_POSTING + "/thanks"),
+    (JOB, LEVER_POSTING + "/thanks/", LEVER_POSTING + "/thanks/"),
+    (JOB, LEVER_POSTING + "/confirmation", LEVER_POSTING + "/confirmation"),
+    (JOB, LEVER_POSTING + "/confirmation/", LEVER_POSTING + "/confirmation/"),
+    (
+        JOB.replace("jobs.lever.co", "jobs.eu.lever.co"),
+        JOB.replace("jobs.lever.co", "jobs.eu.lever.co") + "/confirmation",
+        JOB.replace("jobs.lever.co", "jobs.eu.lever.co") + "/confirmation",
+    ),
+    (JOB, JOB.replace("jobs.lever.co", "JOBS.LEVER.CO:443"), JOB),
+    (GREENHOUSE, GREENHOUSE, GREENHOUSE),
+    (GREENHOUSE, GREENHOUSE_MODERN + "/", GREENHOUSE_MODERN + "/"),
+    (GREENHOUSE, GREENHOUSE_MODERN + "/confirmation", GREENHOUSE_MODERN + "/confirmation"),
+    (GREENHOUSE_MODERN + "/", GREENHOUSE + "/confirmation/", GREENHOUSE + "/confirmation/"),
+    (ASHBY, ASHBY + "/confirmation/done/", ASHBY + "/confirmation/done/"),
+])
+def test_sp47_manual_confirmation_keeps_exact_job_identity(posting, confirmation, stored):
+    workspace = replace(kit(), application_url=posting)
+    raw = import_value(workspace)
+    raw["confirmation_page_url"] = confirmation + "?private=discard#secret"
+    receipt = validate_browser_receipt(workspace, raw, now=TIME)
+    assert receipt.confirmation_page_url == stored
+    assert receipt.status == "browser_observed_unverified"
+    assert receipt.to_dict()["independently_verified_by_employer"] is False
+    assert receipt.to_dict()["actually_submitted_count_changed"] is False
+    assert "discard" not in str(receipt.to_dict())
+    assert "secret" not in str(receipt.to_dict())
+
+
+@pytest.mark.parametrize("posting,confirmation", [
+    # A prior attempt for one job must never make another job's receipt fit.
+    (JOB, "https://jobs.lever.co/uprightproject/other-job/apply/confirmation"),
+    (JOB, "https://jobs.lever.co/uprightproject/thanks"),
+    (JOB, LEVER_POSTING + "-sibling/apply"),
+    (JOB, LEVER_POSTING + "/application/confirmation"),
+    (JOB, LEVER_POSTING + "/thanks/another-job"),
+    (JOB, JOB + "-other"),
+    (JOB, JOB.replace("jobs.lever.co", "jobs.eu.lever.co")),
+    (GREENHOUSE, GREENHOUSE_MODERN.replace("123456", "1234567")),
+    (GREENHOUSE, GREENHOUSE_MODERN.replace("synthetic-fi", "other-board")),
+    (GREENHOUSE, "https://job-boards.greenhouse.io/synthetic-fi/confirmation"),
+    (GREENHOUSE, GREENHOUSE_MODERN + "/confirmation/other-job"),
+    (GREENHOUSE, GREENHOUSE_MODERN + "/apply"),
+    (GREENHOUSE, GREENHOUSE_MODERN.replace(".io", ".io.evil.invalid")),
+    (ASHBY, ASHBY + "-other"),
+    (ASHBY, ASHBY.replace("junior-data-analyst", "different-job")),
+    (JOB, JOB.replace("https://", "http://")),
+    (GREENHOUSE, GREENHOUSE_MODERN.replace("https://", "https://user:password@")),
+    (GREENHOUSE, GREENHOUSE_MODERN.replace(".io", ".io:8443")),
+])
+def test_sp47_receipt_refuses_sibling_jobs_and_unapproved_confirmation_routes(posting, confirmation):
+    workspace = replace(kit(), application_url=posting)
+    raw = import_value(workspace)
+    raw["confirmation_page_url"] = confirmation
+    with pytest.raises(ReceiptError):
+        validate_browser_receipt(workspace, raw, now=TIME)
+
+
+@pytest.mark.parametrize("posting", [JOB, ASHBY, GREENHOUSE])
+@pytest.mark.parametrize("malicious_suffix", [
+    "/../other-job", "/./confirmation", "/%2e%2e/other-job",
+    "/%2Fother-job", "\\confirmation", "//confirmation", "/confirmation\t",
+])
+def test_sp47_receipt_rejects_paths_that_browser_parsers_can_reinterpret(posting, malicious_suffix):
+    workspace = replace(kit(), application_url=posting)
+    raw = import_value(workspace)
+    raw["confirmation_page_url"] = posting + malicious_suffix
+    with pytest.raises(ReceiptError):
+        validate_browser_receipt(workspace, raw, now=TIME)
+
+
+@pytest.mark.parametrize("posting", [JOB, ASHBY, GREENHOUSE])
+@pytest.mark.parametrize("suffix", ["?source=altered", "#fragment", "\n"])
+def test_sp47_expected_posting_cannot_be_normalized_into_a_different_identity(posting, suffix):
+    workspace = replace(kit(), application_url=posting + suffix)
+    raw = import_value(workspace)
+    raw["confirmation_page_url"] = posting
+    with pytest.raises(ReceiptError):
+        validate_browser_receipt(workspace, raw, now=TIME)
+
+
+@pytest.mark.parametrize("posting,confirmation", [
+    (JOB, LEVER_POSTING + "/thanks"),
+    (GREENHOUSE, GREENHOUSE_MODERN + "/confirmation"),
+    (ASHBY, ASHBY + "/confirmation"),
+])
+def test_sp47_oidc_owner_imports_manual_observation_without_any_automated_attempt(
+    monkeypatch, posting, confirmation,
+):
+    """Original middleware, private workspace and receipt API, two OIDC owners.
+
+    In-memory fixture stores isolate the API boundary. PostgreSQL persistence
+    remains covered separately above and in the original E2E contract.
+    """
+    origin = "https://smartploy.komplyint.fi"
+    issuer = "https://synthetic-sso.example.invalid"
+    monkeypatch.delenv("SMARTPLOY_DATABASE_URL", raising=False)
+    for name, value in {
+        "SMARTPLOY_ENVIRONMENT": "production",
+        "SMARTPLOY_AUTH_MODE": "oidc",
+        "SMARTPLOY_ACCESS_ENABLED": "false",
+        "SMARTPLOY_PUBLIC_ORIGIN": origin,
+        "SMARTPLOY_ALLOWED_HOSTS": "smartploy.komplyint.fi",
+        "SMARTPLOY_OIDC_ISSUER": issuer,
+        "SMARTPLOY_OIDC_CLIENT_ID": "synthetic-sp47",
+        "SMARTPLOY_OIDC_REDIRECT_URI": origin + "/auth/callback",
+        "SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI": origin + "/auth/logged-out",
+    }.items():
+        monkeypatch.setenv(name, value)
+    identities = MemoryIdentityRepository()
+    sessions = MemorySessionRepository()
+    principals = [AuthenticatedPrincipal(
+        issuer=issuer, subject=subject, email="same@example.invalid", auth_source="oidc",
+    ) for subject in ("sp47-owner", "sp47-other-owner")]
+    owners = [identities.resolve_or_create(principal) for principal in principals]
+    tokens = [sessions.create(
+        user_id=owner.user_id, principal=principal, ttl_seconds=3600,
+    ).token for owner, principal in zip(owners, principals)]
+    app = create_app(
+        SmartployService(), identity_repository=identities,
+        session_repository=sessions, oidc_client=object(),
+    )
+    # Neither a local attempt marker nor an automated employer claim is a
+    # prerequisite for a user's private, explicitly unverified observation.
+    assert app.state.employer_claims is None
+    assert app.state.employer_rights is None
+
+    def forbidden_send(*args, **kwargs):
+        pytest.fail("A manual browser observation must never call an employer")
+
+    monkeypatch.setattr(app.state.partner_lever_transport, "send", forbidden_send)
+    workspace = replace(kit(owners[0].profile_id), application_url=posting)
+    app.state.workspace_repository.create_or_get(workspace)
+    endpoint = f"/api/v1/application-workspaces/{workspace.workspace_id}/browser-receipt"
+    api = TestClient(app, base_url=origin)
+    assert api.get(endpoint).status_code == 401
+    raw = import_value(workspace, time=datetime.now(timezone.utc))
+    raw["confirmation_page_url"] = confirmation + "?private=discard#secret"
+    headers = {"Origin": origin, "Sec-Fetch-Site": "same-origin",
+               "X-Smartploy-Expected-User-Id": owners[0].user_id}
+    api.cookies.set(SESSION_COOKIE_NAME, tokens[0])
+    assert api.get(endpoint).json()["present"] is False
+    assert api.post(endpoint, headers=headers, json={
+        "confirm_user_observed": False, "receipt": raw,
+    }).status_code == 422
+    stale = {**raw, "document_revision": workspace.revision + 1}
+    assert api.post(endpoint, headers=headers, json={
+        "confirm_user_observed": True, "receipt": stale,
+    }).status_code == 422
+    payload = {"confirm_user_observed": True, "receipt": raw}
+    stored = api.post(endpoint, headers=headers, json=payload)
+    assert stored.status_code == 200, stored.text
+    result = stored.json()
+    assert result["external_confirmation_verified"] is False
+    assert result["receipt"]["status"] == "browser_observed_unverified"
+    assert result["receipt"]["confirmation_page_url"] == confirmation
+    assert result["receipt"]["actually_submitted_count_changed"] is False
+    assert stored.headers["cache-control"] == "private, no-store"
+    assert api.post(endpoint, headers=headers, json=payload).json() == result
+    assert api.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
+    assert app.state.workspace_repository.get(
+        owners[0].profile_id, workspace.workspace_id,
+    ).status == "draft"
+
+    # An identical email address does not make another OIDC account the owner.
+    api.cookies.set(SESSION_COOKIE_NAME, tokens[1])
+    assert api.get(endpoint).status_code == 404
+    assert api.post(endpoint, headers={**headers,
+        "X-Smartploy-Expected-User-Id": owners[1].user_id,
+    }, json=payload).status_code == 404
+    api.cookies.set(SESSION_COOKIE_NAME, tokens[0])
+    assert api.get(endpoint).json()["receipt"] == result["receipt"]
+    assert app.state.employer_claims is None
+    assert app.state.employer_rights is None
