@@ -135,23 +135,45 @@ job's original posting link, using the downloaded CV and letter.
 
 ## Load the companion on the applicant's computer
 
-1. After the reviewed SmartPloy PR is merged and tested, obtain the repository
-   locally with `git clone https://github.com/galapoto/smartploy.git`
-   or download the source from your own repository account.
+**SP44: production-bundled download.** Once the exact SP44 commit has been
+deployed and its running release SHA verified, sign in to SmartPloy and open
+**My applications → Fill the employer's form → Download Chrome companion ZIP**.
+The direct first-party path is
+`https://smartploy.komplyint.fi/smartploy-apply-companion.zip`, with an optional
+`.zip.sha256` checksum at the same origin. Download is a public static asset;
+**no private applicant data, browser packet or employer credentials** are in
+the archive. A build-only Python stdlib packager bundles *only* reviewed MV3
+files from `browser-companion` and creates an independent SHA-256 manifest.
+
+1. Use **desktop Chrome or Chromium** (not mobile Chrome). Download the
+   companion ZIP using SmartPloy's application editor and **extract it** to
+   a dedicated local folder. Do **not** try to load the ZIP directly as an
+   extension.
 2. In Chrome/Chromium navigate to `chrome://extensions` and enable
    **Developer mode**.
-3. Click **Load unpacked**, choose `smartploy/browser-companion`.
+3. Click **Load unpacked** and choose the **extracted folder containing
+   `manifest.json`**, not the ZIP or the folder containing your downloaded ZIP.
 4. Pin **SmartPloy Apply Companion** to the toolbar.
 5. Confirm it requests only `activeTab`, `scripting`, and `storage`.
    It must never ask for broad browsing-history permissions or password access.
+6. After a new SmartPloy release, download and **reload/reinstall the updated
+   unpacked companion** if its version/contents changed. It has no automatic
+   update channel. Review each form, CV and job before any data transfer.
 
-This is an unpacked first-party extension; it is **not yet Chrome Web Store
-published**, code signed, or security-audited for public distribution.
-A code review and real browser QA are required before general deployment.
+For repository-based development, the previous path still works:
+`git clone https://github.com/galapoto/smartploy.git`, then select
+`smartploy/browser-companion` with Load unpacked. The production ZIP and
+repository folder use the same original modules and safety rules. A missing
+ZIP endpoint must return HTTP **404**, not the SmartPloy HTML SPA page.
+
+This is a first-party unpacked extension. It is **not Chrome Web Store
+published, Chrome Web Store signed or externally security-audited for mass
+distribution**; a real signed-in applicant and consenting employer form QA is
+required before claiming full production browser acceptance.
 
 ## Prepare each application
 
-1. Sign in to `https://smartploy.obumai.com`.
+1. Sign in to `https://smartploy.komplyint.fi` (production ZITADEL login).
 2. In CV & profile, approve **one full name, one email address** and,
    optionally, phone and the social-profile URLs. Check that your job-specific
    cover letter has no placeholders.
