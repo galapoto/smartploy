@@ -214,4 +214,22 @@ describe("SP21 application journey", () => {
     expect(screen.queryByText("Different account hidden vacancy")).toBeNull();
   });
 
+
+  it("keeps the whole-ledger search field focused while a debounced private read is pending", async () => {
+    let release!: (value: CVJobMatches) => void;
+    const delayed = new Promise<CVJobMatches>((resolve) => { release = resolve; });
+    vi.mocked(api.getCVJobMatches).mockImplementation((options) =>
+      options?.query === "Unseen" ? delayed : Promise.resolve(data));
+    render(<ApplicationJourney {...props()}/>);
+    await screen.findByText("IT-suunnittelija");
+    const input = screen.getByRole("searchbox", { name: /filter matching jobs/i });
+    input.focus();
+    fireEvent.change(input, { target: { value: "Unseen" } });
+    await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("searchbox", { name: /filter matching jobs/i })).toBe(input);
+    expect(document.activeElement).toBe(input);
+    release(data);
+    await screen.findByText("IT-suunnittelija");
+  });
+
 });
