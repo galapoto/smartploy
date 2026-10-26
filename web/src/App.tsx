@@ -822,15 +822,9 @@ export default function App() {
       if (prepared && !failed) {
         setSelectedWorkspaceId(firstWorkspace);
         navigate("applications");
-      } else if (prepared) {
-        // Stay on the Apply page so the caller can keep only the failed
-        // exact keys selected; successful workspaces are already durable.
-        setNotice(prepared + " private draft(s) prepared; " + failed +
-          " job(s) need a retry. The ready drafts are in My applications.");
-      } else {
-        setNotice("No selected drafts could be prepared. Review your CV, " +
-          "current job source and account settings, then retry selected jobs.");
       }
+      // Partial success stays on Apply; successful exact keys will be
+      // removed by the child's matching result, failures remain retryable.
       const agentSummary = outcome.agentsActive + " private per-job agent(s) ready for in-app tracking. " +
         (outcome.agentsPaused ? outcome.agentsPaused + " case(s) paused. " : "") +
         (outcome.agentsClosed ? outcome.agentsClosed + " case(s) closed. " : "") +
@@ -842,6 +836,10 @@ export default function App() {
       } else if (prepared) {
         setNotice(prepared + " private application draft(s) ready; " + failed +
           " job(s) need a retry. " + agentSummary);
+      } else {
+        setNotice("No selected drafts could be prepared. Review your CV, " +
+          "current job source and account settings, then retry selected jobs. " +
+          "No applications were sent to employers.");
       }
       return outcome;
     } finally {
