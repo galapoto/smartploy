@@ -273,6 +273,9 @@ jobs:
           grep -Fq 'AGENT_ZERO_FRESH_RUN_MISSING' /tmp/agent-zero-expected-red.log
           rm -f /tmp/agent-zero-expected-red.log
           bash deploy/personal/scripts/assert-running-images.sh "${DEPLOY_SHA}"
+          # SP45: exercise the SAME exact source→download verifier used by
+          # guarded OVH deploy/release-evidence, against the synthetic Caddy.
+          bash deploy/personal/scripts/assert-companion-release.sh smartploy.obumai.com 18091
           # Negative control: tag an unrelated existing image as a fake release;
           # the image-ID gate must detect that the running containers are stale.
           BAD_SHA="0000000000000000000000000000000000000000"
