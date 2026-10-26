@@ -953,16 +953,31 @@ def create_app(
         return item.summary() if item else {"present": False}
 
     @app.get("/api/v1/profile/cv/matches")
-    def cv_first_job_matches(request: Request) -> JSONResponse:
-        """Read-only same-account local CV search across the existing job DB.
+    def cv_first_job_matches(
+        request: Request,
+        limit: int = Query(default=40, ge=1, le=100),
+        recommended_offset: int = Query(default=0, ge=0, le=100000),
+        other_offset: int = Query(default=0, ge=0, le=100000),
+        query: str = Query(default="", max_length=120),
+        selected_job_key: str = Query(default="", max_length=160),
+    ) -> JSONResponse:
+        """Owner-bound, paged CV search of the ENTIRE current job ledger.
 
-        An upload alone never approves career evidence or starts employer work.
-        The response is not cacheable: this is private CV-derived information.
+        Separate lane offsets preserve the original ranking. The selected
+        posting is independently pinned by exact current canonical key,
+        even if it falls outside both page windows. No employer actions.
         """
+        if any(ord(char) < 32 for char in query + selected_job_key):
+            raise HTTPException(status_code=422, detail="Unsupported CV search value")
         tenant, _ = tenant_context(request)
         profile_id = tenant.profile_repository.profile_id
         cv = app.state.cv_repository.get(profile_id)
-        result = cv_job_matches(cv, tenant.list_jobs(), profile_id=profile_id)
+        result = cv_job_matches(
+            cv, tenant.list_jobs(), profile_id=profile_id,
+            max_items=limit, recommended_offset=recommended_offset,
+            other_offset=other_offset, query=query,
+            selected_job_key=selected_job_key,
+        )
         return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
 
     @app.post("/api/v1/profile/cv")
