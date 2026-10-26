@@ -30,8 +30,8 @@ FILES = (
 )
 MAX_SOURCE_BYTES = 500_000
 ZIP_TIMESTAMP = (2026, 10, 1, 0, 0, 0)
-RELATIVE_IMPORT = re.compile(
-    r"""(?:\bfrom\s*|\bimport\s*)["'](\./[^"'\r\n]+)["']""",
+MODULE_IMPORT = re.compile(
+    r"""(?:\bfrom\s*|\bimport\s*)["']([^"'\r\n]+)["']""",
 )
 HTML_ASSET = re.compile(r"""(?:src|href)=["']([^"']+)["']""")
 
@@ -74,8 +74,8 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
     for name, data in files.items():
         if not name.endswith(".mjs"):
             continue
-        for imported in RELATIVE_IMPORT.findall(data.decode("utf-8")):
-            if imported[2:] not in files:
+        for imported in MODULE_IMPORT.findall(data.decode("utf-8")):
+            if not imported.startswith("./") or imported[2:] not in files:
                 raise ValueError(f"{name} references an unreviewed import: {imported}")
 
     # Verify all local HTML references. Chrome extension does not need host
