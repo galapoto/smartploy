@@ -7,7 +7,7 @@ import { getCVJobMatches, getSession } from "./api";
 import { safeExternalJobUrl } from "./lib";
 import type {
   ApplicationAssistanceLevel, ApplicationFlowMode,
-  CVDocument, CVJobMatches, SearchJobCard
+  CVDocument, CVJobMatches, SearchJobCard, AutoApplyBatchOutcome
 } from "./types";
 
 const CV_PAGE_SIZE = 40;
@@ -41,7 +41,9 @@ export default function ApplicationJourney(props: {
   onFindJobs: () => void;
   onOpenApplications: () => void;
   onPrepare: (canonicalKey: string) => Promise<void>;
-  onPrepareSelected: (canonicalKeys: string[]) => Promise<void>;
+  onPrepareSelected: (
+    canonicalKeys: string[], onProgress: (completed: number, total: number) => void
+  ) => Promise<AutoApplyBatchOutcome>;
 }) {
   const [results, setResults] = useState<CVJobMatches | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,6 +59,13 @@ export default function ApplicationJourney(props: {
   const [showOther, setShowOther] = useState(true);
   const [assistance, setAssistance] = useState<ApplicationAssistanceLevel>("documents");
   const [selected, setSelected] = useState<string[]>([]);
+  const [batchResult, setBatchResult] = useState<AutoApplyBatchOutcome | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
+  const queueInFlight = useRef(false);
+  // In-flight batch results cannot restore choices from a replaced CV or
+  // different account, even if their server calls already completed.
+  const queueScope = useRef("");
+  queueScope.current = JSON.stringify([props.userId, props.cv.sha256 || "", props.cv.present]);
 
   // Debounce only the read-only query. Ranking and filtering happen on the
   // entire current job ledger, NOT just the rows already in this browser.
@@ -65,7 +74,11 @@ export default function ApplicationJourney(props: {
     return () => window.clearTimeout(timer);
   }, [filter]);
 
-  useEffect(() => { setSelected([]); }, [props.cv.sha256, props.userId]);
+  useEffect(() => {
+    setSelected([]);
+    setBatchResult(null);
+    setBatchProgress(null);
+  }, [props.cv.sha256, props.cv.present, props.userId]);
 
   // No CV, session tokens, or profile contents are persisted in browser storage.
   // An account switch unmounts this keyed component in the parent. Epoch and
@@ -184,6 +197,8 @@ export default function ApplicationJourney(props: {
   }
 
   function toggleSelected(key: string) {
+    if (props.queueBusy || queueInFlight.current) return;
+    setBatchResult(null);
     setSelected((current) => current.includes(key)
       ? current.filter((row) => row !== key)
       : [...current, key].slice(0, 15));
@@ -196,11 +211,30 @@ export default function ApplicationJourney(props: {
   }
 
   async function queue() {
-    if (!selected.length || props.queueBusy) return;
+    if (!selected.length || props.queueBusy || queueInFlight.current) return;
+    const keys = [...selected]; // immutable exact selection for this one run
+    const scope = queueScope.current;
+    queueInFlight.current = true;
     setError("");
-    try { await props.onPrepareSelected(selected); }
-    catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Could not prepare the selected drafts.");
+    setBatchResult(null);
+    setBatchProgress({ completed: 0, total: keys.length });
+    try {
+      const outcome = await props.onPrepareSelected(keys, (completed, total) => {
+        if (queueScope.current === scope) setBatchProgress({ completed, total });
+      });
+      if (queueScope.current !== scope) return;
+      // A successful private draft is durable. Keep ONLY failed keys checked
+      // so "Retry" never needlessly asks the server for already saved jobs.
+      const succeeded = new Set(outcome.preparedKeys);
+      setSelected((current) => current.filter((key) => !succeeded.has(key)));
+      setBatchResult(outcome);
+    } catch (exc) {
+      if (queueScope.current === scope) {
+        setError(exc instanceof Error ? exc.message : "Could not prepare the selected drafts.");
+      }
+    } finally {
+      queueInFlight.current = false;
+      if (queueScope.current === scope) setBatchProgress(null);
     }
   }
 
@@ -229,7 +263,8 @@ export default function ApplicationJourney(props: {
         {props.mode === "automatic" ? <label className="flow-select">
           <input type="checkbox" checked={chosen}
             onChange={() => toggleSelected(row.canonical_key)}
-            disabled={!job.source_current || (!chosen && selected.length >= 15)} />
+            disabled={props.queueBusy || !job.source_current ||
+              (!chosen && selected.length >= 15)} />
           {chosen ? "Selected" : "Select for preparation"}
         </label> : null}
         {link ? <a className="outline-btn compact" href={link}
@@ -385,9 +420,27 @@ export default function ApplicationJourney(props: {
           <strong>{selected.length} of 15 vacancies selected</strong>
           <p>Each selected job gets its own private application draft and in-app agent.
             No email, call or employer application is sent. You can pause or close an agent later.</p>
+          {batchProgress ? <p role="status" aria-live="polite">
+            Checked {batchProgress.completed} of {batchProgress.total} selected jobs.
+            A failed posting will not stop the remaining selections.
+          </p> : null}
+          {batchResult && batchResult.failedKeys.length > 0 ? <div className="flow-boundary" role="status">
+            <strong>{batchResult.preparedKeys.length} private draft(s) ready;
+              {" " + batchResult.failedKeys.length} job(s) need a retry.</strong>
+            <p>Successful jobs were removed from this selection. Only failed jobs remain
+              checked, and none were submitted to an employer.</p>
+            {batchResult.preparedKeys.length ? <button className="outline-btn compact"
+              type="button" onClick={props.onOpenApplications}>
+              Open prepared applications <ArrowRight size={14}/>
+            </button> : null}
+          </div> : null}
           <button className="primary-btn" type="button" disabled={!selected.length || props.queueBusy}
             onClick={() => void queue()}>
-            {props.queueBusy ? "Preparing selected drafts and agents…" : "Prepare applications & start agents"}
+            {props.queueBusy ? "Preparing selected drafts and agents…" :
+              batchResult?.failedKeys.length &&
+                selected.every((key) => batchResult.failedKeys.includes(key))
+                ? "Retry " + selected.length + " failed job" + (selected.length === 1 ? "" : "s")
+                : "Prepare applications & start agents"}
             <ArrowRight size={16}/>
           </button>
         </div> : null}
