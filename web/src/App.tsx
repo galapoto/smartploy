@@ -754,7 +754,7 @@ export default function App() {
 
   async function onPrepareSelectedJobs(
     keys: string[], onProgress: (completed: number, total: number) => void,
-    shouldStop: () => boolean = () => false,
+    shouldStop: () => boolean = () => false, keepOnApply = false,
   ): Promise<AutoApplyBatchOutcome> {
     if (flowQueueInFlight.current) {
       throw new Error("An AutoApply preparation batch is already running.");
@@ -840,7 +840,7 @@ export default function App() {
       const prepared = outcome.preparedKeys.length;
       const failed = outcome.failedKeys.length;
       const pending = outcome.skippedKeys!.length;
-      if (prepared && !failed && !pending) {
+      if (prepared && !failed && !pending && !keepOnApply) {
         setSelectedWorkspaceId(firstWorkspace);
         navigate("applications");
       }
