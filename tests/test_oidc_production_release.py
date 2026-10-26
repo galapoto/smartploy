@@ -413,7 +413,10 @@ def test_real_compose_interpolation_resolves_healthcheck_for_both_profiles(tmp_p
 
     available = subprocess.run(
         ["docker", "compose", "version"], capture_output=True,
-        text=True, check=False, timeout=5,
+        # GitHub's shared Docker host may be simultaneously building a
+        # production-like Compose stack. Fail on a genuinely hung CLI, but
+        # allow normal cold plugin startup and runner I/O contention.
+        text=True, check=False, timeout=30,
     )
     if available.returncode:
         import pytest
@@ -433,7 +436,7 @@ def test_real_compose_interpolation_resolves_healthcheck_for_both_profiles(tmp_p
             ["docker", "compose", "--env-file", str(env), "--env-file",
              str(PROD / mode), "-f", str(PROD / "docker-compose.yml"),
              "config", "--format", "json"],
-            capture_output=True, text=True, check=False, timeout=18,
+            capture_output=True, text=True, check=False, timeout=30,
         )
         # Avoid dumping the Compose JSON, which includes a synthetic
         # password in the generated URL. Only print a benign failure reason.
