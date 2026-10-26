@@ -546,7 +546,7 @@ export type LeverPartnerReviewEvidence = {
 };
 
 export type LeverPartnerReadiness = {
-  partner_provider: "lever";
+  partner_provider: "lever" | "ashby";
   partner_api_configured: boolean;
   independent_partner_rights_reviewed: boolean;
   current_applicant_review_recorded: boolean;
@@ -561,8 +561,10 @@ export type LeverPartnerReadiness = {
 };
 
 export type LeverProviderAcknowledgment = {
-  provider: "lever";
+  provider: "lever" | "ashby";
   provider_application_id: string;
+  /** Ashby submitted-form reference is NOT the employer application ID. */
+  provider_form_submission_id?: string;
   provider_application_acknowledged: true;
   employer_hiring_decision_verified: false;
   automatic_retry_authorized: false;
@@ -593,6 +595,39 @@ export function sendLeverPartnerApplication(
 ): Promise<LeverPartnerApplyResult> {
   return request<LeverPartnerApplyResult>(
     "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/partner-lever-apply",
+    {method:"POST",body:JSON.stringify({
+      expected_revision:revision, expected_document_sha256:documentSha,
+      expected_cv_pdf_sha256:cvPdfSha,
+      expected_fields_sha256:fieldsSha,expected_cv_pdf_size:pdfSize,
+      explicit_final_user_approval:true,approve_employer_data_transfer:true,
+      affirm_reviewed_employer_form:true,
+    })},expectedUserId
+  );
+}
+
+/** Official Ashby submission uses the SAME first-party reviewed POST payload,
+ * but requires a distinct exact-job rights scope and the same sticky claim.
+ */
+export function getAshbyPartnerReadiness(workspaceId: string): Promise<LeverPartnerReadiness> {
+  return request<LeverPartnerReadiness>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/partner-ashby-readiness"
+  );
+}
+
+export function getAshbyPartnerReceipt(
+  workspaceId: string
+): Promise<{present:boolean;receipt:LeverProviderAcknowledgment|null}> {
+  return request<{present:boolean;receipt:LeverProviderAcknowledgment|null}>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/partner-ashby-receipt"
+  );
+}
+
+export function sendAshbyPartnerApplication(
+  workspaceId: string, revision:number, documentSha:string,
+  cvPdfSha:string, fieldsSha:string, pdfSize:number, expectedUserId:string
+): Promise<LeverPartnerApplyResult> {
+  return request<LeverPartnerApplyResult>(
+    "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/partner-ashby-apply",
     {method:"POST",body:JSON.stringify({
       expected_revision:revision, expected_document_sha256:documentSha,
       expected_cv_pdf_sha256:cvPdfSha,
