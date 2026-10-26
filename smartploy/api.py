@@ -39,11 +39,15 @@ from .employer_review_intent_storage import (
     EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
 )
 from .employer_automation_rights import (
-    ACTION, LEVER_API_ACTION, PostgresEmployerAutomationRightsRepository,
+    ACTION, LEVER_API_ACTION, ASHBY_API_ACTION, PostgresEmployerAutomationRightsRepository,
 )
 from .lever_partner_submit import (
     LeverPartnerRegistry, LeverPartnerTransport, LeverPartnerUnavailable,
     LeverPartnerUncertain, PostgresPartnerApplicationReceipts,
+)
+from .ashby_partner_submit import (
+    AshbyPartnerRegistry, AshbyPartnerTransport, AshbyPartnerUnavailable,
+    AshbyPartnerUncertain,
 )
 from .employer_final_action_gate import EmployerFinalActionDenied
 from .employer_final_action_gate import PostgresEmployerFinalActionGate
@@ -566,6 +570,11 @@ def create_app(
     app.state.partner_lever_registry = LeverPartnerRegistry.from_env()
     app.state.partner_lever_transport = LeverPartnerTransport()
     app.state.partner_lever_receipts = PostgresPartnerApplicationReceipts(dsn) if dsn else None
+    # SP52: same owner/claim/receipt ledger, but separate employer-issued
+    # posting credentials and distinct exact Ashby rights action scope.
+    app.state.partner_ashby_registry = AshbyPartnerRegistry.from_env()
+    app.state.partner_ashby_transport = AshbyPartnerTransport()
+    app.state.partner_ashby_receipts = app.state.partner_lever_receipts
     app.state.local_ai = LocalDraftClient(LocalDraftSettings.from_env())
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
@@ -2043,42 +2052,50 @@ def create_app(
             },
         )
 
-    def _partner_lever_ready(
-        workspace_id: str, request: Request,
+    def _partner_ready(
+        workspace_id: str, request: Request, *, provider: str,
     ) -> tuple[UserProfileBinding, Any, Any, dict[str, object]]:
+        """One read-only applicant review/rights contract; provider scopes stay isolated."""
+        if provider not in {"lever", "ashby"}:
+            raise HTTPException(status_code=409, detail="Unsupported provider")
         binding = signed_in_employer_review(request)
         workspace = _review_workspace(workspace_id, binding)
+        receipts = (
+            app.state.partner_ashby_receipts if provider == "ashby"
+            else app.state.partner_lever_receipts
+        )
         if (
             app.state.employer_final_actions is None
             or app.state.employer_review_intents is None
             or app.state.employer_rights is None
-            or app.state.employer_claims is None
-            or app.state.partner_lever_receipts is None
+            or app.state.employer_claims is None or receipts is None
         ):
             raise HTTPException(status_code=503, detail="Durable partner submission unavailable")
         tenant, _ = tenant_context(request)
-        registry = app.state.partner_lever_registry
+        registry = (
+            app.state.partner_ashby_registry if provider == "ashby"
+            else app.state.partner_lever_registry
+        )
         config = registry.public_readiness(workspace.application_url)
+        scope = ASHBY_API_ACTION if provider == "ashby" else LEVER_API_ACTION
         try:
             rights = app.state.employer_rights.inspect(
-                workspace.application_url, action_scope=LEVER_API_ACTION
+                workspace.application_url, action_scope=scope
             )
             review = app.state.employer_review_intents.get(binding, workspace.application_url)
-            receipt = app.state.partner_lever_receipts.get(binding, workspace.application_url)
+            receipt = receipts.get(binding, workspace.application_url, provider=provider)
             prior = existing_employer_claim(binding, workspace)
         except HTTPException:
             raise
         except Exception as exc:
-            raise HTTPException(status_code=503, detail="Partner-readiness lookup unavailable") from exc
+            raise HTTPException(
+                status_code=503, detail="Partner-readiness lookup unavailable"
+            ) from exc
         reviewed = bool(
             review and review.public_status(
                 workspace_id=workspace_id, revision=workspace.revision
             )["review_recorded"]
         )
-        # Reuse the EXISTING exact CV PDF, contact and letter fingerprint
-        # computation. Official provider applications do NOT need a copied
-        # extension packet or private contact data sent to the clipboard.
-        # These hashes are strictly NON-BEARER review evidence.
         packet = None
         try:
             packet = make_browser_packet(
@@ -2100,21 +2117,25 @@ def create_app(
             "cv_pdf_size": packet["cv_pdf_size"],
             "expires_at": packet["expires_at"],
         } if authorized and packet is not None else None
-        eligible = bool(authorized and reviewed)
         return binding, workspace, tenant, {
-            "partner_provider": "lever",
+            "partner_provider": provider,
             "partner_api_configured": config["partner_api_configured"],
             "independent_partner_rights_reviewed": rights["operator_permission_reviewed"],
             "current_applicant_review_recorded": reviewed,
             "current_document_and_posting_ready": current,
             "prior_employer_attempt": prior is not None,
             "provider_acknowledged": receipt is not None,
-            "eligible_for_explicit_partner_submit": eligible,
+            "eligible_for_explicit_partner_submit": bool(authorized and reviewed),
             "review_evidence": review_evidence,
             "review_evidence_is_authorization": False,
             "unattended_auto_apply_enabled": False,
             "automatic_retry_authorized": False,
         }
+
+    def _partner_lever_ready(
+        workspace_id: str, request: Request,
+    ) -> tuple[UserProfileBinding, Any, Any, dict[str, object]]:
+        return _partner_ready(workspace_id, request, provider="lever")
 
     @app.post("/api/v1/application-workspaces/{workspace_id}/browser-final-attempt")
     def reserve_verified_browser_final_attempt(
