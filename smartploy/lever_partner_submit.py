@@ -18,7 +18,8 @@ import httpx
 from psycopg import connect
 
 from .browser_handoff import HandoffError, _posting_url
-from .employer_automation_rights import employer_job_key
+from .ashby_partner_submit import AshbyPartnerAcknowledgment, _valid_uuid
+from .employer_automation_rights import ASHBY_API_ACTION, LEVER_API_ACTION, employer_job_key
 from .employer_submit_claim_storage import EmployerSubmitClaim
 from .identity import UserProfileBinding
 
@@ -245,7 +246,11 @@ class LeverPartnerTransport:
 
 
 class PostgresPartnerApplicationReceipts:
-    """Owner-scoped verified provider ACK, not a recruiter hiring decision."""
+    """One ORIGINAL atomic receipt ledger shared by Lever/Ashby, owner-scoped.
+
+    Both providers must have a consumed sticky claim FIRST. This repository
+    cannot issue claims, grant employer rights or submit applications.
+    """
 
     def __init__(self, dsn: str) -> None:
         self.dsn = str(dsn or "").strip()
@@ -254,18 +259,27 @@ class PostgresPartnerApplicationReceipts:
 
     def record(
         self, binding: UserProfileBinding, claim: EmployerSubmitClaim,
-        acknowledgment: PartnerAcknowledgment,
-    ) -> PartnerAcknowledgment:
+        acknowledgment: PartnerAcknowledgment | AshbyPartnerAcknowledgment,
+        *, provider: str = "lever",
+    ) -> PartnerAcknowledgment | AshbyPartnerAcknowledgment:
         if (
             binding.user_id != claim.user_id or binding.profile_id != claim.profile_id
             or claim.state != "reserved_unverified"
+            or provider not in {"lever", "ashby"}
+            or (provider == "lever" and not isinstance(acknowledgment, PartnerAcknowledgment))
+            or (provider == "ashby" and not isinstance(acknowledgment, AshbyPartnerAcknowledgment))
             or not _APPLICATION_ID.fullmatch(acknowledgment.application_id)
+            or (provider == "ashby" and (
+                not _valid_uuid(acknowledgment.application_id)
+                or not _valid_uuid(acknowledgment.submitted_form_instance_id)
+            ))
         ):
-            raise LeverPartnerUnavailable("Verified account and claim required")
+            raise LeverPartnerUnavailable("Verified account, provider and claim required")
+        form_id = (
+            acknowledgment.submitted_form_instance_id if provider == "ashby" else ""
+        )
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
-                # Trust only the ORIGINAL durable claim in PostgreSQL, not a
-                # caller-supplied claim dataclass. No new submission ledger.
                 cur.execute(
                     """SELECT canonical_key,workspace_id,document_revision,
                               application_url_sha256,employer_job_key_sha256,state
@@ -274,14 +288,14 @@ class PostgresPartnerApplicationReceipts:
                        FOR SHARE""",
                     (claim.claim_id,binding.user_id,binding.profile_id),
                 )
-                durable=cur.fetchone()
+                durable = cur.fetchone()
                 if (
-                    durable is None or durable[0]!=claim.canonical_key
-                    or durable[1]!=claim.workspace_id
-                    or int(durable[2])!=claim.document_revision
-                    or durable[3]!=claim.application_url_sha256
-                    or durable[4]!=claim.employer_job_key_sha256
-                    or durable[5]!="reserved_unverified"
+                    durable is None or durable[0] != claim.canonical_key
+                    or durable[1] != claim.workspace_id
+                    or int(durable[2]) != claim.document_revision
+                    or durable[3] != claim.application_url_sha256
+                    or durable[4] != claim.employer_job_key_sha256
+                    or durable[5] != "reserved_unverified"
                 ):
                     raise LeverPartnerUnavailable("Original one-attempt claim cannot be verified")
                 cur.execute(
@@ -290,32 +304,30 @@ class PostgresPartnerApplicationReceipts:
                        WHERE profile_id=%s AND workspace_id=%s FOR UPDATE""",
                     (binding.profile_id,claim.workspace_id),
                 )
-                workspace=cur.fetchone()
+                workspace = cur.fetchone()
                 if workspace is not None and (
-                    workspace[0]!=claim.canonical_key
+                    workspace[0] != claim.canonical_key
                     or sha256(str(workspace[1]).encode("utf-8")).hexdigest()
-                       !=claim.application_url_sha256
+                       != claim.application_url_sha256
                 ):
                     raise LeverPartnerUnavailable("Employer job identity changed since submission")
                 cur.execute(
                     """INSERT INTO smartploy_partner_application_receipts
                        (claim_id,user_id,profile_id,workspace_id,
-                        employer_job_key_sha256,provider,provider_application_id)
-                       VALUES (%s,%s,%s,%s,%s,'lever',%s)
+                        employer_job_key_sha256,provider,provider_application_id,
+                        provider_form_submission_id)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                        ON CONFLICT DO NOTHING RETURNING claim_id""",
                     (
                         claim.claim_id,binding.user_id,binding.profile_id,
-                        claim.workspace_id,claim.employer_job_key_sha256,
-                        acknowledgment.application_id,
+                        claim.workspace_id,claim.employer_job_key_sha256,provider,
+                        acknowledgment.application_id,form_id,
                     ),
                 )
                 if cur.fetchone() is None:
                     raise LeverPartnerUnavailable("Provider receipt already recorded or conflicted")
-                # Keep the EXISTING workspace in the SAME transaction as the
-                # real provider acknowledgment. No self-reported downgrade and
-                # no unverified "applied" status. If a user intentionally
-                # deleted their workspace during the HTTP send, the original
-                # claim and provider receipt survive for reconciliation.
+                # ORIGINAL atomic workspace status transition and receipt insert.
+                # Absent/deleted workspace does not erase a verified claim.
                 if workspace is not None:
                     cur.execute(
                         """UPDATE smartploy_application_workspaces
@@ -329,14 +341,29 @@ class PostgresPartnerApplicationReceipts:
 
     def get(
         self, binding: UserProfileBinding, application_url: str,
-    ) -> PartnerAcknowledgment | None:
-        key = employer_job_key(application_url)
+        *, provider: str = "lever",
+    ) -> PartnerAcknowledgment | AshbyPartnerAcknowledgment | None:
+        if provider not in {"lever", "ashby"}:
+            raise LeverPartnerUnavailable("Unsupported provider receipt")
+        key = employer_job_key(
+            application_url,
+            action_scope=ASHBY_API_ACTION if provider == "ashby" else LEVER_API_ACTION,
+        )
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    """SELECT provider_application_id FROM smartploy_partner_application_receipts
-                       WHERE user_id=%s AND profile_id=%s AND employer_job_key_sha256=%s""",
-                    (binding.user_id,binding.profile_id,key),
+                    """SELECT provider_application_id,provider_form_submission_id
+                       FROM smartploy_partner_application_receipts
+                       WHERE user_id=%s AND profile_id=%s
+                         AND employer_job_key_sha256=%s AND provider=%s""",
+                    (binding.user_id,binding.profile_id,key,provider),
                 )
                 row = cur.fetchone()
-        return PartnerAcknowledgment(application_id=str(row[0])) if row else None
+        if row is None:
+            return None
+        if provider == "ashby":
+            return AshbyPartnerAcknowledgment(
+                submitted_form_instance_id=str(row[1]),
+                application_id=str(row[0]),
+            )
+        return PartnerAcknowledgment(application_id=str(row[0]))

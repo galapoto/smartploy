@@ -27,6 +27,9 @@ vi.mock("./api", () => ({
   getLeverPartnerReadiness: vi.fn(),
   getLeverPartnerReceipt: vi.fn(),
   sendLeverPartnerApplication: vi.fn(),
+  getAshbyPartnerReadiness: vi.fn(),
+  getAshbyPartnerReceipt: vi.fn(),
+  sendAshbyPartnerApplication: vi.fn(),
   recordEmployerReviewIntent: vi.fn(),
   cancelEmployerReviewIntent: vi.fn(),
   getBrowserReceipt: vi.fn(),
@@ -153,6 +156,26 @@ beforeEach(() => {
   vi.mocked(api.sendLeverPartnerApplication).mockResolvedValue({
     state:"provider_acknowledged", provider:"lever",
     provider_application_id:"app-fixture-1234567890",
+    provider_application_acknowledged:true,
+    employer_hiring_decision_verified:false,automatic_retry_authorized:false,
+    external_actions_performed:true,
+  });
+  vi.mocked(api.getAshbyPartnerReadiness).mockResolvedValue({
+    partner_provider:"ashby",partner_api_configured:false,
+    independent_partner_rights_reviewed:false,
+    current_applicant_review_recorded:false,current_document_and_posting_ready:false,
+    prior_employer_attempt:false,provider_acknowledged:false,
+    eligible_for_explicit_partner_submit:false,review_evidence:null,
+    review_evidence_is_authorization:false,
+    unattended_auto_apply_enabled:false,automatic_retry_authorized:false,
+  });
+  vi.mocked(api.getAshbyPartnerReceipt).mockResolvedValue({
+    present:false,receipt:null,
+  });
+  vi.mocked(api.sendAshbyPartnerApplication).mockResolvedValue({
+    state:"provider_acknowledged", provider:"ashby",
+    provider_application_id:"12345678-abcd-49ab-8abc-123456789012",
+    provider_form_submission_id:"87654321-abcd-49ab-8abc-123456789012",
     provider_application_acknowledged:true,
     employer_hiring_decision_verified:false,automatic_retry_authorized:false,
     external_actions_performed:true,
@@ -311,6 +334,73 @@ describe("Application Studio private-read account boundary", () => {
     })).toBeNull();
     expect(api.sendLeverPartnerApplication).toHaveBeenCalledTimes(1);
     expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+  });
+
+  it("SP52 reviews and sends once to an independently authorized Ashby partner, never Lever",async()=>{
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces:[{...job("A"),
+        application_url:"https://jobs.ashbyhq.com/synthetic-fi/junior-qa"}],count:1,
+    });
+    const evidence={
+      workspace_id:"workspace-A",revision:1,expires_at:"2099-01-01T00:15:00Z",
+      document_sha256:"a".repeat(64),cv_pdf_sha256:"b".repeat(64),
+      approved_fields_sha256:"c".repeat(64),cv_pdf_size:1002,
+    };
+    const ready={
+      partner_provider:"ashby" as const,partner_api_configured:true,
+      independent_partner_rights_reviewed:true,
+      current_applicant_review_recorded:true,current_document_and_posting_ready:true,
+      prior_employer_attempt:false,provider_acknowledged:false,
+      eligible_for_explicit_partner_submit:true,review_evidence:evidence,
+      review_evidence_is_authorization:false as const,
+      unattended_auto_apply_enabled:false as const,automatic_retry_authorized:false as const,
+    };
+    vi.mocked(api.getAshbyPartnerReadiness)
+      .mockResolvedValueOnce({...ready,current_applicant_review_recorded:false,
+        eligible_for_explicit_partner_submit:false})
+      .mockResolvedValue(ready);
+    vi.spyOn(window,"confirm").mockReturnValue(true);
+    studio();
+    const panel=await screen.findByLabelText("Official Ashby partner submission");
+    expect(panel.textContent).toContain("No extension, copied personal-data packet or clipboard");
+    expect(api.getLeverPartnerReadiness).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button",{
+      name:/Record reviewed CV, letter and job \(no submit\)/
+    }));
+    await waitFor(()=>expect(api.getAshbyPartnerReadiness).toHaveBeenCalledTimes(2));
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+    const send=await screen.findByRole("button",{
+      name:/Submit reviewed application to authorized Ashby employer/
+    });
+    fireEvent.click(send);
+    await waitFor(()=>expect(api.sendAshbyPartnerApplication).toHaveBeenCalledWith(
+      "workspace-A",1,"a".repeat(64),"b".repeat(64),
+      "c".repeat(64),1002,"usr-a"
+    ));
+    const proof=await screen.findByLabelText("Official Ashby provider acknowledgement");
+    expect(proof.textContent).toContain("12345678-abcd-49ab-8abc-123456789012");
+    expect(await screen.findByText("Sent · Ashby acknowledged")).toBeTruthy();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).toHaveBeenCalledTimes(1);
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button",{
+      name:/Submit reviewed application to authorized Ashby employer/
+    })).toBeNull();
+  });
+
+  it("SP52 rejects Ashby submit without independent posting permission or review",async()=>{
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces:[{...job("A"),
+        application_url:"https://jobs.ashbyhq.com/synthetic-fi/junior-qa"}],count:1,
+    });
+    studio();
+    const panel=await screen.findByLabelText("Official Ashby partner submission");
+    expect(panel.textContent).toContain("No authorized direct Ashby submission");
+    expect(screen.queryByRole("button",{
+      name:/Submit reviewed application to authorized Ashby employer/
+    })).toBeNull();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 
   it("reloads an independently acknowledged application as non-editable, never a draft",async()=>{

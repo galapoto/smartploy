@@ -37,12 +37,13 @@ from smartploy.employer_review_intent_storage import (
     EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
 )
 from smartploy.employer_automation_rights import (
-    PostgresEmployerAutomationRightsRepository, employer_job_key,
+    ASHBY_API_ACTION, PostgresEmployerAutomationRightsRepository, employer_job_key,
 )
 from smartploy.employer_final_action_gate import (
     EmployerFinalActionDenied, PostgresEmployerFinalActionGate,
 )
 from smartploy.lever_partner_submit import LeverPartnerTransport, PostgresPartnerApplicationReceipts
+from smartploy.ashby_partner_submit import AshbyPartnerRegistry, AshbyPartnerTransport
 from smartploy.identity import AuthenticatedPrincipal, PostgresIdentityRepository
 from smartploy.storage import PostgresJobRepository
 
@@ -1474,3 +1475,264 @@ def test_sp43_real_postgres_greenhouse_review_reuses_owner_locked_ledger_not_sub
     repo.cancel(a,application_url=modern)
     with pytest.raises(EmployerReviewIntentDenied,match="cancelled"):
         repo.verify_for_companion(a,**args)
+
+
+# SP52: Use the original signed-in Lever E2E fixture's REAL OIDC identities,
+# deterministic CV PDF and owner-scoped job/workspace tables. Only the exact
+# provider posting, rights scope, partner credentials and HTTP transport change.
+SP52_ASHBY_FORM = {"sections": [{"fields": [
+    {"isRequired": True, "field": {
+        "id": "1", "path": "_systemfield_name", "type": "String",
+    }},
+    {"isRequired": True, "field": {
+        "id": "2", "path": "_systemfield_email", "type": "Email",
+    }},
+    {"isRequired": True, "field": {
+        "id": "3", "path": "_systemfield_resume", "type": "File",
+    }},
+    {"isRequired": False, "field": {
+        "id": "4", "path": "_systemfield_cover_letter", "type": "LongText",
+    }},
+]}]}
+SP52_ASHBY_POSTING = "e9ed20fd-d45f-4aad-8a00-a19bfba0083e"
+SP52_ASHBY_FORM_INSTANCE = "7a3d9986-a88a-49f4-b363-8da21b893e30"
+SP52_ASHBY_APPLICATION = "7b6f4f32-910e-4c78-ae7a-d310cc5edacc"
+
+
+@pytest.fixture
+def sp52_signed_in_ashby(signed_in_partner_workflow, monkeypatch):
+    api,app,route,headers,a,b,_,old_url,nonce,tokens,lever_key = signed_in_partner_workflow
+    ashby_url = f"https://jobs.ashbyhq.com/syntheticpartner/{nonce}/application"
+    ashby_hash = employer_job_key(ashby_url,action_scope=ASHBY_API_ACTION)
+    # Replace only the exact existing job URL in the original live job ledger.
+    # Both original approved CV/contact facts and job fingerprint are kept.
+    workspace_id = route.rsplit("/", 1)[1]
+    workspace = app.state.workspace_repository.get(a.profile_id, workspace_id)
+    assert workspace is not None
+    with connect(DSN) as conn:
+        conn.execute(
+            """UPDATE smartploy_jobs SET candidate=jsonb_set(
+                 candidate,'{job,application_url}',to_jsonb(%s::text))
+               WHERE canonical_key=%s""",
+            (ashby_url,workspace.canonical_key),
+        )
+        conn.execute(
+            """UPDATE smartploy_application_workspaces SET application_url=%s
+               WHERE workspace_id=%s AND profile_id=%s""",
+            (ashby_url,workspace_id,a.profile_id),
+        )
+    from smartploy.ashby_partner_submit import _form_sha
+    env_name = "SMARTPLOY_ASHBY_PARTNER_KEY_SP52_SYNTHETIC"
+    monkeypatch.setenv("SMARTPLOY_ASHBY_PARTNER_POSTINGS_JSON",json.dumps({
+        f"syntheticpartner/{nonce}":{
+            "posting_id":SP52_ASHBY_POSTING,
+            "form_review_sha256":_form_sha(SP52_ASHBY_FORM),
+            "api_key_env":env_name,"standard_form_only_reviewed":True,
+            "consent_policy_reviewed":True,"survey_forms_absent_reviewed":True,
+        }
+    }))
+    monkeypatch.setenv(env_name,"synthetic-employer-owned-ashby-key-123456")
+    app.state.partner_ashby_registry=AshbyPartnerRegistry.from_env()
+    # Reuse the same original owner and current-job/PDF fingerprint generator.
+    w=app.state.workspace_repository.get(a.profile_id,workspace_id)
+    job=PostgresJobRepository(DSN).get(w.canonical_key)
+    profile=PostgresProfileRepository(DSN,profile_id=a.profile_id).profile()
+    packet=make_browser_packet(w,job,profile)
+    assert packet["application_url"] == ashby_url
+    # A separate pair of independent operator reviews for ASHBY, not Lever.
+    with connect(DSN) as conn:
+        conn.execute(
+            """INSERT INTO smartploy_employer_automation_rights
+               (employer_job_key_sha256,action_scope,permission_basis,
+                permission_evidence_sha256,terms_evidence_sha256,
+                reviewed_by,independently_approved_by,reviewed_at,expires_at,state)
+               VALUES (%s,%s,'documented_partner_integration',%s,%s,
+                       'ashby-auditor-a','ashby-auditor-b',
+                       now()-interval '1 hour',now()+interval '1 day','approved')""",
+            (ashby_hash,ASHBY_API_ACTION,"a"*64,"b"*64),
+        )
+    try:
+        yield api,app,route,headers,a,b,packet,ashby_url,nonce,tokens,ashby_hash
+    finally:
+        # Clean own Ashby rows first; outer fixture removes only the original
+        # Lever approval and then owner/workspace/job rows.
+        with connect(DSN) as conn:
+            conn.execute(
+                "DELETE FROM smartploy_partner_application_receipts WHERE user_id=%s AND provider='ashby'",
+                (a.user_id,),
+            )
+            conn.execute(
+                "DELETE FROM smartploy_employer_final_approvals WHERE user_id=%s AND employer_job_key_sha256=%s",
+                (a.user_id,ashby_hash),
+            )
+            conn.execute(
+                "DELETE FROM smartploy_employer_submit_claims WHERE user_id=%s AND employer_job_key_sha256=%s",
+                (a.user_id,ashby_hash),
+            )
+            conn.execute(
+                "DELETE FROM smartploy_employer_review_intents WHERE user_id=%s AND employer_job_key_sha256=%s",
+                (a.user_id,ashby_hash),
+            )
+            conn.execute(
+                "DELETE FROM smartploy_employer_automation_rights WHERE employer_job_key_sha256=%s",
+                (ashby_hash,),
+            )
+
+
+def _sp52_ashby_mock(requests, *, url, uncertain=False):
+    def handler(req):
+        requests.append(req.url.path)
+        assert req.method == "POST" and req.url.host == "api.ashbyhq.com"
+        if req.url.path == "/jobPosting.info":
+            assert b"same@example.invalid" not in req.content
+            assert b"%PDF" not in req.content
+            return httpx.Response(200,json={"success":True,"results":{
+                "id":SP52_ASHBY_POSTING,"status":"Published","isListed":True,
+                "applyLink":url,
+                "surveyFormDefinitions":[],
+                "applicationFormDefinition":SP52_ASHBY_FORM,
+            }})
+        if req.url.path == "/applicationForm.submit":
+            assert b"%PDF-" in req.content
+            assert b"same@example.invalid" in req.content
+            assert req.content.count(b'name="resume_1"') == 1
+            if uncertain:
+                return httpx.Response(503,json={"success":False})
+            return httpx.Response(200,json={"success":True,"results":{
+                "formMessages":{"blocked":False},
+                "submittedFormInstance":{
+                    "id":SP52_ASHBY_FORM_INSTANCE,
+                    "formDefinition":SP52_ASHBY_FORM,
+                    "submittedValues":{
+                        "_systemfield_name":"Synthetic Applicant",
+                        "_systemfield_email":"same@example.invalid",
+                    },
+                },
+            }})
+        if req.url.path == "/application.info":
+            assert json.loads(req.content)=={
+                "submittedFormInstanceId":SP52_ASHBY_FORM_INSTANCE,
+            }
+            return httpx.Response(200,json={"success":True,
+                "results":{"id":SP52_ASHBY_APPLICATION}})
+        raise AssertionError("Unexpected provider method")
+    return httpx.MockTransport(handler)
+
+
+def test_sp52_ashby_partner_signed_in_approved_post_ack_owner_isolated_and_no_replay(
+    sp52_signed_in_ashby,
+):
+    api,app,route,headers,a,b,packet,url,nonce,tokens,key=sp52_signed_in_ashby
+    # Bind mock provider to the exact fixture target; no real provider host.
+    calls=[]
+    app.state.partner_ashby_transport=AshbyPartnerTransport(_sp52_ashby_mock(calls,url=url))
+    before=api.get(route+"/partner-ashby-readiness")
+    assert before.status_code==200,before.text
+    posture=before.json()
+    assert posture["partner_provider"]=="ashby"
+    assert posture["partner_api_configured"] is True
+    assert posture["independent_partner_rights_reviewed"] is True
+    assert posture["current_applicant_review_recorded"] is False
+    assert posture["eligible_for_explicit_partner_submit"] is False
+    assert posture["review_evidence"]["document_sha256"]==packet["document_sha256"]
+    assert posture["review_evidence"]["cv_pdf_sha256"]==packet["cv_pdf_sha256"]
+    assert posture["unattended_auto_apply_enabled"] is False
+    assert "same@example.invalid" not in before.text
+    assert api.get(route+"/partner-lever-readiness").status_code in (200,503)
+    payload=_partner_submit_payload(packet)
+    assert api.post(route+"/partner-ashby-apply",json=payload,headers=headers).status_code==409
+    assert calls==[]
+    _partner_review(api,route,headers,packet)
+    assert api.get(route+"/partner-ashby-readiness").json()["eligible_for_explicit_partner_submit"]
+    wrong=api.post(route+"/partner-ashby-apply",json={
+        **payload,"approve_employer_data_transfer":False,
+    },headers=headers)
+    assert wrong.status_code==422 and calls==[]
+    other_origin=api.post(route+"/partner-ashby-apply",json=payload,
+        headers={**headers,"Origin":"https://evil.invalid"})
+    assert other_origin.status_code==403 and calls==[]
+    result=api.post(route+"/partner-ashby-apply",json=payload,headers=headers)
+    assert result.status_code==200,result.text
+    assert result.json()["state"]=="provider_acknowledged"
+    assert result.json()["provider"]=="ashby"
+    assert result.json()["provider_application_id"]==SP52_ASHBY_APPLICATION
+    assert result.json()["provider_form_submission_id"]==SP52_ASHBY_FORM_INSTANCE
+    assert result.json()["employer_hiring_decision_verified"] is False
+    assert calls==["/jobPosting.info","/applicationForm.submit","/application.info"]
+    stored=app.state.workspace_repository.get(a.profile_id,packet["workspace_id"])
+    assert stored.status=="provider_acknowledged"
+    assert stored.revision==packet["revision"]
+    assert stored.to_dict()["authority"]["may_edit"] is False
+    receipt=api.get(route+"/partner-ashby-receipt").json()
+    assert receipt["present"] is True
+    assert receipt["receipt"]["provider_form_submission_id"]==SP52_ASHBY_FORM_INSTANCE
+    with connect(DSN) as conn:
+        row=conn.execute(
+            """SELECT provider,provider_application_id,provider_form_submission_id
+               FROM smartploy_partner_application_receipts WHERE user_id=%s AND employer_job_key_sha256=%s""",
+            (a.user_id,key),
+        ).fetchone()
+    assert row==("ashby",SP52_ASHBY_APPLICATION,SP52_ASHBY_FORM_INSTANCE)
+    assert api.post(route+"/partner-ashby-apply",json=payload,headers=headers).status_code==409
+    assert calls==["/jobPosting.info","/applicationForm.submit","/application.info"]
+    api.cookies.set(SESSION_COOKIE_NAME,tokens["b"])
+    assert api.get(route+"/partner-ashby-readiness").status_code==404
+    assert api.get(route+"/partner-ashby-receipt").status_code==404
+    assert api.post(route+"/partner-ashby-apply",json=payload,headers=headers).status_code in (403,404,409)
+
+
+
+def test_sp52_ashby_provider_uncertain_is_sticky_and_never_auto_retried(
+    sp52_signed_in_ashby,
+):
+    api,app,route,headers,a,b,packet,url,nonce,tokens,key=sp52_signed_in_ashby
+    calls=[]
+    app.state.partner_ashby_transport=AshbyPartnerTransport(
+        _sp52_ashby_mock(calls,url=url,uncertain=True)
+    )
+    _partner_review(api,route,headers,packet)
+    payload=_partner_submit_payload(packet)
+    result=api.post(route+"/partner-ashby-apply",json=payload,headers=headers)
+    assert result.status_code==202,result.text
+    assert result.json()["state"]=="outcome_uncertain"
+    assert result.json()["automatic_retry_authorized"] is False
+    assert calls==["/jobPosting.info","/applicationForm.submit"]
+    assert app.state.workspace_repository.get(a.profile_id,packet["workspace_id"]).status=="draft"
+    assert api.get(route+"/partner-ashby-receipt").json()["present"] is False
+    assert api.post(route+"/partner-ashby-apply",json=payload,headers=headers).status_code==409
+    assert calls==["/jobPosting.info","/applicationForm.submit"]
+    assert app.state.employer_claims.get_for_employer_url(
+        a,url,action_scope=ASHBY_API_ACTION
+    ).state=="uncertain"
+
+
+def test_sp52_ashby_rights_revoked_or_same_reviewer_cannot_transfer(
+    sp52_signed_in_ashby,
+):
+    api,app,route,headers,a,b,packet,url,nonce,tokens,key=sp52_signed_in_ashby
+    calls=[]
+    app.state.partner_ashby_transport=AshbyPartnerTransport(_sp52_ashby_mock(calls,url=url))
+    _partner_review(api,route,headers,packet)
+    # The database itself permanently disallows one-person approval:
+    # verify the constraint rather than pretending this invalid row exists.
+    from psycopg.errors import CheckViolation
+    with pytest.raises(CheckViolation):
+        with connect(DSN) as conn:
+            conn.execute(
+                """UPDATE smartploy_employer_automation_rights
+                   SET independently_approved_by=reviewed_by
+                   WHERE employer_job_key_sha256=%s""",
+                (key,),
+            )
+    # A separately revoked, formerly valid two-reviewer permission is also
+    # ineligible before any provider traffic.
+    with connect(DSN) as conn:
+        conn.execute(
+            """UPDATE smartploy_employer_automation_rights
+               SET state='revoked' WHERE employer_job_key_sha256=%s""",
+            (key,),
+        )
+    assert not api.get(route+"/partner-ashby-readiness").json()["independent_partner_rights_reviewed"]
+    assert api.post(route+"/partner-ashby-apply",json=_partner_submit_payload(packet),
+        headers=headers).status_code==409
+    assert calls==[]
