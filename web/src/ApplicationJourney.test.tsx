@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ApplicationJourney from "./ApplicationJourney";
 import StartChoices from "./StartChoices";
 import * as api from "./api";
-import type { CVJobMatches, SearchJobCard } from "./types";
+import type { AutoApplyBatchOutcome, CVJobMatches, SearchJobCard } from "./types";
 
 vi.mock("./api", () => ({ getCVJobMatches: vi.fn(), getSession: vi.fn() }));
 
@@ -40,7 +40,11 @@ function props() {
     mode: "manual" as const, selectedJobKey: "", uploading: false,
     preparing: "", queueBusy: false, onMode: vi.fn(), onUpload: vi.fn(),
     onReviewCV: vi.fn(), onFindJobs: vi.fn(), onOpenApplications: vi.fn(),
-    onPrepare: vi.fn(async () => {}), onPrepareSelected: vi.fn(async (_keys: string[]) => {}),
+    onPrepare: vi.fn(async () => {}), onPrepareSelected: vi.fn(async (keys: string[],
+      _onProgress: (completed: number, total: number) => void): Promise<AutoApplyBatchOutcome> => ({
+      preparedKeys: keys, failedKeys: [], agentsActive: keys.length,
+      agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+    })),
   };
 }
 
@@ -103,7 +107,8 @@ describe("SP21 application journey", () => {
     expect(screen.getByText(/Each selected job gets its own private application draft and in-app agent/i)).toBeTruthy();
     fireEvent.click(screen.getAllByRole("checkbox", { name: /select for preparation/i })[0]);
     fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
-    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(["current-planner"]));
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(
+      ["current-planner"], expect.any(Function)));
     expect(screen.queryByRole("button", { name: /submit application/i })).toBeNull();
   });
 
@@ -230,6 +235,69 @@ describe("SP21 application journey", () => {
     expect(document.activeElement).toBe(input);
     release(data);
     await screen.findByText("IT-suunnittelija");
+  });
+
+
+  it("shows partial progress, retains only failed exact jobs and retries without repeating successes", async () => {
+    const p = { ...props(), mode: "automatic" as const };
+    p.onPrepareSelected
+      .mockResolvedValueOnce({
+        preparedKeys: ["current-planner"], failedKeys: ["extra-role"],
+        agentsActive: 1, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+      })
+      .mockResolvedValueOnce({
+        preparedKeys: ["extra-role"], failedKeys: [],
+        agentsActive: 1, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+      });
+    render(<ApplicationJourney {...p} />);
+    await screen.findByText("IT-suunnittelija");
+    const selectors = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    fireEvent.click(selectors[0]);
+    fireEvent.click(selectors[1]);
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    expect((await screen.findByText(/1 private draft\(s\) ready/i)).textContent)
+      .toMatch(/1 job\(s\) need a retry/i);
+    await waitFor(() => {
+      expect((selectors[0] as HTMLInputElement).checked).toBe(false);
+      expect((selectors[1] as HTMLInputElement).checked).toBe(true);
+    });
+    expect(screen.getByRole("button", { name: /open prepared applications/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /retry 1 failed job/i }));
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenNthCalledWith(
+      2, ["extra-role"], expect.any(Function)));
+    expect(p.onPrepareSelected).toHaveBeenNthCalledWith(
+      1, ["current-planner", "extra-role"], expect.any(Function));
+    await waitFor(() => expect((selectors[1] as HTMLInputElement).checked).toBe(false));
+    expect(screen.queryByRole("button", { name: /submit application/i })).toBeNull();
+  });
+
+  it("reports batch progress without submitting or creating jobs by itself", async () => {
+    const p = { ...props(), mode: "automatic" as const };
+    let complete!: (value: {
+      preparedKeys: string[]; failedKeys: string[]; agentsActive: number;
+      agentsPaused: number; agentsClosed: number; agentsUnavailable: number;
+    }) => void;
+    p.onPrepareSelected.mockImplementation((_keys, onProgress) => {
+      onProgress(1, 1);
+      return new Promise((resolve) => { complete = resolve; });
+    });
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getAllByRole("checkbox", { name: /select for preparation/i })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    expect(await screen.findByText(/Checked 1 of 1 selected jobs/i)).toBeTruthy();
+    // This isolated component mock does not toggle the parent's queueBusy
+    // prop. Clicking its still-visible label must nevertheless be ignored by
+    // the component's synchronous local in-flight guard.
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    expect(p.onPrepareSelected).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      complete({
+        preparedKeys: ["current-planner"], failedKeys: [],
+        agentsActive: 1, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+      });
+    });
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledTimes(1));
   });
 
 });

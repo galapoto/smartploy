@@ -553,6 +553,16 @@ export interface CVJobMatches {
   employer_actions_performed: false;
 }
 
+/** SP49: truthful per-job private draft outcomes. Never an employer submission receipt. */
+export interface AutoApplyBatchOutcome {
+  preparedKeys: string[];
+  failedKeys: string[];
+  agentsActive: number;
+  agentsPaused: number;
+  agentsClosed: number;
+  agentsUnavailable: number;
+}
+
 /** A product experience mode, not employer-automation authorization. */
 export type ApplicationFlowMode = "manual" | "assisted" | "automatic";
 export type ApplicationAssistanceLevel = "filter" | "documents" | "full";

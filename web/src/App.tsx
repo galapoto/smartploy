@@ -31,7 +31,7 @@ import type {
   ManualJobPayload, PrivateSavedJob, RankingCard, SavedJob, SessionInfo,
   SearchPreferences, SearchPreferencesUpdate, SearchResults, LocalAIStatus,
   JobAIProcessingConsent, JobAIProcessingConsentEvent,
-  ApplicationFlowMode
+  ApplicationFlowMode, AutoApplyBatchOutcome
 } from "./types";
 
 type Page = "dashboard" | "apply" | "jobs" | "training" | "applications" | "profile" | "tools" | "insights" | "sources" | "settings";
@@ -170,7 +170,8 @@ export default function App() {
     company: "", role_title: "", location: "", description: "", application_url: ""
   });
   const uploadRef = useRef<HTMLInputElement>(null);
-  const flowQueueInFlight = useRef(false);
+  // A run token prevents an old account's finally block unlocking a new batch.
+  const flowQueueInFlight = useRef<symbol | null>(null);
 
   // Old in-flight requests must not repopulate another account's workspace.
   const loadGeneration = useRef(0);
@@ -191,7 +192,7 @@ export default function App() {
     // selected job or cached navigation state belonging to its predecessor.
     setPage("dashboard"); setSearch(""); setExpandedJob("");
     setFlowMode("manual"); setFlowSelectedJob(""); setFlowQueueBusy(false);
-    setStartSearchBusy(false); flowQueueInFlight.current = false;
+    setStartSearchBusy(false); flowQueueInFlight.current = null;
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
     setBusyCV(false); setBusyFact(""); setPreparing(""); setManualBusy(false);
@@ -750,51 +751,104 @@ export default function App() {
     }
   }
 
-  async function onPrepareSelectedJobs(keys: string[]) {
-    if (flowQueueInFlight.current) return;
-    const selected = [...new Set(keys)].filter(Boolean).slice(0, 15);
-    if (!selected.length) return;
+  async function onPrepareSelectedJobs(
+    keys: string[], onProgress: (completed: number, total: number) => void
+  ): Promise<AutoApplyBatchOutcome> {
+    if (flowQueueInFlight.current) {
+      throw new Error("An AutoApply preparation batch is already running.");
+    }
+    const selected = [...new Set(keys.filter(Boolean))].slice(0, 15);
+    const empty: AutoApplyBatchOutcome = {
+      preparedKeys: [], failedKeys: [], agentsActive: 0,
+      agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+    };
+    if (!selected.length) return empty;
     const identity = lastSessionIdentity.current;
-    flowQueueInFlight.current = true;
+    if (!identity) throw new Error("Sign in to prepare private applications.");
+    const token = Symbol("account-scoped-autoapply-batch");
+    flowQueueInFlight.current = token;
     setFlowQueueBusy(true);
-    let prepared = 0;
-    let agentsActive = 0;
-    let agentsUnavailable = 0;
+    const outcome: AutoApplyBatchOutcome = { ...empty };
     let firstWorkspace = "";
-    let failure = "";
+    let completed = 0;
     try {
-      // Reuse the original owner-bound, idempotent per-job workspace API.
-      // No employer POST, extension grant or automatic final browser click.
+      // SP49: one bad or retired posting must not starve subsequent chosen
+      // jobs. Every request still passes the original private identity guard
+      // and original idempotent workspace/Agent Zero create-or-get endpoints.
       for (const key of selected) {
+        if (lastSessionIdentity.current !== identity ||
+            flowQueueInFlight.current !== token) {
+          throw new PrivateActionIdentityChanged();
+        }
         try {
-          // Each explicitly selected AutoApply job becomes one durable,
-          // in-app-only agent case. Reuse the original idempotent workspace
-          // + Agent Zero APIs; never grant employer submission permission.
           const result = await runPrivateMutation((userId) =>
             startApplicationWorkspace(key, userId, true));
+          if (!result.workspace?.workspace_id) {
+            throw new Error("Application workspace response was incomplete.");
+          }
+          outcome.preparedKeys.push(key);
           if (!firstWorkspace) firstWorkspace = result.workspace.workspace_id;
-          prepared += 1;
-          if (result.agent_tracking?.state === "active") agentsActive += 1;
-          else agentsUnavailable += 1;
+          switch (result.agent_tracking?.state) {
+            case "active": outcome.agentsActive += 1; break;
+            case "paused": outcome.agentsPaused += 1; break;
+            case "closed": outcome.agentsClosed += 1; break;
+            default: outcome.agentsUnavailable += 1;
+          }
         } catch (exc) {
-          if (exc instanceof PrivateActionIdentityChanged) return;
-          failure = exc instanceof Error ? exc.message : "Unable to prepare the next job";
-          break;
+          // A changed/expired session is never a retryable job error:
+          // stop before attempting another job under a different principal.
+          if (exc instanceof PrivateActionIdentityChanged ||
+              lastSessionIdentity.current !== identity ||
+              flowQueueInFlight.current !== token) {
+            throw new PrivateActionIdentityChanged();
+          }
+          // A failed request may have saved a draft before a network error.
+          // create-or-get makes an explicit later retry idempotent; never
+          // treat failure as an employer submission or blindly retry now.
+          outcome.failedKeys.push(key);
+        }
+        completed += 1;
+        if (flowQueueInFlight.current === token &&
+            lastSessionIdentity.current === identity) {
+          onProgress(completed, selected.length);
         }
       }
-      if (lastSessionIdentity.current !== identity) return;
-      if (!prepared) throw new Error(failure || "No drafts were prepared");
-      setSelectedWorkspaceId(firstWorkspace);
-      navigate("applications");
-      setNotice(prepared + " private application draft(s) ready for review. " +
-        agentsActive + " private per-job agent(s) ready for in-app tracking. " +
-        (agentsUnavailable ? agentsUnavailable +
+      if (lastSessionIdentity.current !== identity ||
+          flowQueueInFlight.current !== token) {
+        throw new PrivateActionIdentityChanged();
+      }
+      const prepared = outcome.preparedKeys.length;
+      const failed = outcome.failedKeys.length;
+      if (prepared && !failed) {
+        setSelectedWorkspaceId(firstWorkspace);
+        navigate("applications");
+      }
+      // Partial success stays on Apply; successful exact keys will be
+      // removed by the child's matching result, failures remain retryable.
+      const agentSummary = outcome.agentsActive + " private per-job agent(s) ready for in-app tracking. " +
+        (outcome.agentsPaused ? outcome.agentsPaused + " case(s) paused. " : "") +
+        (outcome.agentsClosed ? outcome.agentsClosed + " case(s) closed. " : "") +
+        (outcome.agentsUnavailable ? outcome.agentsUnavailable +
           " case(s) not actively tracking; check My applications and worker readiness. " : "") +
-        (failure ? "Stopped before the next job: " + failure + ". " : "") +
-        "Agent reminders require the server worker. No applications were sent to employers.");
+        "Agent reminders require the server worker. No applications were sent to employers.";
+      if (prepared && !failed) {
+        setNotice(prepared + " private application draft(s) ready for review. " + agentSummary);
+      } else if (prepared) {
+        setNotice(prepared + " private application draft(s) ready; " + failed +
+          " job(s) need a retry. " + agentSummary);
+      } else {
+        setNotice("No selected drafts could be prepared. Review your CV, " +
+          "current job source and account settings, then retry selected jobs. " +
+          "No applications were sent to employers.");
+      }
+      return outcome;
     } finally {
-      flowQueueInFlight.current = false;
-      if (lastSessionIdentity.current === identity) setFlowQueueBusy(false);
+      // An older asynchronous batch must never unlock the current account's
+      // batch after logout, session switch or a newer run.
+      if (flowQueueInFlight.current === token) {
+        flowQueueInFlight.current = null;
+        if (lastSessionIdentity.current === identity) setFlowQueueBusy(false);
+      }
     }
   }
 

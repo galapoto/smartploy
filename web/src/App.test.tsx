@@ -265,6 +265,112 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
   });
 
+  it("continues past a retired job and retries only failed selections while preserving successful private agents", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "synthetic-CV.pdf", sha256: "batch-cv",
+    });
+    const lateRows = ["job-retired", "job-current", "job-unavailable"].map((key, index) => ({
+      ...tailored.recommendations[0],
+      canonical_key: key,
+      job: { ...listing.job, role_title: ["Retired IT trainee", "Current QA Tester", "Uncertain Data Engineer"][index] },
+    }));
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      cv_present: true, cv_filename: "synthetic-CV.pdf", match_mode: "cv_text_signals",
+      detected_roles: ["Data Analyst"], detected_topics: [],
+      recommended: lateRows, other_jobs: [], current_jobs_count: 3,
+      recommended_count: 3, other_jobs_count: 0,
+      selected_job: null,
+      matched_from: "local_cv_text_not_approved_evidence",
+      qualifications_verified: false, employer_actions_performed: false,
+    });
+    vi.mocked(api.startApplicationWorkspace)
+      .mockRejectedValueOnce(new Error("Retired posting"))
+      .mockResolvedValueOnce({
+        workspace: { workspace_id: "kit-current" }, created: true,
+        agent_tracking: { requested: true, state: "active", created: true,
+          external_actions_performed: 0, worker_wake_verified: false },
+      } as never)
+      .mockRejectedValueOnce(new Error("Provider source unavailable"))
+      .mockResolvedValueOnce({
+        workspace: { workspace_id: "kit-retired-reconciled" }, created: false,
+        agent_tracking: { requested: true, state: "paused", created: false,
+          external_actions_performed: 0, worker_wake_verified: false },
+      } as never)
+      .mockResolvedValueOnce({
+        workspace: { workspace_id: "kit-unavailable" }, created: true,
+        agent_tracking: { requested: true, state: "unavailable", created: false,
+          external_actions_performed: 0, worker_wake_verified: false },
+      } as never);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /AutoApply Select jobs for automated preparation/i }));
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    const selectors = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    expect(selectors).toHaveLength(3);
+    for (const checkbox of selectors) fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.getByRole("button", { name: /retry 2 failed jobs/i })).toBeTruthy());
+    expect((selectors[0] as HTMLInputElement).checked).toBe(true);
+    expect((selectors[1] as HTMLInputElement).checked).toBe(false);
+    expect((selectors[2] as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(screen.getByRole("button", { name: /open prepared applications/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /retry 2 failed jobs/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(5));
+    expect(api.startApplicationWorkspace).toHaveBeenNthCalledWith(1, "job-retired", "usr-synthetic-1", true);
+    expect(api.startApplicationWorkspace).toHaveBeenNthCalledWith(2, "job-current", "usr-synthetic-1", true);
+    expect(api.startApplicationWorkspace).toHaveBeenNthCalledWith(3, "job-unavailable", "usr-synthetic-1", true);
+    expect(api.startApplicationWorkspace).toHaveBeenNthCalledWith(4, "job-retired", "usr-synthetic-1", true);
+    expect(api.startApplicationWorkspace).toHaveBeenNthCalledWith(5, "job-unavailable", "usr-synthetic-1", true);
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(screen.getByText(/1 case\(s\) paused/i)).toBeTruthy();
+    expect(screen.getByText(/1 case\(s\) not actively tracking/i)).toBeTruthy();
+    expect(screen.getByText(/No applications were sent to employers/i)).toBeTruthy();
+  });
+
+  it("stops an AutoApply batch on a same-email identity switch before trying the next job", async () => {
+    const changeAccount = switchableSession();
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "synthetic-CV.pdf", sha256: "batch-account-cv",
+    });
+    const twoRows = ["first-job", "second-job"].map((key, index) => ({
+      ...tailored.recommendations[0],
+      canonical_key: key,
+      job: { ...listing.job, role_title: ["Junior Business Analyst", "Junior Software Tester"][index] },
+    }));
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      cv_present: true, cv_filename: "synthetic-CV.pdf", match_mode: "cv_text_signals",
+      detected_roles: ["Business Analyst"], detected_topics: [],
+      recommended: twoRows, other_jobs: [], current_jobs_count: 2,
+      recommended_count: 2, other_jobs_count: 0,
+      matched_from: "local_cv_text_not_approved_evidence",
+      qualifications_verified: false, employer_actions_performed: false,
+    });
+    let finishFirst!: (result: unknown) => void;
+    vi.mocked(api.startApplicationWorkspace).mockImplementationOnce(
+      () => new Promise((resolve) => { finishFirst = resolve; }) as never
+    );
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /AutoApply Select jobs for automated preparation/i }));
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    const selectors = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    fireEvent.click(selectors[0]);
+    fireEvent.click(selectors[1]);
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
+    changeAccount();
+    await act(async () => {
+      finishFirst({
+        workspace: { workspace_id: "kit-first-other-account" }, created: true,
+        agent_tracking: { requested: true, state: "active", created: true,
+          external_actions_performed: 0, worker_wake_verified: false },
+      });
+    });
+    await waitFor(() => expect(screen.getByText(/signed-in account changed or could not be verified/i)).toBeTruthy());
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+
   it("keeps General selected while optional user-profile requests finish in the background", async () => {
     let finishCV = () => {};
     vi.mocked(api.getCV).mockImplementationOnce(() => new Promise((resolve) => {
