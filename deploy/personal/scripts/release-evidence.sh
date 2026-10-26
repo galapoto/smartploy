@@ -108,6 +108,13 @@ fi
 if ! bash "${SCRIPT_DIR}/assert-running-images.sh" "${DEPLOYED_SHA}" >/dev/null; then
   fail "running container image IDs do not match deployed Git revision"
 fi
+# SP45: independently check the exact public ZIP against current source.
+# This is an anonymous local Caddy read, not a browser or employer action.
+if ! COMPANION_FIELDS="$(bash "${SCRIPT_DIR}/assert-companion-release.sh" "${PRODUCTION_HOST}" "${WEB_PORT}")"; then
+  fail "running companion download/sha differs from approved source"
+fi
+[[ "${COMPANION_FIELDS}" == *"companion_release_verified=true"* ]] \
+  || fail "companion release proof is incomplete"
 # A generic healthy worker/database is NOT proof that Agent Zero was
 # registered or actually ran. Require an independent task-level receipt.
 # Values are fixed booleans/status labels only: no applicant/job/secret data.
@@ -275,6 +282,7 @@ runtime_policy_sha256=${POLICY_SHA256}
 compose_file_sha256=${COMPOSE_SHA256}
 ${HEALTH_FIELDS}
 ${AGENT_ZERO_FIELDS}
+${COMPANION_FIELDS}
 latest_backup_file=${LATEST_BACKUP_FILE}
 latest_backup_sha256=${LATEST_BACKUP_SHA256}
 latest_backup_metadata_valid=${LATEST_BACKUP_METADATA_VALID}
