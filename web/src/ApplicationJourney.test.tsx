@@ -210,7 +210,7 @@ describe("SP21 application journey", () => {
       authenticated: true, user_id: "other-account", auth_source: "oidc",
     });
     release({ ...data, recommended: [late], other_jobs: [], recommended_count: 2 });
-    expect(await screen.findByRole("alert")).toHaveTextContent(/signed-in account.*changed/i);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/signed-in account.*changed/i);
     expect(screen.queryByText("Different account hidden vacancy")).toBeNull();
   });
 
