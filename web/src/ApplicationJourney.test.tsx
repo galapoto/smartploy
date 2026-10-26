@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import ApplicationJourney from "./ApplicationJourney";
 import StartChoices from "./StartChoices";
 import * as api from "./api";
-import type { CVJobMatches, SearchJobCard } from "./types";
+import type { AutoApplyBatchOutcome, CVJobMatches, SearchJobCard } from "./types";
 
 vi.mock("./api", () => ({ getCVJobMatches: vi.fn(), getSession: vi.fn() }));
 
@@ -41,7 +41,7 @@ function props() {
     preparing: "", queueBusy: false, onMode: vi.fn(), onUpload: vi.fn(),
     onReviewCV: vi.fn(), onFindJobs: vi.fn(), onOpenApplications: vi.fn(),
     onPrepare: vi.fn(async () => {}), onPrepareSelected: vi.fn(async (keys: string[],
-      _onProgress: (completed: number, total: number) => void) => ({
+      _onProgress: (completed: number, total: number) => void): Promise<AutoApplyBatchOutcome> => ({
       preparedKeys: keys, failedKeys: [], agentsActive: keys.length,
       agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
     })),
