@@ -245,7 +245,7 @@ def _approved_form(
             field = entry["field"]
             path, kind = field.get("path"), field.get("type")
             if (not isinstance(path, str) or path in discovered
-                    or path not in _FIELDS or kind not in _FIELDS.get(path, ()) 
+                    or path not in _FIELDS or kind not in _FIELDS.get(path, ())
                     or type(entry.get("isRequired")) is not bool):
                 raise AshbyPartnerUnavailable(
                     "Ashby employer-specific or sensitive questions require manual review"
@@ -285,6 +285,7 @@ class AshbyPartnerTransport:
         if (org != posting.organization or slug != posting.job_slug
                 or not _valid_uuid(posting.posting_id)
                 or not isinstance(pdf, bytes) or not pdf.startswith(b"%PDF-")
+                or not pdf.rstrip().endswith(b"%%EOF")
                 or not 12 <= len(pdf) <= _MAX_PDF
                 or not isinstance(fields, dict)
                 or not isinstance(fields.get("full_name"), str)
