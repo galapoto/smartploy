@@ -258,15 +258,32 @@ class PostgresEmployerSubmitClaimRepository:
 
     def get_for_employer_url(
         self, binding: UserProfileBinding, application_url: str,
+        *, action_scope: str = "single_user_initiated_browser_final_submit",
     ) -> EmployerSubmitClaim | None:
-        """Locate a claim even when another imported source has a different key."""
+        """Find cross-source claims; do not grant new final-submit authority.
+
+        The original default and original reserve() stay Lever-only. Ashby
+        lookups require the explicit distinct partner action and strict
+        exact hosted job validation in employer_automation_rights.
+        """
         if not binding.user_id or not binding.profile_id:
             raise EmployerSubmitClaimDenied("Verified account required")
-        try:
-            _posting_url(application_url)
-        except (HandoffError, TypeError) as exc:
-            raise EmployerSubmitClaimDenied("Verified Lever employer URL required") from exc
-        employer_key = _employer_job_key_sha256(application_url)
+        if action_scope == "partner_ashby_application_form_submit":
+            # Local import avoids a module cycle; rights imports this module
+            # for its original Lever-specific hash.
+            from .employer_automation_rights import employer_job_key
+            employer_key = employer_job_key(application_url, action_scope=action_scope)
+        else:
+            if action_scope not in (
+                "single_user_initiated_browser_final_submit",
+                "partner_lever_postings_api_submit",
+            ):
+                raise EmployerSubmitClaimDenied("Unsupported employer claim lookup")
+            try:
+                _posting_url(application_url)
+            except (HandoffError, TypeError) as exc:
+                raise EmployerSubmitClaimDenied("Verified Lever employer URL required") from exc
+            employer_key = _employer_job_key_sha256(application_url)
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
