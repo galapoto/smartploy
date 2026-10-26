@@ -62,14 +62,27 @@ def cv_job_matches(
     *,
     profile_id: str,
     max_items: int = 120,
+    recommended_offset: int = 0,
+    other_offset: int = 0,
+    query: str = "",
+    selected_job_key: str = "",
 ) -> dict[str, object]:
     """Return source-current jobs ranked from CV text, with honest uncertainty.
 
     This is pure matching; the caller must authenticate and scope the CV to
     profile_id using the existing tenant_context/owner CV repository.
     """
-    if not isinstance(max_items, int) or not 1 <= max_items <= 300:
+    if type(max_items) is not int or not 1 <= max_items <= 300:
         raise ValueError("Invalid CV job result limit")
+    if any(type(offset) is not int or not 0 <= offset <= 100000
+           for offset in (recommended_offset, other_offset)):
+        raise ValueError("Invalid CV job result offset")
+    if (not isinstance(query, str) or len(query) > 120
+            or any(ord(char) < 32 for char in query)):
+        raise ValueError("Invalid CV job search query")
+    if (not isinstance(selected_job_key, str) or len(selected_job_key) > 160
+            or any(ord(char) < 32 for char in selected_job_key)):
+        raise ValueError("Invalid selected job key")
     if cv is not None and cv.profile_id != profile_id:
         raise ValueError("CV owner does not match signed-in profile")
     current = [item for item in jobs if item.source_current]
@@ -79,6 +92,7 @@ def cv_job_matches(
             "detected_roles": [], "detected_topics": [],
             "recommended": [], "other_jobs": [],
             "current_jobs_count": len(current), "recommended_count": 0,
+            "other_jobs_count": 0, "selected_job": None,
             "matched_from": "none", "qualifications_verified": False,
             "employer_actions_performed": False,
         }
@@ -99,16 +113,40 @@ def cv_job_matches(
     result = search_jobs(current, preferences)
     recommended = result["recommendations"] if has_signals else []
     other = result["broader"] if has_signals else result["all_jobs"]
+    # Preserve the selected job even when it is outside both page windows.
+    # Its identity must be an exact current source ledger key, not a guessed
+    # URL or a title search; the owner must still review before preparing.
+    selected_job = next(
+        (row for row in recommended + other
+         if row["canonical_key"] == selected_job_key), None
+    ) if selected_job_key else None
+
+    # Filter across ALL current ranked results before slicing any page.
+    # Filtering the browser's first 80/120 rows would silently hide later
+    # vacancies even when their title or employer matches the user's query.
+    needle = query.strip().casefold()
+    if needle:
+        def matches(row: dict[str, object]) -> bool:
+            job = row["job"]
+            return any(
+                needle in str(job.get(field, "") or "").casefold()
+                for field in ("role_title", "company", "location")
+            )
+        recommended = [row for row in recommended if matches(row)]
+        other = [row for row in other if matches(row)]
+
     # Never turn incidental keyword overlap into an asserted qualification.
     # Preserve broader/weak results for exploration, clearly separate.
     return {
         "cv_present": True, "cv_filename": cv.filename,
         "match_mode": "cv_text_signals" if has_signals else "no_recognized_cv_signals",
         "detected_roles": list(roles), "detected_topics": list(topics),
-        "recommended": recommended[:max_items],
-        "other_jobs": other[:max_items],
+        "recommended": recommended[recommended_offset:recommended_offset + max_items],
+        "other_jobs": other[other_offset:other_offset + max_items],
         "current_jobs_count": len(current),
         "recommended_count": len(recommended),
+        "other_jobs_count": len(other),
+        "selected_job": selected_job,
         "matched_from": "local_cv_text_not_approved_evidence",
         "qualifications_verified": False,
         "employer_actions_performed": False,
