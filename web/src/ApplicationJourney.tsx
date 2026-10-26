@@ -367,8 +367,8 @@ export default function ApplicationJourney(props: {
         {jobs.length ? <>
           <div className="flow-job-list">{jobs.map(resultCard)}</div>
           <p className="muted" role="status">Showing {jobs.length} current job cards.
-            {" " + results.recommended_count + " CV-text matches"}
-            {" · " + (showOther ? (results.other_jobs_count ?? results.other_jobs.length) : 0) + " exploratory matches"}.
+            {" " + results.recommended_count + " ranked results"}
+            {" · " + (showOther ? (results.other_jobs_count ?? results.other_jobs.length) : 0) + " exploratory results"}.
             {results.selected_job ? " Your Search-selected vacancy is pinned above." : ""}</p>
           {hasMore ? <button className="secondary-btn" type="button"
             disabled={paging} onClick={() => void loadMore()}>
