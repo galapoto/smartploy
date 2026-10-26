@@ -39,6 +39,17 @@ export function getEmployerAttemptStatus(workspaceId: string): Promise<EmployerA
 
 const API_BASE = (import.meta.env.VITE_SMARTPLOY_API_BASE ?? "").replace(/\/$/, "");
 
+/** Typed HTTP status for safe, private AutoApply error triage.
+ * Keep ordinary Error behavior for every existing caller; the status code is
+ * server response metadata, not a permission to retry a submission.
+ */
+export class SmartployHttpError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "SmartployHttpError";
+  }
+}
+
 /** Browser mutations must carry the account captured BEFORE any async wait.
  * The server compares it with the authenticated user binding before side effects.
  * This header is a precondition, never a replacement for authentication.
@@ -81,7 +92,7 @@ async function request<T>(path: string, init?: RequestInit, expectedUserId?: str
     ) {
       window.location.assign(loginUrl);
     }
-    throw new Error(message);
+    throw new SmartployHttpError(message, response.status);
   }
 
   return (await response.json()) as T;

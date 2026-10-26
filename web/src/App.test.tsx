@@ -371,6 +371,143 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByTestId("application-editor")).toBeNull();
   });
 
+  it("SP50 Stop honors the current private request but skips every later selected job", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "synthetic.pdf", sha256: "sp50-stop",
+    });
+    const candidates = ["one", "two", "three"].map((key) => ({
+      ...tailored.recommendations[0],
+      canonical_key: "job-" + key,
+      job: { ...listing.job, role_title: "Junior Data Analyst " + key },
+    }));
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      cv_present: true, cv_filename: "synthetic.pdf", match_mode: "cv_text_signals",
+      detected_roles: ["Data Analyst"], detected_topics: [],
+      recommended: candidates, other_jobs: [], current_jobs_count: 3,
+      recommended_count: 3, other_jobs_count: 0,
+      matched_from: "local_cv_text_not_approved_evidence",
+      qualifications_verified: false, employer_actions_performed: false,
+    });
+    let finishFirst!: (value: unknown) => void;
+    vi.mocked(api.startApplicationWorkspace).mockImplementationOnce(
+      () => new Promise((resolve) => { finishFirst = resolve; }) as never
+    );
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", {
+      name: /AutoApply Select jobs for automated preparation/i,
+    }));
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    const selectors = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    selectors.forEach((control) => fireEvent.click(control));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: /^stop after current job$/i }));
+    expect(screen.getByText(/Stop requested; current job may still complete/i)).toBeTruthy();
+    await act(async () => {
+      finishFirst({
+        workspace: { workspace_id: "kit-first" }, created: true,
+        agent_tracking: { requested: true, state: "active", created: true,
+          external_actions_performed: 0, worker_wake_verified: false },
+      });
+    });
+    expect(await screen.findByText(/2 job\(s\) were not started after Stop/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1);
+    expect((selectors[0] as HTMLInputElement).checked).toBe(false);
+    expect((selectors[1] as HTMLInputElement).checked).toBe(true);
+    expect((selectors[2] as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /continue 2 remaining jobs/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(3));
+    expect(api.startApplicationWorkspace).toHaveBeenNthCalledWith(
+      2, "job-two", "usr-synthetic-1", true,
+    );
+    expect(api.startApplicationWorkspace).toHaveBeenNthCalledWith(
+      3, "job-three", "usr-synthetic-1", true,
+    );
+    expect(await screen.findByTestId("application-editor")).toBeTruthy();
+    expect(screen.getByText(/No applications were sent to employers/i)).toBeTruthy();
+  });
+
+  it("SP50 retries only transient failures; 404 remains review-required across retries", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "synthetic.pdf", sha256: "sp50-error",
+    });
+    const candidates = ["missing", "busy"].map((key) => ({
+      ...tailored.recommendations[0],
+      canonical_key: "job-" + key,
+      job: { ...listing.job, role_title: "Junior QA " + key },
+    }));
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      cv_present: true, cv_filename: "synthetic.pdf", match_mode: "cv_text_signals",
+      detected_roles: ["Software Tester"], detected_topics: [],
+      recommended: candidates, other_jobs: [], current_jobs_count: 2,
+      recommended_count: 2, other_jobs_count: 0,
+      matched_from: "local_cv_text_not_approved_evidence",
+      qualifications_verified: false, employer_actions_performed: false,
+    });
+    vi.mocked(api.startApplicationWorkspace)
+      .mockRejectedValueOnce(Object.assign(new Error("RAW_JOB_SECRET"), { status: 404 }))
+      .mockRejectedValueOnce(Object.assign(new Error("RAW_SERVER_SECRET"), { status: 503 }))
+      .mockResolvedValueOnce({
+        workspace: { workspace_id: "kit-busy-ready" }, created: true,
+        agent_tracking: { requested: true, state: "active", created: true,
+          external_actions_performed: 0, worker_wake_verified: false },
+      } as never);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", {
+      name: /AutoApply Select jobs for automated preparation/i,
+    }));
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    screen.getAllByRole("checkbox", { name: /select for preparation/i })
+      .forEach((control) => fireEvent.click(control));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    expect(await screen.findByText(/This posting could not be found/i)).toBeTruthy();
+    expect(screen.getByText(/private preparation service is temporarily unavailable/i)).toBeTruthy();
+    expect(screen.queryByText(/RAW_JOB_SECRET/)).toBeNull();
+    expect(screen.queryByText(/RAW_SERVER_SECRET/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /retry 1 failed job/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(3));
+    expect(api.startApplicationWorkspace).toHaveBeenNthCalledWith(
+      3, "job-busy", "usr-synthetic-1", true,
+    );
+    expect(await screen.findByRole("button", { name: /review blocked jobs first/i })).toBeTruthy();
+    expect(screen.getByText(/This posting could not be found/i)).toBeTruthy();
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("button", { name: /open prepared applications/i })).toBeTruthy();
+  });
+
+  it("SP50 stops on a general 403 authorization failure without attempting later jobs", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "synthetic.pdf", sha256: "sp50-denied",
+    });
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      cv_present: true, cv_filename: "synthetic.pdf", match_mode: "cv_text_signals",
+      detected_roles: ["Data Analyst"], detected_topics: [],
+      recommended: [
+        { ...tailored.recommendations[0], canonical_key: "denied-1" },
+        { ...tailored.recommendations[0], canonical_key: "denied-2" },
+      ], other_jobs: [], current_jobs_count: 2,
+      recommended_count: 2, other_jobs_count: 0,
+      matched_from: "local_cv_text_not_approved_evidence",
+      qualifications_verified: false, employer_actions_performed: false,
+    });
+    vi.mocked(api.startApplicationWorkspace).mockRejectedValueOnce(
+      Object.assign(new Error("privileged error not disclosed"), { status: 403 }),
+    );
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", {
+      name: /AutoApply Select jobs for automated preparation/i,
+    }));
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    screen.getAllByRole("checkbox", { name: /select for preparation/i })
+      .forEach((control) => fireEvent.click(control));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    expect(await screen.findByText(/Private preparation access is unavailable/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/privileged error not disclosed/i)).toBeNull();
+  });
+
   it("keeps General selected while optional user-profile requests finish in the background", async () => {
     let finishCV = () => {};
     vi.mocked(api.getCV).mockImplementationOnce(() => new Promise((resolve) => {

@@ -41,7 +41,8 @@ function props() {
     preparing: "", queueBusy: false, onMode: vi.fn(), onUpload: vi.fn(),
     onReviewCV: vi.fn(), onFindJobs: vi.fn(), onOpenApplications: vi.fn(),
     onPrepare: vi.fn(async () => {}), onPrepareSelected: vi.fn(async (keys: string[],
-      _onProgress: (completed: number, total: number) => void): Promise<AutoApplyBatchOutcome> => ({
+      _onProgress: (completed: number, total: number) => void,
+      _shouldStop?: () => boolean, _keepOnApply?: boolean): Promise<AutoApplyBatchOutcome> => ({
       preparedKeys: keys, failedKeys: [], agentsActive: keys.length,
       agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
     })),
@@ -108,7 +109,7 @@ describe("SP21 application journey", () => {
     fireEvent.click(screen.getAllByRole("checkbox", { name: /select for preparation/i })[0]);
     fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
     await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(
-      ["current-planner"], expect.any(Function)));
+      ["current-planner"], expect.any(Function), expect.any(Function), false));
     expect(screen.queryByRole("button", { name: /submit application/i })).toBeNull();
   });
 
@@ -264,9 +265,9 @@ describe("SP21 application journey", () => {
     expect(screen.getByRole("button", { name: /open prepared applications/i })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /retry 1 failed job/i }));
     await waitFor(() => expect(p.onPrepareSelected).toHaveBeenNthCalledWith(
-      2, ["extra-role"], expect.any(Function)));
+      2, ["extra-role"], expect.any(Function), expect.any(Function), false));
     expect(p.onPrepareSelected).toHaveBeenNthCalledWith(
-      1, ["current-planner", "extra-role"], expect.any(Function));
+      1, ["current-planner", "extra-role"], expect.any(Function), expect.any(Function), false);
     await waitFor(() => expect((selectors[1] as HTMLInputElement).checked).toBe(false));
     expect(screen.queryByRole("button", { name: /submit application/i })).toBeNull();
   });
@@ -299,5 +300,40 @@ describe("SP21 application journey", () => {
     });
     await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledTimes(1));
   });
+
+
+  it("SP50 stops after in-flight job and leaves unstarted private jobs selected", async () => {
+    const p = { ...props(), mode: "automatic" as const };
+    let shouldStop!: () => boolean;
+    let finish!: (value: AutoApplyBatchOutcome) => void;
+    p.onPrepareSelected.mockImplementation((_keys, onProgress, stop) => {
+      shouldStop = stop!;
+      onProgress(0, 2);
+      return new Promise<AutoApplyBatchOutcome>((resolve) => { finish = resolve; });
+    });
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    const selectors = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    selectors.forEach((control) => fireEvent.click(control));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    expect(await screen.findByRole("button", { name: /^stop after current job$/i })).toBeTruthy();
+    expect(shouldStop()).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /^stop after current job$/i }));
+    expect(shouldStop()).toBe(true);
+    expect(screen.getByText(/Stop requested; current job may still complete/i)).toBeTruthy();
+    await act(async () => {
+      finish({
+        preparedKeys: ["current-planner"], failedKeys: [], skippedKeys: ["extra-role"],
+        stopRequested: true, issues: [], agentsActive: 1,
+        agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+      });
+    });
+    expect(await screen.findByText(/1 job\(s\) were not started after Stop/i)).toBeTruthy();
+    expect((selectors[0] as HTMLInputElement).checked).toBe(false);
+    expect((selectors[1] as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole("button", { name: /continue 1 remaining job/i })).toBeTruthy();
+    expect(p.onPrepareSelected).toHaveBeenCalledTimes(1);
+  });
+
 
 });

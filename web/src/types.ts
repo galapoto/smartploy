@@ -553,10 +553,22 @@ export interface CVJobMatches {
   employer_actions_performed: false;
 }
 
-/** SP49: truthful per-job private draft outcomes. Never an employer submission receipt. */
+/** A fixed, non-sensitive diagnostic, not employer data or permission. */
+export interface AutoApplyBatchIssue {
+  canonicalKey: string;
+  kind: "job_missing" | "review_required" | "service_busy" | "outcome_unknown";
+  guidance: string;
+  retryable: boolean;
+}
+
+/** SP49/50: truthful per-job private draft outcomes, not employer receipts. */
 export interface AutoApplyBatchOutcome {
   preparedKeys: string[];
   failedKeys: string[];
+  /** Only unstarted jobs; stop is honored between existing private requests. */
+  skippedKeys?: string[];
+  stopRequested?: boolean;
+  issues?: AutoApplyBatchIssue[];
   agentsActive: number;
   agentsPaused: number;
   agentsClosed: number;

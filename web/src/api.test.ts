@@ -204,3 +204,24 @@ describe("browser writes carry a stable initiating-account precondition", () => 
     });
   });
 });
+
+
+describe("SP50 original HTTP client preserves private mutation failure status", () => {
+  it("keeps 404/409/503 status for safe job triage without changing error messages", async () => {
+    for (const status of [404, 409, 503]) {
+      fetchSpy.mockResolvedValueOnce({
+        ok: false, status, json: async () => ({ detail: "Synthetic test rejection" }),
+      } as Response);
+      await expect(api.startApplicationWorkspace("synthetic-job", USER, true))
+        .rejects.toMatchObject({
+          name: "SmartployHttpError", status, message: "Synthetic test rejection",
+        });
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    for (const [, init] of fetchSpy.mock.calls as [string, RequestInit][]) {
+      expect(init.headers).toMatchObject({
+        "X-Smartploy-Expected-User-Id": USER,
+      });
+    }
+  });
+});
