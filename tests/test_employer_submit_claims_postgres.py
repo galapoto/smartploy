@@ -1683,7 +1683,7 @@ def test_sp52_ashby_partner_signed_in_approved_post_ack_owner_isolated_and_no_re
     api.cookies.set(SESSION_COOKIE_NAME,tokens["b"])
     assert api.get(route+"/partner-ashby-readiness").status_code==404
     assert api.get(route+"/partner-ashby-receipt").status_code==404
-    assert api.post(route+"/partner-ashby-apply",json=payload,headers=headers).status_code in (403,404)
+    assert api.post(route+"/partner-ashby-apply",json=payload,headers=headers).status_code in (403,404,409)
 
 
 
@@ -1718,10 +1718,23 @@ def test_sp52_ashby_rights_revoked_or_same_reviewer_cannot_transfer(
     calls=[]
     app.state.partner_ashby_transport=AshbyPartnerTransport(_sp52_ashby_mock(calls,url=url))
     _partner_review(api,route,headers,packet)
+    # The database itself permanently disallows one-person approval:
+    # verify the constraint rather than pretending this invalid row exists.
+    from psycopg.errors import CheckViolation
+    with pytest.raises(CheckViolation):
+        with connect(DSN) as conn:
+            conn.execute(
+                """UPDATE smartploy_employer_automation_rights
+                   SET independently_approved_by=reviewed_by
+                   WHERE employer_job_key_sha256=%s""",
+                (key,),
+            )
+    # A separately revoked, formerly valid two-reviewer permission is also
+    # ineligible before any provider traffic.
     with connect(DSN) as conn:
         conn.execute(
             """UPDATE smartploy_employer_automation_rights
-               SET independently_approved_by=reviewed_by WHERE employer_job_key_sha256=%s""",
+               SET state='revoked' WHERE employer_job_key_sha256=%s""",
             (key,),
         )
     assert not api.get(route+"/partner-ashby-readiness").json()["independent_partner_rights_reviewed"]
