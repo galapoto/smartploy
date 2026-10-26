@@ -1009,10 +1009,22 @@ export default function ApplicationStudio(props: {
               onClick={() => void copyBrowserPacket()}>
               <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" : "Copy approved autofill packet"}
             </button>
+            <a className="outline-btn" href="/smartploy-apply-companion.zip"
+              download="smartploy-apply-companion.zip"
+              aria-label="Download Chrome companion ZIP from SmartPloy">
+              <Download size={15}/> Download Chrome companion ZIP
+            </a>
             <a className="outline-btn"
               href="https://github.com/galapoto/smartploy/blob/main/docs/BROWSER_APPLY_COMPANION.md"
-              target="_blank" rel="noopener noreferrer">Browser companion instructions <ArrowUpRight size={15}/></a>
+              target="_blank" rel="noopener noreferrer">Installation instructions <ArrowUpRight size={15}/></a>
           </div>
+          <p className="muted">
+            Desktop Chrome or Chromium: download and extract the ZIP, open
+            chrome://extensions, enable Developer mode and choose Load unpacked.
+            Select the extracted folder containing manifest.json. The companion
+            runs only when you click it; it does not submit jobs in the background.
+            It is not a Chrome Web Store install and does not update automatically.
+          </p>
           {handoffPacketText ? <div className="studio-packet-fallback">
             <label htmlFor="smartploy-browser-packet">Private packet for your browser companion</label>
             <textarea id="smartploy-browser-packet" readOnly rows={4}
