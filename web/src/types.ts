@@ -544,6 +544,10 @@ export interface CVJobMatches {
   other_jobs: SearchJobCard[];
   current_jobs_count: number;
   recommended_count: number;
+  /** Total matching exploratory rows, not just the current page. */
+  other_jobs_count?: number;
+  /** Exact current posting chosen from Search, even outside either page. */
+  selected_job?: SearchJobCard | null;
   matched_from: "none" | "local_cv_text_not_approved_evidence";
   qualifications_verified: false;
   employer_actions_performed: false;
