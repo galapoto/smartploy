@@ -11,6 +11,7 @@ import {
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
   getEmployerAttemptStatus, getEmployerReviewIntent, getEmployerFinalActionReadiness,
   getLeverPartnerReadiness, getLeverPartnerReceipt, sendLeverPartnerApplication,
+  getAshbyPartnerReadiness, getAshbyPartnerReceipt, sendAshbyPartnerApplication,
   recordEmployerReviewIntent, cancelEmployerReviewIntent,
   getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
@@ -31,6 +32,15 @@ class StudioSelectionChanged extends Error {}
 type DraftTicket = { key: string; epoch: number };
 
 const safePostingLink = safeExternalJobUrl;
+
+/** UI routing hint ONLY. Backend enforces exact hosted job, rights and claim. */
+function partnerKind(url: string): "lever" | "ashby" {
+  try {
+    return new URL(url).hostname === "jobs.ashbyhq.com" ? "ashby" : "lever";
+  } catch {
+    return "lever";
+  }
+}
 
 // Reuse the existing review / packet hashes, never a browser clipboard token.
 // The server rechecks all these fields in a new signed-in transaction.
@@ -269,8 +279,10 @@ export default function ApplicationStudio(props: {
           getEmployerAttemptStatus(workspaceId),
           getEmployerReviewIntent(workspaceId),
           getEmployerFinalActionReadiness(workspaceId),
-          getLeverPartnerReadiness(workspaceId),
-          getLeverPartnerReceipt(workspaceId),
+          partnerKind(selected.application_url) === "ashby"
+            ? getAshbyPartnerReadiness(workspaceId) : getLeverPartnerReadiness(workspaceId),
+          partnerKind(selected.application_url) === "ashby"
+            ? getAshbyPartnerReceipt(workspaceId) : getLeverPartnerReceipt(workspaceId),
         ]);
         if (!alive || accountBlockedRef.current) return;
         await verifyAccount();
@@ -521,7 +533,9 @@ export default function ApplicationStudio(props: {
     // original signed-in private GET rechecks separate employer rights.
     try {
       const refreshed = await runPrivateAction(
-        () => getLeverPartnerReadiness(selected.workspace_id),ticket
+        () => partnerKind(selected.application_url) === "ashby"
+            ? getAshbyPartnerReadiness(selected.workspace_id)
+            : getLeverPartnerReadiness(selected.workspace_id),ticket
       );
       if (isCurrentDraft(ticket)) setPartnerReadiness(refreshed);
     } catch {
@@ -543,7 +557,7 @@ export default function ApplicationStudio(props: {
       "REVIEW EXACT CV, COVER LETTER AND JOB FOR " + selected.company + "?\n\n" +
       "I have checked the displayed CV, letter, name, approved contact details, " +
       "this vacancy and employer form. Save my review for ten minutes. " +
-      "This step DOES NOT submit to Lever, share personal data externally, " +
+      "This step DOES NOT submit to any employer, share personal data externally, " +
       "or authorize a future automatic application."
     )) return;
     const ticket=captureDraft(selected);
@@ -607,7 +621,9 @@ export default function ApplicationStudio(props: {
       setMessage("Review cancelled. No employer application was submitted.");
       try {
         const refreshed = await runPrivateAction(
-          () => getLeverPartnerReadiness(selected.workspace_id),ticket
+          () => partnerKind(selected.application_url) === "ashby"
+            ? getAshbyPartnerReadiness(selected.workspace_id)
+            : getLeverPartnerReadiness(selected.workspace_id),ticket
         );
         if (isCurrentDraft(ticket)) setPartnerReadiness(refreshed);
       } catch {
@@ -629,7 +645,8 @@ export default function ApplicationStudio(props: {
         !freshPartnerEvidence(partnerReadiness.review_evidence,selected)) return;
     const evidence=partnerReadiness.review_evidence;
     if (!window.confirm(
-      "SEND THIS APPLICATION TO THE AUTHORIZED LEVER EMPLOYER?\n\n" +
+      "SEND THIS APPLICATION TO THE AUTHORIZED " +
+            partnerKind(selected.application_url).toUpperCase() + " EMPLOYER?\n\n" +
       selected.role_title + " · " + selected.company + "\n\n" +
       "I have reviewed the exact CV PDF, cover letter, contact details, employer form " +
       "and employer data-processing terms. I approve transferring them to the employer " +
@@ -641,7 +658,8 @@ export default function ApplicationStudio(props: {
     setPartnerBusy(true); setError(""); setMessage("");
     try {
       const result = await runPrivateAction(
-        () => sendLeverPartnerApplication(
+        () => (partnerKind(selected.application_url) === "ashby"
+          ? sendAshbyPartnerApplication : sendLeverPartnerApplication)(
           selected.workspace_id,selected.revision,
           evidence.document_sha256,evidence.cv_pdf_sha256,
           evidence.approved_fields_sha256,evidence.cv_pdf_size,
@@ -660,7 +678,8 @@ export default function ApplicationStudio(props: {
             ? {...item,status:"provider_acknowledged"} : item
         ));
         setPartnerReceipt(result);
-        setMessage("Lever confirmed creation of this job application. Reference: " +
+        setMessage((result.provider === "ashby" ? "Ashby" : "Lever") +
+          " confirmed creation of this job application. Reference: " +
           result.provider_application_id + ". This is not a hiring decision.");
       } else {
         setMessage("Employer response is uncertain. Do not retry; check the employer portal or contact support.");
@@ -1077,17 +1096,22 @@ export default function ApplicationStudio(props: {
             <p className="muted">This informational indicator never permits a browser click by
               itself: server review, employer rights, your explicit final decision and a one-use claim are required.</p>
           </div>
-          <div className="studio-packet-fallback" aria-label="Official Lever partner submission">
-            <strong>Complete your reviewed job application through Lever</strong>
+          <div className="studio-packet-fallback" aria-label={partnerKind(selected.application_url) === "ashby"
+            ? "Official Ashby partner submission" : "Official Lever partner submission"}>
+            <strong>Complete your reviewed job application through {
+              partnerKind(selected.application_url) === "ashby" ? "Ashby" : "Lever"
+            }</strong>
             {partnerReceipt ? <>
-              <p role="status">Lever acknowledged the application. Reference:
+              <p role="status">{partnerReceipt?.provider === "ashby" ? "Ashby" : "Lever"} acknowledged the application. Reference:
                 <strong> {partnerReceipt.provider_application_id}</strong>.</p>
               <p className="muted">The employer's system confirmed creation of the application.
                 This is not a hiring decision; do not submit the same job again.</p>
             </> : partnerReadiness?.partner_api_configured &&
                 partnerReadiness.independent_partner_rights_reviewed &&
                 selected && freshPartnerEvidence(partnerReadiness.review_evidence,selected) ? <>
-              <p className="muted">This exact employer job has separately reviewed Lever API
+              <p className="muted">This exact employer job has separately reviewed {
+                partnerKind(selected.application_url) === "ashby" ? "Ashby" : "Lever"
+              } API
                 permission. Review your CV and letter above, then record your review here.
                 No extension, copied personal-data packet or clipboard is needed.</p>
               {!finalReview?.review_recorded ||
@@ -1111,7 +1135,8 @@ export default function ApplicationStudio(props: {
                   disabled={partnerBusy || reviewBusy || !handoff?.ready || dirty ||
                     employerAttempt?.previous_attempt_reserved === true || !!browserReceipt}
                   onClick={() => void sendPartnerApplication()}>
-                  {partnerBusy ? "Submitting once…" : "Submit reviewed application to authorized Lever employer"}
+                  {partnerBusy ? "Submitting once…" : "Submit reviewed application to authorized " +
+                      (partnerKind(selected.application_url) === "ashby" ? "Ashby" : "Lever") + " employer"}
                 </button> : <p role="status">
                   Partner eligibility is not verified after review. No application may be sent.
                 </p>}
@@ -1119,7 +1144,9 @@ export default function ApplicationStudio(props: {
             </> : <p className="muted">
               {partnerReadiness?.prior_employer_attempt
                 ? "An employer attempt already exists; contact support to reconcile. Do not retry."
-                : "No authorized direct Lever submission is available for this job. " +
+                : "No authorized direct " +
+                  (partnerKind(selected.application_url) === "ashby" ? "Ashby" : "Lever") +
+                  " submission is available for this job. " +
                   "Use the browser companion and submit manually on the employer website."}
             </p>}
             {!partnerReadiness ? <p role="status">Partner readiness unavailable. No employer transfer is permitted.</p> : null}
@@ -1131,9 +1158,11 @@ export default function ApplicationStudio(props: {
           </p>
         </section> : null}
         {selected.status === "provider_acknowledged" ? <section
-          className="studio-receipt" aria-label="Official Lever provider acknowledgement">
+          className="studio-receipt" aria-label="Official provider acknowledgement">
           <div className="studio-receipt-header">
-            <strong><CheckCircle2 size={16}/> Lever received this application</strong>
+            <strong><CheckCircle2 size={16}/> {
+              partnerReceipt?.provider === "ashby" ? "Ashby" : "Lever"
+            } received this application</strong>
             <span className="state-pill good">Provider acknowledged</span>
           </div>
           {partnerReceipt ? <p role="status">
@@ -1194,7 +1223,7 @@ export default function ApplicationStudio(props: {
                 ? "Confirm outcome of previous attempt" : "I applied on employer site"}
               <CheckCircle2 size={16}/></button>
           </div> : selected.status === "provider_acknowledged" ?
-            <p>Lever acknowledged your application{partnerReceipt ?
+            <p>{partnerReceipt?.provider === "ashby" ? "Ashby" : "Lever"} acknowledged your application{partnerReceipt ?
               " · Reference " + partnerReceipt.provider_application_id : ""}.
               Documents are locked to preserve the submitted version.</p> :
             <p>Self-reported applied {selected.self_reported_applied_at ? new Date(selected.self_reported_applied_at).toLocaleDateString() : ""}{selected.self_reported_reference ? " · " + selected.self_reported_reference : ""}</p>}
