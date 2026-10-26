@@ -43,7 +43,7 @@ export default function ApplicationJourney(props: {
   onPrepare: (canonicalKey: string) => Promise<void>;
   onPrepareSelected: (
     canonicalKeys: string[], onProgress: (completed: number, total: number) => void,
-    shouldStop?: () => boolean
+    shouldStop?: () => boolean, keepOnApply?: boolean
   ) => Promise<AutoApplyBatchOutcome>;
 }) {
   const [results, setResults] = useState<CVJobMatches | null>(null);
@@ -224,24 +224,43 @@ export default function ApplicationJourney(props: {
   async function queue() {
     if (!runnableSelection.length || props.queueBusy || queueInFlight.current) return;
     const keys = [...runnableSelection]; // immutable exact selection for this run
+    const previous = batchResult; // preserve earlier review-required job failures
     const scope = queueScope.current;
     const batchToken = Symbol("one-private-autoapply-selection");
     queueInFlight.current = batchToken;
     stopRequestedRef.current = false;
     setStopRequested(false);
     setError("");
-    setBatchResult(null);
+    // Keep earlier blocked reasons visible while a separate retry is running.
     setBatchProgress({ completed: 0, total: keys.length });
     try {
       const outcome = await props.onPrepareSelected(keys, (completed, total) => {
         if (queueScope.current === scope) setBatchProgress({ completed, total });
-      }, () => stopRequestedRef.current || queueScope.current !== scope);
+      }, () => stopRequestedRef.current || queueScope.current !== scope,
+      blockedKeys.size > 0);
       if (queueScope.current !== scope) return;
-      // A successful private draft is durable. Keep ONLY failed keys checked
-      // so "Retry" never needlessly asks the server for already saved jobs.
+      // A successful private draft is durable. Never retry it just because
+      // another exact job failed or the user stopped the remaining batch.
       const succeeded = new Set(outcome.preparedKeys);
       setSelected((current) => current.filter((key) => !succeeded.has(key)));
-      setBatchResult(outcome);
+      const attempted = new Set(keys);
+      const merged: AutoApplyBatchOutcome = {
+        ...outcome,
+        preparedKeys: [...new Set([...(previous?.preparedKeys || []), ...outcome.preparedKeys])],
+        failedKeys: [
+          ...(previous?.failedKeys || []).filter((key) => !attempted.has(key)),
+          ...outcome.failedKeys,
+        ],
+        skippedKeys: [
+          ...(previous?.skippedKeys || []).filter((key) => !attempted.has(key)),
+          ...(outcome.skippedKeys || []),
+        ],
+        issues: [
+          ...(previous?.issues || []).filter((item) => !attempted.has(item.canonicalKey)),
+          ...(outcome.issues || []),
+        ],
+      };
+      setBatchResult(merged);
     } catch (exc) {
       if (queueScope.current === scope) {
         setError(exc instanceof Error ? exc.message : "Could not prepare the selected drafts.");
