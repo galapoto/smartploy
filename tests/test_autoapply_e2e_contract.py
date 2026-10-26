@@ -454,7 +454,7 @@ def test_sp46_autoapply_e2e_contract_exact_user_job_and_outcome(contract, outcom
         assert updated["status"] == "provider_acknowledged"
         assert updated["authority"]["has_external_submission_proof"] is True
         assert updated["authority"]["may_edit"] is False
-        assert agent_repo.reconcile_workspace_updates(profile_id=owner.profile_id) == 1
+        assert agent_repo.reconcile_workspace_updates(profile_id=owner.profile_id, agent_id=agent_id) == 1
         assert agent_repo.get(owner.profile_id,agent_id)["observed_workspace_status"] == (
             "provider_acknowledged"
         )
@@ -470,5 +470,5 @@ def test_sp46_autoapply_e2e_contract_exact_user_job_and_outcome(contract, outcom
         assert receipt_response["present"] is False
         assert updated["status"] == "draft"
         assert updated["authority"]["has_external_submission_proof"] is False
-        assert agent_repo.reconcile_workspace_updates(profile_id=owner.profile_id) == 0
+        assert agent_repo.reconcile_workspace_updates(profile_id=owner.profile_id, agent_id=agent_id) == 0
         assert len(agent_repo.events(owner.profile_id,agent_id)) == 1
