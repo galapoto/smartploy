@@ -37,12 +37,13 @@ from smartploy.employer_review_intent_storage import (
     EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
 )
 from smartploy.employer_automation_rights import (
-    PostgresEmployerAutomationRightsRepository, employer_job_key,
+    ASHBY_API_ACTION, PostgresEmployerAutomationRightsRepository, employer_job_key,
 )
 from smartploy.employer_final_action_gate import (
     EmployerFinalActionDenied, PostgresEmployerFinalActionGate,
 )
 from smartploy.lever_partner_submit import LeverPartnerTransport, PostgresPartnerApplicationReceipts
+from smartploy.ashby_partner_submit import AshbyPartnerRegistry, AshbyPartnerTransport
 from smartploy.identity import AuthenticatedPrincipal, PostgresIdentityRepository
 from smartploy.storage import PostgresJobRepository
 
@@ -1479,12 +1480,6 @@ def test_sp43_real_postgres_greenhouse_review_reuses_owner_locked_ledger_not_sub
 # SP52: Use the original signed-in Lever E2E fixture's REAL OIDC identities,
 # deterministic CV PDF and owner-scoped job/workspace tables. Only the exact
 # provider posting, rights scope, partner credentials and HTTP transport change.
-from smartploy.ashby_partner_submit import (
-    AshbyPartnerRegistry, AshbyPartnerTransport,
-)
-from smartploy.employer_automation_rights import ASHBY_API_ACTION
-
-
 SP52_ASHBY_FORM = {"sections": [{"fields": [
     {"isRequired": True, "field": {
         "id": "1", "path": "_systemfield_name", "type": "String",
