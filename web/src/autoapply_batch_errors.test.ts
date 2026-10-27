@@ -8,6 +8,8 @@ describe("SP50 owner-private preparation failure classification", () => {
     [409, "review_required", false],
     [422, "review_required", false],
     [400, "review_required", false],
+    [401, "access_denied", false],
+    [403, "access_denied", false],
     [429, "service_busy", true],
     [503, "service_busy", true],
     [504, "service_busy", true],

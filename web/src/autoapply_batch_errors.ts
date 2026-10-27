@@ -23,6 +23,12 @@ export function describeAutoApplyBatchIssue(
       guidance: "This posting could not be found. Refresh job search and choose a current vacancy.",
     };
   }
+  if (status === 401 || status === 403) {
+    return {
+      canonicalKey, kind: "access_denied", retryable: false,
+      guidance: "Private preparation access is unavailable. Verify your sign-in and permissions before preparing further jobs.",
+    };
+  }
   if ((status >= 400 && status < 500) && status !== 408 && status !== 429) {
     return {
       canonicalKey, kind: "review_required", retryable: false,

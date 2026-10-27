@@ -764,7 +764,7 @@ export default function App() {
     const selected = [...new Set(keys.filter(Boolean))].slice(0, 15);
     const empty: AutoApplyBatchOutcome = {
       preparedKeys: [], failedKeys: [], skippedKeys: [],
-      stopRequested: false, issues: [],
+      stopRequested: false, accessInterrupted: false, issues: [],
       agentsActive: 0, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
     };
     if (!selected.length) return empty;
@@ -827,8 +827,20 @@ export default function App() {
           const status = exc && typeof exc === "object" && "status" in exc
             ? (exc as { status?: unknown }).status : 0;
           if (status === 401 || status === 403) {
-            throw new Error("Private preparation access is unavailable. " +
-              "Check your signed-in account and permissions before attempting other jobs.");
+            // Keep already-created private drafts for this still-verified owner.
+            // A different or expired OIDC subject is rejected above by the
+            // original runPrivateMutation identity guard and never shown.
+            outcome.failedKeys.push(key);
+            outcome.issues!.push(describeAutoApplyBatchIssue(key, exc));
+            outcome.accessInterrupted = true;
+            outcome.skippedKeys!.push(...selected.slice(index + 1));
+            completed += 1;
+            if (flowQueueInFlight.current === token &&
+                lastSessionIdentity.current === identity &&
+                activeCVSelection.current === initialCVSelection) {
+              onProgress(completed, selected.length);
+            }
+            break;
           }
           // A request may have committed its draft before a network error.
           // Existing create-or-get makes an explicit later retry idempotent.
@@ -863,7 +875,12 @@ export default function App() {
         (outcome.agentsUnavailable ? outcome.agentsUnavailable +
           " case(s) not actively tracking; check My applications and worker readiness. " : "") +
         "Agent reminders require the server worker. No applications were sent to employers.";
-      if (prepared && !failed && !pending) {
+      if (outcome.accessInterrupted) {
+        setNotice("Preparation stopped after an access denial. " + prepared +
+          " private draft(s) remain saved; " + failed + " denied, " + pending +
+          " not attempted. Restore access and reload before continuing. " +
+          "No applications were sent to employers.");
+      } else if (prepared && !failed && !pending) {
         setNotice(prepared + " private application draft(s) ready for review. " + agentSummary);
       } else if (prepared || pending) {
         setNotice(prepared + " private application draft(s) ready; " + failed +

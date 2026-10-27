@@ -508,6 +508,57 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByText(/privileged error not disclosed/i)).toBeNull();
   });
 
+  it("SP55 retains private draft progress after a later 403 and never attempts subsequent jobs", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "synthetic.pdf", sha256: "sp55-partial-access",
+    });
+    const candidates = ["permitted", "denied", "unstarted"].map((key) => ({
+      ...tailored.recommendations[0],
+      canonical_key: "job-" + key,
+      job: { ...listing.job, role_title: "Junior Analyst " + key },
+    }));
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      cv_present: true, cv_filename: "synthetic.pdf", match_mode: "cv_text_signals",
+      detected_roles: ["Data Analyst"], detected_topics: [],
+      recommended: candidates, other_jobs: [], current_jobs_count: 3,
+      recommended_count: 3, other_jobs_count: 0,
+      matched_from: "local_cv_text_not_approved_evidence",
+      qualifications_verified: false, employer_actions_performed: false,
+    });
+    vi.mocked(api.startApplicationWorkspace)
+      .mockResolvedValueOnce({
+        workspace: { workspace_id: "sp55-first-owner-draft" }, created: true,
+        agent_tracking: { requested: true, state: "active", created: true,
+          external_actions_performed: 0, worker_wake_verified: false },
+      } as never)
+      .mockRejectedValueOnce(
+        Object.assign(new Error("PRIVATE_PROVIDER_SECRET"), { status: 403 }),
+      );
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", {
+      name: /AutoApply Select jobs for automated preparation/i,
+    }));
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    const selectors = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    selectors.forEach((control) => fireEvent.click(control));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    expect(await screen.findByText(/Access was denied during private preparation/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(2);
+    expect(api.startApplicationWorkspace).toHaveBeenNthCalledWith(1, "job-permitted", "usr-synthetic-1", true);
+    expect(api.startApplicationWorkspace).toHaveBeenNthCalledWith(2, "job-denied", "usr-synthetic-1", true);
+    expect((selectors[0] as HTMLInputElement).checked).toBe(false);
+    expect((selectors[1] as HTMLInputElement).checked).toBe(true);
+    expect((selectors[2] as HTMLInputElement).checked).toBe(true);
+    expect((selectors[1] as HTMLInputElement).disabled).toBe(true);
+    expect((selectors[2] as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: /access denied.*reload to continue/i }))
+      .toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: /open prepared applications/i })).toBeTruthy();
+    expect(screen.queryByText(/PRIVATE_PROVIDER_SECRET/)).toBeNull();
+    expect(screen.getByText(/1 private draft\(s\) remain saved/i)).toBeTruthy();
+    expect(screen.getByText(/No applications were sent to employers/i)).toBeTruthy();
+  });
+
   it("keeps General selected while optional user-profile requests finish in the background", async () => {
     let finishCV = () => {};
     vi.mocked(api.getCV).mockImplementationOnce(() => new Promise((resolve) => {

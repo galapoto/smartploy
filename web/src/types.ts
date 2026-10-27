@@ -556,7 +556,7 @@ export interface CVJobMatches {
 /** A fixed, non-sensitive diagnostic, not employer data or permission. */
 export interface AutoApplyBatchIssue {
   canonicalKey: string;
-  kind: "job_missing" | "review_required" | "service_busy" | "outcome_unknown";
+  kind: "job_missing" | "review_required" | "service_busy" | "outcome_unknown" | "access_denied";
   guidance: string;
   retryable: boolean;
 }
@@ -568,6 +568,8 @@ export interface AutoApplyBatchOutcome {
   /** Only unstarted jobs; stop is honored between existing private requests. */
   skippedKeys?: string[];
   stopRequested?: boolean;
+  /** An authorization failure halted the queue; reload after restoring access. */
+  accessInterrupted?: boolean;
   issues?: AutoApplyBatchIssue[];
   agentsActive: number;
   agentsPaused: number;

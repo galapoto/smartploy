@@ -202,7 +202,7 @@ export default function ApplicationJourney(props: {
   }
 
   function toggleSelected(key: string) {
-    if (props.queueBusy || queueInFlight.current) return;
+    if (props.queueBusy || queueInFlight.current || batchResult?.accessInterrupted) return;
     setBatchResult(null);
     setSelected((current) => current.includes(key)
       ? current.filter((row) => row !== key)
@@ -219,7 +219,9 @@ export default function ApplicationJourney(props: {
     (batchResult?.issues || []).filter((issue) => !issue.retryable)
       .map((issue) => issue.canonicalKey)
   );
-  const runnableSelection = selected.filter((key) => !blockedKeys.has(key));
+  const accessInterrupted = batchResult?.accessInterrupted === true;
+  const runnableSelection = accessInterrupted ? [] :
+    selected.filter((key) => !blockedKeys.has(key));
 
   async function queue() {
     if (!runnableSelection.length || props.queueBusy || queueInFlight.current) return;
@@ -309,7 +311,7 @@ export default function ApplicationJourney(props: {
         {props.mode === "automatic" ? <label className="flow-select">
           <input type="checkbox" checked={chosen}
             onChange={() => toggleSelected(row.canonical_key)}
-            disabled={props.queueBusy || !job.source_current ||
+            disabled={props.queueBusy || accessInterrupted || !job.source_current ||
               (!chosen && selected.length >= 15)} />
           {chosen ? "Selected" : "Select for preparation"}
         </label> : null}
@@ -488,6 +490,9 @@ export default function ApplicationJourney(props: {
                 ? " " + batchResult.skippedKeys.length +
                   " job(s) were not started after Stop and remain selected." : ""}
               {" "}No application was submitted to an employer.</p>
+            {accessInterrupted ? <p role="alert">Access was denied during private preparation.
+              Already prepared drafts remain saved, and no further jobs were attempted.
+              Restore access and reload SmartPloy before continuing this queue.</p> : null}
             {(batchResult.issues || []).length > 0 ? <ul aria-label="Job preparation issues">
               {batchResult.issues!.map((issue) => {
                 const matching = jobs.find((row) => row.canonical_key === issue.canonicalKey);
@@ -513,6 +518,7 @@ export default function ApplicationJourney(props: {
             disabled={!runnableSelection.length || props.queueBusy}
             onClick={() => void queue()}>
             {props.queueBusy ? "Preparing selected drafts and agents…" :
+              accessInterrupted ? "Access denied · reload to continue" :
               !runnableSelection.length && blockedKeys.size
                 ? "Review blocked jobs first" :
               batchResult?.skippedKeys?.length
