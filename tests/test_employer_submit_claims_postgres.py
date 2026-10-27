@@ -1579,7 +1579,13 @@ def sp52_signed_in_ashby(signed_in_partner_workflow, monkeypatch):
             )
 
 
-def _sp52_ashby_mock(requests, *, url, uncertain=False):
+def _sp52_ashby_mock(requests, *, url, uncertain=False, drift=False):
+    form = json.loads(json.dumps(SP52_ASHBY_FORM))
+    if drift:
+        form["sections"][0]["fields"].append({
+            "isRequired": False,
+            "field": {"id": "5", "path": "unreviewed_employer_question", "type": "String"},
+        })
     def handler(req):
         requests.append(req.url.path)
         assert req.method == "POST" and req.url.host == "api.ashbyhq.com"
@@ -1590,7 +1596,7 @@ def _sp52_ashby_mock(requests, *, url, uncertain=False):
                 "id":SP52_ASHBY_POSTING,"status":"Published","isListed":True,
                 "applyLink":url,
                 "surveyFormDefinitions":[],
-                "applicationFormDefinition":SP52_ASHBY_FORM,
+                "applicationFormDefinition":form,
             }})
         if req.url.path == "/applicationForm.submit":
             assert b"%PDF-" in req.content
@@ -1658,7 +1664,7 @@ def test_sp52_ashby_partner_signed_in_approved_post_ack_owner_isolated_and_no_re
     assert result.json()["provider_application_id"]==SP52_ASHBY_APPLICATION
     assert result.json()["provider_form_submission_id"]==SP52_ASHBY_FORM_INSTANCE
     assert result.json()["employer_hiring_decision_verified"] is False
-    assert calls==["/jobPosting.info","/applicationForm.submit","/application.info"]
+    assert calls==["/jobPosting.info","/jobPosting.info","/applicationForm.submit","/application.info"]
     stored=app.state.workspace_repository.get(a.profile_id,packet["workspace_id"])
     assert stored.status=="provider_acknowledged"
     assert stored.revision==packet["revision"]
@@ -1674,7 +1680,7 @@ def test_sp52_ashby_partner_signed_in_approved_post_ack_owner_isolated_and_no_re
         ).fetchone()
     assert row==("ashby",SP52_ASHBY_APPLICATION,SP52_ASHBY_FORM_INSTANCE)
     assert api.post(route+"/partner-ashby-apply",json=payload,headers=headers).status_code==409
-    assert calls==["/jobPosting.info","/applicationForm.submit","/application.info"]
+    assert calls==["/jobPosting.info","/jobPosting.info","/applicationForm.submit","/application.info"]
     api.cookies.set(SESSION_COOKIE_NAME,tokens["b"])
     assert api.get(route+"/partner-ashby-readiness").status_code==404
     assert api.get(route+"/partner-ashby-receipt").status_code==404
@@ -1696,11 +1702,11 @@ def test_sp52_ashby_provider_uncertain_is_sticky_and_never_auto_retried(
     assert result.status_code==202,result.text
     assert result.json()["state"]=="outcome_uncertain"
     assert result.json()["automatic_retry_authorized"] is False
-    assert calls==["/jobPosting.info","/applicationForm.submit"]
+    assert calls==["/jobPosting.info","/jobPosting.info","/applicationForm.submit"]
     assert app.state.workspace_repository.get(a.profile_id,packet["workspace_id"]).status=="draft"
     assert api.get(route+"/partner-ashby-receipt").json()["present"] is False
     assert api.post(route+"/partner-ashby-apply",json=payload,headers=headers).status_code==409
-    assert calls==["/jobPosting.info","/applicationForm.submit"]
+    assert calls==["/jobPosting.info","/jobPosting.info","/applicationForm.submit"]
     assert app.state.employer_claims.get_for_employer_url(
         a,url,action_scope=ASHBY_API_ACTION
     ).state=="uncertain"
@@ -1736,3 +1742,65 @@ def test_sp52_ashby_rights_revoked_or_same_reviewer_cannot_transfer(
     assert api.post(route+"/partner-ashby-apply",json=_partner_submit_payload(packet),
         headers=headers).status_code==409
     assert calls==[]
+
+
+def test_sp53_ashby_changed_live_form_rejected_before_ever_reserving_claim(
+    sp52_signed_in_ashby,
+):
+    api,app,route,headers,a,b,packet,url,nonce,tokens,key=sp52_signed_in_ashby
+    calls=[]
+    app.state.partner_ashby_transport=AshbyPartnerTransport(
+        _sp52_ashby_mock(calls,url=url,drift=True)
+    )
+    _partner_review(api,route,headers,packet)
+    result=api.post(
+        route+"/partner-ashby-apply",json=_partner_submit_payload(packet),headers=headers,
+    )
+    assert result.status_code==409,result.text
+    assert "no submission attempt reserved" in result.json()["detail"]
+    # Only the public-job verification; no contact, PDF, form-submit or ID lookup.
+    assert calls==["/jobPosting.info"]
+    assert app.state.employer_claims.get_for_employer_url(
+        a,url,action_scope=ASHBY_API_ACTION
+    ) is None
+    assert app.state.workspace_repository.get(
+        a.profile_id,packet["workspace_id"]
+    ).status=="draft"
+    assert api.get(route+"/partner-ashby-receipt").json()["present"] is False
+
+
+def test_sp53_ashby_changed_between_preflight_and_send_is_still_not_submitted(
+    sp52_signed_in_ashby,
+):
+    api,app,route,headers,a,b,packet,url,nonce,tokens,key=sp52_signed_in_ashby
+    calls=[]
+    initial=_sp52_ashby_mock(calls,url=url)
+    drift=_sp52_ashby_mock(calls,url=url,drift=True)
+    checks=[0]
+
+    def switched(req):
+        if req.url.path=="/jobPosting.info":
+            checks[0]+=1
+            if checks[0]==2:
+                return drift.handle_request(req)
+        return initial.handle_request(req)
+
+    app.state.partner_ashby_transport=AshbyPartnerTransport(
+        httpx.MockTransport(switched)
+    )
+    _partner_review(api,route,headers,packet)
+    result=api.post(
+        route+"/partner-ashby-apply",json=_partner_submit_payload(packet),headers=headers,
+    )
+    # After an irrevocable claim, even harmless TOCTOU drift cannot authorize
+    # a second attempt; the first one is held for manual reconciliation.
+    assert result.status_code==503,result.text
+    assert calls==["/jobPosting.info","/jobPosting.info"]
+    claim=app.state.employer_claims.get_for_employer_url(
+        a,url,action_scope=ASHBY_API_ACTION
+    )
+    assert claim is not None
+    assert api.get(route+"/partner-ashby-receipt").json()["present"] is False
+    assert api.post(route+"/partner-ashby-apply",
+        json=_partner_submit_payload(packet),headers=headers).status_code==409
+    assert calls==["/jobPosting.info","/jobPosting.info"]

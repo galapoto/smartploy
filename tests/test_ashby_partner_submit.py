@@ -346,3 +346,52 @@ def test_invalid_reviewed_fields_or_pdf_fail_before_issuing_api_requests(
             posting, application_url=URL, fields=fields, pdf=pdf,
         )
     assert not requests
+
+
+
+def test_sp53_preclaim_check_never_issues_a_submission(monkeypatch):
+    posting = registry(monkeypatch).match(URL)
+    requests = []
+    transport = AshbyPartnerTransport(valid_mock(requests))
+    assert transport.preflight_before_claim(
+        posting, application_url=URL, fields=FIELDS, pdf=PDF,
+    ) is None
+    assert [request.url.path for request in requests] == ["/jobPosting.info"]
+    assert b"person@example.invalid" not in requests[0].content
+    assert b"%PDF-" not in requests[0].content
+
+
+def test_sp53_changed_form_or_unreviewed_letter_stops_before_claim(monkeypatch):
+    posting = registry(monkeypatch).match(URL)
+    changed = deepcopy(FORM)
+    changed["sections"][0]["fields"].append({
+        "isRequired": False,
+        "field": {"id": "5", "path": "new_question", "type": "String"},
+    })
+    requests = []
+    with pytest.raises(AshbyPartnerUnavailable):
+        AshbyPartnerTransport(
+            valid_mock(requests, info=posting_response(changed))
+        ).preflight_before_claim(
+            posting, application_url=URL, fields=FIELDS, pdf=PDF,
+        )
+    assert [request.url.path for request in requests] == ["/jobPosting.info"]
+
+    requests.clear()
+    with pytest.raises(AshbyPartnerUnavailable, match="cover letter"):
+        AshbyPartnerTransport(valid_mock(requests)).preflight_before_claim(
+            posting, application_url=URL,
+            fields={**FIELDS, "cover_letter": "Too short"}, pdf=PDF,
+        )
+    assert [request.url.path for request in requests] == ["/jobPosting.info"]
+
+
+def test_sp53_invalid_packet_never_preflights_live_employer(monkeypatch):
+    posting = registry(monkeypatch).match(URL)
+    requests = []
+    with pytest.raises(AshbyPartnerUnavailable):
+        AshbyPartnerTransport(valid_mock(requests)).preflight_before_claim(
+            posting, application_url=URL, fields={**FIELDS, "email": "invalid"},
+            pdf=PDF,
+        )
+    assert requests == []
