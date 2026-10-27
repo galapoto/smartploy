@@ -33,12 +33,20 @@ type DraftTicket = { key: string; epoch: number };
 
 const safePostingLink = safeExternalJobUrl;
 
-/** UI routing hint ONLY. Backend enforces exact hosted job, rights and claim. */
-function partnerKind(url: string): "lever" | "ashby" {
+/** UI routing hint ONLY. Never infer Lever rights for unrelated hosts.
+ * Backend still enforces exact posting, independent rights and one-use claim.
+ */
+function partnerKind(url: string): "lever" | "ashby" | null {
   try {
-    return new URL(url).hostname === "jobs.ashbyhq.com" ? "ashby" : "lever";
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password ||
+        parsed.port) return null;
+    if (parsed.hostname === "jobs.ashbyhq.com") return "ashby";
+    if (parsed.hostname === "jobs.lever.co" ||
+        parsed.hostname === "jobs.eu.lever.co") return "lever";
+    return null;
   } catch {
-    return "lever";
+    return null;
   }
 }
 
@@ -101,7 +109,7 @@ export default function ApplicationStudio(props: {
     selectedDraftRef.current.epoch === ticket.epoch, []);
 
   const captureDraft = (item: ApplicationWorkspace): DraftTicket => ({
-    key: JSON.stringify([item.workspace_id, item.revision]),
+    key: JSON.stringify([item.workspace_id, item.revision, item.application_url]),
     epoch: selectedDraftRef.current.epoch,
   });
 
@@ -243,11 +251,14 @@ export default function ApplicationStudio(props: {
     () => workspaces.find((item) => item.workspace_id === selectedId) || null,
     [workspaces, selectedId]
   );
+  const selectedPartner = selected ? partnerKind(selected.application_url) : null;
   // Clear draft-local editor content, receipt/packet previews AND pending
   // indicators before a different draft can paint. The old draft's promise
   // may still finish; its completion must never unlock the new draft.
   useLayoutEffect(() => {
-    const key = selected ? JSON.stringify([selected.workspace_id, selected.revision]) : "";
+    const key = selected ? JSON.stringify([
+      selected.workspace_id, selected.revision, selected.application_url,
+    ]) : "";
     if (selectedDraftRef.current.key !== key) {
       selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
       setBusy(false); setAIBusy(false); setLetterBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
@@ -260,7 +271,7 @@ export default function ApplicationStudio(props: {
       setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
           setPartnerReadiness(null); setPartnerReceipt(null);
     }
-  }, [selected?.workspace_id, selected?.revision]);
+  }, [selected?.workspace_id, selected?.revision, selected?.application_url]);
 
   useEffect(() => {
     if (!selected?.workspace_id || accountBlockedRef.current) return;
@@ -272,6 +283,7 @@ export default function ApplicationStudio(props: {
         if (!alive || accountBlockedRef.current) return;
         // Private owner reads revalidate identity both before and after.
         // Policy posture is NOT a browser grant or a submission instruction.
+        const provider = partnerKind(selected.application_url);
         const [handoffResult, receiptResult, attemptResult, reviewResult, finalActionResult,
           partnerReadyResult, partnerReceiptResult] = await Promise.allSettled([
           getBrowserHandoffReadiness(workspaceId),
@@ -279,10 +291,10 @@ export default function ApplicationStudio(props: {
           getEmployerAttemptStatus(workspaceId),
           getEmployerReviewIntent(workspaceId),
           getEmployerFinalActionReadiness(workspaceId),
-          partnerKind(selected.application_url) === "ashby"
-            ? getAshbyPartnerReadiness(workspaceId) : getLeverPartnerReadiness(workspaceId),
-          partnerKind(selected.application_url) === "ashby"
-            ? getAshbyPartnerReceipt(workspaceId) : getLeverPartnerReceipt(workspaceId),
+          provider === "ashby" ? getAshbyPartnerReadiness(workspaceId)
+            : provider === "lever" ? getLeverPartnerReadiness(workspaceId) : Promise.resolve(null),
+          provider === "ashby" ? getAshbyPartnerReceipt(workspaceId)
+            : provider === "lever" ? getLeverPartnerReceipt(workspaceId) : Promise.resolve(null),
         ]);
         if (!alive || accountBlockedRef.current) return;
         await verifyAccount();
@@ -292,8 +304,11 @@ export default function ApplicationStudio(props: {
         setEmployerAttempt(attemptResult.status === "fulfilled" ? attemptResult.value : null);
         setFinalReview(reviewResult.status === "fulfilled" ? reviewResult.value : null);
         setFinalAction(finalActionResult.status === "fulfilled" ? finalActionResult.value : null);
-        setPartnerReadiness(partnerReadyResult.status === "fulfilled" ? partnerReadyResult.value : null);
-        setPartnerReceipt(partnerReceiptResult.status === "fulfilled" ? partnerReceiptResult.value.receipt : null);
+        setPartnerReadiness(partnerReadyResult.status === "fulfilled" &&
+          partnerReadyResult.value?.partner_provider === provider ? partnerReadyResult.value : null);
+        setPartnerReceipt(partnerReceiptResult.status === "fulfilled" &&
+          partnerReceiptResult.value?.receipt?.provider === provider
+            ? partnerReceiptResult.value.receipt : null);
       } catch {
         // verifyAccount clears private state and blocks the editor on any
         // missing or different session. Ordinary API failures show no data.
@@ -304,7 +319,7 @@ export default function ApplicationStudio(props: {
       }
     })();
     return () => { alive = false; };
-  }, [selected?.workspace_id, selected?.revision, verifyAccount]);
+  }, [selected?.workspace_id, selected?.revision, selected?.application_url, verifyAccount]);
 
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
