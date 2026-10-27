@@ -1,10 +1,10 @@
 """SP51: exact-posting Ashby employer-PARTNER transport, NOT a public submit API.
 
-This module is deliberately NOT registered in SmartPloy's HTTP API or worker.
-The existing Lever-only two-reviewer rights, applicant review and one-shot
-PostgreSQL claim currently cannot authorize an Ashby employer submission.
-A later integration must extend those gates transactionally BEFORE calling
-this transport. Never invoke from search, scraping, source polling or Agent Zero.
+The official transport is called only by the existing signed-in Ashby route
+(after independent employer rights, two applicant approvals and one-use claim).
+A read-only form preflight may run before that claim; neither it nor this
+module alone grants employer submission permission. Never invoke from source
+polling, browsing or Agent Zero.
 
 Reuse: official Ashby API; current reviewed SmartPloy CV PDF and contact
 fingerprints; existing HTTPX and strict job-host URL validator.
@@ -265,80 +265,118 @@ def _approved_form(
     return form
 
 
-class AshbyPartnerTransport:
-    """INTERNAL transport building block. Not callable from HTTP/UI/worker.
 
-    The follow-up integration MUST require a signed-in, exact owner-bound,
-    irrevocably consumed PostgreSQL claim with fresh independent reviewed
-    Ashby submission rights BEFORE it may invoke this method. No automatic
-    retry even when a submission response is ambiguous.
+def _validate_submission_packet(
+    posting: AshbyPartnerPosting, application_url: str,
+    fields: dict[str, str], pdf: bytes,
+) -> None:
+    """Existing exact-job/CV/contact rules shared by preflight and final send."""
+    org, slug = _exact_url(application_url)
+    if (org != posting.organization or slug != posting.job_slug
+            or not _valid_uuid(posting.posting_id)
+            or not isinstance(pdf, bytes) or not pdf.startswith(b"%PDF-")
+            or not pdf.rstrip().endswith(b"%%EOF")
+            or not 12 <= len(pdf) <= _MAX_PDF
+            or not isinstance(fields, dict)
+            or not isinstance(fields.get("full_name"), str)
+            or not 1 <= len(fields["full_name"].strip()) <= 160
+            or not isinstance(fields.get("email"), str)
+            or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", fields["email"])):
+        raise AshbyPartnerUnavailable(
+            "Reviewed applicant and exact Ashby posting required"
+        )
+
+
+def _fetch_approved_form(
+    client: httpx.Client, posting: AshbyPartnerPosting, application_url: str,
+) -> dict[str, object]:
+    """Read-only employer form verification; no applicant fields or CV leave."""
+    try:
+        response = client.post(
+            "/jobPosting.info",
+            json={"jobPostingId": posting.posting_id,
+                  "includeUnpublishedJobPostings": False},
+        )
+        if response.status_code != 200:
+            raise AshbyPartnerUnavailable("Ashby posting verification unavailable")
+        info = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise AshbyPartnerUnavailable(
+            "Cannot verify the exact Ashby posting before any applicant transfer"
+        ) from exc
+    return _approved_form(info, posting, application_url)
+
+
+def _reviewed_form_answers(
+    approved_form: dict[str, object], fields: dict[str, str],
+) -> list[dict[str, str]]:
+    """Use only the original first-party reviewed form/contact mapping."""
+    answers = [
+        {"path": "_systemfield_name", "value": fields["full_name"].strip()},
+        {"path": "_systemfield_email", "value": fields["email"].strip()},
+        {"path": "_systemfield_resume", "value": "resume_1"},
+    ]
+    form_paths = {
+        entry["field"]["path"]
+        for section in approved_form["sections"]
+        for entry in section["fields"]
+    }
+    phone = fields.get("phone", "")
+    letter = fields.get("cover_letter", "")
+    if "_systemfield_phone" in form_paths and isinstance(phone, str) and phone.strip():
+        answers.append({"path": "_systemfield_phone", "value": phone.strip()[:40]})
+    if "_systemfield_cover_letter" in form_paths:
+        if not isinstance(letter, str) or len(letter.strip()) < 60:
+            raise AshbyPartnerUnavailable("Exact reviewed cover letter is required")
+        answers.append({"path": "_systemfield_cover_letter",
+                        "value": letter.strip()[:10000]})
+    return answers
+
+
+class AshbyPartnerTransport:
+    """Internal transport used only after signed-in, authorized exact-job claim.
+
+    Never initiate a submission from a worker or unauthenticated caller.
+    No automatic retry even if the provider result is ambiguous.
     """
 
     def __init__(self, transport: httpx.BaseTransport | None = None) -> None:
         self._transport = transport
 
-    def send_after_external_claim(
-        self, posting: AshbyPartnerPosting, *,
-        application_url: str, fields: dict[str, str], pdf: bytes,
-    ) -> AshbyPartnerAcknowledgment:
-        org, slug = _exact_url(application_url)
-        if (org != posting.organization or slug != posting.job_slug
-                or not _valid_uuid(posting.posting_id)
-                or not isinstance(pdf, bytes) or not pdf.startswith(b"%PDF-")
-                or not pdf.rstrip().endswith(b"%%EOF")
-                or not 12 <= len(pdf) <= _MAX_PDF
-                or not isinstance(fields, dict)
-                or not isinstance(fields.get("full_name"), str)
-                or not 1 <= len(fields["full_name"].strip()) <= 160
-                or not isinstance(fields.get("email"), str)
-                or not re.fullmatch(
-                    r"[^\s@]+@[^\s@]+\.[^\s@]+", fields["email"]
-                )):
-            raise AshbyPartnerUnavailable("Reviewed applicant and exact Ashby posting required")
-        credential = posting.key()
-        with httpx.Client(
-            base_url=_API_ROOT, auth=(credential, ""),
+    def _client(self, posting: AshbyPartnerPosting) -> httpx.Client:
+        return httpx.Client(
+            base_url=_API_ROOT, auth=(posting.key(), ""),
             transport=self._transport, trust_env=False,
             follow_redirects=False, timeout=httpx.Timeout(9.0, connect=3.0),
             headers={"Accept": "application/json; version=1",
                      "User-Agent": "SmartPloy-AshbyPartner/1"},
-        ) as client:
-            # This is a read-only preflight: NO CV or applicant data sent.
-            try:
-                response = client.post(
-                    "/jobPosting.info",
-                    json={"jobPostingId": posting.posting_id,
-                          "includeUnpublishedJobPostings": False},
-                )
-                if response.status_code != 200:
-                    raise AshbyPartnerUnavailable("Ashby posting verification unavailable")
-                info = response.json()
-            except (httpx.HTTPError, ValueError) as exc:
-                raise AshbyPartnerUnavailable(
-                    "Cannot verify the exact Ashby posting before any applicant transfer"
-                ) from exc
-            approved_form = _approved_form(info, posting, application_url)
-            # No arbitrary answers or consent strings. Never invent the
-            # candidate's response to employer legal/survey questions.
-            answers = [
-                {"path": "_systemfield_name", "value": fields["full_name"].strip()},
-                {"path": "_systemfield_email", "value": fields["email"].strip()},
-                {"path": "_systemfield_resume", "value": "resume_1"},
-            ]
-            form_paths = {
-                entry["field"]["path"]
-                for section in approved_form["sections"]
-                for entry in section["fields"]
-            }
-            phone = fields.get("phone", "")
-            letter = fields.get("cover_letter", "")
-            if "_systemfield_phone" in form_paths and isinstance(phone, str) and phone.strip():
-                answers.append({"path": "_systemfield_phone", "value": phone.strip()[:40]})
-            if "_systemfield_cover_letter" in form_paths:
-                if not isinstance(letter, str) or len(letter.strip()) < 60:
-                    raise AshbyPartnerUnavailable("Exact reviewed cover letter is required")
-                answers.append({"path": "_systemfield_cover_letter",
-                                "value": letter.strip()[:10000]})
+        )
+
+    def preflight_before_claim(
+        self, posting: AshbyPartnerPosting, *,
+        application_url: str, fields: dict[str, str], pdf: bytes,
+    ) -> None:
+        """Check the *current* employer form before consuming one-use consent.
+
+        This makes only an Ashby jobPosting.info request, with the reviewed
+        employer posting UUID, not CV bytes, name, email or an application.
+        It grants no future send permission: send_after_external_claim always
+        performs this same verification again *after* the durable claim.
+        """
+        _validate_submission_packet(posting, application_url, fields, pdf)
+        with self._client(posting) as client:
+            form = _fetch_approved_form(client, posting, application_url)
+            _reviewed_form_answers(form, fields)
+
+    def send_after_external_claim(
+        self, posting: AshbyPartnerPosting, *,
+        application_url: str, fields: dict[str, str], pdf: bytes,
+    ) -> AshbyPartnerAcknowledgment:
+        _validate_submission_packet(posting, application_url, fields, pdf)
+        with self._client(posting) as client:
+            # Recheck the live form AFTER the committed claim (TOCTOU guard).
+            approved_form = _fetch_approved_form(client, posting, application_url)
+            answers = _reviewed_form_answers(approved_form, fields)
             # One exact POST. A local response does not grant a second POST.
             try:
                 submitted = client.post(
