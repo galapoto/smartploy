@@ -47,7 +47,7 @@ function job(tag: string): ApplicationWorkspace {
   return {
     workspace_id: "workspace-" + tag, canonical_key: "fictional-" + tag,
     role_title: tag + " private role", company: "Fictional Employer",
-    application_url: "https://example.invalid/job-" + tag,
+    application_url: "https://jobs.lever.co/synthetic-fi/job-" + tag,
     cv_text: "PRIVATE-CV-" + tag, cover_letter_text: "PRIVATE-LETTER-" + tag,
     source_cv_sha256: "a".repeat(64), approved_evidence_ids: [],
     revision: 1, status: "draft", self_reported_applied_at: "",
@@ -275,6 +275,83 @@ describe("Application Studio private-read account boundary", () => {
       name:/Submit reviewed application to authorized Lever employer/
     })).toBeNull();
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["hosted Greenhouse", "https://boards.greenhouse.io/syntheticfi/jobs/12345"],
+    ["unrelated employer", "https://example.invalid/job-A"],
+    ["Lever lookalike host", "https://jobs.lever.co.evil.invalid/synthetic-fi/role"],
+    ["Ashby lookalike host", "https://jobs.ashbyhq.com.evil.invalid/synthetic-fi/role"],
+    ["plain HTTP", "http://jobs.lever.co/synthetic-fi/role"],
+    ["credential-bearing URL", "https://user:secret@jobs.ashbyhq.com/synthetic-fi/role"],
+    ["nondefault port", "https://jobs.lever.co:444/synthetic-fi/role"],
+  ])("SP54 keeps %s on manual handoff without partner API calls",async(_,applicationUrl)=>{
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces:[{...job("A"),application_url:applicationUrl}],count:1,
+    });
+    studio();
+    const fallback=await screen.findByLabelText("Manual-only employer application");
+    expect(fallback.textContent).toContain("no direct employer API submission");
+    expect(fallback.textContent).toContain("personally complete");
+    await waitFor(()=>expect(api.getEmployerFinalActionReadiness)
+      .toHaveBeenCalledWith("workspace-A"));
+    expect(api.getLeverPartnerReadiness).not.toHaveBeenCalled();
+    expect(api.getLeverPartnerReceipt).not.toHaveBeenCalled();
+    expect(api.getAshbyPartnerReadiness).not.toHaveBeenCalled();
+    expect(api.getAshbyPartnerReceipt).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Official Lever partner submission")).toBeNull();
+    expect(screen.queryByLabelText("Official Ashby partner submission")).toBeNull();
+    expect(screen.queryByRole("button",{name:/Submit reviewed application to authorized/})).toBeNull();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("SP54 preserves the official EU Lever host without treating other employers as Lever",async()=>{
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces:[{...job("A"),application_url:"https://jobs.eu.lever.co/synthetic-fi/job-A"}],count:1,
+    });
+    studio();
+    const panel=await screen.findByLabelText("Official Lever partner submission");
+    expect(panel.textContent).toContain("No authorized direct Lever submission");
+    await waitFor(()=>expect(api.getLeverPartnerReadiness)
+      .toHaveBeenCalledWith("workspace-A"));
+    expect(api.getAshbyPartnerReadiness).not.toHaveBeenCalled();
+  });
+
+  it("SP54 ignores mismatched partner readiness and never exposes a send",async()=>{
+    vi.mocked(api.getLeverPartnerReadiness).mockResolvedValue({
+      partner_provider:"ashby",partner_api_configured:true,
+      independent_partner_rights_reviewed:true,
+      current_applicant_review_recorded:true,current_document_and_posting_ready:true,
+      prior_employer_attempt:false,provider_acknowledged:false,
+      eligible_for_explicit_partner_submit:true,review_evidence:{
+        workspace_id:"workspace-A",revision:1,expires_at:"2099-01-01T00:15:00Z",
+        document_sha256:"a".repeat(64),cv_pdf_sha256:"b".repeat(64),
+        approved_fields_sha256:"c".repeat(64),cv_pdf_size:1002,
+      },
+      review_evidence_is_authorization:false,
+      unattended_auto_apply_enabled:false,automatic_retry_authorized:false,
+    });
+    studio();
+    const panel=await screen.findByLabelText("Official Lever partner submission");
+    await waitFor(()=>expect(panel.textContent).toContain("Partner readiness unavailable"));
+    expect(screen.queryByRole("button",{name:/Record reviewed CV, letter and job/})).toBeNull();
+    expect(screen.queryByRole("button",{name:/Submit reviewed application to authorized/})).toBeNull();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("SP54 never labels an unsupported provider acknowledgement as Lever",async()=>{
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces:[{...job("A"),status:"provider_acknowledged",
+        application_url:"https://boards.greenhouse.io/syntheticfi/jobs/12345"}],count:1,
+    });
+    studio();
+    expect(await screen.findByText("Sent · provider acknowledged")).toBeTruthy();
+    expect(await screen.findByLabelText("Employer provider acknowledgement")).toBeTruthy();
+    expect(screen.queryByLabelText("Official Lever provider acknowledgement")).toBeNull();
+    expect(api.getLeverPartnerReceipt).not.toHaveBeenCalled();
+    expect(api.getAshbyPartnerReceipt).not.toHaveBeenCalled();
   });
 
   it("reviews and completes a real authorized partner application without copying private data",async()=>{
