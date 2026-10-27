@@ -39,7 +39,7 @@ export default function ApplicationJourney(props: {
   onUpload: () => void;
   onReviewCV: () => void;
   onFindJobs: () => void;
-  onOpenApplications: () => void;
+  onOpenApplications: (workspaceId?: string) => void;
   onPrepare: (canonicalKey: string) => Promise<void>;
   onPrepareSelected: (
     canonicalKeys: string[], onProgress: (completed: number, total: number) => void,
@@ -246,9 +246,25 @@ export default function ApplicationJourney(props: {
       const succeeded = new Set(outcome.preparedKeys);
       setSelected((current) => current.filter((key) => !succeeded.has(key)));
       const attempted = new Set(keys);
+      const preparedKeys = [...new Set([
+        ...(previous?.preparedKeys || []), ...outcome.preparedKeys,
+      ])];
+      // Preserve successful job->workspace identity across selected retries
+      // instead of opening an unrelated "latest" draft from the owner list.
+      const successful = new Set(preparedKeys);
+      const preparedByKey = new Map<string, string>();
+      for (const item of [
+        ...(previous?.preparedWorkspaces || []), ...(outcome.preparedWorkspaces || []),
+      ]) {
+        if (successful.has(item.canonicalKey) && item.workspaceId) {
+          preparedByKey.set(item.canonicalKey, item.workspaceId);
+        }
+      }
       const merged: AutoApplyBatchOutcome = {
         ...outcome,
-        preparedKeys: [...new Set([...(previous?.preparedKeys || []), ...outcome.preparedKeys])],
+        preparedKeys,
+        preparedWorkspaces: [...preparedByKey].map(([canonicalKey, workspaceId]) =>
+          ({ canonicalKey, workspaceId })),
         failedKeys: [
           ...(previous?.failedKeys || []).filter((key) => !attempted.has(key)),
           ...outcome.failedKeys,
@@ -509,10 +525,33 @@ export default function ApplicationJourney(props: {
                 Find current vacancies <ArrowRight size={14}/>
               </button>
             </p> : null}
-            {batchResult.preparedKeys.length ? <button className="outline-btn compact"
-              type="button" onClick={props.onOpenApplications}>
-              Open prepared applications <ArrowRight size={14}/>
-            </button> : null}
+            {batchResult.preparedKeys.length ? <>
+              <button className="outline-btn compact" type="button"
+                onClick={() => props.onOpenApplications(
+                  batchResult.preparedWorkspaces?.[0]?.workspaceId)}>
+                Open prepared applications <ArrowRight size={14}/>
+              </button>
+              {(batchResult.preparedWorkspaces?.length || 0) > 0 ? (
+                <details className="flow-prepared-details">
+                  <summary>Review each saved application individually</summary>
+                  <div className="row-actions" aria-label="Prepared application review links">
+                    {batchResult.preparedWorkspaces!.map((entry) => {
+                      const match = jobs.find((row) => row.canonical_key === entry.canonicalKey);
+                      const label = match
+                        ? match.job.role_title + " · " + match.job.company
+                        : "Prepared job application";
+                      return <button key={entry.canonicalKey} type="button"
+                        className="outline-btn compact"
+                        aria-label={"Review prepared " + label}
+                        onClick={() => props.onOpenApplications(entry.workspaceId)}>
+                        Review {label} <ArrowRight size={14}/>
+                      </button>;
+                    })}
+                  </div>
+                  <p>Opens the exact private draft for review. No application is sent.</p>
+                </details>
+              ) : null}
+            </> : null}
           </div> : null}
           <button className="primary-btn" type="button"
             disabled={!runnableSelection.length || props.queueBusy}
@@ -540,7 +579,8 @@ export default function ApplicationJourney(props: {
         <p>Saved applications keep your CV, letter and status in one place. You can return to the next job at any time.</p>
       </div></div>
       <div className="row-actions">
-        <button className="secondary-btn" type="button" onClick={props.onOpenApplications}>
+        <button className="secondary-btn" type="button"
+          onClick={() => props.onOpenApplications()}>
           Open My applications <ArrowRight size={16}/>
         </button>
         <button className="outline-btn" type="button" onClick={props.onFindJobs}>
