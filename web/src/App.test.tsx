@@ -557,6 +557,12 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByText(/PRIVATE_PROVIDER_SECRET/)).toBeNull();
     expect(screen.getByText(/1 private draft\(s\) remain saved/i)).toBeTruthy();
     expect(screen.getByText(/No applications were sent to employers/i)).toBeTruthy();
+    // SP56: partial success must focus the exact newly prepared workspace,
+    // not the oldest or first unrelated application in the private ledger.
+    fireEvent.click(screen.getByRole("button", { name: /open prepared applications/i }));
+    expect(screen.getByTestId("application-editor").getAttribute("data-workspace"))
+      .toBe("sp55-first-owner-draft");
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(2);
   });
 
   it("keeps General selected while optional user-profile requests finish in the background", async () => {

@@ -263,6 +263,9 @@ describe("SP21 application journey", () => {
       expect((selectors[1] as HTMLInputElement).checked).toBe(true);
     });
     expect(screen.getByRole("button", { name: /open prepared applications/i })).toBeTruthy();
+    // Legacy/synthetic outcomes lacking server workspace IDs never invent one.
+    fireEvent.click(screen.getByRole("button", { name: /open prepared applications/i }));
+    expect(p.onOpenApplications).toHaveBeenCalledWith(undefined);
     fireEvent.click(screen.getByRole("button", { name: /retry 1 failed job/i }));
     await waitFor(() => expect(p.onPrepareSelected).toHaveBeenNthCalledWith(
       2, ["extra-role"], expect.any(Function), expect.any(Function), false));
@@ -270,6 +273,63 @@ describe("SP21 application journey", () => {
       1, ["current-planner", "extra-role"], expect.any(Function), expect.any(Function), false);
     await waitFor(() => expect((selectors[1] as HTMLInputElement).checked).toBe(false));
     expect(screen.queryByRole("button", { name: /submit application/i })).toBeNull();
+  });
+
+  it("SP56 targets the exact reviewed job and retains earlier IDs after subset retry", async () => {
+    const p = { ...props(), mode: "automatic" as const };
+    const third: SearchJobCard = {
+      ...listing, canonical_key: "needs-source-review", lane: "broader",
+      job: { ...listing.job, role_title: "Security Trainee" },
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, other_jobs: [...data.other_jobs, third],
+      current_jobs_count: 3, other_jobs_count: 2,
+    });
+    p.onPrepareSelected
+      .mockResolvedValueOnce({
+        preparedKeys: ["current-planner"],
+        preparedWorkspaces: [{ canonicalKey: "current-planner", workspaceId: "exact-workspace-planner" }],
+        failedKeys: ["extra-role", "needs-source-review"],
+        issues: [
+          { canonicalKey: "extra-role", kind: "service_busy", retryable: true,
+            guidance: "The private preparation service is temporarily unavailable." },
+          { canonicalKey: "needs-source-review", kind: "job_missing", retryable: false,
+            guidance: "This posting is no longer current." },
+        ],
+        agentsActive: 1, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+      })
+      .mockResolvedValueOnce({
+        preparedKeys: ["extra-role"],
+        preparedWorkspaces: [{ canonicalKey: "extra-role", workspaceId: "exact-workspace-support" }],
+        failedKeys: [], issues: [],
+        agentsActive: 1, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+      });
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    screen.getAllByRole("checkbox", { name: /select for preparation/i })
+      .forEach((control) => fireEvent.click(control));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    expect(await screen.findByRole("button", { name: /open prepared applications/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /open prepared applications/i }));
+    expect(p.onOpenApplications).toHaveBeenLastCalledWith("exact-workspace-planner");
+    fireEvent.click(screen.getByText(/Review each saved application individually/i));
+    fireEvent.click(screen.getByRole("button", { name: /Review prepared IT-suunnittelija/i }));
+    expect(p.onOpenApplications).toHaveBeenLastCalledWith("exact-workspace-planner");
+
+    fireEvent.click(screen.getByRole("button", { name: /retry 1 failed job/i }));
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("button", { name: /review blocked jobs first/i })).toBeTruthy();
+    const summary = screen.getByText(/Review each saved application individually/i);
+    if (!(summary.closest("details") as HTMLDetailsElement)?.open) fireEvent.click(summary);
+    fireEvent.click(screen.getByRole("button", { name: /Review prepared IT support/i }));
+    expect(p.onOpenApplications).toHaveBeenLastCalledWith("exact-workspace-support");
+    fireEvent.click(screen.getByRole("button", { name: /Review prepared IT-suunnittelija/i }));
+    expect(p.onOpenApplications).toHaveBeenLastCalledWith("exact-workspace-planner");
+    expect(p.onOpenApplications).toHaveBeenCalledTimes(4);
+    expect(p.onPrepareSelected).toHaveBeenNthCalledWith(
+      2, ["extra-role"], expect.any(Function), expect.any(Function), true,
+    );
+    expect(screen.queryByRole("button", { name: /Submit application to employer/i })).toBeNull();
   });
 
   it("reports batch progress without submitting or creating jobs by itself", async () => {

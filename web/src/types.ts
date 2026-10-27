@@ -564,6 +564,8 @@ export interface AutoApplyBatchIssue {
 /** SP49/50: truthful per-job private draft outcomes, not employer receipts. */
 export interface AutoApplyBatchOutcome {
   preparedKeys: string[];
+  /** Exact private workspace IDs returned by owner-verified create-or-get; not employer receipts. */
+  preparedWorkspaces?: Array<{ canonicalKey: string; workspaceId: string }>;
   failedKeys: string[];
   /** Only unstarted jobs; stop is honored between existing private requests. */
   skippedKeys?: string[];

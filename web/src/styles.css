@@ -642,6 +642,12 @@ h1, h2, h3, h4, p { margin-top: 0; }
   border: 1px solid #c8e2f7; border-radius: 12px; margin-top: 14px; }
 .flow-queue strong { color: #24527c; }
 .flow-queue p { margin: 6px 0 11px; color: #607c96; font-size: 11px; }
+/* SP56: reveal exact prepared-job actions without a dense new page. */
+.flow-prepared-details { margin-top: 11px; padding-top: 9px; border-top: 1px solid #dce8f5; }
+.flow-prepared-details summary { color: #24527c; font-weight: 700; font-size: 12px; cursor: pointer; }
+.flow-prepared-details .row-actions { margin-top: 9px; }
+.flow-prepared-details .row-actions button { max-width: 100%; white-space: normal; text-align: left; }
+.flow-prepared-details p { margin-top: 9px; }
 .flow-next .row-actions { margin-top: 10px; }
 .flow-error { color: #9b3546; background: #fff5f5; border: 1px solid #e9cbcb;
   border-radius: 10px; padding: 14px; display: grid; justify-items: start; gap: 10px; }

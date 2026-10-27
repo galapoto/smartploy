@@ -763,7 +763,7 @@ export default function App() {
     }
     const selected = [...new Set(keys.filter(Boolean))].slice(0, 15);
     const empty: AutoApplyBatchOutcome = {
-      preparedKeys: [], failedKeys: [], skippedKeys: [],
+      preparedKeys: [], preparedWorkspaces: [], failedKeys: [], skippedKeys: [],
       stopRequested: false, accessInterrupted: false, issues: [],
       agentsActive: 0, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
     };
@@ -807,6 +807,11 @@ export default function App() {
             throw new Error("Application workspace response was incomplete.");
           }
           outcome.preparedKeys.push(key);
+          // Preserve the exact owner-verified create-or-get response for
+          // review; never guess an employer job from the workspace list order.
+          outcome.preparedWorkspaces!.push({
+            canonicalKey: key, workspaceId: result.workspace.workspace_id,
+          });
           if (!firstWorkspace) firstWorkspace = result.workspace.workspace_id;
           switch (result.agent_tracking?.state) {
             case "active": outcome.agentsActive += 1; break;
@@ -1175,7 +1180,10 @@ export default function App() {
             onMode={setFlowMode} onUpload={onUploadClick}
             onReviewCV={() => navigate("profile")}
             onFindJobs={() => void startGeneralBrowse()}
-            onOpenApplications={() => navigate("applications")}
+            onOpenApplications={(workspaceId) => {
+              if (workspaceId) setSelectedWorkspaceId(workspaceId);
+              navigate("applications");
+            }}
             onPrepare={onPrepare} onPrepareSelected={onPrepareSelectedJobs}
           /> : null}
           {page === "jobs" ? <div className="stacked"><div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>{privateSavedJobsPanel}</div> : null}
