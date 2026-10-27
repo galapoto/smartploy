@@ -33,12 +33,20 @@ type DraftTicket = { key: string; epoch: number };
 
 const safePostingLink = safeExternalJobUrl;
 
-/** UI routing hint ONLY. Backend enforces exact hosted job, rights and claim. */
-function partnerKind(url: string): "lever" | "ashby" {
+/** UI routing hint ONLY. Never infer Lever rights for unrelated hosts.
+ * Backend still enforces exact posting, independent rights and one-use claim.
+ */
+function partnerKind(url: string): "lever" | "ashby" | null {
   try {
-    return new URL(url).hostname === "jobs.ashbyhq.com" ? "ashby" : "lever";
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password ||
+        parsed.port) return null;
+    if (parsed.hostname === "jobs.ashbyhq.com") return "ashby";
+    if (parsed.hostname === "jobs.lever.co" ||
+        parsed.hostname === "jobs.eu.lever.co") return "lever";
+    return null;
   } catch {
-    return "lever";
+    return null;
   }
 }
 
@@ -101,7 +109,7 @@ export default function ApplicationStudio(props: {
     selectedDraftRef.current.epoch === ticket.epoch, []);
 
   const captureDraft = (item: ApplicationWorkspace): DraftTicket => ({
-    key: JSON.stringify([item.workspace_id, item.revision]),
+    key: JSON.stringify([item.workspace_id, item.revision, item.application_url]),
     epoch: selectedDraftRef.current.epoch,
   });
 
@@ -243,11 +251,14 @@ export default function ApplicationStudio(props: {
     () => workspaces.find((item) => item.workspace_id === selectedId) || null,
     [workspaces, selectedId]
   );
+  const selectedPartner = selected ? partnerKind(selected.application_url) : null;
   // Clear draft-local editor content, receipt/packet previews AND pending
   // indicators before a different draft can paint. The old draft's promise
   // may still finish; its completion must never unlock the new draft.
   useLayoutEffect(() => {
-    const key = selected ? JSON.stringify([selected.workspace_id, selected.revision]) : "";
+    const key = selected ? JSON.stringify([
+      selected.workspace_id, selected.revision, selected.application_url,
+    ]) : "";
     if (selectedDraftRef.current.key !== key) {
       selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
       setBusy(false); setAIBusy(false); setLetterBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
@@ -260,7 +271,7 @@ export default function ApplicationStudio(props: {
       setHandoff(null); setBrowserReceipt(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
           setPartnerReadiness(null); setPartnerReceipt(null);
     }
-  }, [selected?.workspace_id, selected?.revision]);
+  }, [selected?.workspace_id, selected?.revision, selected?.application_url]);
 
   useEffect(() => {
     if (!selected?.workspace_id || accountBlockedRef.current) return;
@@ -272,6 +283,7 @@ export default function ApplicationStudio(props: {
         if (!alive || accountBlockedRef.current) return;
         // Private owner reads revalidate identity both before and after.
         // Policy posture is NOT a browser grant or a submission instruction.
+        const provider = partnerKind(selected.application_url);
         const [handoffResult, receiptResult, attemptResult, reviewResult, finalActionResult,
           partnerReadyResult, partnerReceiptResult] = await Promise.allSettled([
           getBrowserHandoffReadiness(workspaceId),
@@ -279,10 +291,10 @@ export default function ApplicationStudio(props: {
           getEmployerAttemptStatus(workspaceId),
           getEmployerReviewIntent(workspaceId),
           getEmployerFinalActionReadiness(workspaceId),
-          partnerKind(selected.application_url) === "ashby"
-            ? getAshbyPartnerReadiness(workspaceId) : getLeverPartnerReadiness(workspaceId),
-          partnerKind(selected.application_url) === "ashby"
-            ? getAshbyPartnerReceipt(workspaceId) : getLeverPartnerReceipt(workspaceId),
+          provider === "ashby" ? getAshbyPartnerReadiness(workspaceId)
+            : provider === "lever" ? getLeverPartnerReadiness(workspaceId) : Promise.resolve(null),
+          provider === "ashby" ? getAshbyPartnerReceipt(workspaceId)
+            : provider === "lever" ? getLeverPartnerReceipt(workspaceId) : Promise.resolve(null),
         ]);
         if (!alive || accountBlockedRef.current) return;
         await verifyAccount();
@@ -292,8 +304,11 @@ export default function ApplicationStudio(props: {
         setEmployerAttempt(attemptResult.status === "fulfilled" ? attemptResult.value : null);
         setFinalReview(reviewResult.status === "fulfilled" ? reviewResult.value : null);
         setFinalAction(finalActionResult.status === "fulfilled" ? finalActionResult.value : null);
-        setPartnerReadiness(partnerReadyResult.status === "fulfilled" ? partnerReadyResult.value : null);
-        setPartnerReceipt(partnerReceiptResult.status === "fulfilled" ? partnerReceiptResult.value.receipt : null);
+        setPartnerReadiness(partnerReadyResult.status === "fulfilled" &&
+          partnerReadyResult.value?.partner_provider === provider ? partnerReadyResult.value : null);
+        setPartnerReceipt(partnerReceiptResult.status === "fulfilled" &&
+          partnerReceiptResult.value?.receipt?.provider === provider
+            ? partnerReceiptResult.value.receipt : null);
       } catch {
         // verifyAccount clears private state and blocks the editor on any
         // missing or different session. Ordinary API failures show no data.
@@ -304,7 +319,7 @@ export default function ApplicationStudio(props: {
       }
     })();
     return () => { alive = false; };
-  }, [selected?.workspace_id, selected?.revision, verifyAccount]);
+  }, [selected?.workspace_id, selected?.revision, selected?.application_url, verifyAccount]);
 
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
@@ -529,11 +544,13 @@ export default function ApplicationStudio(props: {
     setFinalReview(item);
     setMessage("Review recorded temporarily. No employer application was sent.");
     setPartnerReadiness(null);
+    const provider = partnerKind(selected.application_url);
+    if (!provider) return;
     // Never infer partner eligibility from a successful review write. The
     // original signed-in private GET rechecks separate employer rights.
     try {
       const refreshed = await runPrivateAction(
-        () => partnerKind(selected.application_url) === "ashby"
+        () => provider === "ashby"
             ? getAshbyPartnerReadiness(selected.workspace_id)
             : getLeverPartnerReadiness(selected.workspace_id),ticket
       );
@@ -545,8 +562,10 @@ export default function ApplicationStudio(props: {
 
   /** One click to review a partner job, with no clipboard/extension dependency. */
   async function recordPartnerReview() {
-    if (!selected || dirty || !handoff?.ready || !finalReview || reviewBusy ||
+    const provider = selected ? partnerKind(selected.application_url) : null;
+    if (!selected || !provider || dirty || !handoff?.ready || !finalReview || reviewBusy ||
         partnerBusy || browserReceipt || partnerReceipt ||
+        partnerReadiness?.partner_provider !== provider ||
         employerAttempt?.previous_attempt_reserved ||
         !partnerReadiness?.partner_api_configured ||
         !partnerReadiness.independent_partner_rights_reviewed ||
@@ -619,9 +638,11 @@ export default function ApplicationStudio(props: {
       setFinalReview(result);
       setPartnerReadiness(null);
       setMessage("Review cancelled. No employer application was submitted.");
+      const provider = partnerKind(selected.application_url);
+      if (!provider) return;
       try {
         const refreshed = await runPrivateAction(
-          () => partnerKind(selected.application_url) === "ashby"
+          () => provider === "ashby"
             ? getAshbyPartnerReadiness(selected.workspace_id)
             : getLeverPartnerReadiness(selected.workspace_id),ticket
         );
@@ -636,17 +657,19 @@ export default function ApplicationStudio(props: {
 
   /** A real employer API POST: no clipboard, only signed-in server preview. */
   async function sendPartnerApplication() {
-    if (!selected || dirty || !handoff?.ready ||
+    const provider = selected ? partnerKind(selected.application_url) : null;
+    if (!selected || !provider || dirty || !handoff?.ready ||
         !finalReview?.review_recorded ||
         Date.parse(finalReview.expires_at) <= Date.now() ||
         !partnerReadiness?.eligible_for_explicit_partner_submit ||
+        partnerReadiness.partner_provider !== provider ||
         employerAttempt?.previous_attempt_reserved || browserReceipt ||
         partnerReceipt || partnerBusy || partnerSendingRef.current ||
         !freshPartnerEvidence(partnerReadiness.review_evidence,selected)) return;
     const evidence=partnerReadiness.review_evidence;
     if (!window.confirm(
       "SEND THIS APPLICATION TO THE AUTHORIZED " +
-            partnerKind(selected.application_url).toUpperCase() + " EMPLOYER?\n\n" +
+            provider.toUpperCase() + " EMPLOYER?\n\n" +
       selected.role_title + " · " + selected.company + "\n\n" +
       "I have reviewed the exact CV PDF, cover letter, contact details, employer form " +
       "and employer data-processing terms. I approve transferring them to the employer " +
@@ -658,7 +681,7 @@ export default function ApplicationStudio(props: {
     setPartnerBusy(true); setError(""); setMessage("");
     try {
       const result = await runPrivateAction(
-        () => (partnerKind(selected.application_url) === "ashby"
+        () => (provider === "ashby"
           ? sendAshbyPartnerApplication : sendLeverPartnerApplication)(
           selected.workspace_id,selected.revision,
           evidence.document_sha256,evidence.cv_pdf_sha256,
@@ -849,7 +872,8 @@ export default function ApplicationStudio(props: {
           <span className="studio-list-icon"><BriefcaseBusiness size={17}/></span>
           <span className="studio-list-copy"><strong>{item.role_title}</strong><small>{item.company}</small>
             <em>{item.status === "provider_acknowledged"
-              ? "Sent · " + (partnerKind(item.application_url) === "ashby" ? "Ashby" : "Lever") + " acknowledged" :
+              ? "Sent · " + (partnerKind(item.application_url) === "ashby" ? "Ashby" :
+                 partnerKind(item.application_url) === "lever" ? "Lever" : "provider") + " acknowledged" :
               item.status === "self_reported_applied" ? "Applied · self-reported" :
               item.workspace_id === selectedId && browserReceipt
                 ? "Confirmation observed · not verified" :
@@ -1008,7 +1032,7 @@ export default function ApplicationStudio(props: {
             </div>
           ) : (
             <p className="muted">
-              {finalAction?.trusted_one_use_browser_redemption_available
+              {selectedPartner === "lever" && finalAction?.trusted_one_use_browser_redemption_available
                 ? "For individually authorized Lever jobs, the browser companion can reserve a single " +
                   "server-checked attempt and click Submit once after you review the complete employer form. " +
                   "First record your CV review below, then verify it in the companion. " +
@@ -1073,7 +1097,7 @@ export default function ApplicationStudio(props: {
             {!finalReview ? <p role="status">Durable review service unavailable. No authorization can be recorded.</p> : null}
           </div> : null}
           <div className="studio-packet-fallback" aria-label="Employer final-action permission">
-            <strong>{finalAction?.trusted_one_use_browser_redemption_available
+            <strong>{selectedPartner === "lever" && finalAction?.trusted_one_use_browser_redemption_available
               ? "One-use reviewed employer final click"
               : "Automatic employer website click · currently unavailable"}</strong>
             {finalAction ? <>
@@ -1086,7 +1110,7 @@ export default function ApplicationStudio(props: {
               <p className="muted">
                 {finalAction.previous_employer_attempt_reserved
                   ? "A previous employer attempt exists and must be reconciled."
-                  : finalAction.trusted_one_use_browser_redemption_available
+                  : selectedPartner === "lever" && finalAction.trusted_one_use_browser_redemption_available
                   ? "If the employer grants permission for this exact posting, review and fill the Lever form, " +
                     "then reserve ONE attempt from the signed-in SmartPloy tab using the companion. " +
                     "Return to the employer to perform the final click. No automatic retry."
@@ -1097,21 +1121,23 @@ export default function ApplicationStudio(props: {
             <p className="muted">This informational indicator never permits a browser click by
               itself: server review, employer rights, your explicit final decision and a one-use claim are required.</p>
           </div>
-          <div className="studio-packet-fallback" aria-label={partnerKind(selected.application_url) === "ashby"
+          {selectedPartner ? <>
+          <div className="studio-packet-fallback" aria-label={selectedPartner === "ashby"
             ? "Official Ashby partner submission" : "Official Lever partner submission"}>
             <strong>Complete your reviewed job application through {
-              partnerKind(selected.application_url) === "ashby" ? "Ashby" : "Lever"
+              selectedPartner === "ashby" ? "Ashby" : "Lever"
             }</strong>
             {partnerReceipt ? <>
               <p role="status">{partnerReceipt?.provider === "ashby" ? "Ashby" : "Lever"} acknowledged the application. Reference:
                 <strong> {partnerReceipt.provider_application_id}</strong>.</p>
               <p className="muted">The employer's system confirmed creation of the application.
                 This is not a hiring decision; do not submit the same job again.</p>
-            </> : partnerReadiness?.partner_api_configured &&
+            </> : partnerReadiness?.partner_provider === selectedPartner &&
+              partnerReadiness.partner_api_configured &&
                 partnerReadiness.independent_partner_rights_reviewed &&
                 selected && freshPartnerEvidence(partnerReadiness.review_evidence,selected) ? <>
               <p className="muted">This exact employer job has separately reviewed {
-                partnerKind(selected.application_url) === "ashby" ? "Ashby" : "Lever"
+                selectedPartner === "ashby" ? "Ashby" : "Lever"
               } API
                 permission. Review your CV and letter above, then record your review here.
                 No extension, copied personal-data packet or clipboard is needed.</p>
@@ -1137,7 +1163,7 @@ export default function ApplicationStudio(props: {
                     employerAttempt?.previous_attempt_reserved === true || !!browserReceipt}
                   onClick={() => void sendPartnerApplication()}>
                   {partnerBusy ? "Submitting once…" : "Submit reviewed application to authorized " +
-                      (partnerKind(selected.application_url) === "ashby" ? "Ashby" : "Lever") + " employer"}
+                      (selectedPartner === "ashby" ? "Ashby" : "Lever") + " employer"}
                 </button> : <p role="status">
                   Partner eligibility is not verified after review. No application may be sent.
                 </p>}
@@ -1146,12 +1172,19 @@ export default function ApplicationStudio(props: {
               {partnerReadiness?.prior_employer_attempt
                 ? "An employer attempt already exists; contact support to reconcile. Do not retry."
                 : "No authorized direct " +
-                  (partnerKind(selected.application_url) === "ashby" ? "Ashby" : "Lever") +
+                  (selectedPartner === "ashby" ? "Ashby" : "Lever") +
                   " submission is available for this job. " +
                   "Use the browser companion and submit manually on the employer website."}
             </p>}
             {!partnerReadiness ? <p role="status">Partner readiness unavailable. No employer transfer is permitted.</p> : null}
           </div>
+          </> : <div className="studio-packet-fallback" aria-label="Manual-only employer application">
+            <strong>Finish this job application on the employer website</strong>
+            <p className="muted">SmartPloy has no direct employer API submission for this job.
+              Review your prepared CV and letter, use browser assistance only if the
+              employer form is supported, and personally complete its application form.
+              Save the confirmation here afterward. SmartPloy did not send anything.</p>
+          </div>}
           <p className="studio-handoff-disclaimer">
             Browser-only, 15-minute packet. Upload your CV on the employer's page and answer
             any employer-specific questions. Final submission needs a separate approval and
@@ -1159,11 +1192,13 @@ export default function ApplicationStudio(props: {
           </p>
         </section> : null}
         {selected.status === "provider_acknowledged" ? <section
-          className="studio-receipt" aria-label={partnerKind(selected.application_url) === "ashby"
-            ? "Official Ashby provider acknowledgement" : "Official Lever provider acknowledgement"}>
+          className="studio-receipt" aria-label={partnerReceipt?.provider === "ashby"
+            ? "Official Ashby provider acknowledgement" : partnerReceipt?.provider === "lever"
+            ? "Official Lever provider acknowledgement" : "Employer provider acknowledgement"}>
           <div className="studio-receipt-header">
             <strong><CheckCircle2 size={16}/> {
-              partnerReceipt?.provider === "ashby" ? "Ashby" : "Lever"
+              partnerReceipt?.provider === "ashby" ? "Ashby" :
+              partnerReceipt?.provider === "lever" ? "Lever" : "Employer provider"
             } received this application</strong>
             <span className="state-pill good">Provider acknowledged</span>
           </div>
@@ -1225,7 +1260,8 @@ export default function ApplicationStudio(props: {
                 ? "Confirm outcome of previous attempt" : "I applied on employer site"}
               <CheckCircle2 size={16}/></button>
           </div> : selected.status === "provider_acknowledged" ?
-            <p>{partnerReceipt?.provider === "ashby" ? "Ashby" : "Lever"} acknowledged your application{partnerReceipt ?
+            <p>{partnerReceipt?.provider === "ashby" ? "Ashby" :
+              partnerReceipt?.provider === "lever" ? "Lever" : "Employer provider"} acknowledged your application{partnerReceipt ?
               " · Reference " + partnerReceipt.provider_application_id : ""}.
               Documents are locked to preserve the submitted version.</p> :
             <p>Self-reported applied {selected.self_reported_applied_at ? new Date(selected.self_reported_applied_at).toLocaleDateString() : ""}{selected.self_reported_reference ? " · " + selected.self_reported_reference : ""}</p>}
