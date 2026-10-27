@@ -544,11 +544,13 @@ export default function ApplicationStudio(props: {
     setFinalReview(item);
     setMessage("Review recorded temporarily. No employer application was sent.");
     setPartnerReadiness(null);
+    const provider = partnerKind(selected.application_url);
+    if (!provider) return;
     // Never infer partner eligibility from a successful review write. The
     // original signed-in private GET rechecks separate employer rights.
     try {
       const refreshed = await runPrivateAction(
-        () => partnerKind(selected.application_url) === "ashby"
+        () => provider === "ashby"
             ? getAshbyPartnerReadiness(selected.workspace_id)
             : getLeverPartnerReadiness(selected.workspace_id),ticket
       );
@@ -560,8 +562,10 @@ export default function ApplicationStudio(props: {
 
   /** One click to review a partner job, with no clipboard/extension dependency. */
   async function recordPartnerReview() {
-    if (!selected || dirty || !handoff?.ready || !finalReview || reviewBusy ||
+    const provider = selected ? partnerKind(selected.application_url) : null;
+    if (!selected || !provider || dirty || !handoff?.ready || !finalReview || reviewBusy ||
         partnerBusy || browserReceipt || partnerReceipt ||
+        partnerReadiness?.partner_provider !== provider ||
         employerAttempt?.previous_attempt_reserved ||
         !partnerReadiness?.partner_api_configured ||
         !partnerReadiness.independent_partner_rights_reviewed ||
@@ -634,9 +638,11 @@ export default function ApplicationStudio(props: {
       setFinalReview(result);
       setPartnerReadiness(null);
       setMessage("Review cancelled. No employer application was submitted.");
+      const provider = partnerKind(selected.application_url);
+      if (!provider) return;
       try {
         const refreshed = await runPrivateAction(
-          () => partnerKind(selected.application_url) === "ashby"
+          () => provider === "ashby"
             ? getAshbyPartnerReadiness(selected.workspace_id)
             : getLeverPartnerReadiness(selected.workspace_id),ticket
         );
@@ -651,17 +657,19 @@ export default function ApplicationStudio(props: {
 
   /** A real employer API POST: no clipboard, only signed-in server preview. */
   async function sendPartnerApplication() {
-    if (!selected || dirty || !handoff?.ready ||
+    const provider = selected ? partnerKind(selected.application_url) : null;
+    if (!selected || !provider || dirty || !handoff?.ready ||
         !finalReview?.review_recorded ||
         Date.parse(finalReview.expires_at) <= Date.now() ||
         !partnerReadiness?.eligible_for_explicit_partner_submit ||
+        partnerReadiness.partner_provider !== provider ||
         employerAttempt?.previous_attempt_reserved || browserReceipt ||
         partnerReceipt || partnerBusy || partnerSendingRef.current ||
         !freshPartnerEvidence(partnerReadiness.review_evidence,selected)) return;
     const evidence=partnerReadiness.review_evidence;
     if (!window.confirm(
       "SEND THIS APPLICATION TO THE AUTHORIZED " +
-            partnerKind(selected.application_url).toUpperCase() + " EMPLOYER?\n\n" +
+            provider.toUpperCase() + " EMPLOYER?\n\n" +
       selected.role_title + " · " + selected.company + "\n\n" +
       "I have reviewed the exact CV PDF, cover letter, contact details, employer form " +
       "and employer data-processing terms. I approve transferring them to the employer " +
@@ -673,7 +681,7 @@ export default function ApplicationStudio(props: {
     setPartnerBusy(true); setError(""); setMessage("");
     try {
       const result = await runPrivateAction(
-        () => (partnerKind(selected.application_url) === "ashby"
+        () => (provider === "ashby"
           ? sendAshbyPartnerApplication : sendLeverPartnerApplication)(
           selected.workspace_id,selected.revision,
           evidence.document_sha256,evidence.cv_pdf_sha256,
