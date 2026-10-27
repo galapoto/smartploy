@@ -2351,6 +2351,22 @@ def create_app(
             raise HTTPException(
                 status_code=409, detail="Approved PDF, contact or job snapshot drifted"
             )
+        # SP53: do not burn an irrevocable one-shot Ashby claim if the
+        # official read-only form has changed or the reviewed applicant packet
+        # cannot satisfy it. No applicant bytes are transferred at this stage.
+        # The transport rechecks form identity after claim reservation to
+        # fail closed if the posting changes between these two checks.
+        if provider == "ashby":
+            try:
+                app.state.partner_ashby_transport.preflight_before_claim(
+                    posting, application_url=workspace.application_url,
+                    fields=packet["fields"], pdf=cv_pdf,
+                )
+            except AshbyPartnerUnavailable as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Ashby application form unavailable or changed; no submission attempt reserved",
+                ) from exc
         scope = ASHBY_API_ACTION if provider == "ashby" else LEVER_API_ACTION
         try:
             approval, _ = app.state.employer_final_actions.approve(
