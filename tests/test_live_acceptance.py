@@ -1,3 +1,7 @@
+import json
+import subprocess
+import sys
+
 import pytest
 
 from smartploy.live_acceptance import (
@@ -8,6 +12,7 @@ from smartploy.live_acceptance import (
     validate_origin_health,
     validate_public_probe,
     validate_oidc_public_probe,
+    validate_public_release_parity,
 )
 
 
@@ -239,3 +244,83 @@ def test_oidc_direct_https_does_not_weaken_app_or_issuer_gates(
             PublicProbe(status_code=status, location=location),
             surface, "https://auth.komplyint.fi"
         )
+
+# SP57: independent public hostname may still point at stale API/Ingress.
+# All fixtures are synthetic: no DNS, accounts or internet calls.
+def _release_pair():
+    local = oidc_healthy_origin()
+    public = oidc_healthy_origin()
+    local["release_revision"] = "ab12cd34ef56"
+    public["release_revision"] = "ab12cd34ef56"
+    return local, public
+
+
+def test_public_release_parity_accepts_only_identical_valid_oidc_revisions():
+    local, public = _release_pair()
+    assert validate_public_release_parity(local, public, "oidc") == "ab12cd34ef56"
+
+
+@pytest.mark.parametrize("bad_version", [
+    "", "dev", None, "ABCDEF123456", "ab12cd34ef5", "a" * 40,
+    "other_commit", "ab12cd34ef57",
+])
+def test_public_release_parity_refuses_unattested_or_stale_gateway(bad_version):
+    local, public = _release_pair()
+    public["release_revision"] = bad_version
+    with pytest.raises(LiveAcceptanceError):
+        validate_public_release_parity(local, public, "oidc")
+
+
+def test_public_release_parity_refuses_unattested_local_api():
+    local, public = _release_pair()
+    del local["release_revision"]
+    with pytest.raises(LiveAcceptanceError):
+        validate_public_release_parity(local, public, "oidc")
+
+
+@pytest.mark.parametrize(("key", "value"), [
+    ("public_origin", "https://smartploy.obumai.com"),
+    ("service", "impostor"),
+    ("ok", False),
+    ("external_actions_authorized", True),
+    ("storage", {"ready": False}),
+    ("access", {"environment": "development", "enabled": False}),
+])
+def test_public_release_parity_refuses_wrong_service_identity_and_policy(key, value):
+    local, public = _release_pair()
+    public[key] = value
+    with pytest.raises(LiveAcceptanceError):
+        validate_public_release_parity(local, public, "oidc")
+
+
+@pytest.mark.parametrize("mode", ["cloudflare", "disabled", ""])
+def test_public_release_parity_never_loosens_legacy_access(mode):
+    local, public = _release_pair()
+    with pytest.raises(LiveAcceptanceError):
+        validate_public_release_parity(local, public, mode)
+
+
+def test_public_release_parity_cli_emits_only_verified_digest_and_fails_closed(tmp_path):
+    local, public = _release_pair()
+    origin_file = tmp_path / "origin.json"
+    public_file = tmp_path / "public.json"
+    origin_file.write_text(json.dumps(local), encoding="utf-8")
+    public_file.write_text(json.dumps(public), encoding="utf-8")
+
+    def probe():
+        return subprocess.run(
+            [sys.executable, "-m", "smartploy.live_acceptance",
+             "public-release-parity", str(origin_file), str(public_file), "oidc"],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+
+    ok = probe()
+    assert ok.returncode == 0, ok.stderr
+    assert ok.stdout.strip() == "ab12cd34ef56"
+    assert not ok.stderr
+
+    public_file.write_text('{"secret": "PRIVATE_CV_PAYLOAD"}', encoding="utf-8")
+    failed = probe()
+    assert failed.returncode != 0
+    assert "PRIVATE_CV_PAYLOAD" not in failed.stdout + failed.stderr
+    assert "ab12cd34ef56" not in failed.stdout

@@ -240,6 +240,8 @@ LIVE_CLOUDFLARE_EDGE="skipped"
 LIVE_ACCESS_ROOT="skipped"
 LIVE_ACCESS_API="skipped"
 LIVE_OIDC_LOGIN="skipped"
+LIVE_PUBLIC_REVISION_MATCH="skipped"
+LIVE_PUBLIC_RELEASE_REVISION="skipped"
 
 if "${ONLINE}"; then
   LIVE_FILE="${TMP_DIR}/live.txt"
@@ -261,8 +263,20 @@ if "${ONLINE}"; then
   LIVE_ACCESS_ROOT="$(live_value access_root)"
   LIVE_ACCESS_API="$(live_value access_api)"
   LIVE_OIDC_LOGIN="$(live_value oidc_login)"
-  if [[ "${IDENTITY_PROFILE}" == "oidc" && "${LIVE_OIDC_LOGIN}" != "redirect_to_trusted_oidc" ]]; then
-    fail "Live ZITADEL login redirect proof is missing"
+  LIVE_PUBLIC_REVISION_MATCH="$(live_value public_revision_matches_origin)"
+  LIVE_PUBLIC_RELEASE_REVISION="$(live_value public_release_revision)"
+  if [[ "${IDENTITY_PROFILE}" == "oidc" ]]; then
+    [[ "${LIVE_OIDC_LOGIN}" == "redirect_to_trusted_oidc" ]] \
+      || fail "Live ZITADEL login redirect proof is missing"
+    [[ "${LIVE_PUBLIC_REVISION_MATCH}" == "true" ]] \
+      || fail "public HTTPS release parity is not verified"
+    [[ "${LIVE_PUBLIC_RELEASE_REVISION}" == "${DEPLOYED_SHA:0:12}" ]] \
+      || fail "public HTTPS revision differs from approved deployed SHA"
+  else
+    [[ "${LIVE_PUBLIC_REVISION_MATCH}" == "skipped_legacy_access" ]] \
+      || fail "legacy Access release parity classification is invalid"
+    [[ "${LIVE_PUBLIC_RELEASE_REVISION}" == "skipped" ]] \
+      || fail "legacy Access must not assert an unauthenticated release revision"
   fi
 fi
 
@@ -298,6 +312,8 @@ live_cloudflare_edge=${LIVE_CLOUDFLARE_EDGE}
 live_access_root=${LIVE_ACCESS_ROOT}
 live_access_api=${LIVE_ACCESS_API}
 live_oidc_login=${LIVE_OIDC_LOGIN}
+live_public_revision_matches_origin=${LIVE_PUBLIC_REVISION_MATCH}
+live_public_release_revision=${LIVE_PUBLIC_RELEASE_REVISION}
 identity_profile=${IDENTITY_PROFILE}
 EOF
 

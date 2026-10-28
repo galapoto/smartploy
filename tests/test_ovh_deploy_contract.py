@@ -480,3 +480,41 @@ def test_sp36_guarded_release_blocks_bad_worker_before_deploy_sha_success():
     assert "agent_zero_candidate_reminder_verified=false" in (
         PRODUCTION_SCRIPT_DIR / "assert-agent-zero-worker.sh"
     ).read_text(encoding="utf-8")
+
+
+def test_sp57_oidc_public_https_release_parity_is_a_blocking_release_gate():
+    live = (PRODUCTION_SCRIPT_DIR / "live-acceptance.sh").read_text(encoding="utf-8")
+    deploy = (PRODUCTION_SCRIPT_DIR / "deploy.sh").read_text(encoding="utf-8")
+    receipt = (PRODUCTION_SCRIPT_DIR / "release-evidence.sh").read_text(encoding="utf-8")
+
+    # Public OIDC gateway proof must not be derived from the same loopback
+    # response. TLS is verified by curl, and its URL is the validated policy.
+    assert '"${PRODUCTION_ORIGIN}/healthz" > "${PUBLIC_HEALTH_FILE}"' in live
+    assert 'public-release-parity "${HEALTH_FILE}" "${PUBLIC_HEALTH_FILE}" "oidc"' in live
+    assert "public_revision_matches_origin=true" in live
+    assert "public_revision_matches_origin=skipped_legacy_access" in live
+    assert '--max-filesize 16384' in live
+    assert 'public_release_revision=${PUBLIC_REVISION}' in live
+    assert live.index('public-release-parity') < live.index('live_acceptance=pass')
+
+    # Preserve original backup/image/companion/Agent Zero and OIDC checks.
+    assert 'assert-running-images.sh" "${DEPLOY_SHA}"' in deploy
+    assert 'assert-companion-release.sh' in deploy
+    assert 'assert-agent-zero-worker.sh' in deploy
+    assert 'bash "${SCRIPT_DIR}/live-acceptance.sh"' in deploy
+    assert 'public HTTPS revision differs from approved deployed SHA' in receipt
+    assert 'LIVE_PUBLIC_RELEASE_REVISION' in receipt
+    assert 'LIVE_PUBLIC_REVISION_MATCH' in receipt
+    assert 'live_public_release_revision=${LIVE_PUBLIC_RELEASE_REVISION}' in receipt
+    assert 'live_public_revision_matches_origin=${LIVE_PUBLIC_REVISION_MATCH}' in receipt
+    assert '"${DEPLOYED_SHA:0:12}"' in receipt
+
+
+def test_sp57_chromium_runner_is_pinned_to_supported_ubuntu_image():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "  browser:\n" in workflow
+    section = workflow.split("  browser:\n", 1)[1].split("\n  deploy-stack:", 1)[0]
+    assert "runs-on: ubuntu-24.04" in section
+    assert "runs-on: ubuntu-latest" not in section
+    assert "npx playwright install chromium" in section
+    assert "await chromium.launch({ headless: true })" in section

@@ -124,7 +124,10 @@ jobs:
         run: npm run build
 
   browser:
-    runs-on: ubuntu-latest
+    # Playwright 1.55.1 does not install its pinned Chromium on the hosted
+    # ubuntu-26.04 image (ubuntu-latest moved there in Oct 2026). Reuse the
+    # supported Ubuntu 24.04 runner; do not silently upgrade browser tests.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

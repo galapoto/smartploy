@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import re
 from urllib.parse import urlsplit
 import sys
 
@@ -67,6 +68,29 @@ def validate_origin_health(payload: dict[str, object], identity_profile: str = "
 
     if payload.get("external_actions_authorized") is not False:
         raise LiveAcceptanceError("origin external-action authority is unsafe")
+
+
+def validate_public_release_parity(
+    origin: dict[str, object], public: dict[str, object], identity_profile: str = "oidc"
+) -> str:
+    """Prove that the public Komplyint HTTPS gateway serves the local release.
+
+    Source-only comparison: a matched pair is not by itself approval of an
+    exact Git commit. deploy.sh and release-evidence.sh independently check
+    the local image, checkout and approved full SHA before certifying it.
+    """
+    if identity_profile != "oidc":
+        raise LiveAcceptanceError("public revision parity is limited to the public OIDC host")
+    validate_origin_health(origin, identity_profile)
+    validate_origin_health(public, identity_profile)
+    local_revision = origin.get("release_revision")
+    public_revision = public.get("release_revision")
+    for value in (local_revision, public_revision):
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{12}", value) is None:
+            raise LiveAcceptanceError("release fingerprint missing or invalid")
+    if local_revision != public_revision:
+        raise LiveAcceptanceError("public HTTPS entry point runs a different release revision")
+    return local_revision
 
 
 def is_cloudflare_access_redirect(location: str) -> bool:
@@ -156,6 +180,25 @@ def parse_probe_lines(text: str) -> PublicProbe:
 
 
 def _main(argv: list[str]) -> int:
+    if len(argv) == 4 and argv[0] == "public-release-parity":
+        _, local_file, public_file, profile = argv
+        try:
+            payloads = []
+            for path in (local_file, public_file):
+                file = Path(path)
+                if not 0 < file.stat().st_size <= 16384:
+                    raise LiveAcceptanceError("health response size is invalid")
+                decoded = json.loads(file.read_text(encoding="utf-8"))
+                if not isinstance(decoded, dict):
+                    raise LiveAcceptanceError("health response is not an object")
+                payloads.append(decoded)
+            revision = validate_public_release_parity(payloads[0], payloads[1], profile)
+        except (OSError, UnicodeError, json.JSONDecodeError, LiveAcceptanceError) as exc:
+            # Never print malformed provider/health JSON or private fields.
+            raise SystemExit("public release parity: verification failed") from exc
+        print(revision)
+        return 0
+
     oidc_commands = {"oidc-root": "root", "oidc-api": "api", "oidc-login": "login"}
     if len(argv) == 3 and argv[0] in oidc_commands:
         command, path, issuer = argv
@@ -176,7 +219,8 @@ def _main(argv: list[str]) -> int:
         raise SystemExit(
             "usage: python -m smartploy.live_acceptance "
             "(origin-health <json-file> | public-probe <probe-file> | "
-            "oidc-root/oidc-api/oidc-login <probe-file> <issuer-origin>)"
+            "oidc-root/oidc-api/oidc-login <probe-file> <issuer-origin> | "
+            "public-release-parity <local-health-json> <public-health-json> oidc)"
         )
 
     command, path = argv[:2]

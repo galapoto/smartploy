@@ -72,6 +72,29 @@ if ! getent ahosts "${PRODUCTION_HOST}" >/dev/null 2>&1; then
 fi
 echo "dns=pass"
 
+# SP57: local API/image checks are not enough if public HTTPS routes to an
+# older instance. The OIDC hostname intentionally exposes no account data on
+# /healthz. Probe exact immutable policy origin over verified TLS, do not
+# follow redirects, and compare strict 12-hex build revisions before PASS.
+# Legacy Cloudflare Access may deny unauthenticated /healthz; never relax its
+# separate owner-restricted Access gate just to obtain a public fingerprint.
+if [[ "${PROFILE}" == "oidc" ]]; then
+  PUBLIC_HEALTH_FILE="${TMP_DIR}/public-health.json"
+  if ! curl --fail --silent --show-error --max-time 15 --max-filesize 16384 \
+    "${PRODUCTION_ORIGIN}/healthz" > "${PUBLIC_HEALTH_FILE}"; then
+    fail "public OIDC HTTPS release health probe failed"
+  fi
+  if ! PUBLIC_REVISION="$(PYTHONPATH="${REPO_ROOT}" python3 -m smartploy.live_acceptance \
+    public-release-parity "${HEALTH_FILE}" "${PUBLIC_HEALTH_FILE}" "oidc")"; then
+    fail "public OIDC release revision does not match the local origin"
+  fi
+  echo "public_revision_matches_origin=true"
+  echo "public_release_revision=${PUBLIC_REVISION}"
+else
+  echo "public_revision_matches_origin=skipped_legacy_access"
+  echo "public_release_revision=skipped"
+fi
+
 probe_public() {
   local url="$1"
   local output="$2"
