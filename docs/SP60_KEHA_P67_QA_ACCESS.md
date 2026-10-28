@@ -48,6 +48,12 @@ No second crawler or ATS interface; no provider client implementation.
   refusal of wrong QA env or host, redacted 403 response, bounded
   window, explicit execute and default no-network mode.
 
+## SP61 — keep real QA tests documented as they happen
+
+**Living evidence:** [KEHA P67 QA test ledger](KEHA_P67_QA_TEST_LEDGER.md). On 28 October 2026, the operator proved local credential presence but the live probe failed with `QA_NETWORK_OR_TLS`. Two separate direct HTTPS checks timed out **before TCP connection/TLS**; normal IPv4 HTTPS to GitHub succeeded. The real KEHA QA API has **not** authenticated or returned postings.
+
+**Finnish replies:** [QA access troubleshooting and later production request templates](KEHA_P67_QA_REPLY_FI.md). Keep the public GitHub ledger free of the KEHA key and the operator's home outbound IP. Give the IP privately to KEHA for allowlist review. Add every subsequent test receipt as a new append-only ledger row, update the eight scenario outcomes, and copy verified results into the final KEHA email. The eight-scenario plan is an **internal recommendation**, not an official KEHA quota.
+
 ## Operator QA run (not performed by GitHub CI)
 
 1. Do **not** copy the actual key into GitHub, ChatGPT text, email
