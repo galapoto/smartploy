@@ -79,8 +79,8 @@ def run_qa_probe(
 ) -> dict[str, Any]:
     """Execute the existing P67 adapter twice; disclose counts only.
 
-    This does not use SmartployService, PostgreSQL, source observations,
-    persistent scheduler tasks or candidate files. Zero QA postings in the
+    This does not use the application service layer, PostgreSQL,
+    source observations, persistent scheduler tasks or candidate files. Zero QA postings in the
     selected modified window still proves a valid successful API response.
     """
     _validate_window(minutes)
@@ -95,7 +95,12 @@ def run_qa_probe(
     def iso(value: datetime) -> str:
         return value.isoformat().replace("+00:00", "Z")
 
-    adapter = JobMarketFinlandAdapter(settings, http_client=http_client)
+    # Preserve the original production adapter constructor; test transports
+    # are an explicit opt-in and must not change real QA call parameters.
+    adapter = (
+        JobMarketFinlandAdapter(settings, http_client=http_client)
+        if http_client is not None else JobMarketFinlandAdapter(settings)
+    )
     try:
         published = adapter.fetch_window(
             status="PUBLISHED", modified_from=iso(begin), modified_to=iso(current),
