@@ -21,9 +21,13 @@ The original post-deploy `live-acceptance.sh` validated local health, public TLS
 
 ## Test/acceptance plan
 
-- Synthetic valid matching public/local OIDC release; wrong/missing/invalid/uppercase/40-hex releases; stale public ingress; mismatched origin/service/storage/permissions/access; rejected legacy profile; CLI secret-safe nonzero behavior.
+- Synthetic valid matching public/local OIDC release; wrong/missing/invalid/uppercase/40-hex releases; stale public ingress; mismatched origin/service/storage/permissions/access; rejected legacy profile; CLI secret-safe nonzero behavior. The real live-acceptance shell is also executed against entirely synthetic DNS/curl responses to prove green and deliberate RED cases.
 - Static and shell syntax proof that live acceptance is gated before success, without production secrets or runtime mutation; existing Python/PostgreSQL, React, companion, Chromium and isolated Docker CI must remain green.
 - **Source qualification only until live operator proof.** An isolated CI Docker run does not verify real public DNS/TLS. Native ObumDelivery Woodpecker project is still `enabled: false`, so a native positive/negative exact source receipt and operator-approved OVH deployment remain unverified. Do not claim exact source is live just because this PR passes.
 - Post-deploy verified public revision, full on-host SHA, owner-scoped two-account end-to-end QA and actual provider rights/ACK are independent mandatory gates. Generic unattended ATS employer submission remains unavailable.
 
 **No new application engine, third-party source, model, database migration, dependency, external send or deployment performed in this code slice.**
+
+## CI environment compatibility (same SP57 cycle)
+
+The first exact-head browser check failed **before executing Chromium tests** because GitHub's rolling `ubuntu-latest` became Ubuntu 26.04, unsupported by the existing `@playwright/test` 1.55.1 Chromium installer. Keep the pinned browser package and original tests; pin **only** that workflow job to `ubuntu-24.04`, with a static regression that refuses a future accidental reversion. This is a CI runner compatibility repair, not a source-test waiver or production rollout.

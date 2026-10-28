@@ -508,3 +508,13 @@ def test_sp57_oidc_public_https_release_parity_is_a_blocking_release_gate():
     assert 'live_public_release_revision=${LIVE_PUBLIC_RELEASE_REVISION}' in receipt
     assert 'live_public_revision_matches_origin=${LIVE_PUBLIC_REVISION_MATCH}' in receipt
     assert '"${DEPLOYED_SHA:0:12}"' in receipt
+
+
+def test_sp57_chromium_runner_is_pinned_to_supported_ubuntu_image():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "  browser:\n" in workflow
+    section = workflow.split("  browser:\n", 1)[1].split("\n  deploy-stack:", 1)[0]
+    assert "runs-on: ubuntu-24.04" in section
+    assert "runs-on: ubuntu-latest" not in section
+    assert "npx playwright install chromium" in section
+    assert "await chromium.launch({ headless: true })" in section
