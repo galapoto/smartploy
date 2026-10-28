@@ -63,3 +63,54 @@ The command requires PostgreSQL so external-ID lifecycle state survives process 
 - https://tyomarkkinatori.fi/en/instructions-and-support/interfaces/interfaces-for-job-postings/retrieval-interface-description-and-instructions
 - https://tyomarkkinatori.fi/jobpostingprovider/documentation/KIPA-search-jobpostings-en.html
 - https://tyomarkkinatori.fi/en/instructions-and-support/interfaces/interfaces-for-job-postings/terms-of-use-for-job-market-finlands-job-posting-apis
+
+## SP60 — KEHA QA test user grant (28 October 2026)
+
+KEHA Centre granted **Komplyint Oy** a **QA-only** KIPA subscription on
+26 October 2026. This grant does **not** authorize the production endpoint.
+The official P67 v2 OpenAPI schema confirms `POST`, a `modified` interval,
+`onlyStatus=PUBLISHED/ARCHIVED`, `postingLanguageIn`, and NDJSON.
+
+**Keep the QA key out of Git, ChatGPT transcripts, browser logs and the
+production `deploy/personal/env`.** Because the key was shown in shared
+screenshots, request a replacement key from KEHA before production-grade
+or team-shared testing.
+
+The standalone safe test is `scripts/probe_jobmarket_finland_qa.py`. It
+reuses `JobMarketFinlandAdapter` rather than creating a second P67 client.
+With no arguments it performs **zero network calls** and reports only
+whether a key is present. With `--execute` it uses only the exact
+`https://api-qa.ahtp.fi/kipa/p67/v2/jobpostings` endpoint, makes two
+bounded POST search calls (PUBLISHED and ARCHIVED) for the last 30 minutes
+and reports safe aggregate counts. Zero results is a valid QA response.
+
+The QA test reads `JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY` from a
+private shell environment (not a command-line argument). Keep
+`JOBMARKET_FINLAND_API_ENABLED=false` in that test environment; the
+standalone QA probe explicitly refuses the enabled production/worker path.
+It uses **no database**, user account, model or application submission.
+It does not save returned job titles, source bodies, credentials or CVs.
+If QA requires the calling IP to be allowlisted, confirm the exact
+test-host outbound IP privately with KEHA rather than lowering TLS checks.
+
+**Do not flip Job Market Finland on in the live SmartPloy worker.**
+`JobMarketFinlandSettings.from_env` now refuses QA credentials when
+`SMARTPLOY_ENVIRONMENT=production` and the production preflight
+also rejects enabled QA configurations. A later production rollout requires
+a separately issued **production** key, exact official production endpoint,
+operator approval, and the existing image/source/receipt acceptance gates.
+
+Public display remains subject to original-source attribution, rapid
+removal of closed vacancies, restrictions on transfer to third parties,
+and no promotion/marketing based on the retrieved data without KEHA's
+permission. The earlier `external_ai_forwarding_allowed=false` flag
+remains unchanged.
+
+**QA evidence to request without leaking secrets:** exact UTC test time,
+`qa_reachable` or a fixed error category, PUBLISHED/ARCHIVED query
+success and counts, no job storage or external AI actions. These are
+still not evidence of production source availability.
+
+Official references:
+- https://tyomarkkinatori.fi/jobpostingprovider/documentation/KIPA-search-jobpostings-en.html
+- https://tyomarkkinatori.fi/en/instructions-and-support/interfaces/interfaces-for-job-postings/terms-of-use-for-job-market-finlands-job-posting-apis

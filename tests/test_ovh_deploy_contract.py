@@ -559,3 +559,23 @@ def test_sp59_real_worker_schedule_and_private_release_proof_are_blocking():
     assert workflow.index("assert-auto-draft-worker.sh") < workflow.index(
         "AUTO_DRAFT_FRESH_RUN_MISSING"
     )
+
+
+def test_sp60_keha_qa_access_cannot_enable_production_p67_polling():
+    preflight = (ROOT / "deploy/personal/scripts/preflight.sh").read_text(encoding="utf-8")
+    adapter = (ROOT / "smartploy/sources/jobmarket_finland.py").read_text(encoding="utf-8")
+    probe = (ROOT / "scripts/probe_jobmarket_finland_qa.py").read_text(encoding="utf-8")
+
+    assert "Job Market Finland QA P67 must not run in the production worker" in preflight
+    assert "https://api.ahtp.fi/kipa/p67/v2/jobpostings" in preflight
+    assert "KEHA QA credentials cannot be used by a production SmartPloy source" in adapter
+    assert "SMARTPLOY_ENVIRONMENT" in adapter
+    assert "JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY" in probe
+    assert "QA_WORKER_MUST_REMAIN_DISABLED" in probe
+    assert "POSTGRES_PASSWORD" not in probe
+    assert "psycopg" not in probe
+    assert "JobMarketFinlandAdapter" in probe
+    assert "JobMarketFinlandSettings" in probe
+    assert "--execute" in probe
+    assert "production_database_writes" in probe
+    assert "employer_applications_sent" in probe

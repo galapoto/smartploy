@@ -364,6 +364,19 @@ class JobMarketFinlandSettings:
         if not _truthy(os.getenv("JOBMARKET_FINLAND_API_ENABLED", "")):
             return None
         environment = os.getenv("JOBMARKET_FINLAND_ENVIRONMENT", "test").strip().casefold()
+        # SP60: a KEHA QA subscription is for isolated testing, not the
+        # live SmartPloy job ledger. Reject the test feed at ALL production
+        # scheduled/one-shot P67 entry points before any network or DB write.
+        # The standalone QA smoke deliberately constructs test settings
+        # directly and has no database or scheduler access.
+        if (
+            environment == "test"
+            and os.getenv("SMARTPLOY_ENVIRONMENT", "production").strip().casefold()
+            == "production"
+        ):
+            raise JobMarketFinlandAPIError(
+                "KEHA QA credentials cannot be used by a production SmartPloy source"
+            )
         endpoint = os.getenv("JOBMARKET_FINLAND_ENDPOINT", "").strip()
         if not endpoint:
             endpoint = ALLOWED_ENDPOINTS.get(environment, "")

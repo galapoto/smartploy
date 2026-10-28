@@ -96,6 +96,7 @@ def test_endpoint_validation_fails_closed(endpoint, environment):
 def test_from_env_uses_official_endpoint_when_override_is_blank(monkeypatch):
     monkeypatch.setenv("JOBMARKET_FINLAND_API_ENABLED", "true")
     monkeypatch.setenv("JOBMARKET_FINLAND_ENVIRONMENT", "test")
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "test")
     monkeypatch.setenv("JOBMARKET_FINLAND_ENDPOINT", "")
     monkeypatch.setenv("JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY", "fixture-key")
     settings = JobMarketFinlandSettings.from_env()
@@ -354,3 +355,26 @@ def test_retiring_one_source_preserves_an_independently_sourced_duplicate():
     assert rebuilt.source_ids == ("company-careers",)
     assert rebuilt.job.company == "Example Oy"
     assert rebuilt.job.raw["external_ai_forwarding_allowed"] is True
+
+
+def test_sp60_qa_key_never_activates_production_p67_source(monkeypatch):
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")
+    monkeypatch.setenv("JOBMARKET_FINLAND_API_ENABLED", "true")
+    monkeypatch.setenv("JOBMARKET_FINLAND_ENVIRONMENT", "test")
+    monkeypatch.setenv("JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY", "fixture-only-key")
+    monkeypatch.setenv("JOBMARKET_FINLAND_ENDPOINT", TEST_ENDPOINT)
+    with pytest.raises(JobMarketFinlandAPIError, match="QA credentials cannot be used"):
+        JobMarketFinlandSettings.from_env()
+
+    # Production endpoint and independently granted production credentials
+    # are required for production. QA credentials cannot select it by mistake.
+    monkeypatch.setenv("JOBMARKET_FINLAND_ENVIRONMENT", "production")
+    with pytest.raises(JobMarketFinlandAPIError, match="official environment endpoint"):
+        JobMarketFinlandSettings.from_env()
+
+    # A later real production credential can use the official host after
+    # separate KEHA authorization; the test never makes a real HTTP request.
+    monkeypatch.setenv("JOBMARKET_FINLAND_ENDPOINT", PRODUCTION_ENDPOINT)
+    production = JobMarketFinlandSettings.from_env()
+    assert production is not None and production.environment == "production"
+    assert "fixture-only-key" not in repr(production)
