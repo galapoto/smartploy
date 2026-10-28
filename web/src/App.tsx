@@ -67,6 +67,21 @@ function cx(...parts: Array<string | undefined | false>): string {
 }
 
 /** Only actual case creations are counted; a draft is never an employer send. */
+/** Only use a newly created private kit supplied by the same-account scan.
+ * A legacy or inconsistent response never guesses an older draft from the
+ * workspace listing. The original Application Studio rechecks ownership.
+ */
+function firstNewAutoDraftWorkspace(result: AutoDraftResult): string {
+  const ids = result.created_workspace_ids;
+  if (result.created < 1 || !Array.isArray(ids) ||
+      ids.length !== result.created ||
+      new Set(ids).size !== ids.length ||
+      !ids.every((id) => typeof id === "string" && /^kit-[0-9a-f]{30}$/.test(id))) {
+    return "";
+  }
+  return ids[0];
+}
+
 function agentTrackingNotice(result: AutoDraftResult): string {
   const started = result.agents_started || 0;
   const already = result.agents_already_present || 0;
@@ -466,9 +481,17 @@ export default function App() {
       } else if (shouldScan && firstScan?.status === "needs_trusted_source") {
         setPage("jobs");
         setNotice("Automatic IT search is enabled, but matching jobs came from manual or unverified sources. Set up a reviewed public employer feed for automatic drafts. You can still review those listings yourself.");
-      } else if (shouldScan && firstScan?.status === "prepared" && firstScan.created > 0) {
+      } else if (shouldScan && firstScan && firstScan.created > 0 &&
+                 ["prepared", "disabled_after_revocation"].includes(firstScan.status)) {
+        const firstNewKit = firstNewAutoDraftWorkspace(firstScan);
+        setSelectedWorkspaceId(firstNewKit);
         setPage("applications");
-        setNotice(firstScan.created + " matched IT application draft(s) prepared privately. Review each CV and letter before any employer submission." +
+        setNotice(firstScan.created + " matched IT application draft(s) prepared privately. " +
+          (firstNewKit ? "Opened the first new draft for review. " :
+            "Find your new drafts in My applications. ") +
+          (firstScan.stopped_on_opt_out ?
+            "Automatic preparation stopped after you withdrew permission. " : "") +
+          "Review each CV and letter before any employer submission." +
           agentTrackingNotice(firstScan));
       } else if (shouldScan && firstScan?.status === "prepared") {
         setPage(firstScan.agents_started ? "applications" : "jobs");
@@ -732,12 +755,20 @@ export default function App() {
       } else if (result.status === "needs_trusted_source") {
         navigate("jobs");
         setNotice("No new drafts: matching jobs are manual or unverified imports. Automatic drafts require a recently refreshed, reviewed employer or official job feed.");
+      } else if (result.created &&
+                 ["prepared", "disabled_after_revocation"].includes(result.status)) {
+        const firstNewKit = firstNewAutoDraftWorkspace(result);
+        setSelectedWorkspaceId(firstNewKit);
+        navigate("applications");
+        setNotice(result.created + " new matched IT application draft(s) saved privately. " +
+          (firstNewKit ? "Opened the first new draft for review. " :
+            "Find your new drafts in My applications. ") +
+          (result.stopped_on_opt_out ?
+            "Automatic preparation stopped after you withdrew permission. " : "") +
+          "Review each CV and letter before submitting." +
+          agentTrackingNotice(result));
       } else if (result.status !== "prepared") {
         setNotice("Automatic drafts are not available for these account settings.");
-      } else if (result.created) {
-        navigate("applications");
-        setNotice(result.created + " new matched IT application draft(s) saved privately. Review each CV and letter before submitting." +
-          agentTrackingNotice(result));
       } else {
         navigate("jobs");
         setNotice("No new safe matches this time. Existing private drafts are preserved. Check the source and background-worker status before trying again." +
