@@ -249,13 +249,14 @@ def test_new_install_profile_starts_existing_seven_finland_it_sources_without_ai
 
 def test_sp60_qa_p67_source_can_never_register_on_production_worker(monkeypatch):
     import pytest
+    from smartploy.sources.jobmarket_finland import JobMarketFinlandAPIError
 
     clear_worker_sources(monkeypatch)
     monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")
     monkeypatch.setenv("JOBMARKET_FINLAND_API_ENABLED", "true")
     monkeypatch.setenv("JOBMARKET_FINLAND_ENVIRONMENT", "test")
     monkeypatch.setenv("JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY", "synthetic-only-key")
-    with pytest.raises(ValueError, match="QA credentials cannot be used"):
+    with pytest.raises(JobMarketFinlandAPIError, match="QA credentials cannot be used"):
         build_worker_task_specs("postgresql://synthetic")
 
     monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "test")
