@@ -125,6 +125,15 @@ AGENT_ZERO_FIELDS="$(printf '%s\n' "${AGENT_ZERO_REPORT}" | sed -n '/^agent_zero
 [[ "$(printf '%s\n' "${AGENT_ZERO_FIELDS}" | grep -c '^agent_zero_mode=')" -eq 1 ]] \
   || fail "Agent Zero task status missing from release proof"
 
+# SP59: the AUTO-DRAFT task has its own opt-in and scheduler. No applicant
+# identifiers enter this receipt; a completed zero-job cycle is not a CV kit.
+if ! AUTO_DRAFT_REPORT="$(bash "${SCRIPT_DIR}/assert-auto-draft-worker.sh")"; then
+  fail "automatic draft worker runtime gate failed"
+fi
+AUTO_DRAFT_FIELDS="$(printf '%s\n' "${AUTO_DRAFT_REPORT}" | sed -n '/^auto_draft_/p')"
+[[ "$(printf '%s\n' "${AUTO_DRAFT_FIELDS}" | grep -c '^auto_draft_mode=')" -eq 1 ]] \
+  || fail "AutoDraft task status missing from release proof"
+
 TMP_DIR="$(mktemp -d)"
 EVIDENCE_TMP=""
 cleanup() {
@@ -296,6 +305,7 @@ runtime_policy_sha256=${POLICY_SHA256}
 compose_file_sha256=${COMPOSE_SHA256}
 ${HEALTH_FIELDS}
 ${AGENT_ZERO_FIELDS}
+${AUTO_DRAFT_FIELDS}
 ${COMPANION_FIELDS}
 latest_backup_file=${LATEST_BACKUP_FILE}
 latest_backup_sha256=${LATEST_BACKUP_SHA256}
