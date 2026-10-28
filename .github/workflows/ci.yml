@@ -281,6 +281,20 @@ jobs:
           # verifies the *actual* opted-in Agent Zero task has completed
           # a scheduled cycle after the current worker container started.
           bash deploy/personal/scripts/assert-agent-zero-worker.sh
+          # SP59: original owner-opted-in private draft shortlister must have
+          # actually completed a scheduled LOCAL-only cycle on this worker.
+          # The committed fixture opts in explicitly; production does not
+          # inherit permission from an absent host flag.
+          bash deploy/personal/scripts/assert-auto-draft-worker.sh
+          if "${COMPOSE[@]}" exec -T worker \
+              python -m smartploy.auto_draft_runtime_acceptance \
+              --require-run --not-before 2099-01-01T00:00:00Z \
+              > /tmp/auto-draft-expected-red.log 2>&1; then
+            echo "AutoDraft accepted an impossible future worker cycle" >&2
+            exit 1
+          fi
+          grep -Fq 'AUTO_DRAFT_FRESH_RUN_MISSING' /tmp/auto-draft-expected-red.log
+          rm -f /tmp/auto-draft-expected-red.log
           # Deliberately wrong future start is a RED negative control:
           # a stale/past task receipt must never count as a new release run.
           if "${COMPOSE[@]}" exec -T worker \
@@ -434,6 +448,11 @@ jobs:
           grep -Fxq 'preflight_passed=true' "${EVIDENCE_FILE}"
           grep -Fxq 'env_boundary_smoke_passed=true' "${EVIDENCE_FILE}"
           grep -Fxq 'agent_zero_mode=healthy_scheduled_run' "${EVIDENCE_FILE}"
+          grep -Fxq 'auto_draft_mode=healthy_scheduled_run' "${EVIDENCE_FILE}"
+          grep -Fxq 'auto_draft_operator_enabled=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'auto_draft_scheduled_run_verified=true' "${EVIDENCE_FILE}"
+          grep -Fxq 'auto_draft_candidate_drafts_verified=false' "${EVIDENCE_FILE}"
+          grep -Fxq 'auto_draft_employer_contacts_authorized=false' "${EVIDENCE_FILE}"
           grep -Fxq 'agent_zero_operator_enabled=true' "${EVIDENCE_FILE}"
           grep -Fxq 'agent_zero_scheduled_run_verified=true' "${EVIDENCE_FILE}"
           grep -Fxq 'agent_zero_candidate_reminder_verified=false' "${EVIDENCE_FILE}"

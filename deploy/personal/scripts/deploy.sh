@@ -183,6 +183,10 @@ bash "${SCRIPT_DIR}/assert-companion-release.sh" "${PRODUCTION_HOST}" "${WEB_POR
 # a production release SHA. When opted out, fail if an old task stays enabled.
 # The check is read-only and shares the original worker, never an employer send.
 bash "${SCRIPT_DIR}/assert-agent-zero-worker.sh" >/dev/null
+# SP59: generic healthy workers are NOT proof that opted-in automatic
+# job matching actually ran. Require the original shortlister's scheduled
+# safe task after THIS worker's start (or prove the task is disabled).
+bash "${SCRIPT_DIR}/assert-auto-draft-worker.sh" >/dev/null
 
 # OIDC release must prove the ACTUAL public login -> trusted issuer, public
 # static shell, and signed-out private API before recording the release SHA.

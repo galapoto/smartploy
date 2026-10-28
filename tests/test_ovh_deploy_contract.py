@@ -8,6 +8,7 @@ PRODUCTION_SCRIPT_DIR = ROOT / "deploy/personal/scripts"
 EXPECTED_PRODUCTION_SCRIPTS = {
     "backup.sh",
     "deploy.sh",
+    "assert-auto-draft-worker.sh",
     "live-acceptance.sh",
     "preflight.sh",
     "release-evidence.sh",
@@ -518,3 +519,43 @@ def test_sp57_chromium_runner_is_pinned_to_supported_ubuntu_image():
     assert "runs-on: ubuntu-latest" not in section
     assert "npx playwright install chromium" in section
     assert "await chromium.launch({ headless: true })" in section
+
+
+def test_sp59_explicit_private_draft_optin_is_not_inferred_from_host_defaults():
+    compose = (ROOT / "deploy/personal/docker-compose.yml").read_text(encoding="utf-8")
+    env_example = (ROOT / "deploy/personal/env.example").read_text(encoding="utf-8")
+    worker = _service_block(compose, "worker")
+    assert "${SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED:-false}" in worker
+    assert "SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED=true" in env_example
+    for service in ("postgres", "api", "web"):
+        assert "SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED:" not in _service_block(compose, service)
+
+
+def test_sp59_real_worker_schedule_and_private_release_proof_are_blocking():
+    gate = (PRODUCTION_SCRIPT_DIR / "assert-auto-draft-worker.sh").read_text(
+        encoding="utf-8"
+    )
+    deploy = (PRODUCTION_SCRIPT_DIR / "deploy.sh").read_text(encoding="utf-8")
+    evidence = (PRODUCTION_SCRIPT_DIR / "release-evidence.sh").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "python -m smartploy.auto_draft_runtime_acceptance" in gate
+    assert "application:auto-draft-shortlist" in (
+        ROOT / "smartploy/auto_draft_runtime_acceptance.py"
+    ).read_text(encoding="utf-8")
+    assert "auto_draft_mode=" in gate
+    assert "auto_draft_candidate_drafts_verified=false" in gate
+    assert "auto_draft_employer_contacts_authorized=false" in gate
+    assert "POSTGRES_PASSWORD" not in gate
+    assert "printenv" not in gate
+    assert "docker compose up" not in gate
+    assert 'assert-auto-draft-worker.sh"' in deploy
+    assert deploy.index('assert-auto-draft-worker.sh"') < deploy.index(
+        '"${STATE_DIR}/deployed-sha"'
+    )
+    assert 'bash "${SCRIPT_DIR}/assert-auto-draft-worker.sh"' in evidence
+    assert "${AUTO_DRAFT_FIELDS}" in evidence
+    assert "auto_draft_mode=healthy_scheduled_run" in workflow
+    assert "AUTO_DRAFT_FRESH_RUN_MISSING" in workflow
+    assert workflow.index("assert-auto-draft-worker.sh") < workflow.index(
+        "AUTO_DRAFT_FRESH_RUN_MISSING"
+    )

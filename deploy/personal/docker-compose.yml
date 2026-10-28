@@ -152,8 +152,10 @@ services:
       SMARTPLOY_WORKER_JOBMARKET_CADENCE_SECONDS: ${SMARTPLOY_WORKER_JOBMARKET_CADENCE_SECONDS:-300}
       SMARTPLOY_WORKER_KUNTAREKRY_CADENCE_SECONDS: ${SMARTPLOY_WORKER_KUNTAREKRY_CADENCE_SECONDS:-600}
       SMARTPLOY_WORKER_PUBLIC_ATS_CADENCE_SECONDS: ${SMARTPLOY_WORKER_PUBLIC_ATS_CADENCE_SECONDS:-600}
-      # Safe opt-in local job match -> private drafts, no remote AI/employer.
-      SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED: ${SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED:-true}
+      # Candidate-controlled, local-only AutoDraft. Unlike general job polling,
+      # do not silently enable private CV processing when host opt-in is absent.
+      # The committed env.example explicitly enables this for reviewed pilots.
+      SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED: ${SMARTPLOY_WORKER_AUTO_DRAFT_ENABLED:-false}
       SMARTPLOY_WORKER_AUTO_DRAFT_CADENCE_SECONDS: ${SMARTPLOY_WORKER_AUTO_DRAFT_CADENCE_SECONDS:-600}
       # Agent Zero is private in-app case reconciliation ONLY. Separate
       # operator opt-in, default OFF. These must reach the WORKER container
