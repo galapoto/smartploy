@@ -80,6 +80,8 @@ ATS_JSON="$(read_env_value SMARTPLOY_PUBLIC_ATS_SOURCES_JSON)"
 ATS_FILE="$(read_env_value SMARTPLOY_PUBLIC_ATS_SOURCES_FILE)"
 OBUMAI_BASE_URL="$(read_env_value OBUMAI_BASE_URL)"
 JOBMARKET_ENABLED="$(read_env_value JOBMARKET_FINLAND_API_ENABLED)"
+JOBMARKET_ENV="$(read_env_value JOBMARKET_FINLAND_ENVIRONMENT)"
+JOBMARKET_ENDPOINT="$(read_env_value JOBMARKET_FINLAND_ENDPOINT)"
 JOBMARKET_KEY="$(read_env_value JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY)"
 KUNTAREKRY_URL="$(read_env_value KUNTAREKRY_FEED_URL)"
 
@@ -152,6 +154,13 @@ case "${JOBMARKET_ENABLED,,}" in
   true|1|yes|on)
     [[ -n "${JOBMARKET_KEY}" ]] || fail "Job Market Finland is enabled but its subscription key is empty"
     is_placeholder "${JOBMARKET_KEY}" && fail "Job Market Finland is enabled with a placeholder subscription key"
+    # SP60: KEHA issued test-only credentials. Never publish QA postings
+    # inside the real applicant-facing production source ledger.
+    [[ "${JOBMARKET_ENV}" == "production" ]] ||
+      fail "Job Market Finland QA P67 must not run in the production worker; use the isolated no-DB QA smoke"
+    [[ -z "${JOBMARKET_ENDPOINT}" ||
+       "${JOBMARKET_ENDPOINT}" == "https://api.ahtp.fi/kipa/p67/v2/jobpostings" ]] ||
+      fail "Production Job Market Finland requires the exact official P67 production endpoint"
     JOBMARKET_STATUS=enabled
     ;;
   false|0|no|off|"")

@@ -63,6 +63,7 @@ def test_jobmarket_task_metadata_contains_no_subscription_key(monkeypatch):
     clear_worker_sources(monkeypatch)
     monkeypatch.setenv("JOBMARKET_FINLAND_API_ENABLED", "true")
     monkeypatch.setenv("JOBMARKET_FINLAND_ENVIRONMENT", "test")
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "test")
     monkeypatch.setenv("JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY", "super-secret-key")
     specs = build_worker_task_specs("postgresql://fixture")
     assert [item.task_id for item in specs] == ["source:job-market-finland"]
@@ -244,3 +245,22 @@ def test_new_install_profile_starts_existing_seven_finland_it_sources_without_ai
     assert drafts.metadata["private_opt_in_required"] is True
     assert drafts.metadata["external_actions_authorized"] is False
     assert not any(s.task_kind == "application_prepare" for s in specs)
+
+
+def test_sp60_qa_p67_source_can_never_register_on_production_worker(monkeypatch):
+    import pytest
+    from smartploy.sources.jobmarket_finland import JobMarketFinlandAPIError
+
+    clear_worker_sources(monkeypatch)
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")
+    monkeypatch.setenv("JOBMARKET_FINLAND_API_ENABLED", "true")
+    monkeypatch.setenv("JOBMARKET_FINLAND_ENVIRONMENT", "test")
+    monkeypatch.setenv("JOBMARKET_FINLAND_KIPA_SUBSCRIPTION_KEY", "synthetic-only-key")
+    with pytest.raises(JobMarketFinlandAPIError, match="QA credentials cannot be used"):
+        build_worker_task_specs("postgresql://synthetic")
+
+    monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "test")
+    registered = build_worker_task_specs("postgresql://synthetic")
+    assert [item.task_id for item in registered] == ["source:job-market-finland"]
+    assert registered[0].metadata["environment"] == "test"
+    assert "synthetic-only-key" not in str(registered[0].metadata)
