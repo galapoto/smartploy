@@ -1299,12 +1299,15 @@ def create_app(
                 cv_repository=cv_repo,
                 workspace_repository=app.state.workspace_repository,
                 application_agent_repository=app.state.application_agent_repository,
+                # Keep existing worker summaries aggregate-only. Only the
+                # original signed-in same-origin owner POST gets review IDs.
+                include_created_workspace_ids=True,
             )
         except Exception:
             # Do not leak candidate CV, source URLs, DB secrets or private IDs.
             raise HTTPException(status_code=503, detail="Automatic draft preparation unavailable") from None
         return JSONResponse(
-            summary.public_counts(),
+            summary.owner_review_handoff(),
             headers={"Cache-Control": "private, no-store"},
         )
 

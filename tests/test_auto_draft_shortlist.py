@@ -98,6 +98,48 @@ def test_explicit_approved_it_target_automatically_builds_only_the_matched_priva
     assert len(fx[5].list(fx[0])) == 1
 
 
+def test_sp58_owner_only_new_draft_ids_reuse_actual_created_workspace_not_worker_logs():
+    """A candidate's explicit scan can open the exact kit; worker summaries cannot."""
+    pid, prefs, jobs, profile, cv, spaces, _ = fixture()
+    result = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces, include_created_workspace_ids=True,
+    )
+    assert result.created == 1
+    owner_id = spaces.list(pid)[0].workspace_id
+    assert owner_id.startswith("kit-") and len(owner_id) == 34
+    assert result.created_workspace_ids == (owner_id,)
+    assert result.owner_review_handoff()["created_workspace_ids"] == [owner_id]
+    # No job, account, draft, or source IDs in an unattended worker receipt.
+    safe = result.public_counts()
+    assert "created_workspace_ids" not in safe
+    assert owner_id not in str(safe)
+    assert "private" not in str(safe).casefold()
+
+    # A subsequent create-or-get does not report the *old* draft as new.
+    again = prepare_profile_shortlist(
+        pid, preferences_repository=prefs, job_repository=jobs,
+        profile_repository=profile, cv_repository=cv,
+        workspace_repository=spaces, include_created_workspace_ids=True,
+    )
+    assert again.created == 0 and again.already_prepared == 1
+    assert again.created_workspace_ids == ()
+    assert again.owner_review_handoff()["created_workspace_ids"] == []
+    assert len(spaces.list(pid)) == 1
+
+    # The worker's DEFAULT invocation never creates a private handoff mapping.
+    pid2, prefs2, jobs2, profile2, cv2, spaces2, _ = fixture()
+    automated = prepare_profile_shortlist(
+        pid2, preferences_repository=prefs2, job_repository=jobs2,
+        profile_repository=profile2, cv_repository=cv2,
+        workspace_repository=spaces2,
+    )
+    assert automated.created == 1
+    assert automated.created_workspace_ids == ()
+    assert "created_workspace_ids" not in automated.public_counts()
+
+
 def test_background_agents_need_separate_opt_in_and_reuse_existing_case_id():
     """SP33: the original job shortlist may create only private, opted-in cases."""
     pid, prefs, jobs, profile, cv, spaces, settings = fixture()
@@ -357,10 +399,14 @@ def test_actual_postgres_only_lists_active_opted_in_accounts_and_persists_one_dr
         first=prepare_profile_shortlist(
             owner.profile_id,preferences_repository=prefs,job_repository=jobs,
             profile_repository=profiles,cv_repository=cv,workspace_repository=spaces,
-            candidates=[job],
+            candidates=[job], include_created_workspace_ids=True,
         )
         assert first.created>=1 and first.public_counts()["provider_calls"]==0
+        assert first.created_workspace_ids == (spaces.list(owner.profile_id)[0].workspace_id,)
+        assert first.owner_review_handoff()["created_workspace_ids"] == list(first.created_workspace_ids)
+        assert "created_workspace_ids" not in first.public_counts()
         assert spaces.get(owner.profile_id,spaces.list(owner.profile_id)[0].workspace_id)
+        assert spaces.get(other.profile_id, first.created_workspace_ids[0]) is None
         assert spaces.list(other.profile_id)==[]
         assert prepare_profile_shortlist(
             owner.profile_id,preferences_repository=prefs,job_repository=jobs,

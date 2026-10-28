@@ -1323,6 +1323,84 @@ describe("first opt-in creates private IT applications immediately", () => {
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
+  it("SP58 opens the exact new owner kit after first opt-in, not a prior default", async () => {
+    const kit = "kit-" + "a".repeat(30);
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "prepared", checked: 1, eligible: 1, created: 1,
+      created_workspace_ids: [kit], already_prepared: 0, stopped_on_opt_out: false,
+      provider_calls: 0, employer_actions_performed: false,
+      automatic_submission_authorized: false,
+    });
+    await openOptIn();
+    const editor = await screen.findByTestId("application-editor");
+    expect(editor.getAttribute("data-workspace")).toBe(kit);
+    expect(screen.getByText(/Opened the first new draft for review/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.grantJobAIConsent).not.toHaveBeenCalled();
+  });
+
+  it("SP58 direct opt-in rescan focuses the exact created kit after private POST", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    const kit = "kit-" + "b".repeat(30);
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "prepared", checked: 1, eligible: 1, created: 1,
+      created_workspace_ids: [kit], already_prepared: 0, stopped_on_opt_out: false,
+      provider_calls: 0, employer_actions_performed: false,
+      automatic_submission_authorized: false,
+    });
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {
+      name: /Find and prepare matching drafts now/i,
+    }));
+    const editor = await screen.findByTestId("application-editor");
+    expect(editor.getAttribute("data-workspace")).toBe(kit);
+    expect(screen.getByText(/Opened the first new draft for review/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("SP58 never guesses a workspace from legacy or contradictory scan results", async () => {
+    const older = "kit-" + "c".repeat(30);
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "prepared", checked: 2, eligible: 2, created: 2,
+      created_workspace_ids: [older], already_prepared: 0, stopped_on_opt_out: false,
+      provider_calls: 0, employer_actions_performed: false,
+      automatic_submission_authorized: false,
+    });
+    await openOptIn();
+    const editor = await screen.findByTestId("application-editor");
+    expect(editor.getAttribute("data-workspace")).toBe("");
+    expect(screen.getByText(/Find your new drafts in My applications/i)).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("SP58 shows a saved draft made before revocation, without restarting automation", async () => {
+    currentPrefs = {
+      ...initial, completed: true, mode: "personalized",
+      roles: ["Data Analyst"], revision: 1, auto_draft_enabled: true,
+    };
+    const kit = "kit-" + "d".repeat(30);
+    vi.mocked(api.prepareMyMatchingDrafts).mockResolvedValueOnce({
+      status: "disabled_after_revocation", checked: 2, eligible: 2, created: 1,
+      created_workspace_ids: [kit], already_prepared: 0, stopped_on_opt_out: true,
+      provider_calls: 0, employer_actions_performed: false,
+      automatic_submission_authorized: false,
+    });
+    render(<App />);
+    expect(await screen.findByText(/90% search match/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {
+      name: /Find and prepare matching drafts now/i,
+    }));
+    const editor = await screen.findByTestId("application-editor");
+    expect(editor.getAttribute("data-workspace")).toBe(kit);
+    expect(screen.getByText(/Automatic preparation stopped after you withdrew permission/i))
+      .toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
   it("never starts an automatic draft after saving search settings without opt-in", async () => {
     currentPrefs = {
       ...initial, completed: true, mode: "personalized",
@@ -1581,6 +1659,7 @@ describe("first opt-in creates private IT applications immediately", () => {
     await act(async () => {
       finish({
         status: "prepared", checked: 1, eligible: 1, created: 1,
+        created_workspace_ids: ["kit-" + "e".repeat(30)],
         already_prepared: 0, stopped_on_opt_out: false, provider_calls: 0,
         employer_actions_performed: false, automatic_submission_authorized: false,
       });

@@ -735,6 +735,8 @@ export type AutoDraftResult = {
   eligible: number;
   created: number;
   already_prepared: number;
+  /** Newly created, original owner-bound kits from this signed-in scan only. */
+  created_workspace_ids?: string[];
   stopped_on_opt_out: boolean;
   /** Older cached ATS jobs excluded from automatic draft preparation. */
   stale_skipped?: number;

@@ -59,6 +59,16 @@ class AutoDraftSummary:
     agents_started: int = 0
     agents_already_present: int = 0
     agents_unavailable: int = 0
+    # SP58: available only to an explicit owner-scoped POST. The shared
+    # background worker continues to report aggregate public_counts ONLY.
+    created_workspace_ids: tuple[str, ...] = ()
+
+    def owner_review_handoff(self) -> dict[str, object]:
+        """Only call after authenticated owner and same-origin POST checks."""
+        return {
+            **self.public_counts(),
+            "created_workspace_ids": list(self.created_workspace_ids),
+        }
 
     def public_counts(self) -> dict[str, object]:
         return {
@@ -271,6 +281,7 @@ def prepare_profile_shortlist(
     application_agent_repository=None,
     max_new: int = MAX_DRAFTS_PER_USER,
     candidates=None,
+    include_created_workspace_ids: bool = False,
 ) -> AutoDraftSummary:
     """Create bounded, review-required drafts from existing opted-in matches.
 
@@ -298,6 +309,9 @@ def prepare_profile_shortlist(
     checked = len(ranked)
     eligible = created = existing = stale_skipped = unverified_skipped = 0
     agents_started = agents_already = agents_unavailable = 0
+    # Never keep job IDs in an unattended worker summary unless the caller
+    # explicitly requested an owner-private review handoff.
+    created_workspace_ids: list[str] = []
     for match in ranked:
         if created >= bound:
             break
@@ -335,6 +349,7 @@ def prepare_profile_shortlist(
                     agents_started=agents_started,
                     agents_already_present=agents_already,
                     agents_unavailable=agents_unavailable,
+                    created_workspace_ids=tuple(created_workspace_ids),
                 )
             # Job may have been retired between initial matching and the
             # owner approval guard; re-fetch and enforce exact same content.
@@ -379,6 +394,10 @@ def prepare_profile_shortlist(
             saved, added = workspace_repository.create_or_get(proposed)
             created += int(added)
             existing += int(not added)
+            if added and include_created_workspace_ids:
+                # Original create-or-get already verified exact owner and job
+                # identity. This is not a provider submission reference.
+                created_workspace_ids.append(saved.workspace_id)
             # SP33: This is an INDEPENDENT, default-off permission stored in
             # the original owner criteria JSONB. Use the same revocation-locked
             # scope as draft creation, NOT a background agent scheduler or a
@@ -416,6 +435,7 @@ def prepare_profile_shortlist(
         unverified_source_skipped=unverified_skipped,
         agents_started=agents_started, agents_already_present=agents_already,
         agents_unavailable=agents_unavailable,
+        created_workspace_ids=tuple(created_workspace_ids),
     )
 
 
