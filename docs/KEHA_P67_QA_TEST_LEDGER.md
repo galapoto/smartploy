@@ -2,8 +2,8 @@
 
 **Project:** Komplyint Oy / SmartPloy · **Provider:** KEHA Centre / Työmarkkinatori · **Source:** `job-market-finland`  
 **Environment under test:** **QA only**, `https://api-qa.ahtp.fi/kipa/p67/v2/jobpostings`  
-**Evidence reviewed:** User-supplied Linux terminal outputs received on **2026-10-28 and 2026-10-29**. Exact execution times were not captured; do not manufacture timestamps. **11 operator checks: 7 local/control/network PASS (including one repeat), 4 BLOCKED; 0 authenticated KEHA API successes.**  
-**Overall status:** **HOLD — authenticated P67 POST and job retrieval remain unverified.** The Linux Mint network still times out at TCP/443 (QA-008). The separate OVH host now reaches KEHA over TLS (QA-009) **and** its unauthenticated **POST** receives HTTP 401 (QA-010), demonstrating that POST reaches an HTTP authentication/access-control layer. The subscription key has not been sent from OVH; no authorized job retrieval is proven.
+**Evidence reviewed:** User-supplied Linux terminal outputs received on **2026-10-28 and 2026-10-29**. Exact execution times were not captured; do not manufacture timestamps. **12 operator checks: 8 local/control/network PASS (including one repeat), 4 BLOCKED; 0 authenticated KEHA API successes.**  
+**Overall status:** **HOLD — authenticated P67 POST and job retrieval remain unverified.** The Linux Mint network still times out at TCP/443 (QA-008). The separate OVH host now reaches KEHA over TLS (QA-009) **and** its unauthenticated **POST** receives HTTP 401 (QA-010), demonstrating that POST reaches an HTTP authentication/access-control layer. The subscription key has not been sent from OVH; a key-free POST from Linux Mint via the SSH SOCKS tunnel also reached the QA authentication layer (QA-012). No authorized job retrieval is proven.
 
 > **Privacy:** This public document intentionally excludes the subscription key, user's home public IPv4, IP-to-person linkages, private network configuration, request headers, raw job descriptions and CVs. The outgoing IP was identified in the user's private test session and can be communicated *directly to KEHA* as needed. Do not paste the key into issues, PRs, support emails or test output. Consider rotating it because the original credential appeared in screenshots.
 
@@ -30,10 +30,11 @@
 | QA-009 | 2026-10-29 separate OVH host `obum-core-01`, forced-IPv4 HEAD to QA P67 path, **without subscription key** | `curl -4 -sS -I --connect-timeout 10 --max-time 15` → `HTTP=404`; `TCP=0.103818s`; `TLS=0.148471s`; `curl_exit=0` | **PASS — TCP/TLS transport only.** OVH HTTPS succeeded. The P67 specification requires **POST**; a 404 on HEAD does not establish POST routing, authorization or job retrieval. No production changes. |
 | QA-010 | 2026-10-29 separate OVH host `obum-core-01`, unauthenticated forced-IPv4 **POST** to exact KEHA QA P67 URL with `{}` body | `curl -4 -sS --request POST --header 'Content-Type: application/json' --header 'Accept: application/x-ndjson' --data '{}' --output /dev/null` → **`HTTP=401`**, `TCP=0.021172s`, `TLS=0.065590s`, `curl_exit=0` | **PASS — POST reaches an HTTP authentication/access-control layer** from OVH. No subscription key provided, so 401 does **not** prove credential acceptance, request-body correctness or job retrieval. Response body intentionally suppressed; no production changes. |
 | QA-011 | 2026-10-29 repeat of **the same no-key OVH POST control**, `obum-core-01`, exact QA URL and empty JSON body | `HTTP=401`; `TCP=0.021644s`; `TLS=0.078375s`; `curl_exit=0` | **PASS — repeat reachability only**, not a new functional scenario. Confirms reproducible POST response from OVH; no subscription key was present and no job records retrieved. |
+| QA-012 | 2026-10-29 Linux Mint key-free POST through a temporary **SSH SOCKS5 tunnel** at `127.0.0.1:1081` to OVH, using `curl -4 --socks5-hostname` | `HTTP=401`; `TCP=0.000103s` (**local SOCKS connection timing**); `TLS=0.351804s`; `curl_exit=0` | **PASS — end-to-end tunneled HTTPS POST reachability only**. HTTP 401 without subscription key confirms connectivity to an authentication/access-control layer via OVH egress. Does not authenticate key or prove job data retrieval. Secret was not entered. |
 
 **Inference supported by the evidence:** Linux Mint can use other HTTPS services but times out on KEHA QA TCP/443. OVH successfully completed TCP/TLS; HEAD produced 404 (QA-009), and unauthenticated POST produced 401 (QA-010). Thus the OVH origin can reach an HTTP authentication/access-control layer on the POST route. **Key validity, API response contract, actual vacancy counts, and KEHA approval of OVH's test egress are still unverified.** Exact cause of the Linux Mint block remains unknown. Do not enable production workers.
 
-**Recommended next action:** the operator has started `ssh -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -N -D 127.0.0.1:1081 ubuntu@<OVH>` from Linux Mint, with no final tunnel-success receipt yet. Test a key-free P67 **POST** via `curl --socks5-hostname 127.0.0.1:1081` in a **second Linux Mint terminal**; expect HTTP 401 if the tunnel works. Keep the QA key on Linux Mint, never put it in the OVH server filesystem, app environment, logs or GitHub. Only after that no-key proxy check succeeds should the existing database-free SP60 probe use a short-lived local SOCKS client configuration; ensure `httpx` SOCKS support first. KEHA should still confirm allowed egress origins and rotate the previously screenshot-exposed QA key.
+**Recommended next action:** the operator has now proven the `ssh -N -D 127.0.0.1:1081` SOCKS path works (QA-012). From the isolated Linux Mint QA checkout, install the supported optional `httpx[socks]` dependency in its virtual environment, set `HTTPS_PROXY` and `ALL_PROXY` to `socks5://127.0.0.1:1081` for a short-lived subshell, and run the **existing** `python3 -m scripts.probe_jobmarket_finland_qa --execute --minutes 30` with a privately prompted QA key. Keep `JOBMARKET_FINLAND_API_ENABLED=false`, `JOBMARKET_FINLAND_ENVIRONMENT=test`, and `JOBMARKET_FINLAND_ENDPOINT` unset. Two provider POST requests, no production database access or employer applications. Save only scrubbed JSON receipt; no key, IP address, job text or exceptions. The original screenshot-exposed key should be rotated with KEHA before wider use/production.
 
 ## Independent network retest — 2026-10-29 (not from the QA operator IP)
 
@@ -42,7 +43,7 @@ These checks were launched by the assistant from **different execution
 networks**, not the operator's Linux Mint computer or its outbound IPv4.
 The KEHA subscription key was **not** transmitted or loaded into any
 of these requests. They do not replace QA-001..QA-008 and do not add to
-the count of **11 operator checks / 0 authenticated KEHA QA successes**.
+the count of **12 operator checks / 0 authenticated KEHA QA successes**.
 
 | ID | Origin and test | Observed outcome | Interpretation |
 | --- | --- | --- | --- |
@@ -54,15 +55,15 @@ the count of **11 operator checks / 0 authenticated KEHA QA successes**.
 job-posting retrieval** as of this retest. The actual operator **retested from their own Linux machine on 2026-10-29**
 (QA-008) and again observed a TCP/443 timeout. KEHA's QA allowlisting or
 destination routing remains unverified; do not assert that the API key has
-been accepted or rejected. QA-009 showed OVH TLS reachability; QA-010 and its repeat QA-011 returned unauthenticated HTTP 401 for OVH POST. Neither proves key acceptance. The operator then launched a local SSH SOCKS tunnel command to OVH; **tunnel readiness has not been verified** and is **not** counted as a successful test. Record the next key-free **SOCKS-proxied POST** as
-`QA-012` and update the P67 acceptance matrix;
+been accepted or rejected. QA-009 showed OVH TLS reachability; QA-010 and its repeat QA-011 returned unauthenticated HTTP 401 for OVH POST. Neither proves key acceptance. The user then demonstrated **working SOCKS-tunneled unauthenticated POST** from Linux Mint to KEHA in QA-012 (`HTTP 401`), independently confirming that an OVH SSH tunnel can carry the API request without moving the key. Next record the existing SP60 **credential-gated, database-free PUBLISHED and ARCHIVED probe** run from Linux Mint through the tunnel as
+`QA-013` and update the P67 acceptance matrix only if authenticated results support it;
 do **not** overwrite the earlier failures.
 
 ## Eight-scenario QA acceptance matrix
 
 | ID | Test scenario | Current evidence | Required live-acceptance proof |
 | --- | --- | --- | --- |
-| P67-01 | Reach endpoint, authenticate QA key and receive accepted HTTP response | **BLOCKED** for authenticated POST: Linux Mint timeout QA-003/004/006/008; OVH HEAD transport QA-009 PASS and unauthenticated POST HTTP 401 QA-010/011 PASS, but no key-accepted HTTP response | Sanitized `qa_reachable`, both request success flags or an authenticated HTTP receipt |
+| P67-01 | Reach endpoint, authenticate QA key and receive accepted HTTP response | **BLOCKED** for authenticated POST: Linux Mint timeout QA-003/004/006/008; OVH HEAD transport QA-009 PASS, unauthenticated POST HTTP 401 QA-010/011 PASS, and Linux Mint SSH SOCKS-proxied POST HTTP 401 QA-012 PASS, but no key-accepted HTTP response | Sanitized `qa_reachable`, both request success flags or an authenticated HTTP receipt |
 | P67-02 | Retrieve PUBLISHED postings | **NOT RUN** live; **LOCAL PASS** via MockTransport | Live `published_query_passed=true` and count; if zero, explicitly note no data returned |
 | P67-03 | Retrieve ARCHIVED postings | **NOT RUN** live; **LOCAL PASS** via MockTransport | Live `archived_query_passed=true` and count; if zero, note the observed interval |
 | P67-04 | Modified-time windows, empty-response behavior, bounded limits | **NOT RUN** live; **LOCAL PASS** | Successful short and longer windows without incorrect claim of newly discovered jobs |
@@ -84,7 +85,7 @@ do **not** overwrite the earlier failures.
 
 ## How to update after each subsequent run
 
-For every operator output, append exactly one new receipt row **QA-012, QA-013, ...**, retaining all earlier failures for traceability. Add the result to the corresponding `P67-0x` row; change **NOT RUN → PASS** only on provider-backed evidence and note whether the count was zero. Capture the actual UTC timestamp *when available*, exact test command (excluding secrets), QA endpoint, sanitized status/error, small counts, environment, and any blocker/next action.
+For every operator output, append exactly one new receipt row **QA-013, QA-014, ...**, retaining all earlier failures for traceability. Add the result to the corresponding `P67-0x` row; change **NOT RUN → PASS** only on provider-backed evidence and note whether the count was zero. Capture the actual UTC timestamp *when available*, exact test command (excluding secrets), QA endpoint, sanitized status/error, small counts, environment, and any blocker/next action.
 
 Never replace historical failures with later successes. Never turn a synthetic mock test into a provider acceptance claim. Do not store subscriber keys or residential/test-device IPs in this public repository.
 
