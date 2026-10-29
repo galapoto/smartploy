@@ -14,16 +14,19 @@ Kiitos Komplyint Oy:lle 26.10.2026 toimitetusta Työmarkkinatorin työpaikkailmo
 
 Olemme aloittaneet SmartPloy-palvelumme teknisen QA-testauksen. Ohjelmiston sisäiset automaattiset testit ovat läpäisseet tarkistukset, mutta varsinaista API-yhteyttä testiympäristöön ei vielä saada muodostettua.
 
-**Tähän mennessä tehdyt tarkistukset (28.–29.10.2026): yhteensä 8, joista 4 onnistui paikallisesti ja 4 estyi verkkoyhteysongelman vuoksi. Yhtään KEHA:n QA-palvelimen hyväksymää rajapintakutsua ei ole voitu varmistaa.**
+**Tähän mennessä tehdyt tarkistukset (28.–29.10.2026): yhteensä 9, joista 5 onnistui paikallisina tai HTTPS-verkkoyhteyden tarkistuksina ja 4 estyi verkkoyhteysongelman vuoksi. Yhtään tunnistettua P67 POST -rajapintakutsua ei ole vielä saatu hyväksytysti suoritettua.**
 - Testausohjelma käynnistyy oikein, ja QA-tila sekä tilaustunnuksen olemassaolo on vahvistettu paikallisesti. Tämä ei vielä osoita, että palvelin olisi hyväksynyt tunnuksen.
 - Todellinen PUBLISHED/ARCHIVED-hakutesti pysähtyy ennen HTTP-vastausta ilmoitukseen `QA_NETWORK_OR_TLS`.
 - Suora HTTPS-yhteyskokeilu osoitteeseen `https://api-qa.ahtp.fi/kipa/p67/v2/jobpostings` päättyy TCP-yhteyden aikakatkaisuun noin 10 sekunnissa (`curl`-virhekoodi 28, HTTP 000). **Uusintatesti 29.10.2026 vahvisti saman tuloksen** (IPv4, `curl_exit=28`, HTTP 000; TCP- ja TLS-yhteyttä ei muodostunut). TLS-kättelyä tai API-tunnistautumista ei päästä aloittamaan.
-- Vertailutesti `https://github.com` -palveluun toimii IPv4-yhteydellä (HTTP 200). KEHA:n QA-osoitteeseen yhteys ei toimi myöskään pakotetulla IPv4:llä.
+- Vertailutesti `https://github.com` -palveluun toimii IPv4-yhteydellä (HTTP 200). KEHA:n QA-osoitteeseen yhteys ei toimi testitietokoneelta myöskään pakotetulla IPv4:llä.
+- Erilliseltä OVH-palvelimeltamme HTTPS-yhteys QA-palvelimeen toimii: `curl -I` palauttaa HTTP 404 -vastauksen, ja TCP-yhteys (0,104 s) sekä TLS-kättely (0,148 s) onnistuvat. Koska tämä oli HEAD-pyyntö, tulos ei vielä osoita P67 POST -hakujen tai API-avaimen toimivuutta.
 - Salaisia avaimia, henkilötietoja tai hakutuloksia ei ole toimitettu ulkopuolisiin raportteihin.
 
-**Testaavan laitteen julkinen lähtevä IPv4:** [LISÄÄ TÄHÄN VAIN KEHALLE LÄHETETTÄVÄSSÄ YKSITYISESSÄ VIESTISSÄ]
+**Testitietokoneen julkinen lähtevä IPv4:** [LISÄÄ VAIN KEHALLE LÄHETETTÄVÄÄN YKSITYISEEN VIESTIIN]
 
-Voisitteko ystävällisesti tarkistaa, että yllä oleva osoite on sallittu QA-rajapinnan porttiin 443, ja tehdä tarvittavan IP-avauksen? Onko testiympäristön käyttöön muita verkko- tai IP-osoitevaatimuksia? Ilmoitattehan myös, tarvitaanko myöhemmin tuotantopalvelimemme erillinen lähtevä IP-osoite.
+**OVH-palvelimen julkinen lähtevä IPv4:** [LISÄÄ VAIN KEHALLE LÄHETETTÄVÄÄN YKSITYISEEN VIESTIIN]
+
+Voisitteko ystävällisesti tarkistaa, että testitietokoneen IP-osoite on sallittu QA-rajapinnan porttiin 443, ja tehdä tarvittavan IP-avauksen? Voimmeko vaihtoehtoisesti käyttää erillistä QA-testausprosessia OVH-palvelimemme verkosta ilman, että testiympäristön tunnusta tallennetaan tuotantosovelluksen ympäristöön? Onko testiympäristön käyttöön muita verkko- tai IP-osoitevaatimuksia?
 
 Jatkamme julkaistujen ja arkistoitujen työpaikkailmoitusten haku-, suodatus-, kieli-, tietorakenne- ja tietosuojatestien suorittamista heti, kun verkkoyhteys on käytettävissä. Toimitamme teille testiyhteenvedon, kun varsinaiset QA-testit on suoritettu.
 
