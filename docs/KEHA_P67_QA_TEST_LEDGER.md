@@ -2,7 +2,7 @@
 
 **Project:** Komplyint Oy / SmartPloy · **Provider:** KEHA Centre / Työmarkkinatori · **Source:** `job-market-finland`  
 **Environment under test:** **QA only**, `https://api-qa.ahtp.fi/kipa/p67/v2/jobpostings`  
-**Evidence reviewed:** User-supplied Linux terminal output received on **2026-10-28**. The exact execution time was not captured; do not manufacture timestamps.  
+**Evidence reviewed:** User-supplied Linux terminal outputs received on **2026-10-28 and 2026-10-29**. Exact execution times were not captured; do not manufacture timestamps. **8 operator checks: 4 PASS, 4 BLOCKED; 0 authenticated KEHA API successes.**  
 **Overall status:** **BLOCKED — QA network TCP/443 timeout**. Authentication, posting retrieval, and live parser/lifecycle acceptance are **not yet verified**.
 
 > **Privacy:** This public document intentionally excludes the subscription key, user's home public IPv4, IP-to-person linkages, private network configuration, request headers, raw job descriptions and CVs. The outgoing IP was identified in the user's private test session and can be communicated *directly to KEHA* as needed. Do not paste the key into issues, PRs, support emails or test output. Consider rotating it because the original credential appeared in screenshots.
@@ -15,7 +15,7 @@
 - **LOCAL PASS:** verified using SmartPloy or GitHub's *synthetic* test harness only, **not** proof of actual KEHA authorization.
 - **Target acceptance threshold:** the following eight scenarios are a **SmartPloy engineering recommendation**, **not a KEHA-stated number or mandatory test quota**. KEHA decides when evidence suffices for production access.
 
-## Observed operator tests (2026-10-28, exact times unavailable)
+## Observed operator tests (2026-10-28 and 2026-10-29; exact times unavailable)
 
 | Receipt ID | Check | Evidence (non-secret excerpt) | Finding |
 | --- | --- | --- | --- |
@@ -26,6 +26,7 @@
 | QA-005 | Control: outbound public HTTPS / IPv4 | `curl -4 -I https://github.com` → `HTTP=200`, TCP ~0.068 s, TLS ~0.109 s | **PASS**: general outbound IPv4 HTTPS working |
 | QA-006 | QA destination forced IPv4 | `curl -4 -I https://api-qa.ahtp.fi/kipa/p67/v2/jobpostings` → `HTTP=000`; connect timeout ~10 s; no TLS | **BLOCKED**: reproduced with IPv4, so IPv6 preference alone cannot explain the failure |
 | QA-007 | Identify test host's public outbound IPv4 | `curl -4 -fsS https://api.ipify.org` returned one public IPv4 | **PASS**: value retained privately for KEHA's IP allowlist check; **not published here** |
+| QA-008 | 2026-10-29 repeat QA HTTPS connection on original Linux test machine, forced IPv4 | `curl -4 -sS -I --connect-timeout 10 --max-time 15` → `curl: (28)` after 10002 ms; `HTTP=000`; `TCP=0.000000s`; `TLS=0.000000s`; `curl_exit=28` | **BLOCKED**: fresh TCP/443 timeout; no HTTP response, TLS handshake, API authentication or job retrieval. Public egress IP was **not rechecked** during this attempt. |
 
 **Inference supported by the evidence:** name resolution works; general IPv4 HTTPS works; KEHA QA TCP/443 is unreachable from the test machine. Plausible causes include KEHA's IP allowlist, a firewall, or destination-specific routing. **We have not verified which**. It is premature to declare the key valid/invalid, claim a successful QA request, claim zero published vacancies, or enable the live production worker.
 
@@ -37,8 +38,8 @@
 These checks were launched by the assistant from **different execution
 networks**, not the operator's Linux Mint computer or its outbound IPv4.
 The KEHA subscription key was **not** transmitted or loaded into any
-of these requests. They do not replace QA-001..QA-007 and do not add to
-the count of **7 operator checks / 0 authenticated KEHA QA successes**.
+of these requests. They do not replace QA-001..QA-008 and do not add to
+the count of **8 operator checks / 0 authenticated KEHA QA successes**.
 
 | ID | Origin and test | Observed outcome | Interpretation |
 | --- | --- | --- | --- |
@@ -47,17 +48,18 @@ the count of **7 operator checks / 0 authenticated KEHA QA successes**.
 | ENV-001 | Isolated assistant execution container, 2026-10-29T11:06:42Z, IPv4 unauthenticated HEAD to QA host and `github.com` control with `curl --noproxy '*'` | Both reported `curl: (6) Could not resolve host`, HTTP `000` | Local tool environment has no usable external DNS, so this probe **does not test KEHA reachability**. Do not forward it as evidence of a KEHA outage. |
 
 **Conclusion:** No provider-backed progress and **no authenticated KEHA
-job-posting retrieval** as of this retest. The actual operator must
-retry reachability from their own network after KEHA confirms IP opening.
-Do not assert the API key has been accepted or rejected. If the operator
-succeeds, append a new `QA-008` entry with a sanitized result and update
-the P67 acceptance matrix; do **not** overwrite the earlier failures.
+job-posting retrieval** as of this retest. The actual operator **retested from their own Linux machine on 2026-10-29**
+(QA-008) and again observed a TCP/443 timeout. KEHA's QA allowlisting or
+destination routing remains unverified; do not assert that the API key has
+been accepted or rejected. Once KEHA confirms network access, append a new
+`QA-009` entry with a sanitized result and update the P67 acceptance matrix;
+do **not** overwrite the earlier failures.
 
 ## Eight-scenario QA acceptance matrix
 
 | ID | Test scenario | Current evidence | Required live-acceptance proof |
 | --- | --- | --- | --- |
-| P67-01 | Reach endpoint, authenticate QA key and receive accepted HTTP response | **BLOCKED** by QA-003/004/006 | Sanitized `qa_reachable`, both request success flags or an authenticated HTTP receipt |
+| P67-01 | Reach endpoint, authenticate QA key and receive accepted HTTP response | **BLOCKED** by QA-003/004/006/008 | Sanitized `qa_reachable`, both request success flags or an authenticated HTTP receipt |
 | P67-02 | Retrieve PUBLISHED postings | **NOT RUN** live; **LOCAL PASS** via MockTransport | Live `published_query_passed=true` and count; if zero, explicitly note no data returned |
 | P67-03 | Retrieve ARCHIVED postings | **NOT RUN** live; **LOCAL PASS** via MockTransport | Live `archived_query_passed=true` and count; if zero, note the observed interval |
 | P67-04 | Modified-time windows, empty-response behavior, bounded limits | **NOT RUN** live; **LOCAL PASS** | Successful short and longer windows without incorrect claim of newly discovered jobs |
@@ -79,7 +81,7 @@ the P67 acceptance matrix; do **not** overwrite the earlier failures.
 
 ## How to update after each subsequent run
 
-For every operator output, append exactly one new receipt row **QA-008, QA-009, ...**, retaining all earlier failures for traceability. Add the result to the corresponding `P67-0x` row; change **NOT RUN → PASS** only on provider-backed evidence and note whether the count was zero. Capture the actual UTC timestamp *when available*, exact test command (excluding secrets), QA endpoint, sanitized status/error, small counts, environment, and any blocker/next action.
+For every operator output, append exactly one new receipt row **QA-009, QA-010, ...**, retaining all earlier failures for traceability. Add the result to the corresponding `P67-0x` row; change **NOT RUN → PASS** only on provider-backed evidence and note whether the count was zero. Capture the actual UTC timestamp *when available*, exact test command (excluding secrets), QA endpoint, sanitized status/error, small counts, environment, and any blocker/next action.
 
 Never replace historical failures with later successes. Never turn a synthetic mock test into a provider acceptance claim. Do not store subscriber keys or residential/test-device IPs in this public repository.
 

@@ -14,10 +14,10 @@ Kiitos Komplyint Oy:lle 26.10.2026 toimitetusta Työmarkkinatorin työpaikkailmo
 
 Olemme aloittaneet SmartPloy-palvelumme teknisen QA-testauksen. Ohjelmiston sisäiset automaattiset testit ovat läpäisseet tarkistukset, mutta varsinaista API-yhteyttä testiympäristöön ei vielä saada muodostettua.
 
-**Tähän mennessä tehdyt testit (28.10.2026):**
+**Tähän mennessä tehdyt tarkistukset (28.–29.10.2026): yhteensä 8, joista 4 onnistui paikallisesti ja 4 estyi verkkoyhteysongelman vuoksi. Yhtään KEHA:n QA-palvelimen hyväksymää rajapintakutsua ei ole voitu varmistaa.**
 - Testausohjelma käynnistyy oikein, ja QA-tila sekä tilaustunnuksen olemassaolo on vahvistettu paikallisesti. Tämä ei vielä osoita, että palvelin olisi hyväksynyt tunnuksen.
 - Todellinen PUBLISHED/ARCHIVED-hakutesti pysähtyy ennen HTTP-vastausta ilmoitukseen `QA_NETWORK_OR_TLS`.
-- Suora HTTPS-yhteyskokeilu osoitteeseen `https://api-qa.ahtp.fi/kipa/p67/v2/jobpostings` päättyy TCP-yhteyden aikakatkaisuun noin 10 sekunnissa (`curl`-virhekoodi 28, HTTP 000). TLS-kättelyä tai API-tunnistautumista ei päästä aloittamaan.
+- Suora HTTPS-yhteyskokeilu osoitteeseen `https://api-qa.ahtp.fi/kipa/p67/v2/jobpostings` päättyy TCP-yhteyden aikakatkaisuun noin 10 sekunnissa (`curl`-virhekoodi 28, HTTP 000). **Uusintatesti 29.10.2026 vahvisti saman tuloksen** (IPv4, `curl_exit=28`, HTTP 000; TCP- ja TLS-yhteyttä ei muodostunut). TLS-kättelyä tai API-tunnistautumista ei päästä aloittamaan.
 - Vertailutesti `https://github.com` -palveluun toimii IPv4-yhteydellä (HTTP 200). KEHA:n QA-osoitteeseen yhteys ei toimi myöskään pakotetulla IPv4:llä.
 - Salaisia avaimia, henkilötietoja tai hakutuloksia ei ole toimitettu ulkopuolisiin raportteihin.
 
@@ -30,9 +30,6 @@ Jatkamme julkaistujen ja arkistoitujen työpaikkailmoitusten haku-, suodatus-, k
 Kiitos avustanne!
 
 Ystävällisin terveisin,
-
-Komplyint Oy  
-info@komplyint.fi
 
 ---
 
@@ -68,9 +65,6 @@ Käytämme haettuja työpaikkailmoituksia vain rajapinnan käyttöehtojen sallim
 Voisitteko vahvistaa, ovatko suoritetut testit riittävät tuotantoympäristöön siirtymiselle, ja toimittaa tuotantoympäristön erilliset käyttöoikeudet sekä mahdolliset IP-avausohjeet?
 
 Ystävällisin terveisin,
-
-Komplyint Oy  
-info@komplyint.fi
 
 ---
 
