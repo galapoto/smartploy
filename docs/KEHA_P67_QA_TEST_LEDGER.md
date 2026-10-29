@@ -31,6 +31,28 @@
 
 **Recommended next external action:** reply to the existing KEHA credentials email, quote the separate private outbound IPv4 (the user has it), and request confirmation/activation of TCP/443 access to the *QA* hostname. Ask whether additional networks or outbound IPs (including the later OVH worker) require allowlisting. Do not send the subscription key.
 
+## Independent network retest — 2026-10-29 (not from the QA operator IP)
+
+**Separate evidence type: external, unauthenticated network diagnostics.**
+These checks were launched by the assistant from **different execution
+networks**, not the operator's Linux Mint computer or its outbound IPv4.
+The KEHA subscription key was **not** transmitted or loaded into any
+of these requests. They do not replace QA-001..QA-007 and do not add to
+the count of **7 operator checks / 0 authenticated KEHA QA successes**.
+
+| ID | Origin and test | Observed outcome | Interpretation |
+| --- | --- | --- | --- |
+| EXT-001 | Remote web-fetch service, fresh GET to `https://api-qa.ahtp.fi/kipa/p67/v2/jobpostings` | `timeout` | The external fetch path did not obtain an API HTTP response. This is not proof that the operator's allowlisted IP can/cannot connect. |
+| EXT-002 | Same remote service, fresh GET to `https://api-qa.ahtp.fi/` | `proxy_error` | Proxy-layer failure; no usable KEHA API status or authentication verdict. |
+| ENV-001 | Isolated assistant execution container, 2026-10-29T11:06:42Z, IPv4 unauthenticated HEAD to QA host and `github.com` control with `curl --noproxy '*'` | Both reported `curl: (6) Could not resolve host`, HTTP `000` | Local tool environment has no usable external DNS, so this probe **does not test KEHA reachability**. Do not forward it as evidence of a KEHA outage. |
+
+**Conclusion:** No provider-backed progress and **no authenticated KEHA
+job-posting retrieval** as of this retest. The actual operator must
+retry reachability from their own network after KEHA confirms IP opening.
+Do not assert the API key has been accepted or rejected. If the operator
+succeeds, append a new `QA-008` entry with a sanitized result and update
+the P67 acceptance matrix; do **not** overwrite the earlier failures.
+
 ## Eight-scenario QA acceptance matrix
 
 | ID | Test scenario | Current evidence | Required live-acceptance proof |
