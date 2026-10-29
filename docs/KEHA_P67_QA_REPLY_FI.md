@@ -14,12 +14,12 @@ Kiitos Komplyint Oy:lle 26.10.2026 toimitetusta Työmarkkinatorin työpaikkailmo
 
 Olemme aloittaneet SmartPloy-palvelumme teknisen QA-testauksen. Ohjelmiston sisäiset automaattiset testit ovat läpäisseet tarkistukset, mutta varsinaista API-yhteyttä testiympäristöön ei vielä saada muodostettua.
 
-**Tähän mennessä tehdyt tarkistukset (28.–29.10.2026): yhteensä 10, joista 6 onnistui paikallisina, HTTPS-yhteyden tai rajapinnan saavutettavuuden tarkistuksina ja 4 estyi verkkoyhteysongelman vuoksi. Rajapinta-avain ei ole vielä saanut onnistunutta tunnistettua P67 POST -vastausta.**
+**Tähän mennessä tehdyt tarkistukset (28.–29.10.2026): yhteensä 11, joista 7 onnistui paikallisina, HTTPS-yhteyden tai rajapinnan saavutettavuuden tarkistuksina (mukaan lukien yksi uusintatesti) ja 4 estyi verkkoyhteysongelman vuoksi. Rajapinta-avaimella ei ole vielä saatu onnistunutta tunnistettua P67 POST -vastausta.**
 - Testausohjelma käynnistyy oikein, ja QA-tila sekä tilaustunnuksen olemassaolo on vahvistettu paikallisesti. Tämä ei vielä osoita, että palvelin olisi hyväksynyt tunnuksen.
 - Todellinen PUBLISHED/ARCHIVED-hakutesti pysähtyy ennen HTTP-vastausta ilmoitukseen `QA_NETWORK_OR_TLS`.
 - Suora HTTPS-yhteyskokeilu osoitteeseen `https://api-qa.ahtp.fi/kipa/p67/v2/jobpostings` päättyy TCP-yhteyden aikakatkaisuun noin 10 sekunnissa (`curl`-virhekoodi 28, HTTP 000). **Uusintatesti 29.10.2026 vahvisti saman tuloksen** (IPv4, `curl_exit=28`, HTTP 000; TCP- ja TLS-yhteyttä ei muodostunut). TLS-kättelyä tai API-tunnistautumista ei päästä aloittamaan.
 - Vertailutesti `https://github.com` -palveluun toimii IPv4-yhteydellä (HTTP 200). KEHA:n QA-osoitteeseen yhteys ei toimi testitietokoneelta myöskään pakotetulla IPv4:llä.
-- Erilliseltä OVH-palvelimeltamme HTTPS-yhteys QA-palvelimeen toimii: `curl -I` palauttaa HTTP 404 -vastauksen, ja TCP-yhteys (0,104 s) sekä TLS-kättely (0,148 s) onnistuvat. **Uusi avaimeton POST-testi palautti HTTP 401 -vastauksen** (TCP 0,021 s; TLS 0,066 s). Tämä osoittaa pyynnön saavuttavan tunnistautumista tai käyttöoikeutta edellyttävän HTTP-tason, **ei** vielä rajapinta-avaimen hyväksyntää tai työpaikkatietojen hakua.
+- Erilliseltä OVH-palvelimeltamme HTTPS-yhteys QA-palvelimeen toimii: `curl -I` palauttaa HTTP 404 -vastauksen, ja TCP-yhteys (0,104 s) sekä TLS-kättely (0,148 s) onnistuvat. **Avaimeton POST-testi ja sen uusinta palauttivat HTTP 401 -vastauksen** (alkuperäinen TCP 0,021 s / TLS 0,066 s; uusinta TCP 0,022 s / TLS 0,078 s). Tämä osoittaa pyynnön saavuttavan tunnistautumista tai käyttöoikeutta edellyttävän HTTP-tason, **ei** vielä rajapinta-avaimen hyväksyntää tai työpaikkatietojen hakua.
 - Salaisia avaimia, henkilötietoja tai hakutuloksia ei ole toimitettu ulkopuolisiin raportteihin.
 
 **Testitietokoneen julkinen lähtevä IPv4:** [LISÄÄ VAIN KEHALLE LÄHETETTÄVÄÄN YKSITYISEEN VIESTIIN]
