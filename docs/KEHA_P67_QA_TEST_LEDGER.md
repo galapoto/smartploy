@@ -2,8 +2,8 @@
 
 **Project:** Komplyint Oy / SmartPloy · **Provider:** KEHA Centre / Työmarkkinatori · **Source:** `job-market-finland`  
 **Environment under test:** **QA only**, `https://api-qa.ahtp.fi/kipa/p67/v2/jobpostings`  
-**Evidence reviewed:** User-supplied Linux terminal outputs received on **2026-10-28 and 2026-10-29**. Exact execution times were not captured; do not manufacture timestamps. **8 operator checks: 4 PASS, 4 BLOCKED; 0 authenticated KEHA API successes.**  
-**Overall status:** **BLOCKED — QA network TCP/443 timeout**. Authentication, posting retrieval, and live parser/lifecycle acceptance are **not yet verified**.
+**Evidence reviewed:** User-supplied Linux terminal outputs received on **2026-10-28 and 2026-10-29**. Exact execution times were not captured; do not manufacture timestamps. **9 operator checks: 5 local/control/transport PASS, 4 BLOCKED; 0 authenticated KEHA API successes.**  
+**Overall status:** **HOLD — authenticated P67 POST and job retrieval remain unverified.** The Linux Mint network still times out at TCP/443 (QA-008), while a separate OVH host successfully connected over TCP/TLS to the QA hostname and received HTTP 404 for an unauthenticated **HEAD** request (QA-009). A successful HTTPS connection is **not** successful P67 POST.
 
 > **Privacy:** This public document intentionally excludes the subscription key, user's home public IPv4, IP-to-person linkages, private network configuration, request headers, raw job descriptions and CVs. The outgoing IP was identified in the user's private test session and can be communicated *directly to KEHA* as needed. Do not paste the key into issues, PRs, support emails or test output. Consider rotating it because the original credential appeared in screenshots.
 
@@ -27,10 +27,11 @@
 | QA-006 | QA destination forced IPv4 | `curl -4 -I https://api-qa.ahtp.fi/kipa/p67/v2/jobpostings` → `HTTP=000`; connect timeout ~10 s; no TLS | **BLOCKED**: reproduced with IPv4, so IPv6 preference alone cannot explain the failure |
 | QA-007 | Identify test host's public outbound IPv4 | `curl -4 -fsS https://api.ipify.org` returned one public IPv4 | **PASS**: value retained privately for KEHA's IP allowlist check; **not published here** |
 | QA-008 | 2026-10-29 repeat QA HTTPS connection on original Linux test machine, forced IPv4 | `curl -4 -sS -I --connect-timeout 10 --max-time 15` → `curl: (28)` after 10002 ms; `HTTP=000`; `TCP=0.000000s`; `TLS=0.000000s`; `curl_exit=28` | **BLOCKED**: fresh TCP/443 timeout; no HTTP response, TLS handshake, API authentication or job retrieval. Public egress IP was **not rechecked** during this attempt. |
+| QA-009 | 2026-10-29 separate OVH host `obum-core-01`, forced-IPv4 HEAD to QA P67 path, **without subscription key** | `curl -4 -sS -I --connect-timeout 10 --max-time 15` → `HTTP=404`; `TCP=0.103818s`; `TLS=0.148471s`; `curl_exit=0` | **PASS — TCP/TLS transport only.** OVH HTTPS succeeded. The P67 specification requires **POST**; a 404 on HEAD does not establish POST routing, authorization or job retrieval. No production changes. |
 
-**Inference supported by the evidence:** name resolution works; general IPv4 HTTPS works; KEHA QA TCP/443 is unreachable from the test machine. Plausible causes include KEHA's IP allowlist, a firewall, or destination-specific routing. **We have not verified which**. It is premature to declare the key valid/invalid, claim a successful QA request, claim zero published vacancies, or enable the live production worker.
+**Inference supported by the evidence:** the original Linux Mint test computer reaches general HTTPS sites but still times out on KEHA QA TCP/443. The separate OVH host reaches the QA hostname over HTTPS and obtains HTTP 404 for HEAD, which does not establish that POST search works. This is a network-origin-dependent difference; KEHA allowlisting, firewall or routing as the cause remains **unverified**. The P67 key and job retrieval remain untested from OVH. Do not enable production workers.
 
-**Recommended next external action:** reply to the existing KEHA credentials email, quote the separate private outbound IPv4 (the user has it), and request confirmation/activation of TCP/443 access to the *QA* hostname. Ask whether additional networks or outbound IPs (including the later OVH worker) require allowlisting. Do not send the subscription key.
+**Recommended next action:** test the P67 **POST method without a key** from OVH using a harmless empty JSON body and no data persistence, to distinguish a HEAD-specific 404 from POST endpoint routing. Do **not** put the QA key in the production server's application environment. Ask KEHA about IP access for the Linux Mint network and whether an isolated QA test process may use the OVH network. Do not send the subscription key in email.
 
 ## Independent network retest — 2026-10-29 (not from the QA operator IP)
 
@@ -39,7 +40,7 @@ These checks were launched by the assistant from **different execution
 networks**, not the operator's Linux Mint computer or its outbound IPv4.
 The KEHA subscription key was **not** transmitted or loaded into any
 of these requests. They do not replace QA-001..QA-008 and do not add to
-the count of **8 operator checks / 0 authenticated KEHA QA successes**.
+the count of **9 operator checks / 0 authenticated KEHA QA successes**.
 
 | ID | Origin and test | Observed outcome | Interpretation |
 | --- | --- | --- | --- |
@@ -51,15 +52,15 @@ the count of **8 operator checks / 0 authenticated KEHA QA successes**.
 job-posting retrieval** as of this retest. The actual operator **retested from their own Linux machine on 2026-10-29**
 (QA-008) and again observed a TCP/443 timeout. KEHA's QA allowlisting or
 destination routing remains unverified; do not assert that the API key has
-been accepted or rejected. Once KEHA confirms network access, append a new
-`QA-009` entry with a sanitized result and update the P67 acceptance matrix;
+been accepted or rejected. QA-009 later proved separate OVH transport reachability, not POST/API authorization. Append a new
+`QA-010` entry with the next sanitized operator result and update the P67 acceptance matrix;
 do **not** overwrite the earlier failures.
 
 ## Eight-scenario QA acceptance matrix
 
 | ID | Test scenario | Current evidence | Required live-acceptance proof |
 | --- | --- | --- | --- |
-| P67-01 | Reach endpoint, authenticate QA key and receive accepted HTTP response | **BLOCKED** by QA-003/004/006/008 | Sanitized `qa_reachable`, both request success flags or an authenticated HTTP receipt |
+| P67-01 | Reach endpoint, authenticate QA key and receive accepted HTTP response | **BLOCKED** for authenticated POST: Linux Mint timeout QA-003/004/006/008; OVH HEAD transport pass QA-009 is not POST/API proof | Sanitized `qa_reachable`, both request success flags or an authenticated HTTP receipt |
 | P67-02 | Retrieve PUBLISHED postings | **NOT RUN** live; **LOCAL PASS** via MockTransport | Live `published_query_passed=true` and count; if zero, explicitly note no data returned |
 | P67-03 | Retrieve ARCHIVED postings | **NOT RUN** live; **LOCAL PASS** via MockTransport | Live `archived_query_passed=true` and count; if zero, note the observed interval |
 | P67-04 | Modified-time windows, empty-response behavior, bounded limits | **NOT RUN** live; **LOCAL PASS** | Successful short and longer windows without incorrect claim of newly discovered jobs |
@@ -81,7 +82,7 @@ do **not** overwrite the earlier failures.
 
 ## How to update after each subsequent run
 
-For every operator output, append exactly one new receipt row **QA-009, QA-010, ...**, retaining all earlier failures for traceability. Add the result to the corresponding `P67-0x` row; change **NOT RUN → PASS** only on provider-backed evidence and note whether the count was zero. Capture the actual UTC timestamp *when available*, exact test command (excluding secrets), QA endpoint, sanitized status/error, small counts, environment, and any blocker/next action.
+For every operator output, append exactly one new receipt row **QA-010, QA-011, ...**, retaining all earlier failures for traceability. Add the result to the corresponding `P67-0x` row; change **NOT RUN → PASS** only on provider-backed evidence and note whether the count was zero. Capture the actual UTC timestamp *when available*, exact test command (excluding secrets), QA endpoint, sanitized status/error, small counts, environment, and any blocker/next action.
 
 Never replace historical failures with later successes. Never turn a synthetic mock test into a provider acceptance claim. Do not store subscriber keys or residential/test-device IPs in this public repository.
 
