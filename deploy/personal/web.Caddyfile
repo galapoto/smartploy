@@ -19,6 +19,16 @@
         }
     }
 
+    # A real, immutable-build marker must be served as JSON without SPA
+    # fallback or caching. Independent HTTPS/API parity is tested before
+    # a trusted deployment may record the approved SHA.
+    @release path /release.json
+    handle @release {
+        header Cache-Control "no-store"
+        root * /srv
+        file_server
+    }
+
     # Do not let the SPA fallback pretend a missing/outdated extension ZIP
     # exists: direct download must return a real ZIP or a genuine HTTP 404.
     @companion path /smartploy-apply-companion.zip /smartploy-apply-companion.zip.sha256
