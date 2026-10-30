@@ -93,6 +93,49 @@ def validate_public_release_parity(
     return local_revision
 
 
+
+WEB_MANIFEST_SCHEMA = "smartploy-web-release-v1"
+
+
+def validate_web_release_parity(
+    origin_health: dict[str, object],
+    origin_web: dict[str, object],
+    expected_revision: str,
+    identity_profile: str,
+    public_web: dict[str, object] | None = None,
+) -> str:
+    """Require an exact reviewed SHA on API + served static web artifact.
+
+    This is an additional *content* gate. It never approves a release by
+    itself: the caller must independently attest checkout, image IDs, source
+    security, publisher, TLS hostname and applicant acceptance.
+    """
+    validate_origin_health(origin_health, identity_profile)
+    if not isinstance(expected_revision, str) or re.fullmatch(
+        r"[0-9a-f]{12}", expected_revision
+    ) is None:
+        raise LiveAcceptanceError("invalid approved web release revision")
+    if origin_health.get("release_revision") != expected_revision:
+        raise LiveAcceptanceError("local API release fingerprint differs from the reviewed SHA")
+
+    def validate_manifest(document: dict[str, object]) -> None:
+        if not isinstance(document, dict) or set(document) != {
+            "schema", "release_revision"
+        }:
+            raise LiveAcceptanceError("web manifest is missing or has an unknown schema")
+        if document["schema"] != WEB_MANIFEST_SCHEMA:
+            raise LiveAcceptanceError("web manifest format is invalid")
+        if document["release_revision"] != expected_revision:
+            raise LiveAcceptanceError("web static artifact differs from the API/reviewed SHA")
+
+    validate_manifest(origin_web)
+    if public_web is not None:
+        if identity_profile != "oidc":
+            raise LiveAcceptanceError("public web SHA parity requires first-party OIDC")
+        validate_manifest(public_web)
+    return expected_revision
+
+
 def is_cloudflare_access_redirect(location: str) -> bool:
     value = str(location or "").strip()
     if not value:
@@ -179,7 +222,34 @@ def parse_probe_lines(text: str) -> PublicProbe:
     )
 
 
+def read_release_json(path: str) -> dict[str, object]:
+    file = Path(path)
+    if not 0 < file.stat().st_size <= 4096 or file.is_symlink():
+        raise LiveAcceptanceError("release verification payload must be small and regular")
+    decoded = json.loads(file.read_text(encoding="utf-8"))
+    if not isinstance(decoded, dict):
+        raise LiveAcceptanceError("release verification payload is not an object")
+    return decoded
+
+
 def _main(argv: list[str]) -> int:
+    if len(argv) in {5, 6} and argv[0] == "web-release-parity":
+        # python -m smartploy.live_acceptance web-release-parity
+        #   <origin-health.json> <origin-web.json> <expected-12hex>
+        #   <cloudflare|oidc> [public-web.json]
+        try:
+            local_health = read_release_json(argv[1])
+            local_web = read_release_json(argv[2])
+            public_web = read_release_json(argv[5]) if len(argv) == 6 else None
+            result = validate_web_release_parity(
+                local_health, local_web, argv[3], argv[4], public_web
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError, LiveAcceptanceError) as exc:
+            # Never echo an unexpected HTTPS response, applicant data or secret.
+            raise SystemExit("web release parity: verification failed") from exc
+        print(result)
+        return 0
+
     if len(argv) == 4 and argv[0] == "public-release-parity":
         _, local_file, public_file, profile = argv
         try:
@@ -220,7 +290,9 @@ def _main(argv: list[str]) -> int:
             "usage: python -m smartploy.live_acceptance "
             "(origin-health <json-file> | public-probe <probe-file> | "
             "oidc-root/oidc-api/oidc-login <probe-file> <issuer-origin> | "
-            "public-release-parity <local-health-json> <public-health-json> oidc)"
+            "public-release-parity <local-health-json> <public-health-json> oidc | "
+            "web-release-parity <origin-health-json> <origin-web-json> "
+            "<12-hex-revision> <cloudflare|oidc> [public-web-json])"
         )
 
     command, path = argv[:2]
