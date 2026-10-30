@@ -638,7 +638,7 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .flow-job-actions button,.flow-job-actions a { display: inline-flex; align-items: center; gap: 7px; }
 .flow-select { display: flex; align-items: center; gap: 8px; font-size: 12px;
   font-weight: 800; color: #215889; margin-right: auto; }
-.flow-queue { position: sticky; bottom: 0; background: #f5f9ff; padding: 16px;
+.flow-queue { position: static; background: #f5f9ff; padding: 16px;
   border: 1px solid #c8e2f7; border-radius: 12px; margin-top: 14px; }
 .flow-queue strong { color: #24527c; }
 .flow-queue p { margin: 6px 0 11px; color: #607c96; font-size: 11px; }
@@ -697,6 +697,8 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .flow-mode:focus-visible,.flow-start-card:focus-visible { outline: 3px solid #2e8ad7; outline-offset: 3px; }
 .flow-mode-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .flow-mode-head svg { color: #1767ae; }
+.flow-mode-label { font-size: 10px; letter-spacing: .08em; font-weight: 850;
+  color: #1b5c96; margin-right: auto; }
 .flow-mode-choice { font-size: 10px; font-weight: 800; color: #587a9c; border: 1px solid #cdddeb;
   border-radius: 999px; padding: 4px 8px; text-transform: uppercase; letter-spacing: .05em; }
 .flow-mode.selected .flow-mode-choice { background: #d9eeff; color: #175b93; border-color: #8fc6f4; }
