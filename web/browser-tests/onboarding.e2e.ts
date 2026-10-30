@@ -303,7 +303,12 @@ test("CV-first manual application goes from upload to real matching and selected
   await page.getByRole("button", { name: "Save application draft" }).click();
   await expect.poll(() => state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
   await expect(page.getByRole("heading", { name: /My applications/i }).first()).toBeVisible();
+  const progress = page.getByRole("region", { name: "Application progress and next action" });
+  await expect(progress).toBeVisible();
+  await expect(progress).toContainText(/not submitted|unverified|review/i);
+  await expect(page.getByRole("link", { name: /Review CV/i }).first()).toBeVisible();
   expect(state.cvFilename).toBe("Synthetic-IT-CV.docx");
+  await evidence(page, "sp71-private-draft-next-action.png");
   await evidence(page, "synthetic-cv-first-manual-application.png");
 });
 
