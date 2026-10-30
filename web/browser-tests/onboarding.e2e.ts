@@ -259,6 +259,24 @@ async function evidence(page: Page, filename: string) {
 }
 
 
+test("SP69: first-use Upload CV first is a working button and leads to explicit method choice", async ({ page }) => {
+  const state = await installSyntheticApi(page);
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: /Upload CV first/i })).toBeVisible();
+  await page.getByRole("button", { name: /Upload CV first/i }).click();
+  await page.locator("input[aria-label='Select CV to upload']").setInputFiles({
+    name: "Newcomer-Synthetic-CV.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: Buffer.from("IN-TEST CV BLOB; no personal data"),
+  });
+  await expect(page.getByText("Newcomer-Synthetic-CV.docx is ready")).toBeVisible();
+  await expect(page.getByText("Your CV is connected. Choose a method to continue.")).toBeVisible();
+  await expect(page.locator(".flow-mode.selected")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Save application draft/i })).toHaveCount(0);
+  expect(state.cvFilename).toBe("Newcomer-Synthetic-CV.docx");
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+});
+
 test("CV-first manual application goes from upload to real matching and selected private draft", async ({ page }) => {
   const state = await installSyntheticApi(page);
   await page.goto("/");
