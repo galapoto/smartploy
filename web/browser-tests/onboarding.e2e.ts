@@ -6,7 +6,7 @@
  */
 import { mkdir } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
-import type { PrivateSavedJob, SearchJobCard, SearchPreferences, SearchResults } from "../src/types";
+import type { ApplicationWorkspace, PrivateSavedJob, SearchJobCard, SearchPreferences, SearchResults } from "../src/types";
 
 const EMPTY_PREFERENCES: SearchPreferences = {
   completed: false, mode: "personalized", roles: [], locations: [],
@@ -48,6 +48,7 @@ type MockState = {
   lastSave: Record<string, unknown> | null;
   unavailableAI: boolean;
   privateSavedJobs: Record<string, PrivateSavedJob[]>;
+  privateWorkspaces: Record<string, ApplicationWorkspace[]>;
   applicationWorkspaceCreates: string[];
 };
 
@@ -95,6 +96,7 @@ async function installSyntheticApi(page: Page, options: {
     lastSave: null,
     unavailableAI: Boolean(options.unavailableAI),
     privateSavedJobs: {},
+    privateWorkspaces: {},
     applicationWorkspaceCreates: [],
   };
   const response = async (
@@ -172,12 +174,46 @@ async function installSyntheticApi(page: Page, options: {
     }
     if (path.startsWith("/api/v1/jobs/") && path.endsWith("/application-workspace")
         && request.method() === "POST") {
-      state.applicationWorkspaceCreates.push(
-        decodeURIComponent(path.split("/")[4] || "")
-      );
-      await response(route, {
-        created: true, workspace: { workspace_id: "synthetic-draft-1234" },
-      });
+      const key = decodeURIComponent(path.split("/")[4] || "");
+      const job = [analyst, tester].find((item) => item.canonical_key === key);
+      if (!job || !state.cvFilename) {
+        await response(route, { detail: "No current synthetic job or connected CV" }, 409);
+        return;
+      }
+      const current = state.privateWorkspaces[state.userId] || [];
+      const existing = current.find((item) => item.canonical_key === key);
+      if (existing) {
+        await response(route, { created: false, workspace: existing });
+        return;
+      }
+      // A real, reusable owner-scoped synthetic workspace, not just an ID.
+      // The UI can now render the exact draft after navigation, and cross-user
+      // account switches cannot fetch another owner's private CV/letter.
+      const workspace: ApplicationWorkspace = {
+        workspace_id: "synthetic-draft-" + state.userId + "-" + key,
+        canonical_key: key, role_title: job.job.role_title,
+        company: job.job.company, application_url: job.job.application_url,
+        cv_text: "FICTIONAL CV draft for " + job.job.role_title,
+        cover_letter_text: "FICTIONAL letter for " + job.job.company,
+        source_cv_sha256: "a".repeat(64), approved_evidence_ids: [],
+        revision: 1, status: "draft",
+        self_reported_applied_at: "", self_reported_reference: "",
+        created_at: "2026-10-30T08:00:00Z", updated_at: "2026-10-30T08:00:00Z",
+        authority: { may_edit: true, may_download: true,
+          may_submit_to_employer: false, has_external_submission_proof: false },
+      };
+      state.privateWorkspaces[state.userId] = [workspace, ...current];
+      state.applicationWorkspaceCreates.push(key);
+      await response(route, { created: true, workspace });
+      return;
+    }
+    if (path.startsWith("/api/v1/application-workspaces/") &&
+        request.method() === "GET") {
+      const id = decodeURIComponent(path.slice("/api/v1/application-workspaces/".length));
+      const owned = (state.privateWorkspaces[state.userId] || [])
+        .find((item) => item.workspace_id === id);
+      await response(route, owned ? { workspace: owned } :
+        { detail: "No owner-scoped synthetic workspace" }, owned ? 200 : 404);
       return;
     }
 
@@ -228,7 +264,10 @@ async function installSyntheticApi(page: Page, options: {
         : { present: false },
       "/api/v1/profile/facts": { facts: [], count: 0 },
       "/api/v1/applications": { applications: [], count: 0 },
-      "/api/v1/application-workspaces": { workspaces: [], count: 0 },
+      "/api/v1/application-workspaces": {
+        workspaces: state.privateWorkspaces[state.userId] || [],
+        count: (state.privateWorkspaces[state.userId] || []).length,
+      },
       "/api/v1/jobs": { jobs: [], count: 0 },
       "/api/v1/private-jobs": {
         jobs: state.privateSavedJobs[state.userId] || [],
