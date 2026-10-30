@@ -17,7 +17,7 @@ function vacancy(
     unknown_fields: [],
     job: {
       company: "Fictional IT Employer", role_title: options.title ?? "Junior Data Analyst",
-      location: "Finland", career_area: "data", work_mode: "hybrid",
+      location: "Finland", career_area: "it_data", work_mode: "hybrid",
       employer_sector: "private", deadline: "", source_ids: ["fixture"],
       posted_at: "", first_seen_at: "", last_seen_at: "",
       source_current: options.current ?? true,
@@ -65,7 +65,7 @@ describe("SP75 explicit CV-to-AutoApply shortlist", () => {
     expect(result.selected.length).toBe(AUTOAPPLY_SELECTION_LIMIT);
     expect(result.selected.slice(0, 2)).toEqual(["explicit", "broader"]);
     expect(result.selected[2]).toBe("recommended-0");
-    expect(result.selected.at(-1)).toBe("recommended-12");
+    expect(result.selected[result.selected.length - 1]).toBe("recommended-12");
     expect(new Set(result.selected).size).toBe(15);
     expect(result.eligible).toBe(20);
   });
