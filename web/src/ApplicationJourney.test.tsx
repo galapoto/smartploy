@@ -76,6 +76,42 @@ describe("SP21 application journey", () => {
     expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
   });
 
+  it("SP69: an already connected CV does not silently select Manual or unlock application actions", async () => {
+    const p = { ...props(), mode: null };
+    const view = render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    expect(screen.getByText("Your CV is connected. Choose a method to continue.")).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Choose application method" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /save application draft/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /select for preparation/i })).toBeNull();
+    expect(p.onPrepare).not.toHaveBeenCalled();
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /apply with AI help/i }));
+    expect(p.onMode).toHaveBeenCalledWith("assisted");
+    view.rerender(<ApplicationJourney {...p} mode="assisted"/>);
+    expect(screen.getByRole("radio", { name: /match \+ tailored documents/i })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /prepare CV & application/i }).length).toBeGreaterThan(0);
+    expect(p.onPrepare).not.toHaveBeenCalled();
+  });
+
+  it("SP69: start page shows a connected CV and never treats mode selection as employer consent", () => {
+    const onMode = vi.fn(), onBrowse = vi.fn(), onUpload = vi.fn();
+    const view = render(<StartChoices onMode={onMode} onBrowse={onBrowse}
+      onUpload={onUpload} cvPresent/>);
+    expect(screen.getByText(/CV connected\./i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Upload CV first/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Automatic.*AutoApply/i }));
+    expect(onMode).toHaveBeenCalledWith("automatic");
+    expect(onUpload).not.toHaveBeenCalled();
+    view.rerender(<StartChoices onMode={onMode} onBrowse={onBrowse}
+      onUpload={onUpload} cvPresent={false}/>);
+    fireEvent.click(screen.getByRole("button", { name: /Upload CV first/i }));
+    expect(onUpload).toHaveBeenCalledTimes(1);
+    expect(onMode).toHaveBeenCalledTimes(1);
+  });
+
   it("does not require CV before mode selection, and CV upload button actually responds", () => {
     const p = { ...props(), cv: { present: false } };
     render(<ApplicationJourney {...p} />);
