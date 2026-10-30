@@ -1,4 +1,4 @@
-import { ArrowRight, Bot, FileCheck2, Search, WandSparkles } from "lucide-react";
+import { ArrowRight, Bot, CheckCircle2, FileCheck2, Search, WandSparkles } from "lucide-react";
 import type { ApplicationFlowMode } from "./types";
 
 /** One decision, four honest destinations; no hidden submission consent. */
@@ -6,43 +6,48 @@ export default function StartChoices(props: {
   onMode: (mode: ApplicationFlowMode) => void;
   onBrowse: () => void;
   busyBrowse?: boolean;
+  cvPresent?: boolean;
 }) {
   return <section className="flow-start" aria-label="Choose what to do with SmartPloy">
     <div className="flow-start-heading">
       <p className="section-kicker">START HERE</p>
       <h1>Apply for jobs in four simple steps.</h1>
-      <p>Upload your CV, get matching jobs, choose one, and apply. Pick how much help you want.</p>
+      <p>Connect your CV once, choose your level of help, review matching jobs and follow each application through to its outcome.</p>
     </div>
+    {props.cvPresent ? <div className="flow-start-ready" role="status">
+      <CheckCircle2 size={20} aria-hidden="true"/>
+      <span><strong>CV connected.</strong> Choose Manual, Assisted or Automatic below. You do not need to upload again.</span>
+    </div> : <p className="flow-start-how">You can select a method before uploading your CV, or browse jobs without one.</p>}
     <div className="flow-start-grid">
       <button type="button" className="flow-start-card"
         onClick={() => props.onMode("manual")}>
         <FileCheck2 size={25} aria-hidden="true" />
         <strong>Apply manually</strong>
-        <span>We match your CV. You fill and submit the employer application.</span>
-        <small>CV → matches → employer form</small>
+        <span>We find matching jobs. You complete the employer form and press Submit.</span>
+        <small>MANUAL · You send the application</small>
         <ArrowRight size={17} aria-hidden="true" />
       </button>
       <button type="button" className="flow-start-card"
         onClick={() => props.onMode("assisted")}>
         <WandSparkles size={25} aria-hidden="true" />
-        <strong>Apply with AI</strong>
-        <span>Find the right jobs, prepare documents and get help with supported forms.</span>
-        <small>Choose partial assistance</small>
+        <strong>Assisted · Apply with AI</strong>
+        <span>SmartPloy helps prepare your CV, letter and supported forms. You review before sending.</span>
+        <small>ASSISTED · You approve and send</small>
         <ArrowRight size={17} aria-hidden="true" />
       </button>
       <button type="button" className="flow-start-card"
         onClick={() => props.onMode("automatic")}>
         <Bot size={25} aria-hidden="true" />
-        <strong>AutoApply</strong>
-        <span>Select jobs for automated preparation. Unsupported submissions wait for your review.</span>
-        <small>Employer submission needs supported authorization</small>
+        <strong>Automatic · AutoApply</strong>
+        <span>Select jobs for private drafts and tracking agents. Employer sending requires separate authorization.</span>
+        <small>AUTOMATIC · Not an automatic employer send</small>
         <ArrowRight size={17} aria-hidden="true" />
       </button>
       <button type="button" className="flow-start-card" disabled={props.busyBrowse}
         onClick={props.onBrowse}>
         <Search size={25} aria-hidden="true" />
         <strong>Just find jobs</strong>
-        <span>Search every current vacancy. No CV or application required.</span>
+        <span>Browse available jobs and filter them. No CV or application required.</span>
         <small>{props.busyBrowse ? "Opening jobs…" : "Browse and filter"}</small>
         <ArrowRight size={17} aria-hidden="true" />
       </button>
