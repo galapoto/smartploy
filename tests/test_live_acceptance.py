@@ -13,6 +13,7 @@ from smartploy.live_acceptance import (
     validate_public_probe,
     validate_oidc_public_probe,
     validate_public_release_parity,
+    validate_web_release_parity,
 )
 
 
@@ -324,3 +325,112 @@ def test_public_release_parity_cli_emits_only_verified_digest_and_fails_closed(t
     assert failed.returncode != 0
     assert "PRIVATE_CV_PAYLOAD" not in failed.stdout + failed.stderr
     assert "ab12cd34ef56" not in failed.stdout
+
+
+# SP74: API + Caddy web + public HTTPS must share the exact release identity.
+# All fixtures are synthetic; no actual user, production URL fetch or credential.
+def _web_manifest(version="ab12cd34ef56"):
+    return {
+        "schema": "smartploy-web-release-v1",
+        "release_revision": version,
+    }
+
+
+def test_web_release_parity_accepts_exact_api_and_static_build():
+    local, _ = _release_pair()
+    assert validate_web_release_parity(
+        local, _web_manifest(), "ab12cd34ef56", "oidc",
+        _web_manifest()
+    ) == "ab12cd34ef56"
+    legacy = healthy_origin()
+    legacy["release_revision"] = "ab12cd34ef56"
+    assert validate_web_release_parity(
+        legacy, _web_manifest(), "ab12cd34ef56", "cloudflare"
+    ) == "ab12cd34ef56"
+
+
+@pytest.mark.parametrize("bad", [
+    "", "dev", "main", None, "AB12CD34EF56", "ab12cd34ef5",
+    "ab12cd34ef57", "0" * 40, "PRIVATE-CV",
+])
+def test_web_release_parity_rejects_unattested_and_stale_web_version(bad):
+    local, _ = _release_pair()
+    with pytest.raises(LiveAcceptanceError):
+        validate_web_release_parity(
+            local, _web_manifest(bad), "ab12cd34ef56", "oidc"
+        )
+
+
+@pytest.mark.parametrize("bad", [
+    {"release_revision": "ab12cd34ef56"},
+    {"schema": "other", "release_revision": "ab12cd34ef56"},
+    {"schema": "smartploy-web-release-v1",
+     "release_revision": "ab12cd34ef56", "private_note": "NEVER"},
+    {"schema": "smartploy-web-release-v1"},
+    {},
+])
+def test_web_release_parity_rejects_broken_or_secret_bearing_manifest(bad):
+    local, _ = _release_pair()
+    with pytest.raises(LiveAcceptanceError):
+        validate_web_release_parity(local, bad, "ab12cd34ef56", "oidc")
+
+
+def test_web_release_parity_rejects_stale_api_even_if_web_looks_current():
+    local, _ = _release_pair()
+    local["release_revision"] = "ab12cd34ef57"
+    with pytest.raises(LiveAcceptanceError, match="API release fingerprint"):
+        validate_web_release_parity(
+            local, _web_manifest(), "ab12cd34ef56", "oidc"
+        )
+
+
+def test_web_release_parity_rejects_stale_public_web_edge_and_legacy_public_mode():
+    local, _ = _release_pair()
+    with pytest.raises(LiveAcceptanceError, match="static artifact"):
+        validate_web_release_parity(
+            local, _web_manifest(), "ab12cd34ef56", "oidc",
+            _web_manifest("ab12cd34ef57")
+        )
+    legacy = healthy_origin()
+    legacy["release_revision"] = "ab12cd34ef56"
+    with pytest.raises(LiveAcceptanceError, match="first-party OIDC"):
+        validate_web_release_parity(
+            legacy, _web_manifest(), "ab12cd34ef56", "cloudflare",
+            _web_manifest()
+        )
+
+
+@pytest.mark.parametrize("bad", ["", "main", "AB12CD34EF56", "0" * 40])
+def test_web_release_parity_requires_exact_reviewed_source_prefix(bad):
+    local, _ = _release_pair()
+    with pytest.raises(LiveAcceptanceError, match="approved"):
+        validate_web_release_parity(local, _web_manifest(), bad, "oidc")
+
+
+def test_web_release_cli_positive_and_generic_negative_without_private_payload(tmp_path):
+    local, _ = _release_pair()
+    health = tmp_path / "health.json"
+    origin_web = tmp_path / "web.json"
+    public_web = tmp_path / "public.json"
+    health.write_text(json.dumps(local), encoding="utf-8")
+    origin_web.write_text(json.dumps(_web_manifest()), encoding="utf-8")
+    public_web.write_text(json.dumps(_web_manifest()), encoding="utf-8")
+
+    def probe():
+        return subprocess.run(
+            [sys.executable, "-m", "smartploy.live_acceptance",
+             "web-release-parity", str(health), str(origin_web),
+             "ab12cd34ef56", "oidc", str(public_web)],
+            check=False, capture_output=True, text=True, timeout=5,
+        )
+
+    assert probe().stdout.strip() == "ab12cd34ef56"
+    public_web.write_text(
+        '{"private_cv":"SENSITIVE_CV_FIXTURE","release_revision":"old"}',
+        encoding="utf-8",
+    )
+    denied = probe()
+    assert denied.returncode != 0
+    assert "web release parity: verification failed" in denied.stderr
+    assert "SENSITIVE_CV_FIXTURE" not in denied.stdout + denied.stderr
+    assert "ab12cd34ef56" not in denied.stdout
