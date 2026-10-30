@@ -638,7 +638,7 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .flow-job-actions button,.flow-job-actions a { display: inline-flex; align-items: center; gap: 7px; }
 .flow-select { display: flex; align-items: center; gap: 8px; font-size: 12px;
   font-weight: 800; color: #215889; margin-right: auto; }
-.flow-queue { position: sticky; bottom: 0; background: #f5f9ff; padding: 16px;
+.flow-queue { position: static; background: #f5f9ff; padding: 16px;
   border: 1px solid #c8e2f7; border-radius: 12px; margin-top: 14px; }
 .flow-queue strong { color: #24527c; }
 .flow-queue p { margin: 6px 0 11px; color: #607c96; font-size: 11px; }
@@ -664,6 +664,73 @@ h1, h2, h3, h4, p { margin-top: 0; }
   .flow-start,.application-flow .panel { padding: 18px; }
 }
 
+
+/* SP69: unambiguous CV -> method -> job -> review decision experience. */
+.flow-start-ready { display: flex; align-items: flex-start; gap: 11px;
+  margin: 14px 0 18px; border: 1px solid #b7e6d3; background: #eefaf5;
+  color: #1b694e; border-radius: 12px; padding: 14px 16px;
+  font-size: 13px; line-height: 1.5; }
+.flow-start-ready svg { flex: none; color: #13916d; }
+.flow-start-how { display: flex; align-items: center; justify-content: space-between;
+  gap: 15px; flex-wrap: wrap; margin: 13px 0 17px; background: #f2f7fe;
+  padding: 14px 16px; border-radius: 12px; }
+.flow-start-how p { margin: 0; font-size: 12px; color: #426483; flex: 1 1 240px; }
+.flow-start-how button { flex: 0 0 auto; }
+.flow-next-action { display: flex; align-items: flex-start; gap: 13px;
+  padding: 17px; border: 1px solid #c2dcf8; background: #eff7ff;
+  color: #1d527e; border-radius: 13px; }
+.flow-next-action > svg { flex: 0 0 auto; color: #2371b9; }
+.flow-next-action strong { display: block; font-size: 15px; line-height: 1.4; }
+.flow-next-action p { margin: 5px 0 0; color: #547493; line-height: 1.6; font-size: 12px; }
+.flow-choice-needed { border-color: #b8d8f5; }
+.flow-decision,.flow-selection-confirmation,.flow-choice-gate {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 13px 15px; border-radius: 11px; margin: 0 0 15px;
+  font-size: 12px; line-height: 1.55; }
+.flow-decision,.flow-choice-gate { background: #f1f7ff; border: 1px solid #cfe2f8; color: #285b89; }
+.flow-selection-confirmation { background: #eefaF4; border: 1px solid #c5e9d6; color: #22624c; }
+.flow-decision svg,.flow-selection-confirmation svg,.flow-choice-gate svg { flex: none; margin-top: 1px; }
+.flow-decision p,.flow-choice-gate p { margin: 0; }
+.flow-mode-grid { align-items: stretch; }
+.flow-mode { min-height: 220px; gap: 9px; transition: border-color .18s, box-shadow .18s, background .18s; }
+.flow-mode:hover { border-color: #70aad9; box-shadow: 0 5px 16px #1b5a9920; }
+.flow-mode:focus-visible,.flow-start-card:focus-visible { outline: 3px solid #2e8ad7; outline-offset: 3px; }
+.flow-mode-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.flow-mode-head svg { color: #1767ae; }
+.flow-mode-label { font-size: 10px; letter-spacing: .08em; font-weight: 850;
+  color: #1b5c96; margin-right: auto; }
+.flow-mode-choice { font-size: 10px; font-weight: 800; color: #587a9c; border: 1px solid #cdddeb;
+  border-radius: 999px; padding: 4px 8px; text-transform: uppercase; letter-spacing: .05em; }
+.flow-mode.selected .flow-mode-choice { background: #d9eeff; color: #175b93; border-color: #8fc6f4; }
+.flow-mode-responsibility { color: #174e80; font-size: 12px; line-height: 1.45; font-weight: 750;
+  border-top: 1px solid #dce8f4; padding-top: 10px; }
+.flow-mode-next { color: #59768f; font-size: 11px; line-height: 1.45; }
+.flow-next-guidance { margin: 0 0 15px; border-left: 3px solid #73a9da;
+  padding: 10px 13px; border-radius: 0 8px 8px 0;
+  background: #f4f9ff; color: #365f82; font-size: 12px; line-height: 1.6; }
+@media (max-width: 600px) {
+  .flow-start-how button { width: 100%; justify-content: center; }
+  .flow-mode { min-height: 0; }
+}
+
+/* SP69: a concise continuation map in the exact selected job editor. */
+.studio-journey { border: 1px solid #cfe0f1; background: #f5f9ff;
+  padding: 17px; margin: 0 0 18px; border-radius: 13px; color: #244e75; }
+.studio-journey-header { display: flex; gap: 12px; justify-content: space-between;
+  flex-wrap: wrap; align-items: baseline; }
+.studio-journey-header > strong { font-size: 14px; }
+.studio-journey-header > small { color: #376b9a; font-size: 11px; font-weight: 800; }
+.studio-journey ol { display: grid; grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 8px; list-style: none; padding: 0; margin: 14px 0; }
+.studio-journey li { display: flex; gap: 9px; align-items: flex-start;
+  padding: 12px; background: #fff; border: 1px solid #dbe8f5; border-radius: 10px; }
+.studio-journey li > span { display: grid; place-items: center; flex: none;
+  background: #dcefff; color: #175b92; font-weight: 800; font-size: 11px;
+  width: 24px; height: 24px; border-radius: 50%; }
+.studio-journey li strong { display: block; font-size: 12px; line-height: 1.4; }
+.studio-journey li small { display: block; color: #65809a; font-size: 11px; line-height: 1.5; }
+.studio-journey p { font-size: 12px; line-height: 1.55; margin: 0; color: #3d668a; }
+@media (max-width: 850px) { .studio-journey ol { grid-template-columns: 1fr; } }
 
 /* SP35: actionable private Agent Zero inbox; clear hierarchy without
    implying the case itself has submitted or contacted an employer. */

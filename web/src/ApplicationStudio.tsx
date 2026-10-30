@@ -17,7 +17,7 @@ import {
 } from "./api";
 import ApplicationAgentCard from "./ApplicationAgentCard";
 import ApplicationAgentInbox from "./ApplicationAgentInbox";
-import type { ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
+import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import type { EmployerAttemptState, EmployerReviewIntentState, EmployerFinalActionReadiness, LeverPartnerReadiness, LeverProviderAcknowledgment, LeverPartnerReviewEvidence } from "./api";
 
@@ -67,6 +67,7 @@ function freshPartnerEvidence(
 
 export default function ApplicationStudio(props: {
   focusId: string; expectedUserId: string; expectedAuthSource: string; onFindJobs: () => void;
+  mode?: ApplicationFlowMode | null;
 }) {
   const [workspaces, setWorkspaces] = useState<ApplicationWorkspace[]>([]);
   const [selectedId, setSelectedId] = useState(props.focusId);
@@ -909,6 +910,37 @@ export default function ApplicationStudio(props: {
               rel="noopener noreferrer" target="_blank">Employer site <ArrowUpRight size={15}/></a>
           ) : null}
         </div>
+        <section className="studio-journey" aria-label="Your next steps for this application">
+          <div className="studio-journey-header">
+            <strong>{selected.status === "provider_acknowledged"
+              ? "Employer application received — track the outcome"
+              : selected.status === "self_reported_applied"
+                ? "You reported applying — verify the outcome"
+                : "Your private draft is ready. What happens next?"}</strong>
+            <small>{props.mode === "manual" ? "Manual method" :
+              props.mode === "assisted" ? "Assisted method" :
+              props.mode === "automatic" ? "AutoApply preparation" : "Private application"}</small>
+          </div>
+          <ol>
+            <li><span>1</span><div><strong>Review the CV & letter</strong>
+              <small>Edit for this exact job and save your changes before using a document.</small></div></li>
+            <li><span>2</span><div><strong>Complete the employer form</strong>
+              <small>Use the employer link, supported reviewed browser help, or a separately authorized partner submission.</small></div></li>
+            <li><span>3</span><div><strong>Confirm and track</strong>
+              <small>Record the outcome. Only a verified employer acknowledgment counts as independently submitted.</small></div></li>
+          </ol>
+          <p>{selected.status === "provider_acknowledged"
+            ? "The employer system acknowledged this application. Do not send it again."
+            : selected.status === "self_reported_applied"
+              ? "This application is self-reported as applied, not independently verified by the employer."
+              : employerAttempt?.previous_attempt_reserved
+                ? "A previous employer attempt is reserved. Resolve its outcome before any new submission."
+                : props.mode === "automatic"
+                  ? "AutoApply has prepared this draft; it has not sent it to an employer."
+                  : props.mode === "assisted"
+                    ? "AI assistance is optional. Review all suggested details before choosing a final send action."
+                    : "You decide when and how to send this application; saving a draft is not submission."}</p>
+        </section>
         <div className="studio-info">
           <ShieldCheck size={18}/>
           <div><strong>Your content, your decision.</strong>

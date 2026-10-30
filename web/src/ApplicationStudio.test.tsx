@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import * as api from "./api";
 import ApplicationStudio from "./ApplicationStudio";
 import type {
-  ApplicationAgentInboxItem, ApplicationWorkspace, ApplicationWorkspacesResponse, SessionInfo,
+  ApplicationAgentInboxItem, ApplicationFlowMode, ApplicationWorkspace, ApplicationWorkspacesResponse, SessionInfo,
 } from "./types";
 
 vi.mock("./api", () => ({
@@ -97,9 +97,9 @@ function deferred<T>() {
 }
 
 let activeUser = "usr-a";
-const studio = () => render(<ApplicationStudio
+const studio = (mode: ApplicationFlowMode | null = null) => render(<ApplicationStudio
   focusId="" expectedUserId="usr-a" expectedAuthSource="oidc"
-  onFindJobs={vi.fn()}
+  onFindJobs={vi.fn()} mode={mode}
 />);
 
 beforeEach(() => {
@@ -252,6 +252,18 @@ describe("Application Studio private-read account boundary", () => {
     expect(panel.textContent).toContain("never permits");
     expect(api.getEmployerFinalActionReadiness).toHaveBeenCalledWith("workspace-A");
     expect(screen.queryByRole("button",{name:/Automatically submit to employer/i})).toBeNull();
+  });
+
+  it("SP69: private AutoApply draft has a clear review-to-employer-to-receipt guide", async () => {
+    studio("automatic");
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const guide = screen.getByLabelText("Your next steps for this application");
+    expect(guide.textContent).toContain("Your private draft is ready");
+    expect(guide.textContent).toContain("Review the CV & letter");
+    expect(guide.textContent).toContain("Complete the employer form");
+    expect(guide.textContent).toContain("Confirm and track");
+    expect(guide.textContent).toContain("AutoApply has prepared this draft; it has not sent it");
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 
   it("a rejected policy read stays blocked; it does not make an automatic submit possible",async()=>{

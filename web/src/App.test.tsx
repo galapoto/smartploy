@@ -228,7 +228,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       },
     } as never);
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /AutoApply Select jobs for automated preparation/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Automatic.*AutoApply/i }));
     expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("checkbox", { name: /select for preparation/i }));
@@ -254,7 +254,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       },
     } as never);
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /AutoApply Select jobs for automated preparation/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Automatic.*AutoApply/i }));
     await screen.findByRole("heading", { name: "Jobs from your CV" });
     fireEvent.click(screen.getByRole("checkbox", { name: /select for preparation/i }));
     fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
@@ -302,7 +302,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
           external_actions_performed: 0, worker_wake_verified: false },
       } as never);
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /AutoApply Select jobs for automated preparation/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Automatic.*AutoApply/i }));
     await screen.findByRole("heading", { name: "Jobs from your CV" });
     const selectors = screen.getAllByRole("checkbox", { name: /select for preparation/i });
     expect(selectors).toHaveLength(3);
@@ -351,7 +351,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       () => new Promise((resolve) => { finishFirst = resolve; }) as never
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /AutoApply Select jobs for automated preparation/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Automatic.*AutoApply/i }));
     await screen.findByRole("heading", { name: "Jobs from your CV" });
     const selectors = screen.getAllByRole("checkbox", { name: /select for preparation/i });
     fireEvent.click(selectors[0]);
@@ -394,7 +394,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
     render(<App />);
     fireEvent.click(await screen.findByRole("button", {
-      name: /AutoApply Select jobs for automated preparation/i,
+      name: /Automatic.*AutoApply/i,
     }));
     await screen.findByRole("heading", { name: "Jobs from your CV" });
     const selectors = screen.getAllByRole("checkbox", { name: /select for preparation/i });
@@ -455,7 +455,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       } as never);
     render(<App />);
     fireEvent.click(await screen.findByRole("button", {
-      name: /AutoApply Select jobs for automated preparation/i,
+      name: /Automatic.*AutoApply/i,
     }));
     await screen.findByRole("heading", { name: "Jobs from your CV" });
     screen.getAllByRole("checkbox", { name: /select for preparation/i })
@@ -497,7 +497,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
     render(<App />);
     fireEvent.click(await screen.findByRole("button", {
-      name: /AutoApply Select jobs for automated preparation/i,
+      name: /Automatic.*AutoApply/i,
     }));
     await screen.findByRole("heading", { name: "Jobs from your CV" });
     screen.getAllByRole("checkbox", { name: /select for preparation/i })
@@ -536,7 +536,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       );
     render(<App />);
     fireEvent.click(await screen.findByRole("button", {
-      name: /AutoApply Select jobs for automated preparation/i,
+      name: /Automatic.*AutoApply/i,
     }));
     await screen.findByRole("heading", { name: "Jobs from your CV" });
     const selectors = screen.getAllByRole("checkbox", { name: /select for preparation/i });
@@ -1514,6 +1514,9 @@ describe("first opt-in creates private IT applications immediately", () => {
       expect.objectContaining({ name: "synthetic-CV.pdf" }), "usr-synthetic-1"
     ));
     expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
+    expect(screen.getByText("Your CV is connected. Choose a method to continue.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /save application draft/i })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /select for preparation/i })).toBeNull();
     await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(1));
     expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();

@@ -259,6 +259,24 @@ async function evidence(page: Page, filename: string) {
 }
 
 
+test("SP69: first-use Upload CV first is a working button and leads to explicit method choice", async ({ page }) => {
+  const state = await installSyntheticApi(page);
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: /Upload CV first/i })).toBeVisible();
+  await page.getByRole("button", { name: /Upload CV first/i }).click();
+  await page.locator("input[aria-label='Select CV to upload']").setInputFiles({
+    name: "Newcomer-Synthetic-CV.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: Buffer.from("IN-TEST CV BLOB; no personal data"),
+  });
+  await expect(page.getByText("Newcomer-Synthetic-CV.docx is ready")).toBeVisible();
+  await expect(page.getByText("Your CV is connected. Choose a method to continue.")).toBeVisible();
+  await expect(page.locator(".flow-mode.selected")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Save application draft/i })).toHaveCount(0);
+  expect(state.cvFilename).toBe("Newcomer-Synthetic-CV.docx");
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+});
+
 test("CV-first manual application goes from upload to real matching and selected private draft", async ({ page }) => {
   const state = await installSyntheticApi(page);
   await page.goto("/");
@@ -283,6 +301,33 @@ test("CV-first manual application goes from upload to real matching and selected
   await expect(page.getByRole("heading", { name: /My applications/i }).first()).toBeVisible();
   expect(state.cvFilename).toBe("Synthetic-IT-CV.docx");
   await evidence(page, "synthetic-cv-first-manual-application.png");
+});
+
+test("SP69: direct CV upload requires an explicit Manual, Assisted or Automatic choice", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+  });
+  await page.goto("/");
+  await page.locator("input[aria-label='Select CV to upload']").setInputFiles({
+    name: "Synthetic-IT-CV.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: Buffer.from("IN-TEST CV BLOB; no applicant data"),
+  });
+  await expect(page.getByText("Synthetic-IT-CV.docx is ready")).toBeVisible();
+  await expect(page.getByText("Your CV is connected. Choose a method to continue.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
+  await expect(page.locator(".flow-mode.selected")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /save application draft/i })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: /select for preparation/i })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /apply with AI help/i }).click();
+  await expect(page.locator(".flow-mode.selected")).toContainText("Apply with AI help");
+  await expect(page.getByRole("button", { name: /prepare CV & application/i }).first()).toBeVisible();
+  await page.getByRole("button", { name: /AutoApply/i }).click();
+  await expect(page.locator(".flow-mode.selected")).toContainText("AutoApply");
+  await expect(page.getByRole("checkbox", { name: /select for preparation/i }).first()).toBeVisible();
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+  await evidence(page, "sp69-connected-cv-explicit-mode.png");
 });
 
 test("existing job-search cards open the requested assisted journey without creating a draft", async ({ page }) => {

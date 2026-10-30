@@ -141,7 +141,7 @@ class PrivateActionIdentityChanged extends Error {}
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
-  const [flowMode, setFlowMode] = useState<ApplicationFlowMode>("manual");
+  const [flowMode, setFlowMode] = useState<ApplicationFlowMode | null>(null);
   const [flowSelectedJob, setFlowSelectedJob] = useState("");
   const [flowQueueBusy, setFlowQueueBusy] = useState(false);
   const [startSearchBusy, setStartSearchBusy] = useState(false);
@@ -209,7 +209,7 @@ export default function App() {
     // A different account must not inherit an unsaved draft, editor, form,
     // selected job or cached navigation state belonging to its predecessor.
     setPage("dashboard"); setSearch(""); setExpandedJob("");
-    setFlowMode("manual"); setFlowSelectedJob(""); setFlowQueueBusy(false);
+    setFlowMode(null); setFlowSelectedJob(""); setFlowQueueBusy(false);
     setStartSearchBusy(false); flowQueueInFlight.current = null;
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
@@ -594,8 +594,12 @@ export default function App() {
     setBusyCV(true); setNotice("");
     try {
       const uploaded = await runPrivateMutation((userId) => uploadCV(file, userId));
-      setCV(uploaded); setCVPreview(false); navigate("apply");
-      setNotice("CV uploaded. Matching your CV against current jobs now. Select a job below to continue.");
+      setCV(uploaded); setCVPreview(false);
+       // A direct upload does not imply Manual mode. Keep an earlier deliberate
+       // choice only when the user is already inside the guided Apply journey.
+       if (page !== "apply") setFlowMode(null);
+       navigate("apply");
+      setNotice("CV uploaded. Matching your CV against current jobs now. Choose Manual, Assisted or Automatic to continue; nothing was sent.");
       await load(true);
       // An uploaded CV is not automatically approved as career evidence.
       // CV upload never starts background employer work. It is now a clear
@@ -947,7 +951,7 @@ export default function App() {
       setSelectedWorkspaceId(response.workspace.workspace_id);
       navigate("applications");
       setNotice(response.created
-        ? "Application documents are ready to edit. Review the draft before downloading or applying."
+        ? "Draft ready. Step 1: review and save your CV and letter. Step 2: complete the employer form. Step 3: confirm the outcome."
         : "Opened your existing private application documents.");
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged)) {
@@ -965,10 +969,15 @@ export default function App() {
 
   if (preferences && !preferences.completed && page === "dashboard") {
     return <main className="setup-landing flow-first-use">
+      <input ref={uploadRef} type="file" className="visually-hidden"
+        aria-label="Select CV to upload"
+        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        onChange={(event) => void onCVUpload(event)} />
       <div className="setup-brand"><BrandMark/><span><strong>SmartPloy</strong>
         <small>Simple job applications for Finland</small></span></div>
       <StartChoices onMode={(choice) => startApplyFlow(choice)}
-        onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}/>
+        onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
+            cvPresent={cv.present} onUpload={onUploadClick}/>
       {error ? <p className="setup-error" role="alert">{error}</p> : null}
       <details className="flow-advanced-setup">
         <summary>Advanced: customize search preferences (optional)</summary>
@@ -1175,8 +1184,13 @@ export default function App() {
             <div className="hero-tag"><span className="flag-finland" aria-hidden="true" /> Built for the Finnish job market</div>
           </section>
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
-            onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}/>
+            onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
+            cvPresent={cv.present} onUpload={onUploadClick}/>
           <div className="flow-home-cv">
+            {cv.present ? <button className="primary-btn" type="button"
+              onClick={() => navigate("apply")}>
+              Continue with my connected CV <ArrowRight size={16}/>
+            </button> : null}
             <button className="outline-btn" type="button" onClick={onUploadClick}
               disabled={busyCV}><UploadCloud size={16}/>
               {busyCV ? "Uploading…" : cv.present ? "Replace your CV" : "Upload your CV"}
@@ -1223,7 +1237,7 @@ export default function App() {
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}
           {page === "applications" ? <div className="stacked">
-            <ApplicationStudio key={accountViewKey} focusId={selectedWorkspaceId}
+            <ApplicationStudio key={accountViewKey} mode={flowMode} focusId={selectedWorkspaceId}
               expectedUserId={session?.user_id || ""} expectedAuthSource={session?.auth_source || ""}
               onFindJobs={() => navigate("apply")} />
             <section className="panel"><div className="panel-heading"><div><p className="section-kicker">APPLICATION TRACKER</p><h2>Your application pipeline</h2><p>A preparation draft is never counted as submitted.</p></div><span className="subtle-count">{applications.length} records</span></div>
