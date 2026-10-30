@@ -969,6 +969,10 @@ export default function App() {
 
   if (preferences && !preferences.completed && page === "dashboard") {
     return <main className="setup-landing flow-first-use">
+      <input ref={uploadRef} type="file" className="visually-hidden"
+        aria-label="Select CV to upload"
+        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        onChange={(event) => void onCVUpload(event)} />
       <div className="setup-brand"><BrandMark/><span><strong>SmartPloy</strong>
         <small>Simple job applications for Finland</small></span></div>
       <StartChoices onMode={(choice) => startApplyFlow(choice)}
