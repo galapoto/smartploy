@@ -174,6 +174,14 @@ done
 # while the worker is failing its own Docker healthcheck.
 bash "${SCRIPT_DIR}/assert-healthy-stack.sh"
 bash "${SCRIPT_DIR}/assert-running-images.sh" "${DEPLOY_SHA}"
+# SP74: the frontend must be demonstrably built from the same approved SHA
+# as the API, and OIDC public HTTPS must serve that same static artifact.
+# A healthy API with a stale/blank web shell may never become a release.
+WEB_RELEASE_ARGS=( "${DEPLOY_SHA}" )
+if [[ "${IDENTITY_PROFILE}" == "oidc" ]]; then
+  WEB_RELEASE_ARGS+=( --public )
+fi
+bash "${SCRIPT_DIR}/assert-web-release.sh" "${WEB_RELEASE_ARGS[@]}" >/dev/null
 # SP45: a healthy API/web is not proof that the applicant can install the
 # reviewed companion. The served first-party ZIP and SHA must match EXACT
 # checked-out source before deployment state may be committed.

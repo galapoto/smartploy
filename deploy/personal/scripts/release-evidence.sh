@@ -115,6 +115,21 @@ if ! COMPANION_FIELDS="$(bash "${SCRIPT_DIR}/assert-companion-release.sh" "${PRO
 fi
 [[ "${COMPANION_FIELDS}" == *"companion_release_verified=true"* ]] \
   || fail "companion release proof is incomplete"
+# SP74: never attest a healthy API while an older frontend is served by
+# Caddy. Optional public parity is performed only for first-party OIDC.
+WEB_RELEASE_ARGS=( "${DEPLOYED_SHA}" )
+if "${ONLINE}" && [[ "${IDENTITY_PROFILE}" == "oidc" ]]; then
+  WEB_RELEASE_ARGS+=( --public )
+fi
+if ! WEB_RELEASE_FIELDS="$(bash "${SCRIPT_DIR}/assert-web-release.sh" "${WEB_RELEASE_ARGS[@]}")"; then
+  fail "API/static frontend exact release identity mismatch"
+fi
+[[ "${WEB_RELEASE_FIELDS}" == *"web_release_origin_parity=true"* ]] \
+  || fail "web release origin parity proof is incomplete"
+if "${ONLINE}" && [[ "${IDENTITY_PROFILE}" == "oidc" ]]; then
+  [[ "${WEB_RELEASE_FIELDS}" == *"web_release_public_parity=true"* ]] \
+    || fail "public web release parity proof is incomplete"
+fi
 # A generic healthy worker/database is NOT proof that Agent Zero was
 # registered or actually ran. Require an independent task-level receipt.
 # Values are fixed booleans/status labels only: no applicant/job/secret data.
@@ -304,6 +319,7 @@ deployed_at=${DEPLOYED_AT}
 runtime_policy_sha256=${POLICY_SHA256}
 compose_file_sha256=${COMPOSE_SHA256}
 ${HEALTH_FIELDS}
+${WEB_RELEASE_FIELDS}
 ${AGENT_ZERO_FIELDS}
 ${AUTO_DRAFT_FIELDS}
 ${COMPANION_FIELDS}

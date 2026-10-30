@@ -58,6 +58,12 @@ Durable private workspace status `draft` **does not prove no earlier employer at
 
 **SP73 source/reuse/acceptance:** [Previous employer attempt triage record](SP73_PREVIOUS_EMPLOYER_ATTEMPT_TRIAGE.md). Existing first-party code reused; REA_NOT_APPLICABLE because no opaque/unknown code remains. Source approval is **not** actual OVH deployment; exact-SHA native release and owner-signed-in acceptance still tracked by issue #232.
 
+### SP74 P0 — verify API and public frontend are the same immutable release
+
+Current live OIDC API health is reachable but lacks a version; even a future versioned API is not sufficient proof that the public **frontend** is current. Bind the Caddy SPA build to the same reviewed immutable 12-hex SHA as the API and serve an exact JSON `/release.json` as `no-store`, with no SPA fallback. Reuse the existing production provenance gate to reject mismatched API/Caddy/frontend and OIDC public HTTPS revision before recording a deployed SHA or release-evidence artifact. Legacy Cloudflare Access remains protected and only local parity is probed for that profile. No new runtime secrets, container privileges, external employer actions, KEHA source permissions or authentication change.
+
+**SP74 source/reuse/acceptance:** [API and frontend release parity record](SP74_API_WEB_RELEASE_PARITY.md). Exact-head source CI and true signed-in OVH rollout remain independent gates in [release issue #232](https://github.com/galapoto/smartploy/issues/232). REA_NOT_APPLICABLE to already available first-party source and release scripts.
+
 **One simple visible path:**
 1. User signs in through existing first-party identity, imports a CV, chooses General or Personalized search, and specifies employment goals, restrictions, contact preferences and budget.
 2. SmartPloy retrieves source-current jobs using the existing job ledger and explains match uncertainty. It can verify employer-domain legitimacy and flag suspicious offers without invasive profiling.

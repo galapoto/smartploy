@@ -307,6 +307,9 @@ jobs:
           grep -Fq 'AGENT_ZERO_FRESH_RUN_MISSING' /tmp/agent-zero-expected-red.log
           rm -f /tmp/agent-zero-expected-red.log
           bash deploy/personal/scripts/assert-running-images.sh "${DEPLOY_SHA}"
+          # SP74: origin API and the actual Caddy frontend both must expose
+          # the same approved 12-hex revision, with a non-cacheable manifest.
+          bash deploy/personal/scripts/assert-web-release.sh "${DEPLOY_SHA}"
           # SP45: compare current source ZIP to the real Caddy download before
           # considering this source artifact a verified release candidate.
           bash deploy/personal/scripts/assert-companion-release.sh smartploy.obumai.com 18091
