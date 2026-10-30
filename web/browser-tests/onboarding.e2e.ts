@@ -403,7 +403,20 @@ test("CV-first manual application goes from upload to real matching and selected
   await expect(progress).toContainText("Approve contact details before browser autofill");
   await expect(page.getByRole("link", { name: "See missing requirements" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Review CV/i }).first()).toBeVisible();
+  const reviewQueue = page.getByRole("region", { name: "Application review queue" });
+  await expect(reviewQueue).toBeVisible();
+  await expect(reviewQueue).toContainText("1 private draft to finish");
+  await expect(reviewQueue).toContainText("0 self-reported");
+  await expect(reviewQueue).toContainText("0 employer-acknowledged");
+  const filters = reviewQueue.getByRole("group", { name: "Filter application statuses" });
+  await filters.getByRole("button", { name: /Drafts to finish 1/i }).click();
+  await expect(page.getByRole("complementary", { name: "Your application drafts" })
+    .getByRole("button", { name: /Junior Data Analyst/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Continue this draft/i })).toHaveAttribute(
+    "href", "#smartploy-cv-review");
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
   expect(state.cvFilename).toBe("Synthetic-IT-CV.docx");
+  await evidence(page, "sp72-private-draft-review-queue.png");
   await evidence(page, "sp71-private-draft-next-action.png");
   await evidence(page, "synthetic-cv-first-manual-application.png");
 });
