@@ -501,7 +501,7 @@ test("SP75: one-click CV-matched AutoApply shortlist prepares only reviewed curr
   await suggested.click();
   await expect(page.getByText("1 of 15 vacancies selected")).toBeVisible();
   const matchedJob = page.locator(".flow-job").filter({ hasText: "Junior Data Analyst" });
-  const exploratoryJob = page.locator(".flow-job").filter({ hasText: "QA Tester" });
+  const exploratoryJob = page.locator(".flow-job").filter({ hasText: "Software Tester" });
   await expect(matchedJob.getByRole("checkbox", { name: /Select for preparation/i }))
     .toBeChecked();
   await expect(exploratoryJob.getByRole("checkbox", { name: /Select for preparation/i }))
