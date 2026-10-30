@@ -1294,7 +1294,9 @@ describe("Application Studio per-draft result isolation", () => {
     });
 
   function selectB() {
-    fireEvent.click(screen.getByRole("button", { name: /B private role/ }));
+    fireEvent.click(within(screen.getByRole("complementary", {
+      name: "Your application drafts",
+    })).getByRole("button", { name: /B private role/ }));
     expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
   }
 
@@ -1637,7 +1639,9 @@ describe("Application Studio draft-scoped pending indicators", () => {
     });
 
   async function pickB() {
-    fireEvent.click(screen.getByRole("button", { name: /B private role/ }));
+    fireEvent.click(within(screen.getByRole("complementary", {
+      name: "Your application drafts",
+    })).getByRole("button", { name: /B private role/ }));
     expect(screen.getByRole("heading", { name: "B private role" })).toBeTruthy();
     await waitFor(() => {
       expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
