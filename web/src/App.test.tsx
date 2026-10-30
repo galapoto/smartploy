@@ -836,6 +836,9 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    // Dashboard matching can paint before optional CV hydration completes.
+    // Wait for the actual owner-scoped CV before entering its private flow.
+    expect(await screen.findByText("PRIVATE-ACCOUNT-A.pdf")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^Apply manually$/ }));
     await screen.findByRole("button", { name: "Choose this job" });
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
