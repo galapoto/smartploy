@@ -26,6 +26,12 @@ The product must optimize **quality of real opportunities and confirmed outcomes
 
 ## 2. User journey and candidate control
 
+### SP69 P0 — explicit choice after connected CV (30 October 2026)
+
+Direct CV upload must **not silently default to Manual**. Present four clearly numbered application steps: **1 CV → 2 explicit Manual / Assisted / Automatic choice → 3 current job selection and preparation → 4 review, authorized submission and honest tracking**. Method choice is a UI state, not consent to contact employers. CV-matched results may be browsed without choosing a method, but no application preparation actions should appear until the choice is made. Existing consent/rights gates, exact job identity, private workspace, source freshness and one-use employer approval must stay intact. Automatic currently supports explicit private drafts and agents; it must never imply employer submission in an unsupported form.
+
+**SP69 implementation/evidence:** [Dedicated decision and acceptance record](SP69_EXPLICIT_CV_FIRST_APPLICATION_CHOICE.md). This UI work proceeds independently of KEHA P67 production API approval.
+
 **One simple visible path:**
 1. User signs in through existing first-party identity, imports a CV, chooses General or Personalized search, and specifies employment goals, restrictions, contact preferences and budget.
 2. SmartPloy retrieves source-current jobs using the existing job ledger and explains match uncertainty. It can verify employer-domain legitimacy and flag suspicious offers without invasive profiling.
