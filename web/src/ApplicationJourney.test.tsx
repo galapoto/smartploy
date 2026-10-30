@@ -159,6 +159,22 @@ describe("SP21 application journey", () => {
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
   });
 
+  it("SP70: switching out of AutoApply clears the old batch selection", async () => {
+    const p = { ...props(), mode: "automatic" as const };
+    const view = render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    const boxes = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    fireEvent.click(boxes[0]);
+    expect((boxes[0] as HTMLInputElement).checked).toBe(true);
+    view.rerender(<ApplicationJourney {...p} mode="manual" />);
+    expect(screen.getAllByRole("button", { name: /choose this job/i }).length).toBeGreaterThan(0);
+    view.rerender(<ApplicationJourney {...p} mode="automatic" />);
+    const after = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    expect((after[0] as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("button", { name: /prepare applications & start agents/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
   it("SP70: selection from a previous query cannot prepare an absent job", async () => {
     const hidden: SearchJobCard = {
       ...listing, canonical_key: "elsewhere", lane: "recommended",
