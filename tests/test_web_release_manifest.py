@@ -1,6 +1,5 @@
 """SP74: frontend build manifest is deterministic, nonsecret and fail-closed."""
 import json
-from pathlib import Path
 
 import pytest
 
