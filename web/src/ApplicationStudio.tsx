@@ -340,16 +340,16 @@ export default function ApplicationStudio(props: {
     handoffBlockers: handoff?.document_revision === selected.revision ? handoff.blockers : [],
     partnerRightsReviewed: !!selectedPartner &&
       partnerReadiness?.partner_provider === selectedPartner &&
-      partnerReadiness.partner_api_configured === true &&
-      partnerReadiness.independent_partner_rights_reviewed === true &&
-      partnerReadiness.current_document_and_posting_ready === true &&
-      partnerReadiness.prior_employer_attempt === false,
+      partnerReadiness?.partner_api_configured === true &&
+      partnerReadiness?.independent_partner_rights_reviewed === true &&
+      partnerReadiness?.current_document_and_posting_ready === true &&
+      partnerReadiness?.prior_employer_attempt === false,
     partnerFinalEligible: !!selectedPartner &&
       partnerReadiness?.partner_provider === selectedPartner &&
-      partnerReadiness.eligible_for_explicit_partner_submit === true &&
+      partnerReadiness?.eligible_for_explicit_partner_submit === true &&
       finalReview?.review_recorded === true &&
-      Date.parse(finalReview.expires_at) > Date.now() &&
-      freshPartnerEvidence(partnerReadiness.review_evidence,selected),
+      Date.parse(finalReview?.expires_at || "") > Date.now() &&
+      freshPartnerEvidence(partnerReadiness?.review_evidence,selected),
   }) : null;
 
   // Reuse the already saved owner-scoped workspace list. Moving between
