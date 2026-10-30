@@ -839,10 +839,12 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     // Dashboard matching can paint before optional CV hydration completes.
     // Wait for the actual owner-scoped CV before entering its private flow.
     expect(await screen.findByText("PRIVATE-ACCOUNT-A.pdf")).toBeTruthy();
+    // The exact dashboard job-card "Apply manually" action already supplies its
+    // canonical job key. SP70 must show that pinned choice, never create a
+    // workspace until the separate Save application draft click.
     fireEvent.click(screen.getByRole("button", { name: /^Apply manually$/ }));
-    await screen.findByRole("button", { name: "Choose this job" });
+    expect(await screen.findByRole("button", { name: "Selected job" })).toBeTruthy();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
-    fireEvent.click(screen.getAllByRole("button", { name: "Choose this job" })[0]);
     fireEvent.click(screen.getByRole("button", { name: "Save application draft" }));
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
     switchToB();
