@@ -27,7 +27,12 @@ export default function ApplicationAttemptAudit(props: {
   signatureRef.current = signature;
   const generation = useRef(0);
   const inFlight = useRef(false);
-  const [checks, setChecks] = useState<Record<string, AttemptCheck>>({});
+  const [audit, setAudit] = useState<{
+    signature: string; checks: Record<string, AttemptCheck>;
+  }>({ signature, checks: {} });
+  // Invalidate stale results synchronously at render time. The effect below
+  // cancels old work, but must not briefly display a prior revision's "clear".
+  const checks = audit.signature === signature ? audit.checks : {};
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -36,7 +41,7 @@ export default function ApplicationAttemptAudit(props: {
   useEffect(() => {
     ++generation.current;
     inFlight.current = false;
-    setChecks({});
+    setAudit({ signature, checks: {} });
     setBusy(false);
     setMessage("");
     return () => { ++generation.current; inFlight.current = false; };
@@ -74,16 +79,22 @@ export default function ApplicationAttemptAudit(props: {
             ? "reserved"
             : attempt.previous_attempt_reserved === false &&
               attempt.state === "not_reserved" ? "not_reserved" : "unavailable";
-          setChecks((current) => isValid(ticket, scope)
-            ? { ...current, [item.workspace_id]: result } : current);
+          setAudit((current) => isValid(ticket, scope)
+            ? { signature: scope, checks: {
+              ...(current.signature === scope ? current.checks : {}),
+              [item.workspace_id]: result,
+            } } : current);
         } catch {
           if (!isValid(ticket, scope)) return;
           // A network or 403 failure can hide a cookie/account switch.
           // Do not render any former owner's case data without rechecking.
           try { await props.verifyAccount(); } catch { return; }
           if (!isValid(ticket, scope)) return;
-          setChecks((current) => isValid(ticket, scope)
-            ? { ...current, [item.workspace_id]: "unavailable" } : current);
+          setAudit((current) => isValid(ticket, scope)
+            ? { signature: scope, checks: {
+              ...(current.signature === scope ? current.checks : {}),
+              [item.workspace_id]: "unavailable",
+            } } : current);
           setMessage("Some attempt checks could not be verified. Do not retry an employer submission.");
         }
       }
