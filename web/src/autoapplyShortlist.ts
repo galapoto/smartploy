@@ -15,7 +15,7 @@ export function isSafeCVShortlistMatch(row: SearchJobCard): boolean {
     // "Python" in a driver's advert) is not sufficient for bulk selection.
     // Exact role/title alignment is a stricter gate than a weak keyword rank.
     row.reasons.some((reason) => reason.startsWith("Job title matches ")) &&
-    safeExternalJobUrl(row.job.application_url) !== null;
+    !!safeExternalJobUrl(row.job.application_url);
 }
 
 export type AutoApplyShortlist = {
