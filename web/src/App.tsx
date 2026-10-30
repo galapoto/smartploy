@@ -141,7 +141,7 @@ class PrivateActionIdentityChanged extends Error {}
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
-  const [flowMode, setFlowMode] = useState<ApplicationFlowMode>("manual");
+  const [flowMode, setFlowMode] = useState<ApplicationFlowMode | null>(null);
   const [flowSelectedJob, setFlowSelectedJob] = useState("");
   const [flowQueueBusy, setFlowQueueBusy] = useState(false);
   const [startSearchBusy, setStartSearchBusy] = useState(false);
@@ -209,7 +209,7 @@ export default function App() {
     // A different account must not inherit an unsaved draft, editor, form,
     // selected job or cached navigation state belonging to its predecessor.
     setPage("dashboard"); setSearch(""); setExpandedJob("");
-    setFlowMode("manual"); setFlowSelectedJob(""); setFlowQueueBusy(false);
+    setFlowMode(null); setFlowSelectedJob(""); setFlowQueueBusy(false);
     setStartSearchBusy(false); flowQueueInFlight.current = null;
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
@@ -594,8 +594,12 @@ export default function App() {
     setBusyCV(true); setNotice("");
     try {
       const uploaded = await runPrivateMutation((userId) => uploadCV(file, userId));
-      setCV(uploaded); setCVPreview(false); navigate("apply");
-      setNotice("CV uploaded. Matching your CV against current jobs now. Select a job below to continue.");
+      setCV(uploaded); setCVPreview(false);
+       // A direct upload does not imply Manual mode. Keep an earlier deliberate
+       // choice only when the user is already inside the guided Apply journey.
+       if (page !== "apply") setFlowMode(null);
+       navigate("apply");
+      setNotice("CV uploaded. Matching your CV against current jobs now. Choose Manual, Assisted or Automatic to continue; nothing was sent.");
       await load(true);
       // An uploaded CV is not automatically approved as career evidence.
       // CV upload never starts background employer work. It is now a clear
@@ -968,7 +972,8 @@ export default function App() {
       <div className="setup-brand"><BrandMark/><span><strong>SmartPloy</strong>
         <small>Simple job applications for Finland</small></span></div>
       <StartChoices onMode={(choice) => startApplyFlow(choice)}
-        onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}/>
+        onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
+            cvPresent={cv.present}/>
       {error ? <p className="setup-error" role="alert">{error}</p> : null}
       <details className="flow-advanced-setup">
         <summary>Advanced: customize search preferences (optional)</summary>
@@ -1175,8 +1180,13 @@ export default function App() {
             <div className="hero-tag"><span className="flag-finland" aria-hidden="true" /> Built for the Finnish job market</div>
           </section>
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
-            onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}/>
+            onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
+            cvPresent={cv.present}/>
           <div className="flow-home-cv">
+            {cv.present ? <button className="primary-btn" type="button"
+              onClick={() => navigate("apply")}>
+              Continue with my connected CV <ArrowRight size={16}/>
+            </button> : null}
             <button className="outline-btn" type="button" onClick={onUploadClick}
               disabled={busyCV}><UploadCloud size={16}/>
               {busyCV ? "Uploading…" : cv.present ? "Replace your CV" : "Upload your CV"}
