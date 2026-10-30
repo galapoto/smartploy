@@ -9,7 +9,7 @@ import type { ApplicationWorkspace } from "./types";
  */
 export type NextApplicationStep = {
   kind: "provider_confirmed" | "user_reported" | "observed_confirmation" |
-    "reserved_attempt" | "unsaved_edits" | "requirements_blocked" |
+    "reserved_attempt" | "attempt_checks_unavailable" | "unsaved_edits" | "requirements_blocked" |
     "checks_unavailable" | "partner_final_review" | "partner_preparation" |
     "manual_handoff";
   title: string;
@@ -28,6 +28,8 @@ export type NextApplicationInputs = {
   workspaceStatus: ApplicationWorkspace["status"];
   unsavedEdits: boolean;
   previousAttemptReserved: boolean;
+  /** Failure to read attempts must never be mistaken for a safe retry. */
+  attemptStatusKnown: boolean;
   browserReceiptObserved: boolean;
   /** null includes pending/failed policy reads; never treat as authorized. */
   handoffReady: boolean | null;
@@ -99,6 +101,16 @@ export function applicationNextStep(input: NextApplicationInputs): NextApplicati
       statusLabel: "Unsaved draft · not submitted",
       tone: "attention",
       action: { type: "save", label: "Save my edits" },
+    };
+  }
+  if (!input.attemptStatusKnown) {
+    return {
+      kind: "attempt_checks_unavailable",
+      title: "Employer attempt status unavailable — do not retry",
+      detail: "SmartPloy cannot confirm whether this exact job already has a previous employer attempt. Review its status and refresh before taking a final action.",
+      statusLabel: "Attempt status unverified · draft only",
+      tone: "attention",
+      action: { type: "jump", label: "Review employer attempt status", target: "#smartploy-employer-step" },
     };
   }
   if (input.handoffReady === false) {
