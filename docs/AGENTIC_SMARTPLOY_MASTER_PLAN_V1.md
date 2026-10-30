@@ -72,6 +72,12 @@ Changing a search query, view filter or CV/account invalidates old selected cano
 
 **SP75 source/reuse/acceptance:** [CV-first AutoApply quick shortlist record](SP75_CV_FIRST_AUTOAPPLY_SHORTLIST.md); `REA_NOT_APPLICABLE` to available first-party source; actual OVH release and authorized employer submission remain independent requirements tracked by [issue #232](https://github.com/galapoto/smartploy/issues/232).
 
+### SP76 P0 — KEHA production search access and source-only acceptance (30 October 2026)
+
+Komplyint Oy received a separate, securely delivered **production** subscription for the KEHA Job Market Finland P67 v2 job-search API. Treat permission to read listings as granted but **not yet technically verified**; the actual key was masked in chat and must never go to GitHub. Reuse original exact-endpoint PUBLISHED/ARCHIVED incremental adapter, ledger, retirement, attribution and third-party-AI restrictions. Add a **production-only disabled-worker probe** with explicit count-only HTTPS `POST` PUBLISHED/ARCHIVED checks and zero DB writes, plus negative tests for QA/prod mixing, fake endpoint, auth/IP refusal, malformed NDJSON and sensitive error reflection. Require a real redacted OVH probe receipt before an independently approved source-worker activation. The original first-ever incremental 120-minute lookback does not establish full national inventory; plan bounded/backfilled discovery and prompt archive handling before claiming nationwide coverage.
+
+**SP76 source/reuse/acceptance:** [KEHA production grant and activation evidence](SP76_KEHA_P67_PRODUCTION_ACCESS.md). REA_NOT_APPLICABLE to available authorized first-party P67 source. Separately tracked: native CI/OVH release, actual KEHA production request, signed-in CV-to-application journey, permissioned final employer sends.
+
 **One simple visible path:**
 1. User signs in through existing first-party identity, imports a CV, chooses General or Personalized search, and specifies employment goals, restrictions, contact preferences and budget.
 2. SmartPloy retrieves source-current jobs using the existing job ledger and explains match uncertainty. It can verify employer-domain legitimacy and flag suspicious offers without invasive profiling.
