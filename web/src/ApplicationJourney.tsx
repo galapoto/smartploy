@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { getCVJobMatches, getSession } from "./api";
 import { safeExternalJobUrl } from "./lib";
+import { addCVShortlist, AUTOAPPLY_SELECTION_LIMIT, visibleCurrentKeys } from "./autoapplyShortlist";
 import type {
   ApplicationAssistanceLevel, ApplicationFlowMode,
   CVDocument, CVJobMatches, SearchJobCard, AutoApplyBatchOutcome
@@ -79,7 +80,13 @@ export default function ApplicationJourney(props: {
   // In-flight batch results cannot restore choices from a replaced CV or
   // different account, even if their server calls already completed.
   const queueScope = useRef("");
-  queueScope.current = JSON.stringify([props.userId, props.cv.sha256 || "", props.cv.present]);
+  // A search/filter/view change must invalidate pending selection work in
+  // addition to the original account/CV boundary. A job from a previous
+  // query cannot silently become an application in the new result set.
+  queueScope.current = JSON.stringify([
+    props.userId, props.cv.sha256 || "", props.cv.present,
+    props.mode, filter.trim(), activeQuery, revision, showOther,
+  ]);
 
   // Debounce only the read-only query. Ranking and filtering happen on the
   // entire current job ledger, NOT just the rows already in this browser.
@@ -174,8 +181,12 @@ export default function ApplicationJourney(props: {
   // available until the applicant chooses a visible current vacancy.
   const focusedJob = jobs.find((row) => row.canonical_key === focusedKey &&
     row.job.source_current) || null;
+  const currentSelection = visibleCurrentKeys(selected, jobs);
+  const staleSelectionCount = selected.length - currentSelection.length;
+  const shortlistSuggestion = addCVShortlist(selected, results?.recommended || []);
+  const queryPending = filter.trim() !== activeQuery;
   const hasChosenJob = props.cv.present && !!props.mode &&
-    (props.mode === "automatic" ? selected.length > 0 : !!focusedJob);
+    (props.mode === "automatic" ? currentSelection.length > 0 : !!focusedJob);
 
   const hasMore = !!results && (
     results.recommended.length < results.recommended_count ||
@@ -233,11 +244,46 @@ export default function ApplicationJourney(props: {
   }
 
   function toggleSelected(key: string) {
-    if (props.queueBusy || queueInFlight.current || batchResult?.accessInterrupted) return;
+    if (props.queueBusy || queueInFlight.current || batchResult?.accessInterrupted ||
+        loading || paging || queryPending || !!error ||
+        !jobs.some((row) => row.canonical_key === key && row.job.source_current &&
+          !!safeExternalJobUrl(row.job.application_url))) return;
     setBatchResult(null);
     setSelected((current) => current.includes(key)
       ? current.filter((row) => row !== key)
-      : [...current, key].slice(0, 15));
+      : [...current, key].slice(0, AUTOAPPLY_SELECTION_LIMIT));
+  }
+
+  function selectCVShortlist() {
+    if (props.mode !== "automatic" || !results || props.queueBusy ||
+        !!queueInFlight.current || loading || paging || queryPending || !!error ||
+        batchResult?.accessInterrupted || staleSelectionCount > 0) return;
+    const proposal = addCVShortlist(selected, results.recommended);
+    if (!proposal.added.length) return;
+    setBatchResult(null);
+    setSelected(proposal.selected);
+  }
+
+  function clearSelected() {
+    if (props.queueBusy || queueInFlight.current) return;
+    setSelected([]);
+    setBatchResult(null);
+  }
+
+  function changeSearch(value: string) {
+    // Do not cancel a possibly committed backend request. Stop *after* the
+    // current job and require a newly reviewed source-current selection.
+    if (queueInFlight.current) stopRequestedRef.current = true;
+    setSelected([]);
+    setBatchResult(null);
+    setFilter(value);
+  }
+
+  function changeOtherVisibility() {
+    if (props.queueBusy || queueInFlight.current) return;
+    setShowOther((current) => !current);
+    setSelected([]);
+    setBatchResult(null);
   }
 
   async function prepareOne(key: string) {
@@ -252,10 +298,12 @@ export default function ApplicationJourney(props: {
   );
   const accessInterrupted = batchResult?.accessInterrupted === true;
   const runnableSelection = accessInterrupted ? [] :
-    selected.filter((key) => !blockedKeys.has(key));
+    currentSelection.filter((key) => !blockedKeys.has(key));
 
   async function queue() {
-    if (!runnableSelection.length || props.queueBusy || queueInFlight.current) return;
+    if (!runnableSelection.length || props.mode !== "automatic" || !results ||
+        loading || paging || queryPending || !!error || staleSelectionCount ||
+        props.queueBusy || queueInFlight.current) return;
     const keys = [...runnableSelection]; // immutable exact selection for this run
     const previous = batchResult; // preserve earlier review-required job failures
     const scope = queueScope.current;
@@ -360,8 +408,9 @@ export default function ApplicationJourney(props: {
           <input type="checkbox" checked={chosen}
             onChange={() => toggleSelected(row.canonical_key)}
             disabled={props.queueBusy || !!queueInFlight.current ||
-              accessInterrupted || !job.source_current ||
-              (!chosen && selected.length >= 15)} />
+              accessInterrupted || loading || paging || queryPending ||
+              !job.source_current || !link ||
+              (!chosen && selected.length >= AUTOAPPLY_SELECTION_LIMIT)} />
           {chosen ? "Selected" : "Select for preparation"}
         </label> : null}
         {props.mode && props.mode !== "automatic" ? <button type="button"
@@ -548,12 +597,13 @@ export default function ApplicationJourney(props: {
       {props.cv.present ? <div className="flow-filter">
         <label><Search size={17} aria-hidden="true"/>
           <input aria-label="Filter matching jobs" type="search" value={filter}
-            onChange={(event) => setFilter(event.target.value)}
+            onChange={(event) => changeSearch(event.target.value)}
             maxLength={120}
             placeholder="Search all current jobs by title, employer or location"/>
         </label>
         <button className="outline-btn compact" type="button"
-          onClick={() => setShowOther(current => !current)}>
+          disabled={props.queueBusy || !!queueInFlight.current}
+          onClick={changeOtherVisibility}>
           {showOther ? "Hide other jobs" : "Include other current jobs (" +
             (results?.other_jobs_count ?? results?.other_jobs.length ?? 0) + ")"}
         </button>
@@ -610,9 +660,42 @@ export default function ApplicationJourney(props: {
             Browse all jobs <ArrowRight size={16}/>
           </button></div>}
         {props.mode === "automatic" ? <div className="flow-queue">
-          <strong>{selected.length} of 15 vacancies selected</strong>
+          <strong>{selected.length} of {AUTOAPPLY_SELECTION_LIMIT} vacancies selected</strong>
           <p>Each selected job gets its own private application draft and in-app agent.
             No email, call or employer application is sent. You can pause or close an agent later.</p>
+          <div className="flow-shortlist-actions" role="group" aria-label="CV-matched AutoApply shortlist">
+            <button className="navy-btn compact" type="button"
+              disabled={!shortlistSuggestion.added.length || !results || loading ||
+                paging || queryPending || !!error || staleSelectionCount > 0 ||
+                props.queueBusy || !!queueInFlight.current || accessInterrupted}
+              onClick={selectCVShortlist}>
+              Select {shortlistSuggestion.added.length} CV-title matched job{shortlistSuggestion.added.length === 1 ? "" : "s"}
+              <CheckCircle2 size={15} aria-hidden="true"/>
+            </button>
+            <button className="outline-btn compact" type="button"
+              disabled={!selected.length || props.queueBusy || !!queueInFlight.current}
+              onClick={clearSelected}>Clear selected jobs</button>
+          </div>
+          <p className="flow-shortlist-note">
+            This selects only loaded, current vacancies with a direct role-title match
+            and a valid employer link. Weaker skill-only matches and unrelated jobs
+            require individual review. No selection starts an application automatically.
+          </p>
+          {results && results.recommended_count > results.recommended.length ?
+            <p className="flow-shortlist-note">Only currently loaded recommendations are eligible.
+              Use Load more current jobs to include later matches.</p> : null}
+          {staleSelectionCount > 0 ? <div role="alert" className="flow-boundary">
+            {staleSelectionCount} selected job{staleSelectionCount === 1 ? " is" : "s are"}
+            no longer visible and eligible. Clear and reselect current vacancies before preparing.
+          </div> : null}
+          {selected.length > 0 && staleSelectionCount === 0 ?
+            <details className="flow-shortlist-review">
+              <summary>Review {selected.length} selected job{selected.length === 1 ? "" : "s"} before preparing</summary>
+              <ol>{selected.map((key) => {
+                const row = jobs.find((item) => item.canonical_key === key);
+                return row ? <li key={key}><strong>{row.job.role_title}</strong> · {row.job.company}</li> : null;
+              })}</ol>
+            </details> : null}
           {batchProgress ? <div className="row-actions">
             <p role="status" aria-live="polite">
               Checked {batchProgress.completed} of {batchProgress.total} selected jobs.
@@ -683,7 +766,8 @@ export default function ApplicationJourney(props: {
             </> : null}
           </div> : null}
           <button className="primary-btn" type="button"
-            disabled={!runnableSelection.length || props.queueBusy || !!queueInFlight.current}
+            disabled={!runnableSelection.length || props.queueBusy || !!queueInFlight.current ||
+              loading || paging || queryPending || !!error || staleSelectionCount > 0}
             onClick={() => void queue()}>
             {props.queueBusy ? "Preparing selected drafts and agents…" :
               accessInterrupted ? "Access denied · reload to continue" :
