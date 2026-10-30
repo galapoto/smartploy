@@ -200,6 +200,8 @@ services:
     build:
       context: ../..
       dockerfile: web/Dockerfile
+      args:
+        APP_VERSION: ${SMARTPLOY_IMAGE_TAG:-dev}
     image: smartploy-web:${SMARTPLOY_IMAGE_TAG:-dev}
     restart: unless-stopped
     depends_on:
