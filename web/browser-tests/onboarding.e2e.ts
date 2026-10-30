@@ -414,8 +414,19 @@ test("CV-first manual application goes from upload to real matching and selected
     .getByRole("button", { name: /Junior Data Analyst/i })).toBeVisible();
   await expect(page.getByRole("link", { name: /Continue this draft/i })).toHaveAttribute(
     "href", "#smartploy-cv-review");
+  const attemptAudit = page.getByRole("region", { name: "Previous employer attempt checks" });
+  await expect(attemptAudit).toContainText("0 of 1 loaded private drafts checked");
+  await attemptAudit.getByRole("button", { name: "Check next 1 draft attempt" }).click();
+  await expect(attemptAudit).toContainText("1 of 1 loaded private drafts checked");
+  await expect(attemptAudit).toContainText("0 need previous-attempt reconciliation");
+  await attemptAudit.getByText("View per-application attempt checks").click();
+  await expect(attemptAudit).toContainText(
+    "No previous attempt recorded at check time — not send permission");
+  // An attempt check is a signed-in GET, never another application creation
+  // or a final employer action.
   expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
   expect(state.cvFilename).toBe("Synthetic-IT-CV.docx");
+  await evidence(page, "sp73-checked-private-draft-attempt.png");
   await evidence(page, "sp72-private-draft-review-queue.png");
   await evidence(page, "sp71-private-draft-next-action.png");
   await evidence(page, "synthetic-cv-first-manual-application.png");
