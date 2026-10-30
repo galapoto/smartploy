@@ -443,6 +443,7 @@ export default function ApplicationJourney(props: {
             aria-pressed={props.mode === choice} onClick={() => props.onMode(choice)}>
             <span className="flow-mode-head">
               <Icon size={23} aria-hidden="true"/>
+              <span className="flow-mode-label">{choice.toUpperCase()}</span>
               <span className="flow-mode-choice">{props.mode === choice ? "Selected" : "Choose"}</span>
             </span>
             <strong>{MODE_INFO[choice].title}</strong>
@@ -466,7 +467,7 @@ export default function ApplicationJourney(props: {
       </fieldset> : null}
       {props.mode === "automatic" ? <div className="flow-boundary" role="note">
         <ShieldCheck size={20} aria-hidden="true"/>
-        <p><strong>AutoApply preparation and private case agents are available.</strong>
+        <p><strong>AutoApply preparation and private case agents are available.</strong>{" "}
           Select vacancies below to prepare saved drafts and start one in-app tracking agent per job.
           The agents cannot contact employers; background reminders depend on the server worker.
           Final submission still requires a separately authorized employer integration and approval.
