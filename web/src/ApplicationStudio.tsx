@@ -917,9 +917,11 @@ export default function ApplicationStudio(props: {
               : selected.status === "self_reported_applied"
                 ? "You reported applying — verify the outcome"
                 : "Your private draft is ready. What happens next?"}</strong>
-            <small>{props.mode === "manual" ? "Manual method" :
-              props.mode === "assisted" ? "Assisted method" :
-              props.mode === "automatic" ? "AutoApply preparation" : "Private application"}</small>
+            <small>{selected.status === "provider_acknowledged"
+              ? "Employer acknowledgment recorded" :
+              selected.status === "self_reported_applied"
+                ? "Self-reported, not employer-verified" :
+                "Private draft · employer submission not verified"}</small>
           </div>
           <ol>
             <li><span>1</span><div><strong>Review the CV & letter</strong>
@@ -929,17 +931,20 @@ export default function ApplicationStudio(props: {
             <li><span>3</span><div><strong>Confirm and track</strong>
               <small>Record the outcome. Only a verified employer acknowledgment counts as independently submitted.</small></div></li>
           </ol>
+          <nav className="studio-journey-links" aria-label="Jump to application step">
+            <a href="#smartploy-cv-review">Review CV</a>
+            <a href="#smartploy-letter-review">Review letter</a>
+            {selected.status === "draft" ?
+              <a href="#smartploy-employer-step">Employer form options</a> : null}
+            <a href="#smartploy-outcome-step">Record or verify outcome</a>
+          </nav>
           <p>{selected.status === "provider_acknowledged"
             ? "The employer system acknowledged this application. Do not send it again."
             : selected.status === "self_reported_applied"
               ? "This application is self-reported as applied, not independently verified by the employer."
               : employerAttempt?.previous_attempt_reserved
                 ? "A previous employer attempt is reserved. Resolve its outcome before any new submission."
-                : props.mode === "automatic"
-                  ? "AutoApply has prepared this draft; it has not sent it to an employer."
-                  : props.mode === "assisted"
-                    ? "AI assistance is optional. Review all suggested details before choosing a final send action."
-                    : "You decide when and how to send this application; saving a draft is not submission."}</p>
+                : "This is a private application draft. Whether you chose Manual, Assisted or AutoApply, saving a draft does not mean the employer received it. Review and use a supported final action."}</p>
         </section>
         <div className="studio-info">
           <ShieldCheck size={18}/>
@@ -997,7 +1002,7 @@ export default function ApplicationStudio(props: {
             </div> : null}
           </div> : null}
         </section>
-        <div className="studio-document">
+        <div className="studio-document" id="smartploy-cv-review">
           <div className="studio-document-head"><strong><FileText size={17}/> CV draft</strong><span>{cvText.length.toLocaleString()} / 30,000 characters</span></div>
           <textarea aria-label="Editable CV text" rows={15} maxLength={30000}
             readOnly={selected.status !== "draft" || !!browserReceipt ||
@@ -1014,7 +1019,7 @@ export default function ApplicationStudio(props: {
               aria-disabled={dirty}><Download size={15}/> PDF</a>
           </div>
         </div>
-        <div className="studio-document">
+        <div className="studio-document" id="smartploy-letter-review">
           <div className="studio-document-head"><strong><FileCheck2 size={17}/> Cover letter draft</strong><span>{letterText.length.toLocaleString()} / 10,000 characters</span></div>
           {selected.status === "draft" ? <div className="studio-letter-language" aria-label="Cover letter language">
             <span>Draft using approved experience:</span>
@@ -1046,7 +1051,8 @@ export default function ApplicationStudio(props: {
               aria-disabled={dirty}><Download size={15}/> PDF</a>
           </div>
         </div>
-        {selected.status === "draft" ? <section className="studio-handoff" aria-label="Browser application assistant">
+        {selected.status === "draft" ? <section className="studio-handoff" id="smartploy-employer-step"
+          aria-label="Browser application assistant">
           <div className="studio-handoff-header">
             <div><p className="section-kicker">EMPLOYER APPLICATION</p><h4>Fill the employer's form</h4>
               <p>Use the optional SmartPloy companion for reviewed contact details, ordinary answers and PDF assistance on supported Lever, Ashby and hosted Greenhouse forms. Greenhouse submission remains manual; Ashby requires separately authorized partner API rights and your fresh final approval.</p></div>
@@ -1278,7 +1284,7 @@ export default function ApplicationStudio(props: {
             </div> : null}
           </>}
         </section> : null}
-        <div className="studio-footer">
+        <div className="studio-footer" id="smartploy-outcome-step">
           <span><LockKeyhole size={14}/> Private workspace · revision {selected.revision}</span>
           {selected.status === "draft" ? <div className="studio-actions">
             <button type="button" className="primary-btn" disabled={busy || !dirty || !!browserReceipt ||
