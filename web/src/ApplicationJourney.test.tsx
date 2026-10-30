@@ -200,6 +200,134 @@ describe("SP21 application journey", () => {
     expect(p.onPrepare).not.toHaveBeenCalled();
   });
 
+  it("SP75: select a CV-title-matched shortlist with one click, then explicitly prepare once", async () => {
+    const p = { ...props(), mode: "automatic" as const };
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    const suggest = screen.getByRole("button", { name: /Select 1 CV-title matched job/i });
+    expect((suggest as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: /prepare applications & start agents/i }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    fireEvent.click(suggest);
+    // The selected count and exact keys eventually sent to the existing
+    // private preparation callback are more reliable than guessing an item
+    // position in a recommendation + exploratory display.
+    expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy();
+    const selectedBox = screen.getByRole("checkbox", { name: "Selected" }) as HTMLInputElement;
+    const exploratoryBox = screen.getByRole("checkbox", {
+      name: "Select for preparation",
+    }) as HTMLInputElement;
+    expect(selectedBox.checked).toBe(true);
+    expect(exploratoryBox.checked).toBe(false);
+    const noMoreMatches = screen.getByRole("button", {
+      name: /Select 0 CV-title matched jobs/i,
+    }) as HTMLButtonElement;
+    expect(noMoreMatches.disabled).toBe(true);
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText(/Review 1 selected job before preparing/i));
+    expect(screen.getAllByText(/IT-suunnittelija/i).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(
+      ["current-planner"], expect.any(Function), expect.any(Function), false,
+    ));
+    expect(screen.queryByRole("button", { name: /submit application to employer/i })).toBeNull();
+  });
+
+  it("SP75: adds up to 15 exact CV-title matches without drivers, stale or unrelated jobs", async () => {
+    const extra = Array.from({ length: 18 }, (_, i): SearchJobCard => ({
+      ...listing, canonical_key: "data-" + i,
+      job: { ...listing.job, role_title: "Data Analyst " + i,
+        application_url: "https://employer.example.invalid/data-" + i },
+    }));
+    const driver: SearchJobCard = {
+      ...listing, canonical_key: "driver", reasons: ["Keywords: Python"],
+      job: { ...listing.job, role_title: "Delivery Driver" },
+    };
+    const stale: SearchJobCard = {
+      ...listing, canonical_key: "stale", job: { ...listing.job, source_current: false },
+    };
+    const invalid: SearchJobCard = {
+      ...listing, canonical_key: "invalid",
+      job: { ...listing.job, application_url: "javascript:alert(1)" },
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, recommended: [listing, driver, stale, invalid, ...extra],
+      recommended_count: 22, other_jobs: [],
+    });
+    const p = { ...props(), mode: "automatic" as const };
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("Delivery Driver");
+    fireEvent.click(screen.getByRole("button", { name: /Select 15 CV-title matched jobs/i }));
+    expect(screen.getByText("15 of 15 vacancies selected")).toBeTruthy();
+    expect((screen.getByRole("button", { name: /Select 0 CV-title matched jobs/i }) as HTMLButtonElement)
+      .disabled).toBe(true);
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledTimes(1));
+    const keys = p.onPrepareSelected.mock.calls[0][0];
+    expect(keys).toHaveLength(15);
+    expect(keys[0]).toBe("current-planner");
+    expect(keys).not.toContain("driver");
+    expect(keys).not.toContain("stale");
+    expect(keys).not.toContain("invalid");
+    expect(new Set(keys).size).toBe(15);
+  });
+
+  it("SP75: changed search discards queued keys even during the debounce boundary", async () => {
+    const other: SearchJobCard = {
+      ...listing, canonical_key: "other-job",
+      job: { ...listing.job, role_title: "Other Analyst" },
+    };
+    vi.mocked(api.getCVJobMatches).mockImplementation(async (options) =>
+      options?.query === "Other" ? {
+        ...data, recommended: [other], recommended_count: 1,
+        other_jobs: [], other_jobs_count: 0,
+      } : data);
+    const p = { ...props(), mode: "automatic" as const };
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getByRole("button", { name: /Select 1 CV-title matched job/i }));
+    expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy();
+    fireEvent.change(screen.getByRole("searchbox", { name: /Filter matching jobs/i }),
+      { target: { value: "Other" } });
+    expect(screen.getByText("0 of 15 vacancies selected")).toBeTruthy();
+    expect((screen.getByRole("button", { name: /prepare applications & start agents/i }) as HTMLButtonElement)
+      .disabled).toBe(true);
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+    await screen.findByText("Other Analyst");
+    fireEvent.click(screen.getByRole("button", { name: /Select 1 CV-title matched job/i }));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(
+      ["other-job"], expect.any(Function), expect.any(Function), false,
+    ));
+  });
+
+  it("SP75: changing search during an active batch asks to stop after current job", async () => {
+    const p = { ...props(), mode: "automatic" as const };
+    let unblock!: (result: AutoApplyBatchOutcome) => void;
+    let stopping: (() => boolean) | undefined;
+    p.onPrepareSelected.mockImplementation(async (_keys, _progress, shouldStop) => {
+      stopping = shouldStop;
+      return await new Promise((resolve) => { unblock = resolve; });
+    });
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getByRole("button", { name: /Select 1 CV-title matched job/i }));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledTimes(1));
+    expect(stopping?.()).toBe(false);
+    fireEvent.change(screen.getByRole("searchbox", { name: /Filter matching jobs/i }),
+      { target: { value: "New vacancy" } });
+    expect(stopping?.()).toBe(true);
+    await act(async () => unblock({
+      preparedKeys: ["current-planner"], failedKeys: [], agentsActive: 1,
+      agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+    }));
+    expect(screen.getByText("0 of 15 vacancies selected")).toBeTruthy();
+    expect(p.onPrepareSelected).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: /submit application/i })).toBeNull();
+  });
+
   it("prepares explicitly selected automatic drafts without employer submission", async () => {
     const p = { ...props(), mode: "automatic" as const };
     render(<ApplicationJourney {...p} />);

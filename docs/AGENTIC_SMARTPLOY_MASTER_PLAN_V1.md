@@ -64,6 +64,14 @@ Current live OIDC API health is reachable but lacks a version; even a future ver
 
 **SP74 source/reuse/acceptance:** [API and frontend release parity record](SP74_API_WEB_RELEASE_PARITY.md). Exact-head source CI and true signed-in OVH rollout remain independent gates in [release issue #232](https://github.com/galapoto/smartploy/issues/232). REA_NOT_APPLICABLE to already available first-party source and release scripts.
 
+### SP75 P0 — one-click CV-matched AutoApply shortlist (30 October 2026)
+
+After the candidate explicitly chooses AutoApply, let them select a bounded **up-to-15 CV-title matched current-job shortlist** with one deliberate click rather than manually selecting every posting. The suggestion must use the existing owner-scoped CV match and first-party server-ranked data; only loaded `recommended` jobs with a true direct title match, current source and validated original employer URL qualify. Keyword-only driver postings cannot be silently included. Show the exact titles and companies before the candidate separately chooses **Prepare applications & start agents**; this creates only original per-job owner-bound private drafts and in-app agents, never employer sends.
+
+Changing a search query, view filter or CV/account invalidates old selected canonical keys, including the 250 ms debounce window; an in-flight backend write may finish, but no further old-job queue actions may execute. Reuse the original SP49 per-job idempotent preparation, partial-success/stop semantics and SP69–SP73 guards. No new backend, permission, dependency or scraper.
+
+**SP75 source/reuse/acceptance:** [CV-first AutoApply quick shortlist record](SP75_CV_FIRST_AUTOAPPLY_SHORTLIST.md); `REA_NOT_APPLICABLE` to available first-party source; actual OVH release and authorized employer submission remain independent requirements tracked by [issue #232](https://github.com/galapoto/smartploy/issues/232).
+
 **One simple visible path:**
 1. User signs in through existing first-party identity, imports a CV, chooses General or Personalized search, and specifies employment goals, restrictions, contact preferences and budget.
 2. SmartPloy retrieves source-current jobs using the existing job ledger and explains match uncertainty. It can verify employer-domain legitimacy and flag suspicious offers without invasive profiling.
