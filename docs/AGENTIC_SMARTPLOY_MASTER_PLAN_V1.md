@@ -52,6 +52,12 @@ After preparing one or multiple cases, show a clear **My Applications** summary 
 
 **SP72 source/acceptance:** [Private application review queue record](SP72_APPLICATION_REVIEW_QUEUE.md). Reuse existing application engine, identity, agent, receipt and tests. No REA reconstruction of already available authorized source; no employer submission capability or KEHA source activation. **Production remains separate: exact SHA rollout and signed-in browser acceptance issue #232.**
 
+### SP73 P0 — read-only employer attempt reconciliation across prepared drafts (30 October 2026)
+
+Durable private workspace status `draft` **does not prove no earlier employer attempt**. When reviewing a batch of prepared applications, offer a deliberate owner-verified, bounded (10 cases/check) GET-based audit of previously reserved employer attempts. Reuse the original authenticated `/employer-attempt` ledger and existing `verifyAccount` / `pick()` unsaved-edit guard. Show `reserved`, `not_reserved at check time`, and `unavailable` distinctly; never equate the latter two to permission to send. Open a reserved attempt's **existing** case for reconciliation without a duplicate submit. Invalidate results immediately on account/selected revision changes and fail closed after auth or network errors. No new API, claim, worker, sender, credential or provider right.
+
+**SP73 source/reuse/acceptance:** [Previous employer attempt triage record](SP73_PREVIOUS_EMPLOYER_ATTEMPT_TRIAGE.md). Existing first-party code reused; REA_NOT_APPLICABLE because no opaque/unknown code remains. Source approval is **not** actual OVH deployment; exact-SHA native release and owner-signed-in acceptance still tracked by issue #232.
+
 **One simple visible path:**
 1. User signs in through existing first-party identity, imports a CV, chooses General or Personalized search, and specifies employment goals, restrictions, contact preferences and budget.
 2. SmartPloy retrieves source-current jobs using the existing job ledger and explains match uncertainty. It can verify employer-domain legitimacy and flag suspicious offers without invasive profiling.
