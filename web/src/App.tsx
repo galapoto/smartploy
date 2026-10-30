@@ -973,7 +973,7 @@ export default function App() {
         <small>Simple job applications for Finland</small></span></div>
       <StartChoices onMode={(choice) => startApplyFlow(choice)}
         onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
-            cvPresent={cv.present}/>
+            cvPresent={cv.present} onUpload={onUploadClick}/>
       {error ? <p className="setup-error" role="alert">{error}</p> : null}
       <details className="flow-advanced-setup">
         <summary>Advanced: customize search preferences (optional)</summary>
@@ -1181,7 +1181,7 @@ export default function App() {
           </section>
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
-            cvPresent={cv.present}/>
+            cvPresent={cv.present} onUpload={onUploadClick}/>
           <div className="flow-home-cv">
             {cv.present ? <button className="primary-btn" type="button"
               onClick={() => navigate("apply")}>
