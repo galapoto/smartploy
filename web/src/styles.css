@@ -764,6 +764,35 @@ h1, h2, h3, h4, p { margin-top: 0; }
   .flow-job-next-actions > a,.flow-job-next-actions > button { width: 100%; justify-content: center; }
 }
 
+/* SP71: one evidence-driven application next action, never a false send badge. */
+.studio-next-action { display: grid; grid-template-columns: minmax(0,1fr) auto;
+  align-items: center; gap: 14px; margin: 15px 0 16px; padding: 16px 17px;
+  background: #fff; border: 1px solid #ccdced; border-left: 4px solid #3b79af;
+  border-radius: 11px; }
+.studio-next-action.state-attention { border-left-color: #b77925; background: #fffcf7; }
+.studio-next-action.state-confirmed { border-left-color: #24816b; background: #f4fbf8; }
+.studio-next-action-copy { min-width: 0; }
+.studio-next-action-copy > strong { display: block; font-size: 14px; line-height: 1.45;
+  color: #173e67; margin: 5px 0; }
+.studio-next-action.state-attention .studio-next-action-copy > strong { color: #805a22; }
+.studio-next-action.state-confirmed .studio-next-action-copy > strong { color: #236751; }
+.studio-next-action-state { font-size: 10px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .06em; color: #526d8c; }
+.studio-next-action-copy p { color: #53718d; margin: 0; font-size: 12px; line-height: 1.6; }
+.studio-next-action > a,.studio-next-action > button {
+  display: inline-flex; justify-content: center; align-items: center; gap: 8px;
+  white-space: normal; text-align: center; text-decoration: none;
+  min-height: 42px; max-width: 225px; }
+.studio-next-action > a:focus-visible,.studio-next-action > button:focus-visible {
+  outline: 3px solid #286ba5; outline-offset: 3px; }
+.studio-journey-boundary { margin: 12px 0 0; font-size: 11px; color: #637f98;
+  line-height: 1.6; }
+#smartploy-observed-evidence { scroll-margin-top: 26px; }
+@media (max-width: 760px) {
+  .studio-next-action { grid-template-columns: 1fr; }
+  .studio-next-action > a,.studio-next-action > button { max-width: none; width: 100%; }
+}
+
 /* SP35: actionable private Agent Zero inbox; clear hierarchy without
    implying the case itself has submitted or contacted an employer. */
 .agent-inbox { border: 1px solid #dbe7f3; border-radius: 14px;
