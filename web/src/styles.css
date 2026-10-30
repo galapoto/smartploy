@@ -711,6 +711,25 @@ h1, h2, h3, h4, p { margin-top: 0; }
   .flow-mode { min-height: 0; }
 }
 
+/* SP69: a concise continuation map in the exact selected job editor. */
+.studio-journey { border: 1px solid #cfe0f1; background: #f5f9ff;
+  padding: 17px; margin: 0 0 18px; border-radius: 13px; color: #244e75; }
+.studio-journey-header { display: flex; gap: 12px; justify-content: space-between;
+  flex-wrap: wrap; align-items: baseline; }
+.studio-journey-header > strong { font-size: 14px; }
+.studio-journey-header > small { color: #376b9a; font-size: 11px; font-weight: 800; }
+.studio-journey ol { display: grid; grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 8px; list-style: none; padding: 0; margin: 14px 0; }
+.studio-journey li { display: flex; gap: 9px; align-items: flex-start;
+  padding: 12px; background: #fff; border: 1px solid #dbe8f5; border-radius: 10px; }
+.studio-journey li > span { display: grid; place-items: center; flex: none;
+  background: #dcefff; color: #175b92; font-weight: 800; font-size: 11px;
+  width: 24px; height: 24px; border-radius: 50%; }
+.studio-journey li strong { display: block; font-size: 12px; line-height: 1.4; }
+.studio-journey li small { display: block; color: #65809a; font-size: 11px; line-height: 1.5; }
+.studio-journey p { font-size: 12px; line-height: 1.55; margin: 0; color: #3d668a; }
+@media (max-width: 850px) { .studio-journey ol { grid-template-columns: 1fr; } }
+
 /* SP35: actionable private Agent Zero inbox; clear hierarchy without
    implying the case itself has submitted or contacted an employer. */
 .agent-inbox { border: 1px solid #dbe7f3; border-radius: 14px;
