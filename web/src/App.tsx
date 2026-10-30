@@ -951,7 +951,7 @@ export default function App() {
       setSelectedWorkspaceId(response.workspace.workspace_id);
       navigate("applications");
       setNotice(response.created
-        ? "Application documents are ready to edit. Review the draft before downloading or applying."
+        ? "Draft ready. Step 1: review and save your CV and letter. Step 2: complete the employer form. Step 3: confirm the outcome."
         : "Opened your existing private application documents.");
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged)) {
@@ -1233,7 +1233,7 @@ export default function App() {
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}
           {page === "applications" ? <div className="stacked">
-            <ApplicationStudio key={accountViewKey} focusId={selectedWorkspaceId}
+            <ApplicationStudio key={accountViewKey} mode={flowMode} focusId={selectedWorkspaceId}
               expectedUserId={session?.user_id || ""} expectedAuthSource={session?.auth_source || ""}
               onFindJobs={() => navigate("apply")} />
             <section className="panel"><div className="panel-heading"><div><p className="section-kicker">APPLICATION TRACKER</p><h2>Your application pipeline</h2><p>A preparation draft is never counted as submitted.</p></div><span className="subtle-count">{applications.length} records</span></div>
