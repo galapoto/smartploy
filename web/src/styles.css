@@ -732,6 +732,38 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .studio-journey p { font-size: 12px; line-height: 1.55; margin: 0; color: #3d668a; }
 @media (max-width: 850px) { .studio-journey ol { grid-template-columns: 1fr; } }
 
+/* SP70: deliberate job selection before any job-specific private mutation. */
+.flow-job-instruction { display: flex; gap: 12px; align-items: flex-start;
+  background: #f1f7ff; border: 1px solid #cbdff4; border-radius: 12px;
+  padding: 15px 16px; margin: 10px 0 17px; color: #1c527f; }
+.flow-job-instruction > svg { flex: 0 0 auto; margin-top: 1px; }
+.flow-job-instruction strong { font-size: 14px; }
+.flow-job-instruction p { color: #567494; font-size: 12px; line-height: 1.6; margin: 5px 0 0; }
+.flow-job-actions button[aria-pressed="true"] { border-color: #91c5f1; background: #1763a5; }
+.flow-job-next { margin-top: 15px; border: 1px solid #c2e1f8;
+  border-radius: 12px; padding: 16px; background: #f1f8ff; }
+.flow-job-next-copy > strong { display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; color: #174b78; }
+.flow-job-next-copy > strong svg { color: #0e8a6d; }
+.flow-job-next-copy p { font-size: 12px; color: #496d90;
+  line-height: 1.6; margin: 8px 0 13px; }
+.flow-job-next-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.flow-job-next-actions a,.flow-job-next-actions button { display: inline-flex;
+  align-items: center; gap: 7px; text-decoration: none; }
+.flow-job.highlighted { border-color: #2777b8; background: #fff; box-shadow: 0 0 0 2px #e5f4ff; }
+.studio-journey-links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.studio-journey-links a { display: inline-flex; align-items: center;
+  padding: 9px 11px; border: 1px solid #a3c7e9; background: #fff;
+  color: #185a93; border-radius: 8px; font-weight: 750; font-size: 11px;
+  text-decoration: none; }
+.studio-journey-links a:hover { border-color: #1675ba; background: #e9f5ff; }
+.studio-journey-links a:focus-visible { outline: 3px solid #2b80ba; outline-offset: 2px; }
+#smartploy-cv-review,#smartploy-letter-review,
+#smartploy-employer-step,#smartploy-outcome-step { scroll-margin-top: 26px; }
+@media (max-width: 600px) {
+  .flow-job-next-actions > a,.flow-job-next-actions > button { width: 100%; justify-content: center; }
+}
+
 /* SP35: actionable private Agent Zero inbox; clear hierarchy without
    implying the case itself has submitted or contacted an employer. */
 .agent-inbox { border: 1px solid #dbe7f3; border-radius: 14px;
