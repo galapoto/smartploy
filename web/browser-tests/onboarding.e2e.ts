@@ -344,7 +344,7 @@ test("SP70: Manual, Assisted and AutoApply explain and preserve distinct job act
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Apply for jobs" }).click();
-  await expect(page.getByText("Choose a method to continue.")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "How do you want to apply?" })).toBeVisible();
   await page.getByRole("button", { name: /Apply manually/i }).last().click();
   await expect(page.getByText("Choose one job to continue")).toBeVisible();
   await page.getByRole("button", { name: "Choose this job" }).first().click();
