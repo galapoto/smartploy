@@ -486,6 +486,58 @@ test("SP70: Manual, Assisted and AutoApply explain and preserve distinct job act
   await evidence(page, "sp70-autoapply-selection-before-preparation.png");
 });
 
+test("SP75: one-click CV-matched AutoApply shortlist prepares only reviewed current job drafts", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Fictional-IT-CV.pdf",
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  await page.getByRole("button", { name: /AutoApply/i }).click();
+  await expect(page.getByRole("button", { name: "Prepare applications & start agents" }))
+    .toBeDisabled();
+  const suggested = page.getByRole("button", { name: "Select 1 CV-title matched job" });
+  await expect(suggested).toBeEnabled();
+  await suggested.click();
+  await expect(page.getByText("1 of 15 vacancies selected")).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /Select for preparation/i }).first())
+    .toBeChecked();
+  await expect(page.getByRole("checkbox", { name: /Select for preparation/i }).nth(1))
+    .not.toBeChecked();
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+  await page.getByText("Review 1 selected job before preparing").click();
+  await expect(page.locator(".flow-shortlist-review")).toContainText("Junior Data Analyst");
+  await evidence(page, "sp75-one-click-cv-matched-shortlist.png");
+  await page.getByRole("button", { name: "Prepare applications & start agents" }).click();
+  await expect.poll(() => state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  await expect(page.getByRole("heading", { name: /My applications/i }).first()).toBeVisible();
+  // Even after an AutoApply batch, the result is a private draft, not an
+  // employer response or permission for unattended final submission.
+  await expect(page.getByRole("region", { name: "Application review queue" }))
+    .toContainText("1 private draft to finish");
+  await expect(page.getByRole("region", { name: "Application review queue" }))
+    .toContainText("0 employer-acknowledged");
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  await evidence(page, "sp75-private-shortlist-draft-after-preparation.png");
+});
+
+test("SP75: a changed CV match search clears the prior AutoApply shortlist before preparation", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Fictional-IT-CV.pdf",
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  await page.getByRole("button", { name: /AutoApply/i }).click();
+  await page.getByRole("button", { name: "Select 1 CV-title matched job" }).click();
+  await expect(page.getByText("1 of 15 vacancies selected")).toBeVisible();
+  await page.getByRole("searchbox", { name: "Filter matching jobs" }).fill("Different employer");
+  await expect(page.getByText("0 of 15 vacancies selected")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Prepare applications & start agents" }))
+    .toBeDisabled();
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+});
+
 test("existing job-search cards open the requested assisted journey without creating a draft", async ({ page }) => {
   const state = await installSyntheticApi(page, {
     initial: { completed: true, mode: "general", revision: 1 },
