@@ -219,8 +219,10 @@ describe("SP21 application journey", () => {
     }) as HTMLInputElement;
     expect(selectedBox.checked).toBe(true);
     expect(exploratoryBox.checked).toBe(false);
-    expect((screen.getByRole("button", { name: /Select 0 CV-title matched jobs/i })
-      as HTMLButtonElement).disabled).toBe(true);
+    const noMoreMatches = screen.getByRole("button", {
+      name: /Select 0 CV-title matched jobs/i,
+    }) as HTMLButtonElement;
+    expect(noMoreMatches.disabled).toBe(true);
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText(/Review 1 selected job before preparing/i));
     expect(screen.getAllByText(/IT-suunnittelija/i).length).toBeGreaterThan(0);
