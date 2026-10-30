@@ -1514,6 +1514,9 @@ describe("first opt-in creates private IT applications immediately", () => {
       expect.objectContaining({ name: "synthetic-CV.pdf" }), "usr-synthetic-1"
     ));
     expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
+    expect(screen.getByText("Your CV is connected. Choose a method to continue.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /save application draft/i })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: /select for preparation/i })).toBeNull();
     await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(1));
     expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
