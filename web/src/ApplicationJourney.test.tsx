@@ -213,6 +213,10 @@ describe("SP21 application journey", () => {
     // private preparation callback are more reliable than guessing an item
     // position in a recommendation + exploratory display.
     expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy();
+    expect((screen.getByRole("checkbox", { name: "Selected" }) as HTMLInputElement)
+      .checked).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "Select for preparation" })
+      as HTMLInputElement).checked).toBe(false);
     expect((screen.getByRole("button", { name: /Select 0 CV-title matched jobs/i })
       as HTMLButtonElement).disabled).toBe(true);
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
