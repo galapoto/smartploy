@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import * as api from "./api";
 import ApplicationStudio from "./ApplicationStudio";
@@ -243,6 +243,91 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Application Studio private-read account boundary", () => {
+
+  it("SP72: review queue groups owner-loaded drafts, reports, and employer acknowledgments truthfully", async () => {
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [
+        job("A"), { ...job("B"), status: "self_reported_applied" },
+        { ...job("C"), status: "provider_acknowledged" },
+      ], count: 3,
+    });
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const queue = screen.getByRole("region", { name: "Application review queue" });
+    expect(queue.textContent).toContain("1 private draft to finish");
+    expect(queue.textContent).toContain("1 self-reported");
+    expect(queue.textContent).toContain("1 employer-acknowledged");
+    expect(queue.textContent).toContain("not necessarily every older case");
+    const filters = within(queue).getByRole("group", { name: "Filter application statuses" });
+    const list = screen.getByRole("complementary", { name: "Your application drafts" });
+    expect(within(list).getAllByRole("button", { name: /private role/i })).toHaveLength(3);
+    fireEvent.click(within(filters).getByRole("button", { name: /Self-reported 1/i }));
+    expect(within(list).getByText("B private role")).toBeTruthy();
+    expect(within(list).queryByText("A private role")).toBeNull();
+    expect(within(list).queryByText("C private role")).toBeNull();
+    expect(screen.getByRole("heading", { name: "A private role" })).toBeTruthy();
+    expect(within(list).getByText(/currently open application is outside this filter/i)).toBeTruthy();
+    fireEvent.click(within(list).getByRole("button", { name: /B private role/i }));
+    expect(await screen.findByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+    fireEvent.click(within(filters).getByRole("button", { name: /Employer acknowledged 1/i }));
+    expect(within(list).getByText("C private role")).toBeTruthy();
+    expect(within(list).queryByText("B private role")).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("SP72: a lone private draft has an actual continue-editor link, not an inert next button", async () => {
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const queue = screen.getByRole("region", { name: "Application review queue" });
+    const resume = within(queue).getByRole("link", { name: /Continue this draft/i });
+    expect(resume.getAttribute("href")).toBe("#smartploy-cv-review");
+    expect(screen.queryByRole("button", { name: /Review next saved draft/i })).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("SP72: quick review next draft obeys the original unsaved-edit confirmation boundary", async () => {
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [job("A"), job("B")], count: 2,
+    });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const next = screen.getByRole("button", { name: "Review next saved draft: B private role" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Editable CV text" }), {
+      target: { value: "A-only unsaved content" },
+    });
+    fireEvent.click(next);
+    expect(confirm).toHaveBeenCalledWith("Discard unsaved changes and open another draft?");
+    expect(screen.getByRole("heading", { name: "A private role" })).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
+      .toBe("A-only unsaved content");
+    confirm.mockReturnValue(true);
+    fireEvent.click(next);
+    expect(await screen.findByRole("heading", { name: "B private role" })).toBeTruthy();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("SP72: no private draft category shows a safe empty state, not a submit option", async () => {
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [{ ...job("A"), status: "self_reported_applied" },
+        { ...job("B"), status: "provider_acknowledged" }], count: 2,
+    });
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const queue = screen.getByRole("region", { name: "Application review queue" });
+    expect(queue.textContent).toContain("0 private drafts to finish");
+    expect(within(queue).queryByRole("link", { name: /Continue this draft/i })).toBeNull();
+    expect(within(queue).queryByRole("button", { name: /Review next draft/i })).toBeNull();
+    const filters = within(queue).getByRole("group", { name: "Filter application statuses" });
+    fireEvent.click(within(filters).getByRole("button", { name: /Drafts to finish 0/i }));
+    const list = screen.getByRole("complementary", { name: "Your application drafts" });
+    expect(within(list).getByText(/No loaded applications in this category/i)).toBeTruthy();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
 
   it("shows rights withheld without an employer-submit button or fake success",async()=>{
     studio();
