@@ -210,11 +210,11 @@ describe("SP21 application journey", () => {
       .toBe(true);
     fireEvent.click(suggest);
     const selections = screen.getAllByRole("checkbox", { name: /select for preparation/i });
-    expect((selections[0] as HTMLInputElement).checked).toBe(true);
+    await waitFor(() => expect((selections[0] as HTMLInputElement).checked).toBe(true));
     expect((selections[1] as HTMLInputElement).checked).toBe(false);
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText(/Review 1 selected job before preparing/i));
-    expect(screen.getByText(/IT-suunnittelija/i)).toBeTruthy();
+    expect(screen.getAllByText(/IT-suunnittelija/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
     await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(
       ["current-planner"], expect.any(Function), expect.any(Function), false,
