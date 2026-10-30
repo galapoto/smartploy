@@ -97,6 +97,17 @@ export default function ApplicationJourney(props: {
     stopRequestedRef.current = true; // old job loop must not continue on new CV
   }, [props.cv.sha256, props.cv.present, props.userId, props.selectedJobKey]);
 
+  // A mode change must not silently re-use a previous AutoApply selection.
+  // If a parent forces a mode change during a running batch, stop before
+  // the next private job; never imply that a mode switch revoked the server
+  // request already in flight.
+  useEffect(() => {
+    if (props.mode !== "automatic") {
+      if (queueInFlight.current) stopRequestedRef.current = true;
+      setSelected([]);
+    }
+  }, [props.mode]);
+
   // No CV, session tokens, or profile contents are persisted in browser storage.
   // An account switch unmounts this keyed component in the parent. Epoch and
   // authenticated-user checks also protect delayed page and search responses.
@@ -348,7 +359,8 @@ export default function ApplicationJourney(props: {
         {props.mode === "automatic" ? <label className="flow-select">
           <input type="checkbox" checked={chosen}
             onChange={() => toggleSelected(row.canonical_key)}
-            disabled={props.queueBusy || accessInterrupted || !job.source_current ||
+            disabled={props.queueBusy || !!queueInFlight.current ||
+              accessInterrupted || !job.source_current ||
               (!chosen && selected.length >= 15)} />
           {chosen ? "Selected" : "Select for preparation"}
         </label> : null}
@@ -487,7 +499,9 @@ export default function ApplicationJourney(props: {
           const Icon = choice === "manual" ? FileText : choice === "assisted" ? WandSparkles : Bot;
           return <button type="button" key={choice}
             className={"flow-mode" + (props.mode === choice ? " selected" : "")}
-            aria-pressed={props.mode === choice} onClick={() => props.onMode(choice)}>
+            aria-pressed={props.mode === choice}
+            disabled={props.queueBusy || !!queueInFlight.current}
+            onClick={() => props.onMode(choice)}>
             <span className="flow-mode-head">
               <Icon size={23} aria-hidden="true"/>
               <span className="flow-mode-label">{choice.toUpperCase()}</span>
@@ -669,7 +683,7 @@ export default function ApplicationJourney(props: {
             </> : null}
           </div> : null}
           <button className="primary-btn" type="button"
-            disabled={!runnableSelection.length || props.queueBusy}
+            disabled={!runnableSelection.length || props.queueBusy || !!queueInFlight.current}
             onClick={() => void queue()}>
             {props.queueBusy ? "Preparing selected drafts and agents…" :
               accessInterrupted ? "Access denied · reload to continue" :
