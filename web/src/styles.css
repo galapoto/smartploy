@@ -826,6 +826,39 @@ h1, h2, h3, h4, p { margin-top: 0; }
   .studio-next-action > a,.studio-next-action > button { max-width: none; width: 100%; }
 }
 
+/* SP73: bounded, read-only and owner-verified employer attempt triage. */
+.studio-attempt-audit { border: 1px solid #d9e4ef; border-radius: 13px;
+  padding: 15px 17px; margin: 14px 0 17px; }
+.studio-attempt-heading { display: flex; flex-wrap: wrap; align-items: flex-start;
+  justify-content: space-between; gap: 14px; }
+.studio-attempt-heading > div { flex: 1 1 310px; }
+.studio-attempt-heading h3 { margin: 4px 0 7px; font-size: 15px;
+  display: flex; align-items: center; gap: 8px; color: #193c60; }
+.studio-attempt-heading h3 svg { color: #317caf; }
+.studio-attempt-heading p { margin: 0; color: #526d88;
+  line-height: 1.6; font-size: 12px; max-width: 650px; }
+.studio-attempt-heading > button { display: inline-flex; align-items: center;
+  gap: 7px; min-height: 40px; }
+.studio-attempt-summary { color: #476782; font-size: 11px;
+  line-height: 1.6; margin: 11px 0 0; }
+.studio-attempt-warning { display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12px; line-height: 1.6; color: #875919; }
+.studio-attempt-reserved { border-left: 3px solid #c18b32;
+  padding: 11px 14px; margin: 12px 0; background: #fffbf2; }
+.studio-attempt-reserved strong { display: flex; align-items: center;
+  gap: 8px; color: #805315; font-size: 12px; }
+.studio-attempt-reserved p { font-size: 11px; line-height: 1.6; color: #725a35; }
+.studio-attempt-details { border-top: 1px solid #e3eaf2; padding-top: 9px;
+  margin-top: 11px; font-size: 11px; color: #3c617f; }
+.studio-attempt-details summary { cursor: pointer; font-weight: 700; }
+.studio-attempt-details ul { padding: 0; list-style: none; }
+.studio-attempt-details li { display: flex; flex-wrap: wrap; align-items: center;
+  gap: 10px; border-top: 1px solid #e8eff6; padding: 9px 0; }
+.studio-attempt-details li > span { flex: 1 1 180px; }
+.studio-attempt-details li > small { flex: 2 1 220px; line-height: 1.5; }
+@media (max-width: 650px) {
+  .studio-attempt-heading > button,.studio-attempt-reserved button { width: 100%; }
+}
 /* SP35: actionable private Agent Zero inbox; clear hierarchy without
    implying the case itself has submitted or contacted an employer. */
 .agent-inbox { border: 1px solid #dbe7f3; border-radius: 14px;
