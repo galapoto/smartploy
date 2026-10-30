@@ -826,6 +826,25 @@ h1, h2, h3, h4, p { margin-top: 0; }
   .studio-next-action > a,.studio-next-action > button { max-width: none; width: 100%; }
 }
 
+/* SP75: one-click, explicitly reviewed CV-title shortlist for private AutoApply. */
+.flow-shortlist-actions { display: flex; flex-wrap: wrap; align-items: center;
+  gap: 9px; margin: 12px 0 9px; }
+.flow-shortlist-actions button { display: inline-flex; align-items: center;
+  justify-content: center; gap: 8px; min-height: 39px; }
+.flow-shortlist-actions button:focus-visible { outline: 3px solid #2e83bf;
+  outline-offset: 2px; }
+.flow-shortlist-actions button:disabled { cursor: not-allowed; opacity: 0.55; }
+.flow-shortlist-note { font-size: 11px; color: #5c728d;
+  line-height: 1.6; margin: 6px 0; }
+.flow-shortlist-review { margin: 11px 0; font-size: 12px;
+  border-top: 1px solid #dce8f3; padding-top: 10px; }
+.flow-shortlist-review summary { cursor: pointer; font-weight: 700;
+  color: #255478; }
+.flow-shortlist-review ol { padding-left: 20px; margin: 8px 0; }
+.flow-shortlist-review li { line-height: 1.55; padding: 4px 0; }
+@media (max-width: 600px) {
+  .flow-shortlist-actions > button { flex: 1 1 100%; }
+}
 /* SP73: bounded, read-only and owner-verified employer attempt triage. */
 .studio-attempt-audit { border: 1px solid #d9e4ef; border-radius: 13px;
   padding: 15px 17px; margin: 14px 0 17px; }
