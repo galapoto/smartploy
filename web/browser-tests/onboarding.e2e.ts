@@ -6,7 +6,7 @@
  */
 import { mkdir } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
-import type { PrivateSavedJob, SearchJobCard, SearchPreferences, SearchResults } from "../src/types";
+import type { ApplicationWorkspace, PrivateSavedJob, SearchJobCard, SearchPreferences, SearchResults } from "../src/types";
 
 const EMPTY_PREFERENCES: SearchPreferences = {
   completed: false, mode: "personalized", roles: [], locations: [],
@@ -48,6 +48,7 @@ type MockState = {
   lastSave: Record<string, unknown> | null;
   unavailableAI: boolean;
   privateSavedJobs: Record<string, PrivateSavedJob[]>;
+  privateWorkspaces: Record<string, ApplicationWorkspace[]>;
   applicationWorkspaceCreates: string[];
 };
 
@@ -95,6 +96,7 @@ async function installSyntheticApi(page: Page, options: {
     lastSave: null,
     unavailableAI: Boolean(options.unavailableAI),
     privateSavedJobs: {},
+    privateWorkspaces: {},
     applicationWorkspaceCreates: [],
   };
   const response = async (
@@ -172,12 +174,101 @@ async function installSyntheticApi(page: Page, options: {
     }
     if (path.startsWith("/api/v1/jobs/") && path.endsWith("/application-workspace")
         && request.method() === "POST") {
-      state.applicationWorkspaceCreates.push(
-        decodeURIComponent(path.split("/")[4] || "")
-      );
+      const key = decodeURIComponent(path.split("/")[4] || "");
+      const job = [analyst, tester].find((item) => item.canonical_key === key);
+      if (!job || !state.cvFilename) {
+        await response(route, { detail: "No current synthetic job or connected CV" }, 409);
+        return;
+      }
+      const current = state.privateWorkspaces[state.userId] || [];
+      const existing = current.find((item) => item.canonical_key === key);
+      if (existing) {
+        await response(route, { created: false, workspace: existing });
+        return;
+      }
+      // A real, reusable owner-scoped synthetic workspace, not just an ID.
+      // The UI can now render the exact draft after navigation, and cross-user
+      // account switches cannot fetch another owner's private CV/letter.
+      const workspace: ApplicationWorkspace = {
+        workspace_id: "synthetic-draft-" + state.userId + "-" + key,
+        canonical_key: key, role_title: job.job.role_title,
+        company: job.job.company, application_url: job.job.application_url,
+        cv_text: "FICTIONAL CV draft for " + job.job.role_title,
+        cover_letter_text: "FICTIONAL letter for " + job.job.company,
+        source_cv_sha256: "a".repeat(64), approved_evidence_ids: [],
+        revision: 1, status: "draft",
+        self_reported_applied_at: "", self_reported_reference: "",
+        created_at: "2026-10-30T08:00:00Z", updated_at: "2026-10-30T08:00:00Z",
+        authority: { may_edit: true, may_download: true,
+          may_submit_to_employer: false, has_external_submission_proof: false },
+      };
+      state.privateWorkspaces[state.userId] = [workspace, ...current];
+      state.applicationWorkspaceCreates.push(key);
+      await response(route, { created: true, workspace });
+      return;
+    }
+    if (path === "/api/v1/application-agents/inbox" && request.method() === "GET") {
       await response(route, {
-        created: true, workspace: { workspace_id: "synthetic-draft-1234" },
+        items: [], count: 0, has_more: false, next_offset: null,
+        background_worker_verified: false, external_actions_authorized: false,
       });
+      return;
+    }
+    if (path === "/api/v1/application-agents" && request.method() === "GET") {
+      await response(route, { agents: [], count: 0, external_actions_authorized: false });
+      return;
+    }
+    if (path.startsWith("/api/v1/application-workspaces/") &&
+        request.method() === "GET") {
+      const relative = path.slice("/api/v1/application-workspaces/".length);
+      const [encodedId, action] = relative.split("/");
+      const id = decodeURIComponent(encodedId);
+      const owned = (state.privateWorkspaces[state.userId] || [])
+        .find((item) => item.workspace_id === id);
+      if (!owned) {
+        await response(route, { detail: "No owner-scoped synthetic workspace" }, 404);
+        return;
+      }
+      if (!action) {
+        await response(route, { workspace: owned });
+        return;
+      }
+      const privateReads: Record<string, unknown> = {
+        agent: { present: false, agent: null, external_actions_authorized: false },
+        "handoff-readiness": {
+          ready: false, blockers: ["Approve contact details before browser autofill"],
+          document_revision: owned.revision, contact_fields_ready: false,
+          employer_submission_performed: false, will_require_manual_review: true,
+          files_attached: false,
+        },
+        "employer-attempt": {
+          previous_attempt_reserved: false, state: "not_reserved",
+          requires_human_reconciliation: false,
+          automatic_employer_submit_authorized: false,
+          external_confirmation_verified: false,
+          cross_device_server_claim_required: true,
+        },
+        "submit-review-intent": {
+          review_recorded: false, review_state: "not_recorded", expires_at: "",
+          automatic_employer_submit_authorized: false, external_actions_performed: false,
+          browser_grant_issued: false,
+        },
+        "final-action-readiness": {
+          operator_permission_reviewed: false, current_applicant_review_recorded: false,
+          separate_final_user_approval_recorded: false,
+          previous_employer_attempt_reserved: false,
+          trusted_one_use_browser_redemption_available: false,
+          final_browser_click_authorized: false,
+          employer_submission_performed: false, employer_receipt_verified: false,
+          blockers: ["independent_employer_permission_missing"],
+        },
+        "browser-receipt": { present: false, receipt: null },
+      };
+      if (!(action in privateReads)) {
+        await response(route, { detail: "Unexpected synthetic workspace read" }, 404);
+        return;
+      }
+      await response(route, privateReads[action]);
       return;
     }
 
@@ -228,7 +319,10 @@ async function installSyntheticApi(page: Page, options: {
         : { present: false },
       "/api/v1/profile/facts": { facts: [], count: 0 },
       "/api/v1/applications": { applications: [], count: 0 },
-      "/api/v1/application-workspaces": { workspaces: [], count: 0 },
+      "/api/v1/application-workspaces": {
+        workspaces: state.privateWorkspaces[state.userId] || [],
+        count: (state.privateWorkspaces[state.userId] || []).length,
+      },
       "/api/v1/jobs": { jobs: [], count: 0 },
       "/api/v1/private-jobs": {
         jobs: state.privateSavedJobs[state.userId] || [],
@@ -303,7 +397,14 @@ test("CV-first manual application goes from upload to real matching and selected
   await page.getByRole("button", { name: "Save application draft" }).click();
   await expect.poll(() => state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
   await expect(page.getByRole("heading", { name: /My applications/i }).first()).toBeVisible();
+  const progress = page.getByRole("region", { name: "Application progress and next action" });
+  await expect(progress).toBeVisible();
+  await expect(progress).toContainText("Action required · draft only");
+  await expect(progress).toContainText("Approve contact details before browser autofill");
+  await expect(page.getByRole("link", { name: "See missing requirements" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Review CV/i }).first()).toBeVisible();
   expect(state.cvFilename).toBe("Synthetic-IT-CV.docx");
+  await evidence(page, "sp71-private-draft-next-action.png");
   await evidence(page, "synthetic-cv-first-manual-application.png");
 });
 

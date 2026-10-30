@@ -258,11 +258,12 @@ describe("Application Studio private-read account boundary", () => {
     studio("automatic");
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
     const guide = screen.getByLabelText("Your next steps for this application");
-    expect(guide.textContent).toContain("Your private draft is ready");
+    await waitFor(() => expect(guide.textContent).toContain("Prepared draft · not submitted"));
+    expect(screen.getByLabelText("Application progress and next action")).toBeTruthy();
     expect(guide.textContent).toContain("Review the CV & letter");
     expect(guide.textContent).toContain("Complete the employer form");
     expect(guide.textContent).toContain("Confirm and track");
-    expect(guide.textContent).toContain("saving a draft does not mean the employer received it");
+    expect(guide.textContent).toContain("AutoApply drafting is not employer submission");
     const jumps = screen.getByRole("navigation", { name: "Jump to application step" });
     const expectedLinks = [
       ["Review CV", "#smartploy-cv-review"],
@@ -283,8 +284,70 @@ describe("Application Studio private-read account boundary", () => {
     studio("automatic");
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
     const guide = screen.getByLabelText("Your next steps for this application");
-    expect(guide.textContent).toContain("Private draft · employer submission not verified");
+    await waitFor(() => expect(guide.textContent).toContain("Prepared draft · not submitted"));
     expect(guide.textContent).not.toContain("AutoApply preparation");
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("SP71: the next-action Save my edits uses the existing owner-bound save, never an employer send", async () => {
+    studio("assisted");
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText("Application progress and next action")
+      .textContent).toContain("Prepared draft · not submitted"));
+    fireEvent.change(screen.getByRole("textbox", { name: "Editable CV text" }), {
+      target: { value: "PRIVATE-CV-A with approved corrections" },
+    });
+    const next = screen.getByLabelText("Application progress and next action");
+    expect(next.textContent).toContain("Unsaved draft · not submitted");
+    const save = screen.getByRole("button", { name: "Save my edits" });
+    fireEvent.click(save);
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", 1, "PRIVATE-CV-A with approved corrections", "PRIVATE-LETTER-A", "usr-a",
+    ));
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+  });
+
+  it("SP71: a reserved employer attempt always shows reconcile, never submit again", async () => {
+    vi.mocked(api.getEmployerAttemptStatus).mockResolvedValue({
+      previous_attempt_reserved: true, state: "uncertain",
+      requires_human_reconciliation: true, automatic_employer_submit_authorized: false,
+      external_confirmation_verified: false, cross_device_server_claim_required: true,
+    });
+    studio("automatic");
+    const guidance = await screen.findByLabelText("Application progress and next action");
+    await waitFor(() => expect(guidance.textContent).toContain("Attempt reserved · not confirmed"));
+    expect(guidance.textContent).toContain("Do not retry");
+    const action = screen.getByRole("link", { name: "Resolve the reserved attempt" });
+    expect(action.getAttribute("href")).toBe("#smartploy-employer-step");
+    expect(screen.queryByRole("button", { name: "Save my edits" })).toBeNull();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+  });
+
+  it("SP71: an unavailable attempt read never implies safe employer handoff", async () => {
+    vi.mocked(api.getEmployerAttemptStatus).mockRejectedValue(new Error("synthetic offline attempt gate"));
+    studio();
+    const guidance = await screen.findByLabelText("Application progress and next action");
+    await waitFor(() => expect(guidance.textContent).toContain("Attempt status unverified · draft only"));
+    expect(guidance.textContent).toContain("do not retry");
+    expect(screen.getByRole("link", { name: "Review employer attempt status" })
+      .getAttribute("href")).toBe("#smartploy-employer-step");
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("SP71: a provider-acknowledged case never returns an employer send as its next step", async () => {
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [{ ...job("A"), status: "provider_acknowledged" }], count: 1,
+    });
+    studio("automatic");
+    const guidance = await screen.findByLabelText("Application progress and next action");
+    expect(guidance.textContent).toContain("Provider acknowledged · submitted");
+    expect(guidance.textContent).toContain("Do not submit it again");
+    expect(screen.getByRole("link", { name: "Review employer confirmation" })
+      .getAttribute("href")).toBe("#smartploy-outcome-step");
+    expect(screen.queryByRole("button", { name: "Save my edits" })).toBeNull();
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 

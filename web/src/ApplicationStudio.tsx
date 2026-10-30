@@ -19,6 +19,7 @@ import ApplicationAgentCard from "./ApplicationAgentCard";
 import ApplicationAgentInbox from "./ApplicationAgentInbox";
 import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
+import { applicationNextStep } from "./applicationNextStep";
 import type { EmployerAttemptState, EmployerReviewIntentState, EmployerFinalActionReadiness, LeverPartnerReadiness, LeverProviderAcknowledgment, LeverPartnerReviewEvidence } from "./api";
 
 const ACCOUNT_CHANGED_NOTICE =
@@ -325,6 +326,31 @@ export default function ApplicationStudio(props: {
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
   ));
+
+  // Presentation-only: server-owned job rights, reviewed-document hashes,
+  // previous attempts, workspace outcome and saved revision remain authoritative.
+  // Stale/missing reads cannot become a green "ready to submit" message.
+  const nextAction = selected ? applicationNextStep({
+    workspaceStatus: selected.status,
+    unsavedEdits: dirty,
+    previousAttemptReserved: employerAttempt?.previous_attempt_reserved === true,
+    attemptStatusKnown: employerAttempt !== null,
+    browserReceiptObserved: browserReceipt !== null,
+    handoffReady: handoff?.document_revision === selected.revision ? handoff.ready : null,
+    handoffBlockers: handoff?.document_revision === selected.revision ? handoff.blockers : [],
+    partnerRightsReviewed: !!selectedPartner &&
+      partnerReadiness?.partner_provider === selectedPartner &&
+      partnerReadiness?.partner_api_configured === true &&
+      partnerReadiness?.independent_partner_rights_reviewed === true &&
+      partnerReadiness?.current_document_and_posting_ready === true &&
+      partnerReadiness?.prior_employer_attempt === false,
+    partnerFinalEligible: !!selectedPartner &&
+      partnerReadiness?.partner_provider === selectedPartner &&
+      partnerReadiness?.eligible_for_explicit_partner_submit === true &&
+      finalReview?.review_recorded === true &&
+      Date.parse(finalReview?.expires_at || "") > Date.now() &&
+      freshPartnerEvidence(partnerReadiness?.review_evidence,selected),
+  }) : null;
 
   // Reuse the already saved owner-scoped workspace list. Moving between
   // applications never creates another draft, agent, or employer attempt.
@@ -912,17 +938,26 @@ export default function ApplicationStudio(props: {
         </div>
         <section className="studio-journey" aria-label="Your next steps for this application">
           <div className="studio-journey-header">
-            <strong>{selected.status === "provider_acknowledged"
-              ? "Employer application received — track the outcome"
-              : selected.status === "self_reported_applied"
-                ? "You reported applying — verify the outcome"
-                : "Your private draft is ready. What happens next?"}</strong>
-            <small>{selected.status === "provider_acknowledged"
-              ? "Employer acknowledgment recorded" :
-              selected.status === "self_reported_applied"
-                ? "Self-reported, not employer-verified" :
-                "Private draft · employer submission not verified"}</small>
+            <strong>One application · one next step</strong>
+            <small>Private exact-job workspace · revision {selected.revision}</small>
           </div>
+          {nextAction ? <div className={"studio-next-action state-" + nextAction.tone}
+            aria-label="Application progress and next action" role="region">
+            <div className="studio-next-action-copy">
+              <span className="studio-next-action-state">{nextAction.statusLabel}</span>
+              <strong>{nextAction.title}</strong>
+              <p>{nextAction.detail}</p>
+            </div>
+            {nextAction.action.type === "save" ?
+              <button type="button" className="navy-btn"
+                disabled={busy || partnerBusy || !!browserReceipt || !!partnerReceipt ||
+                  employerAttempt?.previous_attempt_reserved === true}
+                onClick={() => void save()}><Save size={16} aria-hidden="true"/>
+                {busy ? "Saving…" : nextAction.action.label}</button> :
+              <a className="navy-btn" href={nextAction.action.target}>
+                {nextAction.action.label} <ArrowRight size={16} aria-hidden="true"/>
+              </a>}
+          </div> : null}
           <ol>
             <li><span>1</span><div><strong>Review the CV & letter</strong>
               <small>Edit for this exact job and save your changes before using a document.</small></div></li>
@@ -938,13 +973,10 @@ export default function ApplicationStudio(props: {
               <a href="#smartploy-employer-step">Employer form options</a> : null}
             <a href="#smartploy-outcome-step">Record or verify outcome</a>
           </nav>
-          <p>{selected.status === "provider_acknowledged"
-            ? "The employer system acknowledged this application. Do not send it again."
-            : selected.status === "self_reported_applied"
-              ? "This application is self-reported as applied, not independently verified by the employer."
-              : employerAttempt?.previous_attempt_reserved
-                ? "A previous employer attempt is reserved. Resolve its outcome before any new submission."
-                : "This is a private application draft. Whether you chose Manual, Assisted or AutoApply, saving a draft does not mean the employer received it. Review and use a supported final action."}</p>
+          <p className="studio-journey-boundary">
+            Selecting Manual, Assisted or AutoApply never authorizes a send.
+            The final employer action requires its own reviewed, allowed path.
+          </p>
         </section>
         <div className="studio-info">
           <ShieldCheck size={18}/>
@@ -1247,7 +1279,8 @@ export default function ApplicationStudio(props: {
             This confirms submission, not acceptance for the position or a hiring decision.</p>
         </section> : null}
         {selected.status !== "provider_acknowledged" ? <section
-          className="studio-receipt" aria-label="Browser-observed employer confirmation">
+          className="studio-receipt" id="smartploy-observed-evidence"
+          aria-label="Browser-observed employer confirmation">
           <div className="studio-receipt-header">
             <strong><CheckCircle2 size={16}/> Employer confirmation evidence</strong>
             <span className="state-pill waiting">Not independently verified</span>
