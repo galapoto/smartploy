@@ -262,7 +262,29 @@ describe("Application Studio private-read account boundary", () => {
     expect(guide.textContent).toContain("Review the CV & letter");
     expect(guide.textContent).toContain("Complete the employer form");
     expect(guide.textContent).toContain("Confirm and track");
-    expect(guide.textContent).toContain("AutoApply has prepared this draft; it has not sent it");
+    expect(guide.textContent).toContain("saving a draft does not mean the employer received it");
+    const jumps = screen.getByRole("navigation", { name: "Jump to application step" });
+    const expectedLinks = [
+      ["Review CV", "#smartploy-cv-review"],
+      ["Review letter", "#smartploy-letter-review"],
+      ["Employer form options", "#smartploy-employer-step"],
+      ["Record or verify outcome", "#smartploy-outcome-step"],
+    ];
+    for (const [label, target] of expectedLinks) {
+      const link = screen.getByRole("link", { name: label });
+      expect(jumps.contains(link)).toBe(true);
+      expect(link.getAttribute("href")).toBe(target);
+      expect(document.querySelector(target)).toBeTruthy();
+    }
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("SP70: current session method never mislabels the durable draft status", async () => {
+    studio("automatic");
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const guide = screen.getByLabelText("Your next steps for this application");
+    expect(guide.textContent).toContain("Private draft · employer submission not verified");
+    expect(guide.textContent).not.toContain("AutoApply preparation");
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 

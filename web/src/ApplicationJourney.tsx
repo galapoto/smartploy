@@ -68,6 +68,9 @@ export default function ApplicationJourney(props: {
   const [showOther, setShowOther] = useState(true);
   const [assistance, setAssistance] = useState<ApplicationAssistanceLevel>("documents");
   const [selected, setSelected] = useState<string[]>([]);
+  // A deliberate single-job choice for Manual/Assisted. This is UI-only:
+  // choosing never creates a private workspace or contacts an employer.
+  const [focusedKey, setFocusedKey] = useState(props.cv.present ? props.selectedJobKey : "");
   const [batchResult, setBatchResult] = useState<AutoApplyBatchOutcome | null>(null);
   const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
   const queueInFlight = useRef<symbol | null>(null);
@@ -87,11 +90,23 @@ export default function ApplicationJourney(props: {
 
   useEffect(() => {
     setSelected([]);
+    setFocusedKey(props.cv.present ? props.selectedJobKey : "");
     setBatchResult(null);
     setBatchProgress(null);
     setStopRequested(false);
     stopRequestedRef.current = true; // old job loop must not continue on new CV
-  }, [props.cv.sha256, props.cv.present, props.userId]);
+  }, [props.cv.sha256, props.cv.present, props.userId, props.selectedJobKey]);
+
+  // A mode change must not silently re-use a previous AutoApply selection.
+  // If a parent forces a mode change during a running batch, stop before
+  // the next private job; never imply that a mode switch revoked the server
+  // request already in flight.
+  useEffect(() => {
+    if (props.mode !== "automatic") {
+      if (queueInFlight.current) stopRequestedRef.current = true;
+      setSelected([]);
+    }
+  }, [props.mode]);
 
   // No CV, session tokens, or profile contents are persisted in browser storage.
   // An account switch unmounts this keyed component in the parent. Epoch and
@@ -153,6 +168,14 @@ export default function ApplicationJourney(props: {
       return true;
     });
   }, [results, showOther]);
+
+  // A Search-selected current vacancy is pinned by the original read-only
+  // API. If filtering/source refresh removes it, no draft action remains
+  // available until the applicant chooses a visible current vacancy.
+  const focusedJob = jobs.find((row) => row.canonical_key === focusedKey &&
+    row.job.source_current) || null;
+  const hasChosenJob = props.cv.present && !!props.mode &&
+    (props.mode === "automatic" ? selected.length > 0 : !!focusedJob);
 
   const hasMore = !!results && (
     results.recommended.length < results.recommended_count ||
@@ -314,10 +337,11 @@ export default function ApplicationJourney(props: {
     const job = row.job;
     const link = safeExternalJobUrl(job.application_url);
     const chosen = selected.includes(row.canonical_key);
+    const focused = props.mode !== "automatic" && focusedJob?.canonical_key === row.canonical_key;
     const isMatch = row.lane === "recommended";
     const matches = row.reasons.filter((reason) =>
       !reason.toLowerCase().includes("your stated skills")).slice(0, 2);
-    return <article className={"flow-job" + (props.selectedJobKey === row.canonical_key ? " highlighted" : "")}
+    return <article className={"flow-job" + (focused ? " highlighted" : "")}
       key={row.canonical_key}>
       <div className="flow-job-heading">
         <div>
@@ -335,30 +359,59 @@ export default function ApplicationJourney(props: {
         {props.mode === "automatic" ? <label className="flow-select">
           <input type="checkbox" checked={chosen}
             onChange={() => toggleSelected(row.canonical_key)}
-            disabled={props.queueBusy || accessInterrupted || !job.source_current ||
+            disabled={props.queueBusy || !!queueInFlight.current ||
+              accessInterrupted || !job.source_current ||
               (!chosen && selected.length >= 15)} />
           {chosen ? "Selected" : "Select for preparation"}
         </label> : null}
-        {link ? <a className="outline-btn compact" href={link}
+        {props.mode && props.mode !== "automatic" ? <button type="button"
+          className={focused ? "navy-btn compact" : "secondary-btn compact"}
+          aria-pressed={focused} disabled={!job.source_current}
+          onClick={() => setFocusedKey(row.canonical_key)}>
+          {focused ? "Selected job" : "Choose this job"}
+          {focused ? <CheckCircle2 size={14}/> : <ArrowRight size={14}/>}
+        </button> : null}
+        {link && !focused ? <a className="outline-btn compact" href={link}
           target="_blank" rel="noopener noreferrer">
-          {props.mode === "manual" || (props.mode === "assisted" && assistance === "filter")
-            ? "Apply on employer site" : "View employer posting"}
-          <ExternalLink size={14}/>
-        </a> : <small>Original employer link unavailable</small>}
-        {props.mode === "manual" ? <button className="navy-btn compact" type="button"
-          disabled={props.preparing === row.canonical_key}
-          onClick={() => void prepareOne(row.canonical_key)}>
-          {props.preparing === row.canonical_key ? "Saving…" : "Save application draft"}
-          <ArrowRight size={14}/>
-        </button> : null}
-        {props.mode === "assisted" && assistance !== "filter" ? <button
-          className="navy-btn compact" type="button"
-          disabled={props.preparing === row.canonical_key}
-          onClick={() => void prepareOne(row.canonical_key)}>
-          {props.preparing === row.canonical_key ? "Opening…" : "Prepare CV & application"}
-          <ArrowRight size={14}/>
-        </button> : null}
+          View employer posting <ExternalLink size={14}/>
+        </a> : !link ? <small>Original employer link unavailable</small> : null}
       </div>
+      {focused && props.mode ? <div className="flow-job-next"
+        aria-label={"Next step for " + job.role_title}>
+        <div className="flow-job-next-copy">
+          <strong><CheckCircle2 size={17}/> Selected for {props.mode === "manual" ? "Manual" : "Assisted"} application</strong>
+          <p>{props.mode === "manual"
+            ? "You fill and submit on the original employer website. Save a private draft first if you want SmartPloy to track the result; opening the website alone does not create a case."
+            : assistance === "filter"
+              ? "Filter-only opens the employer website; it does not create an application case or track a submission. For tracked documents, switch to Match + tailored documents."
+              : "Next, open the private job-specific CV and cover-letter editor. Review everything before any employer submission."}</p>
+        </div>
+        <div className="flow-job-next-actions">
+          {props.mode === "manual" || (props.mode === "assisted" && assistance === "filter")
+            ? link ? <a href={link} target="_blank" rel="noopener noreferrer"
+              className="navy-btn compact">Apply on employer site <ExternalLink size={14}/></a> :
+              <span className="muted">Employer link unavailable. This job cannot be submitted here.</span>
+            : null}
+          {props.mode === "manual" ? <button className="outline-btn compact" type="button"
+            disabled={!!props.preparing || !job.source_current}
+            onClick={() => void prepareOne(row.canonical_key)}>
+            {props.preparing === row.canonical_key ? "Saving…" : "Save application draft"}
+            <ArrowRight size={14}/>
+          </button> : null}
+          {props.mode === "assisted" && assistance !== "filter" ? <button
+            className="navy-btn compact" type="button"
+            disabled={!!props.preparing || !job.source_current}
+            onClick={() => void prepareOne(row.canonical_key)}>
+            {props.preparing === row.canonical_key ? "Opening…" : "Prepare CV & application"}
+            <ArrowRight size={14}/>
+          </button> : null}
+          {props.mode === "assisted" && assistance !== "filter" && link ?
+            <a className="outline-btn compact" href={link}
+              target="_blank" rel="noopener noreferrer">
+              View employer posting <ExternalLink size={14}/>
+            </a> : null}
+        </div>
+      </div> : null}
     </article>;
   }
 
@@ -375,9 +428,10 @@ export default function ApplicationJourney(props: {
           aria-current={!props.cv.present ? "step" : undefined}>1 · Your CV</li>
         <li className={props.mode ? "done" : props.cv.present ? "current" : ""}
           aria-current={props.cv.present && !props.mode ? "step" : undefined}>2 · Choose method</li>
-        <li className={props.mode && props.cv.present ? "current" : ""}
-          aria-current={props.mode && props.cv.present ? "step" : undefined}>3 · Choose job & prepare</li>
-        <li>4 · Review & submit</li>
+        <li className={hasChosenJob ? "done" : props.mode && props.cv.present ? "current" : ""}
+          aria-current={props.mode && props.cv.present && !hasChosenJob ? "step" : undefined}>3 · Choose job & prepare</li>
+        <li className={hasChosenJob ? "current" : ""}
+          aria-current={hasChosenJob ? "step" : undefined}>4 · Review & submit</li>
       </ol>
       <div className="flow-next-action" role="status">
         {props.cv.present ? <CheckCircle2 size={24} aria-hidden="true"/> :
@@ -385,11 +439,16 @@ export default function ApplicationJourney(props: {
         <div>
           <strong>{!props.cv.present ? "First: connect your CV." :
             !props.mode ? "CV connected. Now choose Manual, Assisted or Automatic." :
-              "Your next step: review matching jobs."}</strong>
+              hasChosenJob ? "Job choice recorded. Follow its next action below." :
+                "Next: choose a current job from the matches."}</strong>
           <p>{!props.cv.present ? "Upload a PDF or DOCX below. You can choose an application method before or after uploading." :
             !props.mode ? "The three paths are explained in Step 2 below. Nothing will be applied for until you take the appropriate next action." :
-              "Your chosen method is " + MODE_INFO[props.mode].title +
-              ". Use Step 3 to act on an exact current vacancy."}</p>
+              hasChosenJob ? (props.mode === "automatic" ?
+                selected.length + " jobs selected for private preparation. Use the preparation button below; no employer send has occurred." :
+                "Selected: " + focusedJob!.job.role_title + " · " + focusedJob!.job.company +
+                ". Follow the highlighted job's next action. No employer send has occurred.") :
+                "Your chosen method is " + MODE_INFO[props.mode].title +
+                ". Pick an exact current vacancy in Step 3 to continue."}</p>
         </div>
       </div>
     </section>
@@ -440,7 +499,9 @@ export default function ApplicationJourney(props: {
           const Icon = choice === "manual" ? FileText : choice === "assisted" ? WandSparkles : Bot;
           return <button type="button" key={choice}
             className={"flow-mode" + (props.mode === choice ? " selected" : "")}
-            aria-pressed={props.mode === choice} onClick={() => props.onMode(choice)}>
+            aria-pressed={props.mode === choice}
+            disabled={props.queueBusy || !!queueInFlight.current}
+            onClick={() => props.onMode(choice)}>
             <span className="flow-mode-head">
               <Icon size={23} aria-hidden="true"/>
               <span className="flow-mode-label">{choice.toUpperCase()}</span>
@@ -520,6 +581,18 @@ export default function ApplicationJourney(props: {
           !jobs.some((row) => row.canonical_key === props.selectedJobKey) ?
           <p className="flow-boundary" role="status">The selected vacancy is no longer current or available for CV matching. Choose another job from Search.</p> : null}
         {jobs.length ? <>
+          {props.mode ? <div className="flow-job-instruction" role="status">
+            <CheckCircle2 size={19} aria-hidden="true"/>
+            <div><strong>{props.mode === "automatic"
+              ? selected.length ? selected.length + " jobs selected for private preparation" :
+                "Choose jobs for AutoApply preparation"
+              : focusedJob ? "Selected: " + focusedJob.job.role_title + " at " +
+                focusedJob.job.company : "Choose one job to continue"}</strong>
+              <p>{props.mode === "automatic" ? "Tick up to 15 current vacancies, then select Prepare applications & start agents below. No employer is contacted." :
+                focusedJob ? "Use the buttons inside the highlighted job to take the next step. Choosing a job did not create or send an application." :
+                "Click Choose this job on a vacancy. SmartPloy then shows the next action for your chosen method; choosing alone does not create a draft or submit."}</p>
+            </div>
+          </div> : null}
           <div className="flow-job-list">{jobs.map(resultCard)}</div>
           <p className="muted" role="status">Showing {jobs.length} current job cards.
             {" " + results.recommended_count + " ranked results"}
@@ -610,7 +683,7 @@ export default function ApplicationJourney(props: {
             </> : null}
           </div> : null}
           <button className="primary-btn" type="button"
-            disabled={!runnableSelection.length || props.queueBusy}
+            disabled={!runnableSelection.length || props.queueBusy || !!queueInFlight.current}
             onClick={() => void queue()}>
             {props.queueBusy ? "Preparing selected drafts and agents…" :
               accessInterrupted ? "Access denied · reload to continue" :
@@ -637,8 +710,8 @@ export default function ApplicationJourney(props: {
       </div></div>
       <p className="flow-next-guidance" role="note">
         {!props.mode ? "First choose an application method in Step 2. Matching jobs can be browsed without submitting." :
-          props.mode === "manual" ? "Manual: open the original employer application, submit it yourself, then record its status here." :
-          props.mode === "assisted" ? "Assisted: prepare and edit the job-specific CV and letter, review form answers, then send through an authorized route." :
+          props.mode === "manual" ? "Manual: save a private draft first if you want to track the outcome here. Otherwise, open and submit the employer form independently." :
+          props.mode === "assisted" ? "Assisted: prepare a tracked job-specific CV and letter, review form answers, then submit yourself or use a separately authorized route." :
             "Automatic: prepare selected private drafts and agents, review each result and handle any Needs Review items. This screen does not automatically send to employers."}
       </p>
       <div className="row-actions">

@@ -32,6 +32,14 @@ Direct CV upload must **not silently default to Manual**. Present four clearly n
 
 **SP69 implementation/evidence:** [Dedicated decision and acceptance record](SP69_EXPLICIT_CV_FIRST_APPLICATION_CHOICE.md). This UI work proceeds independently of KEHA P67 production API approval.
 
+### SP70 P0 — chosen-job next action and usable draft continuation (30 October 2026)
+
+Once the applicant has a CV and has chosen Manual, Assisted or Automatic, **do not overwhelm them with simultaneous actions on every matched job**. For Manual or Assisted, require a deliberate **Choose this job** action on an exact current vacancy, then show only that selected job's next steps. Do not silently create a workspace or contact employers when a vacancy is chosen. For AutoApply, preserve the exact-job checkbox batch/agent workflow; never describe draft preparation as employer submission. Correct the progress indicator to mark job selection only when there is a real chosen job. A Search-deep-linked current vacancy may be preselected for review but may not silently create or send a draft. No stale/hidden/retired job may enable preparation.
+
+Once a private application exists, show clickable navigation to CV, letter, employer form options and independently verified outcome. Do not label a durable case with an unrelated page-level application mode; use actual workspace/provider evidence. Lock mode transitions while a private batch is running and clear stale AutoApply selection on an intentional mode change. **Reusable first-party code and safety gates remain the foundation**; no new ATS submission privilege.
+
+**SP70 implementation/evidence:** [Guided job selection and handoff record](SP70_GUIDED_JOB_SELECTION_AND_HANDOFF.md). Stage independently of KEHA approval and SP69 production issue #232; native production deployment still requires a separate authorized exact-SHA release.
+
 **One simple visible path:**
 1. User signs in through existing first-party identity, imports a CV, chooses General or Personalized search, and specifies employment goals, restrictions, contact preferences and budget.
 2. SmartPloy retrieves source-current jobs using the existing job ledger and explains match uncertainty. It can verify employer-domain legitimacy and flag suspicious offers without invasive profiling.

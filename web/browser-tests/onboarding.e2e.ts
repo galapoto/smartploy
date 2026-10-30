@@ -296,7 +296,11 @@ test("CV-first manual application goes from upload to real matching and selected
   await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await expect(page.getByText(/CV-text matches/i)).toBeVisible();
-  await page.getByRole("button", { name: "Save application draft" }).first().click();
+  await expect(page.getByRole("button", { name: "Save application draft" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Choose this job" }).first().click();
+  await expect(page.getByLabel("Next step for Junior Data Analyst")).toBeVisible();
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+  await page.getByRole("button", { name: "Save application draft" }).click();
   await expect.poll(() => state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
   await expect(page.getByRole("heading", { name: /My applications/i }).first()).toBeVisible();
   expect(state.cvFilename).toBe("Synthetic-IT-CV.docx");
@@ -322,12 +326,39 @@ test("SP69: direct CV upload requires an explicit Manual, Assisted or Automatic 
 
   await page.getByRole("button", { name: /apply with AI help/i }).click();
   await expect(page.locator(".flow-mode.selected")).toContainText("Apply with AI help");
-  await expect(page.getByRole("button", { name: /prepare CV & application/i }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /prepare CV & application/i })).toHaveCount(0);
+  await page.getByRole("button", { name: "Choose this job" }).first().click();
+  await expect(page.getByRole("button", { name: /prepare CV & application/i })).toBeVisible();
+  expect(state.applicationWorkspaceCreates).toEqual([]);
   await page.getByRole("button", { name: /AutoApply/i }).click();
   await expect(page.locator(".flow-mode.selected")).toContainText("AutoApply");
   await expect(page.getByRole("checkbox", { name: /select for preparation/i }).first()).toBeVisible();
   expect(state.applicationWorkspaceCreates).toEqual([]);
   await evidence(page, "sp69-connected-cv-explicit-mode.png");
+});
+
+test("SP70: Manual, Assisted and AutoApply explain and preserve distinct job actions", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Fictional-CV.pdf",
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  await expect(page.getByRole("heading", { name: "How do you want to apply?" })).toBeVisible();
+  await page.getByRole("button", { name: /Apply manually/i }).last().click();
+  await expect(page.getByText("Choose one job to continue")).toBeVisible();
+  await page.getByRole("button", { name: "Choose this job" }).first().click();
+  await expect(page.getByLabel("Next step for Junior Data Analyst")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Apply on employer site/i })).toBeVisible();
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+  await evidence(page, "sp70-selected-manual-next-action.png");
+  await page.getByRole("button", { name: /Apply with AI help/i }).click();
+  await expect(page.getByRole("button", { name: /Prepare CV & application/i })).toBeVisible();
+  await page.getByRole("button", { name: /AutoApply/i }).click();
+  await expect(page.getByRole("checkbox", { name: /Select for preparation/i }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /Prepare applications & start agents/i })).toBeDisabled();
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+  await evidence(page, "sp70-autoapply-selection-before-preparation.png");
 });
 
 test("existing job-search cards open the requested assisted journey without creating a draft", async ({ page }) => {
@@ -613,7 +644,8 @@ test("a delayed application-draft response is discarded after same-email account
   await page.locator(".flow-start-card").filter({ hasText: "Apply manually" }).click();
   await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
-  await page.getByRole("button", { name: "Save application draft", exact: true }).first().click();
+  await page.getByRole("button", { name: "Choose this job" }).first().click();
+  await page.getByRole("button", { name: "Save application draft", exact: true }).click();
   await started;
   state.userId = "synthetic-user-b"; // email intentionally stays the same
   release();

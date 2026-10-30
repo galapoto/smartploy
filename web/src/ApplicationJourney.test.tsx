@@ -66,6 +66,10 @@ describe("SP21 application journey", () => {
     expect(role).toBeTruthy();
     expect(screen.getByText(/1 CV-text matches/i)).toBeTruthy();
     expect(screen.getByText(/Search cues detected in CV/i)).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /apply on employer site/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /save application draft/i })).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[0]);
+    expect(p.onPrepare).not.toHaveBeenCalled();
     expect(screen.getAllByRole("link", { name: /apply on employer site/i })[0].getAttribute("href"))
       .toBe("https://employer.example.invalid/planner");
     expect(screen.getAllByRole("link", { name: /apply on employer site/i })[0].getAttribute("rel"))
@@ -92,7 +96,9 @@ describe("SP21 application journey", () => {
     expect(p.onMode).toHaveBeenCalledWith("assisted");
     view.rerender(<ApplicationJourney {...p} mode="assisted"/>);
     expect(screen.getByRole("radio", { name: /match \+ tailored documents/i })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: /prepare CV & application/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[0]);
+    expect(screen.getByRole("button", { name: /prepare CV & application/i })).toBeTruthy();
     expect(p.onPrepare).not.toHaveBeenCalled();
   });
 
@@ -128,12 +134,70 @@ describe("SP21 application journey", () => {
     render(<ApplicationJourney {...p} />);
     await screen.findByText("IT-suunnittelija");
     fireEvent.click(screen.getByRole("radio", { name: /filter jobs only/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[0]);
     expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
     expect(screen.getAllByRole("link", { name: /apply on employer site/i })[0]).toBeTruthy();
+    expect(screen.getByText(/it does not create an application case or track a submission/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: /match \+ tailored documents/i }));
     fireEvent.click(screen.getAllByRole("button", { name: /prepare CV & application/i })[0]);
     await waitFor(() => expect(p.onPrepare).toHaveBeenCalledWith("current-planner"));
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
+  it("SP70: job choice changes next step but never silently creates or submits a case", async () => {
+    const p = props();
+    render(<ApplicationJourney {...p} />);
+    await screen.findByText("IT-suunnittelija");
+    expect(screen.getByText(/Choose one job to continue/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /save application draft/i })).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[0]);
+    expect(screen.getByLabelText("Next step for IT-suunnittelija")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /save application draft/i })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /apply on employer site/i }).getAttribute("href"))
+      .toBe("https://employer.example.invalid/planner");
+    expect(screen.getByText(/opening the website alone does not create a case/i)).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Application steps" }).textContent).toContain("4 · Review & submit");
+    expect(p.onPrepare).not.toHaveBeenCalled();
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
+  it("SP70: switching out of AutoApply clears the old batch selection", async () => {
+    const p = { ...props(), mode: "automatic" as const };
+    const view = render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    const boxes = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    fireEvent.click(boxes[0]);
+    expect((boxes[0] as HTMLInputElement).checked).toBe(true);
+    view.rerender(<ApplicationJourney {...p} mode="manual" />);
+    expect(screen.getAllByRole("button", { name: /choose this job/i }).length).toBeGreaterThan(0);
+    view.rerender(<ApplicationJourney {...p} mode="automatic" />);
+    const after = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    expect((after[0] as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("button", { name: /prepare applications & start agents/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
+  it("SP70: selection from a previous query cannot prepare an absent job", async () => {
+    const hidden: SearchJobCard = {
+      ...listing, canonical_key: "elsewhere", lane: "recommended",
+      job: { ...listing.job, role_title: "Elsewhere role" },
+    };
+    vi.mocked(api.getCVJobMatches).mockImplementation(async (options) =>
+      options?.query === "Elsewhere" ? {
+        ...data, recommended: [hidden], other_jobs: [],
+        recommended_count: 1, other_jobs_count: 0,
+      } : data);
+    const p = { ...props(), mode: "assisted" as const };
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[0]);
+    expect(screen.getByRole("button", { name: /prepare CV & application/i })).toBeTruthy();
+    fireEvent.change(screen.getByRole("searchbox", { name: /filter matching jobs/i }),
+      { target: { value: "Elsewhere" } });
+    await screen.findByText("Elsewhere role");
+    expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
+    expect(screen.getByText(/Choose one job to continue/i)).toBeTruthy();
+    expect(p.onPrepare).not.toHaveBeenCalled();
   });
 
   it("prepares explicitly selected automatic drafts without employer submission", async () => {
@@ -191,7 +255,10 @@ describe("SP21 application journey", () => {
       limit: 40, query: "", selected_job_key: "",
       recommended_offset: 1, other_offset: 1,
     });
-    expect(screen.getAllByRole("button", { name: /save application draft/i })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: /choose this job/i })).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: /save application draft/i })).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[2]);
+    expect(screen.getByRole("button", { name: /save application draft/i })).toBeTruthy();
   });
 
   it("pins the exact job selected from main Search even when it is outside the first matching window", async () => {
@@ -206,7 +273,9 @@ describe("SP21 application journey", () => {
     render(<ApplicationJourney {...p}/>);
     await screen.findByText("Selected vacancy on a later page");
     expect(screen.getByText("IT-suunnittelija")).toBeTruthy();
-    fireEvent.click(screen.getAllByRole("button", { name: /save application draft/i })[0]);
+    expect(screen.getByLabelText("Next step for Selected vacancy on a later page")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /save application draft/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /save application draft/i }));
     await waitFor(() => expect(p.onPrepare).toHaveBeenCalledWith("selected-page-8"));
     expect(api.getCVJobMatches).toHaveBeenCalledWith({
       limit: 40, query: "", selected_job_key: "selected-page-8",
