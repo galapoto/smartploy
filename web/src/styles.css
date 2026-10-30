@@ -360,6 +360,39 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .application-studio { padding: 24px; }
 .application-studio .panel-heading { align-items: center; }
 .studio-layout { display: grid; grid-template-columns: 245px minmax(0,1fr); border: 1px solid #e0e8f2; border-radius: 14px; overflow: hidden; background: #fff; }
+/* SP72: owner-scoped application triage; no provider receipt inferred from draft status. */
+.studio-review-queue { grid-column: 1 / -1; padding: 17px 20px;
+  border-bottom: 1px solid #dce7f2; background: #f7faff; }
+.studio-review-queue-heading { display: flex; align-items: center;
+  justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.studio-review-queue-heading h3 { font-size: 16px; margin: 4px 0 6px; color: #153c64; }
+.studio-review-queue-heading p { font-size: 12px; line-height: 1.55;
+  color: #526d89; margin: 0; }
+.studio-review-queue-heading > a,.studio-review-queue-heading > button {
+  display: inline-flex; justify-content: center; align-items: center; gap: 7px;
+  min-height: 41px; text-decoration: none; }
+.studio-review-queue-filters { display: flex; gap: 8px; flex-wrap: wrap;
+  margin-top: 15px; }
+.studio-review-queue-filters button { border: 1px solid #d3e2f0;
+  background: white; color: #3c5b7a; padding: 8px 11px; border-radius: 9px;
+  font-size: 11px; font-weight: 700; display: inline-flex;
+  align-items: center; gap: 7px; cursor: pointer; }
+.studio-review-queue-filters button span { font-size: 10px; color: #557ba3;
+  background: #edf5ff; border-radius: 99px; padding: 1px 7px; }
+.studio-review-queue-filters button[aria-pressed="true"] {
+  border-color: #4b93cf; color: #154c80; background: #e7f3ff; }
+.studio-review-queue-filters button:focus-visible {
+  outline: 3px solid #2e83bf; outline-offset: 2px; }
+.studio-review-queue-note { font-size: 10.5px; line-height: 1.5;
+  color: #72869b; margin: 11px 0 0; }
+.studio-list-empty,.studio-list-filter-note { font-size: 11px;
+  color: #56718b; padding: 10px 9px; line-height: 1.55; margin: 0; }
+.studio-list-filter-note { border-left: 3px solid #c0d7ea; margin: 4px 5px; }
+@media (max-width: 600px) {
+  .studio-review-queue { padding: 15px 13px; }
+  .studio-review-queue-heading > a,.studio-review-queue-heading > button { width: 100%; }
+  .studio-review-queue-filters button { flex: 1 1 auto; justify-content: space-between; }
+}
 .studio-list { background: #f8fbff; border-right: 1px solid #e3eaf3; padding: 15px 11px; display: grid; align-content: start; gap: 6px; }
 .studio-list-heading { display: flex; justify-content: space-between; align-items: center; padding: 6px 9px 12px; font-size: 12px; color: #385572; }
 .studio-list-heading span { color: #4d74a6; background: #e6f1ff; border-radius: 14px; padding: 2px 8px; }

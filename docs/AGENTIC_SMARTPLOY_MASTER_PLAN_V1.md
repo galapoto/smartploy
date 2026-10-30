@@ -46,6 +46,12 @@ Application Studio must display a single **status + next action** derived from t
 
 **SP71 source/acceptance:** [Evidence-driven application completion record](SP71_EVIDENCE_DRIVEN_APPLICATION_COMPLETION.md), including REA-not-applicable rationale, reused code and exact test/production gates. Proceed regardless of pending KEHA P67 source approval; production rollout still requires native ObumDelivery evidence and signed-in acceptance as in issue #232.
 
+### SP72 P0 — owner-scoped application review queue (30 October 2026)
+
+After preparing one or multiple cases, show a clear **My Applications** summary and next private action. Categorize only the authenticated account's **loaded** workspace records as **Drafts to finish / Self-reported / Employer acknowledged**; never misrepresent a browser observation or self-report as an employer-confirmed submission. Filters are strictly read-only UI operations; a **Review next draft** action must reuse original selected workspace, dirty-editor confirmation and checked owner identity. If the only draft is currently open, navigate to its CV editor, not an inert button. Keep per-case SP71 readiness gates and existing Agent Zero inbox unchanged. Avoid claiming global totals when workspace pagination/older cases exist.
+
+**SP72 source/acceptance:** [Private application review queue record](SP72_APPLICATION_REVIEW_QUEUE.md). Reuse existing application engine, identity, agent, receipt and tests. No REA reconstruction of already available authorized source; no employer submission capability or KEHA source activation. **Production remains separate: exact SHA rollout and signed-in browser acceptance issue #232.**
+
 **One simple visible path:**
 1. User signs in through existing first-party identity, imports a CV, chooses General or Personalized search, and specifies employment goals, restrictions, contact preferences and budget.
 2. SmartPloy retrieves source-current jobs using the existing job ledger and explains match uncertainty. It can verify employer-domain legitimacy and flag suspicious offers without invasive profiling.

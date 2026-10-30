@@ -20,6 +20,7 @@ import ApplicationAgentInbox from "./ApplicationAgentInbox";
 import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import { applicationNextStep } from "./applicationNextStep";
+import { summarizeApplicationReviewQueue, type ApplicationReviewFilter } from "./applicationReviewQueue";
 import type { EmployerAttemptState, EmployerReviewIntentState, EmployerFinalActionReadiness, LeverPartnerReadiness, LeverProviderAcknowledgment, LeverPartnerReviewEvidence } from "./api";
 
 const ACCOUNT_CHANGED_NOTICE =
@@ -72,6 +73,9 @@ export default function ApplicationStudio(props: {
 }) {
   const [workspaces, setWorkspaces] = useState<ApplicationWorkspace[]>([]);
   const [selectedId, setSelectedId] = useState(props.focusId);
+  // The filter is local UI state. Owner-scoped workspaces never leave the
+  // browser, and changing the filter never creates or submits a job case.
+  const [reviewFilter, setReviewFilter] = useState<ApplicationReviewFilter>("all");
   const [cvText, setCvText] = useState("");
   const [letterText, setLetterText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -361,6 +365,14 @@ export default function ApplicationStudio(props: {
     return [...workspaces.slice(current + 1), ...workspaces.slice(0, current)]
       .find((item) => item.status === "draft") || null;
   }, [workspaces, selectedId]);
+
+  // Categorize only the verified owner-scoped rows that are currently loaded.
+  // Do not imply full-account totals or per-job partner authorization from
+  // these durable high-level workspace statuses.
+  const reviewQueue = useMemo(
+    () => summarizeApplicationReviewQueue(workspaces, reviewFilter),
+    [workspaces, reviewFilter],
+  );
 
   function pick(id: string) {
     if (dirty && !window.confirm("Discard unsaved changes and open another draft?")) return;
@@ -888,9 +900,57 @@ export default function ApplicationStudio(props: {
         <button type="button" className="primary-btn" onClick={props.onFindJobs}>Choose a job <ArrowRight size={16}/></button>
       </div>
     ) : <div className="studio-layout">
+      <section className="studio-review-queue" aria-label="Application review queue">
+        <div className="studio-review-queue-heading">
+          <div>
+            <span className="section-kicker">WHAT NEEDS ATTENTION</span>
+            <h3>Continue your applications</h3>
+            <p>{reviewQueue.drafts} private draft{reviewQueue.drafts === 1 ? "" : "s"} to finish
+              {" · "}{reviewQueue.selfReported} self-reported
+              {" · "}{reviewQueue.providerAcknowledged} employer-acknowledged.
+              A draft status alone does not prove employer receipt.</p>
+          </div>
+          {nextDraft ? <button className="navy-btn compact" type="button"
+            aria-label={"Review next saved draft: " + nextDraft.role_title}
+            onClick={() => pick(nextDraft.workspace_id)}>
+            Review next draft <ArrowRight size={15} aria-hidden="true"/>
+          </button> : selected?.status === "draft" ?
+            <a className="navy-btn compact" href="#smartploy-cv-review">
+              Continue this draft <ArrowRight size={15} aria-hidden="true"/>
+            </a> : null}
+        </div>
+        <div className="studio-review-queue-filters" role="group"
+          aria-label="Filter application statuses">
+          {([
+            ["all", "All", reviewQueue.totalLoaded],
+            ["draft", "Drafts to finish", reviewQueue.drafts],
+            ["self_reported_applied", "Self-reported", reviewQueue.selfReported],
+            ["provider_acknowledged", "Employer acknowledged", reviewQueue.providerAcknowledged],
+          ] as const).map(([key, label, count]) =>
+            <button type="button" key={key}
+              aria-pressed={reviewFilter === key}
+              onClick={() => setReviewFilter(key)}>
+              {label} <span>{count}</span>
+            </button>)}
+        </div>
+        <p className="studio-review-queue-note">
+          These are counts from {reviewQueue.totalLoaded} loaded private application
+          {reviewQueue.totalLoaded === 1 ? "" : "s"}, not necessarily every older case.
+          The filter changes only the list below; it does not contact any employer.
+        </p>
+      </section>
       <aside className="studio-list" aria-label="Your application drafts">
-        <div className="studio-list-heading"><strong>My applications</strong><span>{workspaces.length}</span></div>
-        {workspaces.map((item) => <button
+        <div className="studio-list-heading"><strong>My applications</strong>
+          <span>{reviewQueue.filtered.length}</span></div>
+        {reviewQueue.filtered.length === 0 ? <p className="studio-list-empty" role="status">
+          No loaded applications in this category. Choose another status filter.
+        </p> : null}
+        {selected && !reviewQueue.filtered.some((item) =>
+          item.workspace_id === selected.workspace_id) ? <p className="studio-list-filter-note">
+          Your currently open application is outside this filter.
+          Select a listed application to switch.
+        </p> : null}
+        {reviewQueue.filtered.map((item) => <button
           key={item.workspace_id} type="button"
           className={"studio-list-item" + (selectedId === item.workspace_id ? " selected" : "")}
           onClick={() => pick(item.workspace_id)}
