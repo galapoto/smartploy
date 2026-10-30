@@ -17,6 +17,7 @@ import {
 } from "./api";
 import ApplicationAgentCard from "./ApplicationAgentCard";
 import ApplicationAgentInbox from "./ApplicationAgentInbox";
+import ApplicationAttemptAudit from "./ApplicationAttemptAudit";
 import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import { applicationNextStep } from "./applicationNextStep";
@@ -888,10 +889,16 @@ export default function ApplicationStudio(props: {
     </div>
     {error ? <div className="studio-alert error" role="alert"><AlertCircle size={16}/>{error}</div> : null}
     {message ? <div className="studio-alert" role="status"><CheckCircle2 size={16}/>{message}</div> : null}
-    {workspaces.length > 0 ? <ApplicationAgentInbox
-      verifyAccount={verifyAccount} expectedUserId={props.expectedUserId}
-      onOpen={(id) => void openInboxCase(id)}
-    /> : null}
+    {workspaces.length > 0 ? <>
+      <ApplicationAgentInbox
+        verifyAccount={verifyAccount} expectedUserId={props.expectedUserId}
+        onOpen={(id) => void openInboxCase(id)}
+      />
+      <ApplicationAttemptAudit workspaces={workspaces}
+        verifyAccount={verifyAccount}
+        onOpen={(id) => pick(id)}
+      />
+    </> : null}
     {workspaces.length === 0 ? (
       <div className="studio-empty">
         <div className="studio-empty-icon"><FileCheck2 size={25}/></div>
@@ -966,7 +973,7 @@ export default function ApplicationStudio(props: {
                 ? "Confirmation observed · not verified" :
               item.workspace_id === selectedId && employerAttempt?.previous_attempt_reserved
                 ? "Attempt reserved · review outcome" :
-              "Draft · not submitted"}</em>
+              "Draft · employer outcome unverified"}</em>
           </span>
         </button>)}
         <button type="button" className="secondary-btn studio-new" onClick={props.onFindJobs}>
@@ -989,7 +996,7 @@ export default function ApplicationStudio(props: {
                 {browserReceipt ? "Confirmation observed · employer verification pending" :
                   employerAttempt?.previous_attempt_reserved
                     ? "Previous attempt · outcome needs review"
-                    : "Editable draft · not submitted"}</span>}
+                    : "Editable draft · employer outcome unverified"}</span>}
           </div>
           {safePostingLink(selected.application_url) ? (
             <a href={safePostingLink(selected.application_url)} className="outline-btn compact"

@@ -1384,6 +1384,44 @@ describe("Application Studio per-draft result isolation", () => {
     expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
   });
 
+  it("SP73: opening a reserved previous-attempt case still obeys unsaved-edit isolation", async () => {
+    twoDrafts();
+    vi.mocked(api.getEmployerAttemptStatus).mockImplementation(async (id) => ({
+      previous_attempt_reserved: id === "workspace-B",
+      state: id === "workspace-B" ? "uncertain" as const : "not_reserved" as const,
+      requires_human_reconciliation: id === "workspace-B",
+      automatic_employer_submit_authorized: false,
+      external_confirmation_verified: false, cross_device_server_claim_required: true,
+    }));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Check next 2 draft attempts" }));
+    const audit = screen.getByRole("region", { name: "Previous employer attempt checks" });
+    await waitFor(() => expect(audit.textContent).toContain("1 need previous-attempt reconciliation"));
+    const open = screen.getByRole("button", {
+      name: "Review B private role at Fictional Employer",
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Editable CV text" }), {
+      target: { value: "UNSAVED A-ONLY factual change" },
+    });
+    fireEvent.click(open);
+    expect(confirm).toHaveBeenCalledWith("Discard unsaved changes and open another draft?");
+    expect(screen.getByRole("heading", { name: "A private role" })).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement)
+      .value).toBe("UNSAVED A-ONLY factual change");
+    confirm.mockReturnValue(true);
+    fireEvent.click(open);
+    expect(await screen.findByRole("heading", { name: "B private role" })).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText("Application progress and next action")
+      .textContent).toContain("Attempt reserved · not confirmed"));
+    expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
   it("opens the next queued private draft and preserves the selected job across Refresh", async () => {
     twoDrafts();
     render(<ApplicationStudio focusId="workspace-A" expectedUserId="usr-a"
