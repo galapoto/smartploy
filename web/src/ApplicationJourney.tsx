@@ -381,9 +381,9 @@ export default function ApplicationJourney(props: {
         <div className="flow-job-next-copy">
           <strong><CheckCircle2 size={17}/> Selected for {props.mode === "manual" ? "Manual" : "Assisted"} application</strong>
           <p>{props.mode === "manual"
-            ? "You fill and submit on the original employer website. A saved SmartPloy draft is optional and is not a submission."
+            ? "You fill and submit on the original employer website. Save a private draft first if you want SmartPloy to track the result; opening the website alone does not create a case."
             : assistance === "filter"
-              ? "You requested job filtering only. Open the original employer site and submit the application yourself."
+              ? "Filter-only opens the employer website; it does not create an application case or track a submission. For tracked documents, switch to Match + tailored documents."
               : "Next, open the private job-specific CV and cover-letter editor. Review everything before any employer submission."}</p>
         </div>
         <div className="flow-job-next-actions">
@@ -710,8 +710,8 @@ export default function ApplicationJourney(props: {
       </div></div>
       <p className="flow-next-guidance" role="note">
         {!props.mode ? "First choose an application method in Step 2. Matching jobs can be browsed without submitting." :
-          props.mode === "manual" ? "Manual: open the original employer application, submit it yourself, then record its status here." :
-          props.mode === "assisted" ? "Assisted: prepare and edit the job-specific CV and letter, review form answers, then send through an authorized route." :
+          props.mode === "manual" ? "Manual: save a private draft first if you want to track the outcome here. Otherwise, open and submit the employer form independently." :
+          props.mode === "assisted" ? "Assisted: prepare a tracked job-specific CV and letter, review form answers, then submit yourself or use a separately authorized route." :
             "Automatic: prepare selected private drafts and agents, review each result and handle any Needs Review items. This screen does not automatically send to employers."}
       </p>
       <div className="row-actions">
