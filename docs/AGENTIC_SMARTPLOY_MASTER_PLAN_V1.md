@@ -40,6 +40,12 @@ Once a private application exists, show clickable navigation to CV, letter, empl
 
 **SP70 implementation/evidence:** [Guided job selection and handoff record](SP70_GUIDED_JOB_SELECTION_AND_HANDOFF.md). Stage independently of KEHA approval and SP69 production issue #232; native production deployment still requires a separate authorized exact-SHA release.
 
+### SP71 P0 — honest application state and next verified action (30 October 2026)
+
+Application Studio must display a single **status + next action** derived from the current owner-bound workspace, revision, existing employer-attempt record, browser observation, server handoff preflight and independently reviewed partner rights. Priority is **provider acknowledged → self-reported → reserved or observed attempt → unsaved edits → unavailable policy → blocked requirements → separate final partner review → manual employer handoff**. Never equate a prepared AutoApply case, browser observation or reserved attempt to a submitted job. The only new user action is a shortcut to the existing revisioned private **Save my edits**; all other next actions navigate to existing safe, approved routes. Preserve all anti-duplicate and applicant-review controls.
+
+**SP71 source/acceptance:** [Evidence-driven application completion record](SP71_EVIDENCE_DRIVEN_APPLICATION_COMPLETION.md), including REA-not-applicable rationale, reused code and exact test/production gates. Proceed regardless of pending KEHA P67 source approval; production rollout still requires native ObumDelivery evidence and signed-in acceptance as in issue #232.
+
 **One simple visible path:**
 1. User signs in through existing first-party identity, imports a CV, chooses General or Personalized search, and specifies employment goals, restrictions, contact preferences and budget.
 2. SmartPloy retrieves source-current jobs using the existing job ledger and explains match uncertainty. It can verify employer-domain legitimacy and flag suspicious offers without invasive profiling.
