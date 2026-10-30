@@ -908,7 +908,7 @@ export default function ApplicationStudio(props: {
             <p>{reviewQueue.drafts} private draft{reviewQueue.drafts === 1 ? "" : "s"} to finish
               {" · "}{reviewQueue.selfReported} self-reported
               {" · "}{reviewQueue.providerAcknowledged} employer-acknowledged.
-              No draft is an employer submission.</p>
+              A draft status alone does not prove employer receipt.</p>
           </div>
           {nextDraft ? <button className="navy-btn compact" type="button"
             aria-label={"Review next saved draft: " + nextDraft.role_title}
