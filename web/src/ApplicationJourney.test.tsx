@@ -137,6 +137,7 @@ describe("SP21 application journey", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[0]);
     expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
     expect(screen.getAllByRole("link", { name: /apply on employer site/i })[0]).toBeTruthy();
+    expect(screen.getByText(/it does not create an application case or track a submission/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: /match \+ tailored documents/i }));
     fireEvent.click(screen.getAllByRole("button", { name: /prepare CV & application/i })[0]);
     await waitFor(() => expect(p.onPrepare).toHaveBeenCalledWith("current-planner"));
@@ -154,6 +155,7 @@ describe("SP21 application journey", () => {
     expect(screen.getByRole("button", { name: /save application draft/i })).toBeTruthy();
     expect(screen.getByRole("link", { name: /apply on employer site/i }).getAttribute("href"))
       .toBe("https://employer.example.invalid/planner");
+    expect(screen.getByText(/opening the website alone does not create a case/i)).toBeTruthy();
     expect(screen.getByRole("list", { name: "Application steps" }).textContent).toContain("4 · Review & submit");
     expect(p.onPrepare).not.toHaveBeenCalled();
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
