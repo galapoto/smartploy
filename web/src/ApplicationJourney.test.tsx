@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import ApplicationJourney from "./ApplicationJourney";
 import StartChoices from "./StartChoices";
 import * as api from "./api";
@@ -209,9 +209,16 @@ describe("SP21 application journey", () => {
     expect((screen.getByRole("button", { name: /prepare applications & start agents/i }) as HTMLButtonElement).disabled)
       .toBe(true);
     fireEvent.click(suggest);
-    const selections = screen.getAllByRole("checkbox", { name: /select for preparation/i });
-    await waitFor(() => expect((selections[0] as HTMLInputElement).checked).toBe(true));
-    expect((selections[1] as HTMLInputElement).checked).toBe(false);
+    const chosenCard = screen.getByText("IT-suunnittelija").closest("article");
+    const exploratoryCard = screen.getByText("IT support").closest("article");
+    expect(chosenCard).toBeTruthy();
+    expect(exploratoryCard).toBeTruthy();
+    await waitFor(() => expect((within(chosenCard!).getByRole("checkbox", {
+      name: /select for preparation/i,
+    }) as HTMLInputElement).checked).toBe(true));
+    expect((within(exploratoryCard!).getByRole("checkbox", {
+      name: /select for preparation/i,
+    }) as HTMLInputElement).checked).toBe(false);
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText(/Review 1 selected job before preparing/i));
     expect(screen.getAllByText(/IT-suunnittelija/i).length).toBeGreaterThan(0);
