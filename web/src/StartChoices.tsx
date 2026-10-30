@@ -5,6 +5,7 @@ import type { ApplicationFlowMode } from "./types";
 export default function StartChoices(props: {
   onMode: (mode: ApplicationFlowMode) => void;
   onBrowse: () => void;
+  onUpload?: () => void;
   busyBrowse?: boolean;
   cvPresent?: boolean;
 }) {
@@ -17,7 +18,12 @@ export default function StartChoices(props: {
     {props.cvPresent ? <div className="flow-start-ready" role="status">
       <CheckCircle2 size={20} aria-hidden="true"/>
       <span><strong>CV connected.</strong> Choose Manual, Assisted or Automatic below. You do not need to upload again.</span>
-    </div> : <p className="flow-start-how">You can select a method before uploading your CV, or browse jobs without one.</p>}
+    </div> : <div className="flow-start-how">
+      <p>Your CV is not connected yet. You can upload it first, or choose a mode and upload on the next screen.</p>
+      {props.onUpload ? <button type="button" className="primary-btn" onClick={props.onUpload}>
+        Upload CV first <ArrowRight size={16} aria-hidden="true"/>
+      </button> : null}
+    </div>}
     <div className="flow-start-grid">
       <button type="button" className="flow-start-card"
         onClick={() => props.onMode("manual")}>
