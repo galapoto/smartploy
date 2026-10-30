@@ -351,12 +351,14 @@ test("SP70: Manual, Assisted and AutoApply explain and preserve distinct job act
   await expect(page.getByLabel("Next step for Junior Data Analyst")).toBeVisible();
   await expect(page.getByRole("link", { name: /Apply on employer site/i })).toBeVisible();
   expect(state.applicationWorkspaceCreates).toEqual([]);
+  await evidence(page, "sp70-selected-manual-next-action.png");
   await page.getByRole("button", { name: /Apply with AI help/i }).click();
   await expect(page.getByRole("button", { name: /Prepare CV & application/i })).toBeVisible();
   await page.getByRole("button", { name: /AutoApply/i }).click();
   await expect(page.getByRole("checkbox", { name: /Select for preparation/i }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Prepare applications & start agents/i })).toBeDisabled();
   expect(state.applicationWorkspaceCreates).toEqual([]);
+  await evidence(page, "sp70-autoapply-selection-before-preparation.png");
 });
 
 test("existing job-search cards open the requested assisted journey without creating a draft", async ({ page }) => {
