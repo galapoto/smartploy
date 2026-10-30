@@ -837,7 +837,9 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^Apply manually$/ }));
-    await screen.findByRole("button", { name: "Save application draft" });
+    await screen.findByRole("button", { name: "Choose this job" });
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    fireEvent.click(screen.getAllByRole("button", { name: "Choose this job" })[0]);
     fireEvent.click(screen.getByRole("button", { name: "Save application draft" }));
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
     switchToB();
