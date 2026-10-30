@@ -114,3 +114,23 @@ still not evidence of production source availability.
 Official references:
 - https://tyomarkkinatori.fi/jobpostingprovider/documentation/KIPA-search-jobpostings-en.html
 - https://tyomarkkinatori.fi/en/instructions-and-support/interfaces/interfaces-for-job-postings/terms-of-use-for-job-market-finlands-job-posting-apis
+
+## SP76 — production key grant and read-only acceptance (30 October 2026)
+
+**Update to SP60:** On 30 October 2026, KEHA issued **separate production**
+P67 job-retrieval credentials to Komplyint Oy through a time-limited secure
+message. The previously stated **QA-only** status remains historically accurate
+for October 26–29, but is **superseded as an authorization blocker** by this
+production grant. The production key is **not** stored in GitHub or this chat.
+No authenticated *production* P67 POST, posting import or OVH rollout has yet
+been independently observed.
+
+The next step is the existing production adapter's **database-free**
+`scripts/probe_jobmarket_finland_production.py`, using the official
+`https://api.ahtp.fi/kipa/p67/v2/jobpostings` address and the actual
+new key loaded privately on OVH. By default the script is offline and
+reads no network. `--execute --minutes 30` deliberately makes exactly
+two count-only POST searches and never starts workers or persists jobs.
+Source ingestion remains **disabled** until the real probe and independent
+trusted OVH release gates pass. Details, the 120-minute-first-window caveat,
+terms and operator acceptance: [SP76 production activation](SP76_KEHA_P67_PRODUCTION_ACCESS.md).
