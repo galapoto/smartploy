@@ -987,6 +987,7 @@ export default function App() {
         <small>Simple job applications for Finland</small></span></div>
       <StartChoices onMode={(choice) => startApplyFlow(choice)}
         onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
+            onOpenApplications={() => navigate("applications")}
             cvPresent={cv.present} onUpload={onUploadClick}
             onCreateCV={() => navigate("profile")}/>
       {error ? <p className="setup-error" role="alert">{error}</p> : null}
@@ -1193,6 +1194,7 @@ export default function App() {
               a signed-in applicant sees, not a hero followed by mode cards. */}
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
+            onOpenApplications={() => navigate("applications")}
             cvPresent={cv.present} onUpload={onUploadClick}
             onCreateCV={() => navigate("profile")}/>
           {cv.present ? <section className="welcome-banner" aria-label="Finnish job discovery">
