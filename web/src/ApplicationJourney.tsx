@@ -30,9 +30,9 @@ const MODE_INFO: Record<ApplicationFlowMode, {
   },
   automatic: {
     title: "AutoApply",
-    summary: "Prepare selected jobs in a private batch and create one tracking agent per job.",
-    responsibility: "No automatic employer submission from this screen.",
-    next: "Next: tick jobs, start private preparation, then review drafts.",
+    summary: "Prepare multiple CV-matched applications, review them and send eligible authorized ATS batches.",
+    responsibility: "Employer submission requires a separately approved Lever/Ashby job and your final review.",
+    next: "Next: select jobs, prepare drafts and approve eligible submissions in My applications.",
   },
 };
 
@@ -468,7 +468,7 @@ export default function ApplicationJourney(props: {
     <section className="panel flow-intro">
       <div className="panel-heading"><div>
         <p className="section-kicker">YOUR APPLICATION GUIDE</p>
-        <h2>Upload your CV. Choose a job. Apply.</h2>
+        <h2>Upload your CV. Choose your method. Apply.</h2>
         <p>One clear route, from your connected CV to an application outcome.
           Pick how much work SmartPloy should do; no mode choice sends anything to an employer.</p>
       </div></div>
@@ -490,7 +490,7 @@ export default function ApplicationJourney(props: {
             !props.mode ? "CV connected. Now choose Manual, Assisted or Automatic." :
               hasChosenJob ? "Job choice recorded. Follow its next action below." :
                 "Next: choose a current job from the matches."}</strong>
-          <p>{!props.cv.present ? "Upload a PDF or DOCX below. You can choose an application method before or after uploading." :
+          <p>{!props.cv.present ? "Upload a PDF/DOCX or create a CV in Step 1. The Manual, Assisted and Automatic choices unlock only after a CV is connected." :
             !props.mode ? "The three paths are explained in Step 2 below. Nothing will be applied for until you take the appropriate next action." :
               hasChosenJob ? (props.mode === "automatic" ?
                 selected.length + " jobs selected for private preparation. Use the preparation button below; no employer send has occurred." :
@@ -518,13 +518,14 @@ export default function ApplicationJourney(props: {
           {props.uploading ? "Uploading and reading your CV…" :
             props.cv.present ? "Replace CV" : "Upload CV & find jobs"}
         </button>
-        {props.cv.present ? <button className="outline-btn" type="button" onClick={props.onReviewCV}>
-          Review CV text & facts <ArrowRight size={16}/>
-        </button> : null}
+        <button className="outline-btn" type="button" onClick={props.onReviewCV}>
+          {props.cv.present ? "Review CV text & facts" : "Create CV from scratch"} <ArrowRight size={16}/>
+        </button>
       </div>
     </section>
 
-    <section className={"panel flow-choice" + (!props.mode ? " flow-choice-needed" : "")}
+    <section className={"panel flow-choice" +
+      (!props.cv.present ? " flow-choice-locked" : !props.mode ? " flow-choice-needed" : "")}
       aria-labelledby="flow-choice-title">
       <div className="panel-heading"><div>
         <p className="section-kicker">STEP 2 OF 4 · YOUR DECISION</p>
@@ -532,12 +533,17 @@ export default function ApplicationJourney(props: {
         <p>This choice controls the next job actions. You can switch methods anytime;
           selecting a method never authorizes an employer submission.</p>
       </div></div>
+      {!props.cv.present ? <div className="flow-decision flow-cv-required" role="status">
+        <CircleHelp size={20} aria-hidden="true"/>
+        <p><strong>Step 2 is locked until your CV is saved.</strong> Return to Step 1
+          to upload your CV or create one from scratch. Your application
+          method is not selected automatically.</p>
+      </div> : <>
       {!props.mode ? <div className="flow-decision" role="status">
         <CircleHelp size={20} aria-hidden="true"/>
-        <p><strong>{props.cv.present ? "Your CV is connected. Choose a method to continue." :
-          "Choose a method now, or upload your CV first."}</strong>
-          {" "}Manual means you submit; Assisted prepares with your review;
-          Automatic currently prepares selected private drafts and agents.</p>
+        <p><strong>Your CV is connected. Choose a method to continue.</strong>
+          {" "}Manual means you submit; Assisted supports CV/letter and forms;
+          Automatic prepares private batches and offers employer-authorized submissions after review.</p>
       </div> : <div className="flow-selection-confirmation" role="status">
         <CheckCircle2 size={19} aria-hidden="true"/>
         <span><strong>{MODE_INFO[props.mode].title} selected.</strong> {MODE_INFO[props.mode].next}
@@ -577,12 +583,14 @@ export default function ApplicationJourney(props: {
       </fieldset> : null}
       {props.mode === "automatic" ? <div className="flow-boundary" role="note">
         <ShieldCheck size={20} aria-hidden="true"/>
-        <p><strong>AutoApply preparation and private case agents are available.</strong>{" "}
-          Select vacancies below to prepare saved drafts and start one in-app tracking agent per job.
-          The agents cannot contact employers; background reminders depend on the server worker.
-          Final submission still requires a separately authorized employer integration and approval.
-          Missing authorization or uncertain forms always wait for review—not “Submitted”.</p>
+        <p><strong>AutoApply prepares selected jobs first.</strong>{" "}
+          It saves a CV and letter for review, with an in-app tracking agent per job.
+          After reviewing the exact drafts, My applications offers a one-action
+          batch of up to three employer-authorized Lever/Ashby submissions.
+          Jobs without rights remain Assisted/Manual. No automatic background
+          employer send, unknown-form answers or retries occur here.</p>
       </div> : null}
+      </>}
     </section>
     <section className="panel flow-matches">
       <div className="panel-heading"><div>
