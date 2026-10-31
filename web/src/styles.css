@@ -271,6 +271,31 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .settings-panel > p { color: #687e98; line-height: 1.7; display: flex; align-items: flex-start; gap: 8px; }
 .site-footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; color: #96a5b5; font-size: 10px; margin: 27px 0 0; border-top: 1px solid #e4eaf1; padding-top: 16px; }
 
+/* SP90: show the actual loaded browser/API/static release identity in-app. */
+.release-status {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 9px;
+  min-height: 36px; margin: 11px 0 18px; padding: 9px 13px;
+  border: 1px solid #dfe7f0; border-radius: 10px;
+  background: #fff; color: #536b89; font-size: 12px; line-height: 1.5;
+}
+.release-status svg { flex: none; color: #657e9d; }
+.release-status code { font-size: 11px; letter-spacing: .01em; }
+.release-status strong { font-weight: 750; color: #1d426c; }
+.release-status-update_available,
+.release-status-mixed, .release-status-unverified {
+  border-color: #d5dfe8; background: #f9fbfd;
+}
+.release-status-update_available svg { color: #235e9d; }
+.release-status-action {
+  margin-left: auto; min-height: 32px; padding: 5px 12px;
+  background: #123c70; color: white; border: 1px solid #123c70;
+  border-radius: 7px; font-size: 12px; font-weight: 750;
+}
+.release-status-action:hover { background: #0d2f59; }
+@media (max-width: 630px) {
+  .release-status-action { width: 100%; margin-left: 0; }
+}
+
 .toast-notice { display: flex; align-items: flex-start; gap: 10px; border: 1px solid #c3dbf3; background: #eaf5ff; color: #245b98; padding: 12px 16px; margin-bottom: 18px; border-radius: 11px; font-size: 12px; line-height: 1.5; }
 .toast-notice span { flex: 1; }
 .toast-notice button { border: 0; background: transparent; color: inherit; }

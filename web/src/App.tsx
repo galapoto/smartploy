@@ -23,6 +23,7 @@ import MasterCVEditor from "./MasterCVEditor";
 import ApplicationJourney from "./ApplicationJourney";
 import { describeAutoApplyBatchIssue } from "./autoapply_batch_errors";
 import StartChoices from "./StartChoices";
+import ReleaseStatus from "./ReleaseStatus";
 import SearchSetup from "./SearchSetup";
 import SearchResultsPanel from "./SearchResultsPanel";
 import TrainingProgramsPanel from "./TrainingProgramsPanel";
@@ -990,6 +991,7 @@ export default function App() {
             onOpenApplications={() => navigate("applications")}
             cvPresent={cv.present} onUpload={onUploadClick}
             onCreateCV={() => navigate("profile")}/>
+      <ReleaseStatus apiRevision={health?.release_revision} />
       {error ? <p className="setup-error" role="alert">{error}</p> : null}
       <details className="flow-advanced-setup">
         <summary>Advanced: customize search preferences (optional)</summary>
@@ -1197,6 +1199,7 @@ export default function App() {
             onOpenApplications={() => navigate("applications")}
             cvPresent={cv.present} onUpload={onUploadClick}
             onCreateCV={() => navigate("profile")}/>
+          <ReleaseStatus apiRevision={health?.release_revision} />
           {cv.present ? <section className="welcome-banner" aria-label="Finnish job discovery">
             <div className="welcome-copy"><p className="section-kicker">YOUR NORDIC CAREER WORKSPACE</p><h1>Make your next move.<br /><em>With clarity.</em></h1><p>Discover Finnish opportunities, build a trusted career profile and prepare the next step with SmartPloy.</p></div>
             <img className="helsinki-art" src="/helsinki-skyline.svg" alt="" />
@@ -1217,6 +1220,7 @@ export default function App() {
           <div className="dashboard-grid"><div>{jobsSection}</div>{sidePanel}</div>
         </> : null}
         {page !== "dashboard" ? <>
+          <ReleaseStatus apiRevision={health?.release_revision} />
           <div className="page-intro"><div><p className="section-kicker">SMARTPLOY / {selectedNav?.label.toUpperCase()}</p><h1>{selectedNav?.label}</h1><p>{preferences?.mode === "general" ? "General search across current Finnish vacancies." : "Your private workspace, ranked by the search criteria you chose."}</p></div>
             {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Save job</button> : null}
             {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}

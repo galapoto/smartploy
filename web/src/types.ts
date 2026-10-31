@@ -189,6 +189,8 @@ export interface ApplicationsResponse {
 export interface HealthResponse {
   ok: boolean;
   service: string;
+  /** Public 12-hex release identity; absent on older deployments. */
+  release_revision?: string;
   storage: { mode: string; ready: boolean; error?: string };
   /** Public health intentionally contains no private profile metadata. */
   obumai_configured: boolean;
