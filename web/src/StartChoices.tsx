@@ -103,7 +103,7 @@ export default function StartChoices(props: {
     {props.onOpenApplications ? <div className="flow-start-workspaces">
       <button type="button" className="flow-start-browse-button" onClick={props.onOpenApplications}>
         <FileText size={19} aria-hidden="true"/>
-        <span><strong>My applications &amp; cover letters</strong><small>Open saved applications, review full letters and return to drafts</small></span>
+        <span><strong>Continue saved drafts &amp; letters</strong><small>Open saved applications, review full letters and return to drafts</small></span>
         <ArrowRight size={17} aria-hidden="true"/>
       </button>
     </div> : null}
