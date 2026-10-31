@@ -20,7 +20,7 @@ describe("SP91 SmartPloy Career Atlas entrypoint", () => {
     expect(screen.getByText(/Selecting a mode never authorizes sending an application/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /^Assisted/ }));
-    expect(onMode).toHaveBeenCalledExactlyOnceWith("assisted");
+    expect(onMode).toHaveBeenCalledWith("assisted");
     expect(onMode).toHaveBeenCalledTimes(1);
   });
 
