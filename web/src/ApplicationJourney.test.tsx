@@ -106,26 +106,34 @@ describe("SP21 application journey", () => {
     const onMode = vi.fn(), onBrowse = vi.fn(), onUpload = vi.fn();
     const view = render(<StartChoices onMode={onMode} onBrowse={onBrowse}
       onUpload={onUpload} cvPresent/>);
-    expect(screen.getByText(/CV connected\./i)).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("CV connected.");
     expect(screen.queryByRole("button", { name: /Upload CV first/i })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Automatic.*AutoApply/i }));
     expect(onMode).toHaveBeenCalledWith("automatic");
     expect(onUpload).not.toHaveBeenCalled();
     view.rerender(<StartChoices onMode={onMode} onBrowse={onBrowse}
       onUpload={onUpload} cvPresent={false}/>);
+    expect(screen.queryByRole("group", { name: /Step 2/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Automatic.*AutoApply/i })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Upload CV first/i }));
     expect(onUpload).toHaveBeenCalledTimes(1);
     expect(onMode).toHaveBeenCalledTimes(1);
   });
 
-  it("does not require CV before mode selection, and CV upload button actually responds", () => {
-    const p = { ...props(), cv: { present: false } };
+  it("SP87 requires a connected CV before method selection, while upload, CV creator and browsing work", () => {
+    const p = { ...props(), cv: { present: false }, mode: null };
     render(<ApplicationJourney {...p} />);
     expect(screen.getByRole("heading", { name: /matching jobs appear here/i })).toBeTruthy();
+    expect(screen.getByText(/Step 2 is locked until your CV is saved/i)).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Choose application method" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Apply with AI help/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /upload CV & find jobs/i }));
     expect(p.onUpload).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /Create CV from scratch/i }));
+    expect(p.onReviewCV).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: /browse all jobs/i }));
     expect(p.onFindJobs).toHaveBeenCalledTimes(1);
+    expect(p.onMode).not.toHaveBeenCalled();
     expect(api.getCVJobMatches).not.toHaveBeenCalled();
   });
 
@@ -351,9 +359,9 @@ describe("SP21 application journey", () => {
     expect(screen.getByText(/signed-in account changed/i)).toBeTruthy();
   });
 
-  it("offers four clear non-submitting starting choices", () => {
+  it("SP87 offers three non-submitting application modes only once a CV is connected", () => {
     const onMode = vi.fn(), onBrowse = vi.fn();
-    render(<StartChoices onMode={onMode} onBrowse={onBrowse}/>);
+    render(<StartChoices onMode={onMode} onBrowse={onBrowse} cvPresent/>);
     fireEvent.click(screen.getByRole("button", { name: /apply manually/i }));
     expect(onMode).toHaveBeenLastCalledWith("manual");
     fireEvent.click(screen.getByRole("button", { name: /apply with AI/i }));
@@ -362,6 +370,23 @@ describe("SP21 application journey", () => {
     expect(onMode).toHaveBeenLastCalledWith("automatic");
     fireEvent.click(screen.getByRole("button", { name: /just find jobs/i }));
     expect(onBrowse).toHaveBeenCalledTimes(1);
+  });
+
+  it("SP87 first-time landing refuses to offer any application mode without CV", () => {
+    const onMode = vi.fn(), onBrowse = vi.fn(), onUpload = vi.fn(), onCreateCV = vi.fn();
+    render(<StartChoices onMode={onMode} onBrowse={onBrowse} cvPresent={false}
+      onUpload={onUpload} onCreateCV={onCreateCV}/>);
+    expect(screen.getByRole("heading", { name: "Start with your CV." })).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Application journey steps" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Apply manually/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Assisted · Apply with AI/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Automatic · AutoApply/ })).toBeNull();
+    expect(screen.getByText(/Step 2 unlocks after your CV is saved/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Upload CV first/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Create CV from scratch/i }));
+    expect(onUpload).toHaveBeenCalledTimes(1);
+    expect(onCreateCV).toHaveBeenCalledTimes(1);
+    expect(onMode).not.toHaveBeenCalled();
   });
 
   it("loads later ranked vacancies instead of hiding everything beyond the first page", async () => {
