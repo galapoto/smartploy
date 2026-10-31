@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -40,7 +41,8 @@ from .employer_review_intent_storage import (
     EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
 )
 from .employer_automation_rights import (
-    ACTION, LEVER_API_ACTION, ASHBY_API_ACTION, PostgresEmployerAutomationRightsRepository,
+    ACTION, LEVER_API_ACTION, ASHBY_API_ACTION, employer_job_key,
+    PostgresEmployerAutomationRightsRepository,
 )
 from .lever_partner_submit import (
     LeverPartnerRegistry, LeverPartnerTransport, LeverPartnerUnavailable,
@@ -314,6 +316,38 @@ class LeverPartnerApplicationPayload(BaseModel):
     explicit_final_user_approval: StrictBool
     approve_employer_data_transfer: StrictBool
     affirm_reviewed_employer_form: StrictBool
+
+
+
+class ReviewedAutoApplyBatchItem(BaseModel):
+    """An exact applicant-reviewed workspace and its server-issued fingerprints.
+
+    Client hashes are equality preconditions, never authorization tokens.
+    Every job must have its own existing expiring reviewed-intent and employer
+    permission; the batch request cannot create those prerequisites.
+    """
+    model_config = ConfigDict(extra="forbid")
+    workspace_id: str = Field(min_length=1, max_length=120)
+    provider: Literal["lever", "ashby"]
+    expected_revision: int = Field(ge=2)
+    expected_document_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_fields_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_cv_pdf_size: int = Field(ge=12, le=2 * 1024 * 1024)
+
+
+class AuthorizedAutoApplyBatchPayload(BaseModel):
+    """One foreground applicant action, capped to avoid long/unsafe retries.
+
+    This is NOT background or blanket consent. Unreviewed jobs, unsupported
+    sites and missing separately audited employer rights are always denied.
+    """
+    model_config = ConfigDict(extra="forbid")
+    items: list[ReviewedAutoApplyBatchItem] = Field(min_length=1, max_length=3)
+    confirm_each_exact_employer_and_job: StrictBool
+    confirm_reviewed_documents_and_form: StrictBool
+    approve_each_employer_data_transfer: StrictBool
+    acknowledge_no_automatic_retry: StrictBool
 
 
 class BrowserReviewVerificationPayload(BaseModel):
@@ -2650,6 +2684,151 @@ def create_app(
     ) -> JSONResponse:
         return _submit_to_authorized_partner(
             workspace_id, payload, request, provider="ashby"
+        )
+
+    @app.post("/api/v1/autoapply/submit-reviewed-batch")
+    def submit_authorized_autoapply_batch(
+        payload: AuthorizedAutoApplyBatchPayload, request: Request,
+    ) -> JSONResponse:
+        """Foreground AutoApply: exact reviewed, authorized ATS jobs only.
+
+        PRE-FLIGHT every job without employer I/O before the first POST, then
+        reuse the original provider sender for independently authorized,
+        one-shot, transactionally reserved submissions. Fail closed on a lost
+        response or provider uncertainty. The next job is NEVER attempted
+        following an uncertain/failed result and no automatic retry occurs.
+        """
+        binding = signed_in_employer_review(request)
+        if (
+            request.headers.get("Origin", "") != public_origin
+            or request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin applicant required")
+        if not (
+            payload.confirm_each_exact_employer_and_job
+            and payload.confirm_reviewed_documents_and_form
+            and payload.approve_each_employer_data_transfer
+            and payload.acknowledge_no_automatic_retry
+        ):
+            raise HTTPException(status_code=422, detail="Explicit exact-job batch approval required")
+
+        seen_workspaces: set[str] = set()
+        seen_employer_jobs: set[str] = set()
+        # No employer network request or durable claim may happen before ALL
+        # selected jobs pass the applicant's current review/permission checks.
+        for item in payload.items:
+            if item.workspace_id in seen_workspaces:
+                raise HTTPException(status_code=409, detail="Duplicate application in batch")
+            seen_workspaces.add(item.workspace_id)
+            _, workspace, _, ready = _partner_ready(
+                item.workspace_id, request, provider=item.provider
+            )
+            if workspace.revision != item.expected_revision:
+                raise HTTPException(status_code=409, detail="A selected application changed")
+            if not ready["eligible_for_explicit_partner_submit"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Batch includes an unreviewed or unauthorized employer application",
+                )
+            evidence = ready["review_evidence"]
+            if not isinstance(evidence, dict) or any(
+                evidence.get(key) != getattr(item, "expected_" + key)
+                for key in (
+                    "document_sha256", "cv_pdf_sha256", "fields_sha256", "cv_pdf_size"
+                )
+            ):
+                raise HTTPException(status_code=409, detail="Reviewed batch document hashes changed")
+            try:
+                expires_at = datetime.fromisoformat(str(evidence["expires_at"]))
+                if expires_at.tzinfo is None or expires_at <= (
+                    datetime.now(timezone.utc) + timedelta(seconds=10)
+                ):
+                    raise ValueError
+                key = employer_job_key(
+                    workspace.application_url,
+                    action_scope=(ASHBY_API_ACTION if item.provider == "ashby" else LEVER_API_ACTION),
+                )
+            except (ValueError, TypeError, KeyError) as exc:
+                raise HTTPException(
+                    status_code=409, detail="Employer review expired or is unsupported"
+                ) from exc
+            if key in seen_employer_jobs:
+                raise HTTPException(
+                    status_code=409, detail="The same employer job appears twice in the batch"
+                )
+            seen_employer_jobs.add(key)
+
+        results: list[dict[str, object]] = []
+        stopped = False
+        reason = ""
+        for item in payload.items:
+            exact = LeverPartnerApplicationPayload(
+                expected_revision=item.expected_revision,
+                expected_document_sha256=item.expected_document_sha256,
+                expected_cv_pdf_sha256=item.expected_cv_pdf_sha256,
+                expected_fields_sha256=item.expected_fields_sha256,
+                expected_cv_pdf_size=item.expected_cv_pdf_size,
+                explicit_final_user_approval=True,
+                approve_employer_data_transfer=True,
+                affirm_reviewed_employer_form=True,
+            )
+            try:
+                # No new network adapter and no bypass of the durable
+                # reviewer, provider form and sticky cross-device claim.
+                response = _submit_to_authorized_partner(
+                    item.workspace_id, exact, request, provider=item.provider
+                )
+                outcome = json.loads(response.body)
+                if outcome.get("state") == "provider_acknowledged":
+                    results.append({
+                        "workspace_id": item.workspace_id,
+                        "provider": item.provider,
+                        "state": "provider_acknowledged",
+                        "provider_application_id": outcome["provider_application_id"],
+                    })
+                else:
+                    results.append({
+                        "workspace_id": item.workspace_id,
+                        "provider": item.provider,
+                        "state": "outcome_uncertain",
+                    })
+                    stopped = True
+                    reason = "employer_outcome_uncertain"
+                    break
+            except HTTPException as exc:
+                # A timeout/5xx may hide a committed employer POST. Do not
+                # attempt another job, retry or claim that the batch succeeded.
+                results.append({
+                    "workspace_id": item.workspace_id,
+                    "provider": item.provider,
+                    "state": "stopped_unverified",
+                    "http_status": exc.status_code,
+                })
+                stopped = True
+                reason = "review_or_employer_outcome_unverified"
+                break
+
+        acknowledged = sum(
+            x["state"] == "provider_acknowledged" for x in results
+        )
+        return JSONResponse(
+            {
+                "results": results,
+                "selected_count": len(payload.items),
+                "attempted_count": len(results),
+                "provider_acknowledged_count": acknowledged,
+                "unattempted_count": len(payload.items) - len(results),
+                "stopped": stopped,
+                "stop_reason": reason,
+                "unattended_auto_apply_enabled": False,
+                "automatic_retry_authorized": False,
+            },
+            headers={
+                "Cache-Control": "private, no-store",
+                "Pragma": "no-cache",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     @app.post("/api/v1/application-workspaces/{workspace_id}/verify-reviewed-packet")
