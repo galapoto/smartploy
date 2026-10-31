@@ -215,7 +215,6 @@ export default function MasterCVEditor(props: {
           disabled={saving}>
           <RefreshCw size={15} /> Reload
         </button>
-      </div>
       </div> : null}
       <div className={"master-cv-columns" +
         (mode === "structured" ? " master-cv-columns-structured" : "")}>
