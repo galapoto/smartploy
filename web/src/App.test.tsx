@@ -1596,7 +1596,7 @@ describe("first opt-in creates private IT applications immediately", () => {
       })] },
     });
     await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText(/CV uploaded\. Matching your CV against current jobs now/i)).toBeTruthy();
+    expect(await screen.findByText(/CV connected\. Step 2: choose Manual, Assisted or Automatic/i)).toBeTruthy();
     expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
     expect(screen.queryByTestId("application-editor")).toBeNull();
   });
