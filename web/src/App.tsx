@@ -9,7 +9,7 @@ import {
 import {
   addManualJob, approveFact, createFact, deleteCV, deleteFact, deletePrivateSavedJob, getApplications,
   getCV, getDashboard, getHealth, getJobs, getPrivateSavedJobs, getProfileFacts, getSession,
-  startApplicationWorkspace, uploadCV, saveCVEditor, getJobAIConsents, getJobAIConsentEvents,
+  startApplicationWorkspace, uploadCV, saveCVEditor, restoreCVEditor, getJobAIConsents, getJobAIConsentEvents,
   grantJobAIConsent, revokeJobAIConsent,
   getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus,
   prepareMyMatchingDrafts, type AutoDraftResult
@@ -1242,6 +1242,9 @@ export default function App() {
               cv={cv}
               onSave={(text, expectedSha256) => runPrivateMutation(
                 (userId) => saveCVEditor(text, expectedSha256, userId)
+              )}
+              onRestore={(digest, expectedSha256) => runPrivateMutation(
+                (userId) => restoreCVEditor(digest, expectedSha256, userId)
               )}
               onSaved={(saved) => {
                 setCV(saved); setCVPreview(false);
