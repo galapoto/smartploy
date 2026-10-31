@@ -59,11 +59,12 @@ class MemoryCVRepository:
                 self._archive.pop(key, None)
 
     def history(self, profile_id: str) -> list[dict[str, object]]:
+        current = self.get(profile_id)
         return [
             {**item.summary(), "archived": True}
             for (pid, _), item in reversed(list(self._archive.items()))
             if pid == profile_id and
-               (self.get(profile_id) is None or item.digest != self.get(profile_id).digest)
+               (current is None or item.digest != current.digest)
         ][:12]
 
     def get_archived(self, profile_id: str, digest: str) -> StoredCV | None:
