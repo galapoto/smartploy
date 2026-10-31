@@ -11,6 +11,7 @@ from pypdf import PdfReader
 import pytest
 
 from smartploy.api import create_app
+from smartploy.complete_letter import compose_completed_letter
 from smartploy.application_workspace import (
     WorkspaceError, WorkspaceRevisionConflict, cover_letter_proposal,
     mark_applied, new_workspace, render_document,
@@ -66,8 +67,10 @@ def test_workspace_draft_uses_only_user_facts_and_is_idempotent():
     assert "Candidate Example" in kit.cv_text
     assert "Python" in kit.cv_text
     assert "Finnish" not in kit.cv_text
-    assert "[Explain in your own words" in kit.cover_letter_text
-    assert "Skill: Python" in kit.cover_letter_text
+    assert "My relevant confirmed skills include Python." in kit.cover_letter_text
+    assert kit.cover_letter_text.endswith("Kind regards,\nCandidate Example")
+    assert "[Explain in your own words" not in kit.cover_letter_text
+    assert "[" not in kit.cover_letter_text
     assert kit.to_dict()["authority"]["may_submit_to_employer"] is False
     assert kit.status == "draft"
 
@@ -100,14 +103,16 @@ def test_sp38_finnish_initial_letter_uses_only_relevant_approved_facts():
     again = new_workspace(job, profile)
     assert first.cover_letter_text == again.cover_letter_text
     assert first.cover_letter_text.startswith("Hei rekrytointitiimi")
-    assert "Haen avoinna olevaa" in first.cover_letter_text
-    assert "Osaaminen: Python" in first.cover_letter_text
-    assert "Osaaminen: SQL" in first.cover_letter_text
+    assert "Haen tehtävää Junior Data Analyst" in first.cover_letter_text
+    assert "Tehtävään liittyvää vahvistettua osaamistani ovat" in first.cover_letter_text
+    assert "Python ja SQL" in first.cover_letter_text
     assert "Ruby" not in first.cover_letter_text
     assert "Long-distance vehicle delivery" not in first.cover_letter_text
     assert "Bachelor of Environmental Engineering" not in first.cover_letter_text
     assert "Ancient Atlantis" not in first.cover_letter_text
-    assert "[Kerro omin sanoin" in first.cover_letter_text
+    assert "[Kerro omin sanoin" not in first.cover_letter_text
+    assert "[" not in first.cover_letter_text
+    assert first.cover_letter_text.endswith("Ystävällisin terveisin,\nSynthetic Applicant")
     assert first.status == "draft"
     assert first.to_dict()["authority"]["may_submit_to_employer"] is False
 
@@ -124,11 +129,61 @@ def test_sp38_explicit_language_preview_is_local_and_never_changes_cv_or_workspa
     assert "Osaaminen: Python" in finnish
     assert "Skill: Python" in english
     assert work.cv_text == original_cv
-    assert work.cover_letter_text == english
+    assert work.cover_letter_text == compose_completed_letter(job, profile, language="en").text
+    assert work.cover_letter_text != english  # Old coaching helper stays compatibility-only.
     assert work.revision == 1
     assert work.status == "draft"
     assert "not submitted" not in english
     assert "Ancient Atlantis" not in english + finnish
+
+
+
+def test_sp85_fresh_draft_with_no_matched_fact_has_prose_not_unverified_claims():
+    profile = CandidateProfile(
+        "sp85-unmatched-owner",
+        facts=(
+            ProfileFact("identity", "Alex Applicant", "user-entered", approved=True).normalized(),
+            ProfileFact("skill", "Ruby", "user-entered", approved=True).normalized(),
+            ProfileFact("skill", "Python", "user-entered", approved=False).normalized(),
+        ),
+    )
+    kit = new_workspace(example_candidate(), profile)
+    assert kit.cover_letter_text.startswith("Dear Hiring Team,\n\n")
+    assert "I am applying for the Junior Data Analyst position at Example Oy." in kit.cover_letter_text
+    assert "Ruby" not in kit.cover_letter_text
+    assert "Python" not in kit.cover_letter_text
+    assert "experience" not in kit.cover_letter_text.lower()
+    assert "[" not in kit.cover_letter_text
+    assert kit.cover_letter_text.endswith("Kind regards,\nAlex Applicant")
+    assert kit.status == "draft"
+    assert kit.to_dict()["authority"]["may_submit_to_employer"] is False
+    original = compose_completed_letter(example_candidate(), profile, language="en")
+    assert not original.complete
+    assert original.missing_information  # Guidance stays outside user-visible prose.
+
+
+def test_sp85_unrecognised_job_language_never_infers_finnish_from_profile():
+    base = example_candidate()
+    mixed = replace(base, job=replace(base.job, language="Finnish and English"))
+    profile = example_profile()
+    work = new_workspace(mixed, profile)
+    assert work.cover_letter_text.startswith("Dear Hiring Team,\n\n")
+    assert "Hei rekrytointitiimi" not in work.cover_letter_text
+    assert "Finnish" not in work.cover_letter_text
+    assert work.revision == 1
+
+
+def test_sp85_new_letter_exports_contain_real_prose_in_both_formats():
+    kit = new_workspace(example_candidate(), example_profile())
+    docx, _, _ = render_document(kit, kind="letter", file_format="docx")
+    paragraphs = "\\n".join(p.text for p in Document(BytesIO(docx)).paragraphs)
+    pdf, _, _ = render_document(kit, kind="letter", file_format="pdf")
+    extracted = "\\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
+    for content in (paragraphs, extracted):
+        assert "Dear Hiring Team" in content
+        assert "My relevant confirmed skills include Python." in content
+        assert "Explain in your own words" not in content
+        assert "[Your name]" not in content
 
 
 def test_sp38_unmatched_or_long_approved_fact_must_not_be_invented_or_truncated():

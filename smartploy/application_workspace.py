@@ -20,6 +20,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from .domain import JobCandidate, normalize_identity_text, utc_now_iso
 from .profile import CandidateProfile
 from .scoring import score_candidate
+from .complete_letter import compose_completed_letter
 
 MAX_CV_CHARACTERS = 30000
 MAX_LETTER_CHARACTERS = 10000
@@ -252,8 +253,16 @@ def new_workspace(
         )
     cv_text = source if source else _candidate_document(profile)
     cv_text = _clean_text(cv_text, limit=MAX_CV_CHARACTERS, label="CV")
+    # SP85: a new application opens with ACTUAL bilingual letter prose, not
+    # the original coaching template. User-approved job-matched evidence alone
+    # supplies applicant claims; missing facts never become fabricated text.
+    # Existing persisted workspaces are never changed by this default.
+    initial_language = (
+        "fi" if normalize_identity_text(candidate.job.language) in _FINNISH_JOB_LANGUAGES
+        else "en"
+    )
     letter = _clean_text(
-        cover_letter_proposal(candidate, profile),
+        compose_completed_letter(candidate, profile, language=initial_language).text,
         limit=MAX_LETTER_CHARACTERS, label="Cover letter",
     )
     pid = profile.profile_id

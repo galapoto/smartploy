@@ -1152,7 +1152,7 @@ export default function ApplicationStudio(props: {
               employerAttempt?.previous_attempt_reserved === true} value={letterText}
             onChange={(event) => setLetterText(event.target.value)}
             placeholder="Your reviewed cover letter" />
-          <small>Generated wording contains only approved job-matched facts. Missing information appears separately, not inside the letter. Review and save explicitly; generating does not contact an employer.</small>
+          <small>New application drafts begin with real Finnish or English letter prose, not coaching placeholders. Only approved, job-matched facts are used. If your profile lacks a confirmed name or relevant experience, edit the letter or use a language button to see the missing-information report. Older saved drafts stay unchanged until you edit them. Review and save explicitly; no employer is contacted.</small>
           <div className="studio-export">
             <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "letter", "docx")}
               className={"outline-btn compact" + (dirty ? " disabled" : "")}
