@@ -14,7 +14,7 @@ describe("SP89: saved application entry in the CV-first journey", () => {
     fireEvent.click(screen.getByRole("button", { name: /Continue saved drafts & letters/i }));
     expect(onOpenApplications).toHaveBeenCalledOnce();
     expect(onMode).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: /^Apply manually/i })).toBeNull();
+    expect((screen.getByRole("button", { name: /^Apply manually/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("keeps the application shortcut visible for a connected CV", () => {
