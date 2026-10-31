@@ -63,6 +63,15 @@ describe("job discovery mode semantics", () => {
     expect(screen.getAllByText("General listing")).toHaveLength(2);
   });
 
+  it("accurately distinguishes imported KEHA jobs from external search links", () => {
+    render(<SearchResultsPanel {...common} data={general} />);
+    expect(screen.getByText(/When the official KEHA connector is enabled/i)).toBeTruthy();
+    expect(screen.getByText(/already counted in SmartPloy's listings/i)).toBeTruthy();
+    expect(screen.queryByText(/doesn't yet ingest Duunitori, Työmarkkinatori/i)).toBeNull();
+    expect(screen.getByRole("link", { name: /Työmarkkinatori/i })).toBeTruthy();
+    expect(screen.getByText(/visiting them does not import more jobs/i)).toBeTruthy();
+  });
+
   it("filters current listings client side without changing saved preferences", () => {
     render(<SearchResultsPanel {...common} data={general} search="tester" />);
     expect(screen.queryByText("Junior Data Analyst")).toBeNull();
