@@ -587,7 +587,8 @@ def test_sp92_auto_draft_restart_reuses_same_scheduler_with_lease_and_no_fake_re
     attestation = (ROOT / "smartploy/auto_draft_runtime_acceptance.py").read_text(
         encoding="utf-8"
     )
-    assert "if not args.once and any(" in source
+    assert "if not args.once and not stop.is_set() and any(" in source
+    assert source.index("signal.signal(signal.SIGINT, request_stop)") < source.index("scheduler.request_private_auto_draft_startup()")
     assert "scheduler.request_private_auto_draft_startup()" in source
     assert 'only_task_id="application:auto-draft-shortlist"' in source
     assert '"candidate_drafts_created_verified": False' in source
