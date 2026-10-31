@@ -248,6 +248,11 @@ export interface CVEditorSaved {
   approved_profile_facts_added: 0;
 }
 
+export interface CVEditorRestored extends CVEditorSaved {
+  text: string;
+  restored_sha256: string;
+}
+
 export interface CandidateFact {
   fact_id: string;
   fact_type: string;
