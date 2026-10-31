@@ -1083,3 +1083,47 @@ h1, h2, h3, h4, p { margin-top: 0; }
 @media (max-width: 600px) { .studio-automation { padding: 16px; }
   .studio-automation-approval .navy-btn { justify-self: stretch; }
   .studio-assisted-guide { padding: 14px; } }
+
+
+/* SP87: CV-first onboarding. A real CV unlocks the three application types. */
+.flow-start-progress { list-style: none; padding: 0; margin: 0 0 20px;
+  display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+.flow-start-progress li { min-width: 0; padding: 10px 12px; font-size: 12px; font-weight: 750;
+  line-height: 1.25; border: 1px solid #e2eaf2; border-radius: 10px;
+  color: #73849a; background: #f7f9fc; }
+.flow-start-progress li.current { color: #154c7b; border-color: #a8cdf1;
+  background: #ecf6ff; }
+.flow-start-progress li.done { color: #1b694e; border-color: #bce7d1;
+  background: #eefaf4; }
+.flow-start-cv-copy { display: grid; gap: 5px; flex: 1 1 230px; }
+.flow-start-cv-copy strong { color: #173b60; font-size: 15px; font-weight: 800; }
+.flow-start-cv-copy p { color: #4c6783; margin: 0; font-size: 13px; line-height: 1.55; }
+.flow-start-locked { display: flex; align-items: flex-start; gap: 12px;
+  border: 1px solid #d4dfef; background: #f9fbff; padding: 14px 17px;
+  border-radius: 12px; color: #3e5a75; font-size: 13px; line-height: 1.55; }
+.flow-start-locked svg { flex: none; color: #48729b; margin-top: 2px; }
+.flow-start-grid.flow-start-grid-methods { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.flow-start-grid-methods .flow-start-card { min-height: 183px; gap: 9px; }
+.flow-start-cv-actions { display: flex; flex-wrap: wrap; gap: 18px; padding-top: 12px; }
+.flow-start-cv-actions .text-link { padding: 5px 0; font-size: 13px; color: #235681; }
+.flow-start-browse { border-top: 1px solid #e5edf5; padding-top: 16px; margin-top: 18px; }
+.flow-start-browse-button { width: 100%; border: 1px solid #d7e5f1; background: #fafcff;
+  border-radius: 12px; min-height: 70px; padding: 13px 17px; display: flex;
+  align-items: center; gap: 13px; text-align: left; color: #174c79; }
+.flow-start-browse-button:hover { background: #edf6ff; border-color: #9dc9f0; }
+.flow-start-browse-button:focus-visible { outline: 3px solid #2e8ad7; outline-offset: 2px; }
+.flow-start-browse-button span { flex: 1; display: grid; gap: 4px; }
+.flow-start-browse-button strong { font-size: 14px; font-weight: 800; }
+.flow-start-browse-button small { color: #536d86; font-size: 12px; line-height: 1.4; }
+.flow-choice-locked { background: #fdfefe; border-color: #e2eaf2; }
+.flow-cv-required { margin-bottom: 0; }
+@media (max-width: 920px) {
+  .flow-start-grid.flow-start-grid-methods { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 620px) {
+  .flow-start-progress { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .flow-start-grid.flow-start-grid-methods { grid-template-columns: 1fr; }
+  .flow-start-grid-methods .flow-start-card { min-height: 145px; }
+  .flow-start-how .row-actions { width: 100%; }
+  .flow-start-how .row-actions button { flex: 1; }
+}
