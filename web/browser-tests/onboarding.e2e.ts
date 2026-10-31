@@ -374,19 +374,19 @@ test("SP69: first-use Upload CV first is a working button and leads to explicit 
 test("CV-first manual application goes from upload to real matching and selected private draft", async ({ page }) => {
   const state = await installSyntheticApi(page);
   await page.goto("/");
-  await page.getByRole("button", { name: /Apply manually/i }).click();
-  await expect(page.getByRole("heading", {
-    name: "Upload your CV. Choose a job. Apply.",
-  })).toBeVisible();
-  await expect(page.getByRole("heading", {
-    name: "Your matching jobs appear here",
-  })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Apply manually/i })).toHaveCount(0);
   await page.locator("input[aria-label='Select CV to upload']").setInputFiles({
     name: "Synthetic-IT-CV.docx",
     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     buffer: Buffer.from("IN-TEST CV BLOB; no real CV"),
   });
   await expect(page.getByText("Synthetic-IT-CV.docx is ready")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Choose application method" })).toBeVisible();
+  await page.getByRole("button", { name: /Apply manually/i }).click();
+  await expect(page.getByRole("heading", {
+    name: "Upload your CV. Choose your method. Apply.",
+  })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await expect(page.getByText(/CV-text matches/i)).toBeVisible();
@@ -549,24 +549,26 @@ test("existing job-search cards open the requested assisted journey without crea
   await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   const analystCard = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
   await analystCard.getByRole("button", { name: /Apply with AI/i }).click();
-  await expect(page.getByRole("heading", { name: "Upload your CV. Choose a job. Apply." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Upload your CV. Choose your method. Apply." })).toBeVisible();
   await expect(page.locator(".flow-mode.selected")).toContainText("Apply with AI help");
   await expect(page.locator(".flow-job.highlighted")).toContainText("Junior Data Analyst");
   expect(state.applicationWorkspaceCreates).toEqual([]);
 });
 
-test("production build renders inline SmartPloy logo and a working first-use chooser", async ({ page }) => {
+test("SP87 production build puts CV first, locks methods, and renders the actual start choices", async ({ page }) => {
   await installSyntheticApi(page);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Apply for jobs in four simple steps." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   const logo = page.locator("svg[aria-label='SmartPloy turquoise and navy mark']");
   await expect(logo).toBeVisible();
   const bounds = await logo.boundingBox();
   expect(bounds?.width).toBeGreaterThan(20);
   expect(bounds?.height).toBeGreaterThan(20);
-  await expect(page.getByRole("button", { name: /apply manually/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /apply with AI/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /autoapply/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Upload CV first/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Create CV from scratch/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /apply manually/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /apply with AI/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /autoapply/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /just find jobs/i })).toBeVisible();
   await page.getByText(/Advanced: customize search preferences/i).click();
   await expect(page.getByRole("radio", { name: /Personalized jobs/i })).toBeChecked();
@@ -751,7 +753,10 @@ test("saved private jobs do not enter ATS discovery and vanish after account swi
 
   state.userId = "synthetic-user-b"; // same email, different authenticated ID
   await page.getByRole("button", { name: "Refresh workspace" }).click();
-  await expect(page.getByRole("heading", { name: /Make your next move/i })).toBeVisible();
+  // Account B has no CV; its journey must reset to Step 1 rather than
+  // displaying the original user's mode selection or CV.
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Apply manually/i })).toHaveCount(0);
   await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByText("PRIVATE-BOOKMARK-A")).toHaveCount(0);
   await expect(page.getByText(/No private saved jobs yet/i)).toBeVisible();
@@ -902,7 +907,7 @@ test("mobile onboarding remains usable when the optional local AI endpoint fails
   await installSyntheticApi(page, { unavailableAI: true });
   await page.goto("/");
   await expect(page.locator("svg[aria-label='SmartPloy turquoise and navy mark']")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Apply for jobs in four simple steps." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   await page.getByRole("button", { name: /Just find jobs/i }).click();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await expect(page.getByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeVisible();
