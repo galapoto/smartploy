@@ -309,6 +309,8 @@ class PostgresCVRepository:
                 archived = cur.fetchone()
                 if archived is None or digest == expected_sha256:
                     raise CVArchiveNotFound("Archived CV version not found")
+                if hashlib.sha256(bytes(archived[2])).hexdigest() != digest:
+                    raise ValueError("Archived CV integrity could not be verified")
                 # Load original bytes before pruning: the selected entry may be
                 # the oldest of 12, while archiving the current file adds one.
                 self._archive_current(cur, profile_id)
