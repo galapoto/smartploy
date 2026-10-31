@@ -215,9 +215,11 @@ beforeEach(() => {
   );
   vi.mocked(api.proposeEvidenceLetter).mockImplementation(async (_, revision, language) => ({
     cover_letter: language === "fi"
-      ? "Hei rekrytointitiimi,\\n\\nOsaaminen: Python\\n[Kerro omin sanoin]"
-      : "Dear Hiring Team,\\n\\nSkill: Python\\n[Explain in your own words]",
-    language, workspace_revision: revision,
+      ? "Hei rekrytointitiimi,\\n\\nTehtävään liittyvä osaamiseni sisältää Pythonin.\\n\\nYstävällisin terveisin,\\nAlex Applicant"
+      : "Dear Hiring Team,\\n\\nMy confirmed skills include Python.\\n\\nKind regards,\\nAlex Applicant",
+    language, complete: true, missing_information: [],
+    evidence_fact_ids: ["fact-approved-python"], review_notes: ["Review all wording."],
+    workspace_revision: revision,
     review_required: true, saved: false,
     external_actions_performed: 0, employer_contacts: 0,
   }));
@@ -904,6 +906,8 @@ describe("Application Studio private-read account boundary", () => {
       name: "Editable cover letter text",
     }) as HTMLTextAreaElement;
     await waitFor(() => expect(letter.value).toContain("Hei rekrytointitiimi"));
+    expect(letter.value).not.toContain("[Kerro");
+    expect(letter.value).not.toContain("Osaaminen:");
     expect((screen.getByRole("textbox", {
       name: "Editable CV text",
     }) as HTMLTextAreaElement).value).toBe(originalCV);

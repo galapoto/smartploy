@@ -28,9 +28,10 @@ from .auto_draft_shortlist import prepare_profile_shortlist
 from .training_directory import TrainingDirectoryError, load_training_programs
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import (
-    WorkspaceError, WorkspaceRevisionConflict, cover_letter_proposal,
+    WorkspaceError, WorkspaceRevisionConflict,
     new_workspace, render_document,
 )
+from .complete_letter import compose_completed_letter
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from .application_agents import ApplicationAgentConflict, PostgresApplicationAgentRepository
 from .browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
@@ -1832,7 +1833,7 @@ def create_app(
     def preview_evidence_letter(
         workspace_id: str, payload: EvidenceLetterPayload, request: Request,
     ) -> JSONResponse:
-        """Applicant-selected Finnish/English draft, no AI or document write.
+        """Applicant-selected complete Finnish/English letter, no AI or document write.
 
         Reuses the exact original workspace owner, posting-fingerprint and
         approved-facts boundaries used by existing Application Studio drafts.
@@ -1871,7 +1872,10 @@ def create_app(
         approved_before = tuple(
             sorted((f.fact_id, f.fact_type, f.value) for f in profile.approved_facts)
         )
-        proposed = cover_letter_proposal(
+        # Explicit user-requested proposal: complete prose, with missing
+        # evidence returned separately. The original initial draft retains
+        # review markers until a separately reviewed readiness migration.
+        proposed = compose_completed_letter(
             candidate, profile, language=payload.language,
         )
         # Do not return old approved facts after a deletion/approval change or
@@ -1892,8 +1896,7 @@ def create_app(
             )
         return JSONResponse(
             {
-                "cover_letter": proposed,
-                "language": payload.language,
+                **proposed.to_dict(),
                 "workspace_revision": latest.revision,
                 "review_required": True,
                 "saved": False,

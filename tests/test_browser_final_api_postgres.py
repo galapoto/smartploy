@@ -247,8 +247,8 @@ def test_sp38_job_specific_language_proposal_is_owner_bound_and_does_not_send(re
         f"/api/v1/application-workspaces/{work.workspace_id}",
     ).json()["workspace"]
     for language, prefix, evidence in (
-        ("fi", "Hei rekrytointitiimi", "Osaaminen: Python SQL"),
-        ("en", "Dear Hiring Team", "Skill: Python SQL"),
+        ("fi", "Hei rekrytointitiimi", "Python SQL"),
+        ("en", "Dear Hiring Team", "Python SQL"),
     ):
         result = api.post(
             route, headers=headers,
@@ -260,6 +260,10 @@ def test_sp38_job_specific_language_proposal_is_owner_bound_and_does_not_send(re
         assert data["language"] == language
         assert data["cover_letter"].startswith(prefix)
         assert evidence in data["cover_letter"]
+        assert "[" not in data["cover_letter"] and "•" not in data["cover_letter"]
+        assert data["complete"] is True
+        assert data["missing_information"] == []
+        assert len(data["evidence_fact_ids"]) == 1
         assert data["review_required"] is True
         assert data["saved"] is False
         assert data["workspace_revision"] == work.revision

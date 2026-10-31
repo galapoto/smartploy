@@ -12,7 +12,7 @@ from pypdf import PdfReader
 
 
 MAX_CV_BYTES = 5 * 1024 * 1024
-MAX_CV_TEXT = 60_000
+MAX_CV_TEXT = 30_000  # Same editable limit as application_workspace.MAX_CV_CHARACTERS
 MAX_ZIP_EXPANDED_BYTES = 20 * 1024 * 1024
 
 
@@ -106,5 +106,10 @@ def parse_cv(filename: str, encoded: str) -> tuple[str, str, bytes, str]:
     if len(text) < 20:
         raise CVImportError("No readable CV text was found. Upload a text-based PDF or DOCX.")
     if len(text) > MAX_CV_TEXT:
-        text = text[:MAX_CV_TEXT]
+        # Truncation can remove a negation, role date or qualification.
+        # Fail before storing instead of misrepresenting an applicant's CV.
+        raise CVImportError(
+            "The CV contains more than 30,000 text characters. "
+            "Please shorten it before uploading; no text was truncated."
+        )
     return safe_filename, media_type, content, text
