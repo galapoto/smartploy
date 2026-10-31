@@ -42,6 +42,10 @@ class CVRevisionConflict(ValueError):
     """An editor saved against an outdated CV revision; never overwrite silently."""
 
 
+class CVArchiveNotFound(ValueError):
+    """The chosen historical CV is absent or belongs to another profile."""
+
+
 class MemoryCVRepository:
     def __init__(self) -> None:
         self._items: dict[str, StoredCV] = {}
@@ -58,7 +62,8 @@ class MemoryCVRepository:
         return [
             {**item.summary(), "archived": True}
             for (pid, _), item in reversed(list(self._archive.items()))
-            if pid == profile_id
+            if pid == profile_id and
+               (self.get(profile_id) is None or item.digest != self.get(profile_id).digest)
         ][:12]
 
     def get_archived(self, profile_id: str, digest: str) -> StoredCV | None:
@@ -80,6 +85,30 @@ class MemoryCVRepository:
         return self.put(profile_id, "smartploy-master-cv.docx",
                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         content, cleaned)
+
+    def restore_archived(
+        self, profile_id: str, *, digest: str, expected_sha256: str,
+    ) -> StoredCV:
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("Invalid archived CV digest")
+        if not isinstance(expected_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+            raise ValueError("Exact current CV revision required")
+        current = self.get(profile_id)
+        if current is None or current.digest != expected_sha256:
+            raise CVRevisionConflict("CV changed in another tab. Reload before restoring.")
+        previous = self.get_archived(profile_id, digest)
+        if previous is None or previous.digest == current.digest:
+            raise CVArchiveNotFound("Archived CV version not found")
+        self._remember(current)
+        # A version cannot simultaneously be the active file and a past file.
+        self._archive.pop((profile_id, digest), None)
+        restored = StoredCV(
+            profile_id=profile_id, filename=previous.filename,
+            media_type=previous.media_type, content=previous.content,
+            text=previous.text, updated_at=datetime.now(timezone.utc).isoformat(),
+        )
+        self._items[profile_id] = restored
+        return restored
 
     def get(self, profile_id: str) -> StoredCV | None:
         return self._items.get(profile_id)
@@ -221,9 +250,13 @@ class PostgresCVRepository:
                 cur.execute(
                     """SELECT filename, media_type, octet_length(content), sha256,
                               archived_at
-                       FROM smartploy_cv_history WHERE profile_id=%s
+                       FROM smartploy_cv_history
+                       WHERE profile_id=%s
+                         AND sha256 <> COALESCE((
+                             SELECT sha256 FROM smartploy_cv_files WHERE profile_id=%s
+                         ), '')
                        ORDER BY archived_at DESC, sha256 DESC LIMIT 12""",
-                    (profile_id,),
+                    (profile_id, profile_id),
                 )
                 rows = cur.fetchall()
         return [{
@@ -246,6 +279,54 @@ class PostgresCVRepository:
                 )
                 row = cur.fetchone()
         return self._from_row(profile_id, row) if row else None
+
+    def restore_archived(
+        self, profile_id: str, *, digest: str, expected_sha256: str,
+    ) -> StoredCV:
+        """Atomically CAS-swap an exact archived file, with no reinterpretation."""
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("Invalid archived CV digest")
+        if not isinstance(expected_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+            raise ValueError("Exact current CV revision required")
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                self._lock(cur, profile_id)
+                cur.execute(
+                    """SELECT sha256 FROM smartploy_cv_files
+                       WHERE profile_id=%s FOR UPDATE""",
+                    (profile_id,),
+                )
+                row = cur.fetchone()
+                if row is None or str(row[0]) != expected_sha256:
+                    raise CVRevisionConflict("CV changed in another tab. Reload before restoring.")
+                cur.execute(
+                    """SELECT filename, media_type, content, extracted_text
+                       FROM smartploy_cv_history
+                       WHERE profile_id=%s AND sha256=%s FOR UPDATE""",
+                    (profile_id, digest),
+                )
+                archived = cur.fetchone()
+                if archived is None or digest == expected_sha256:
+                    raise CVArchiveNotFound("Archived CV version not found")
+                # Load original bytes before pruning: the selected entry may be
+                # the oldest of 12, while archiving the current file adds one.
+                self._archive_current(cur, profile_id)
+                cur.execute(
+                    "DELETE FROM smartploy_cv_history WHERE profile_id=%s AND sha256=%s",
+                    (profile_id, digest),
+                )
+                cur.execute(
+                    """UPDATE smartploy_cv_files
+                       SET filename=%s, media_type=%s, content=%s,
+                           extracted_text=%s, sha256=%s, updated_at=now()
+                       WHERE profile_id=%s
+                       RETURNING filename,media_type,content,extracted_text,updated_at""",
+                    (archived[0], archived[1], archived[2], archived[3], digest, profile_id),
+                )
+                restored = cur.fetchone()
+                if restored is None:
+                    raise RuntimeError("Restored CV disappeared during transaction")
+        return self._from_row(profile_id, restored)
 
     def delete(self, profile_id: str) -> bool:
         with connect(self.dsn) as conn:
