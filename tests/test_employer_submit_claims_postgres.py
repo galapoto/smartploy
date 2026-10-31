@@ -579,6 +579,13 @@ def test_signed_in_review_http_to_postgres_end_to_end(scoped, monkeypatch):
             "Regards, Applicant Synthetic."
         ))
         assert workspaces.create_or_get(work)[1]
+        # Model an explicit owner-reviewed document save through the
+        # production PostgreSQL CAS edit, not an unreviewed initial draft.
+        work = workspaces.edit(
+            a.profile_id, work.workspace_id, expected_revision=work.revision,
+            cv_text=work.cv_text, cover_letter_text=work.cover_letter_text,
+        )
+        assert work is not None and work.revision == 2
         packet = make_browser_packet(work, job, profiles.profile())
 
         monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")
@@ -1101,6 +1108,11 @@ def signed_in_partner_workflow(scoped, monkeypatch):
         "Kind regards, Synthetic Applicant."
     ))
     assert workspaces.create_or_get(workspace)[1]
+    workspace=workspaces.edit(
+        a.profile_id,workspace.workspace_id,expected_revision=workspace.revision,
+        cv_text=workspace.cv_text,cover_letter_text=workspace.cover_letter_text,
+    )
+    assert workspace is not None and workspace.revision == 2
     packet=make_browser_packet(workspace,job,profiles.profile())
     key=employer_job_key(url)
     partner_key="SMARTPLOY_LEVER_PARTNER_KEY_SYNTHETIC"

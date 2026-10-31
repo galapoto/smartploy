@@ -1,0 +1,31 @@
+# SP85 — complete cover letters by default
+
+## Problem fixed
+New application workspaces previously started with review-guide placeholders such as `[Explain in your own words...]`, although the explicit language action already generated real Finnish/English letter prose. Applicants could download a coaching template instead of a cover letter.
+
+## Changes
+- Reuse `smartploy.complete_letter.compose_completed_letter` as the **default** content for `new_workspace`. The explicit language change keeps the same already-tested composer.
+- Reuse the existing exact, published job-language classifier: Finnish only when the listing explicitly indicates Finnish; ambiguous or mixed language remains English. Never infer applicant fluency from the job listing or their CV.
+- Keep applicant qualifications constrained to approved job-matched facts. If the evidence/name is missing, the composer produces incomplete **prose**, not invented credentials or embedded editing commands. The explicit language proposal still returns `complete` and `missing_information` separately.
+- Existing database workspaces, applicant-edited text, revision numbers and employer-review state are not automatically rewritten. The visible language buttons can replace older drafts only by applicant action and confirmation.
+- UI explicitly explains incomplete evidence, old drafts, manual editing, save/review and no employer contact.
+- `review_handoff` explicitly blocks **any revision-1 workspace**, even when the letter has no guide markers. Only a deliberate signed-in revision-checked document save can advance it. This prevents treating machine-prepared prose as applicant approval.
+- A fresh unchanged draft now exposes **Confirm CV & letter review**. The user must confirm before the unchanged documents are saved; an edited draft still requires an explicit Save. The server never treats initial complete prose as permission for an employer action.
+- No new network calls, AI requirements, employer forms, employer claims, source ingestion or migrations.
+
+## Reuse-first
+Uses the existing matching/scoring, approved evidence, CV/application workspace and PDF/DOCX renderers; no REA/external code warranted. Existing legacy helper is retained for compatibility but not used when opening new workspaces.
+
+## Acceptance
+- New English and Finnish workspaces have complete textual introductions, evidence paragraphs when justified, and real closings.
+- No `[Explain...]` or `[Kerro...]` coaching text enters newly generated letters or PDF/DOCX.
+- Unapproved/unmatched facts do not become applicant claims.
+- Unknown or mixed advertised language doesn't force Finnish.
+- Fresh initial review/readiness fails closed despite finished prose; owner-confirmed save advances the revision without employer transfer.
+- Saving and final employer transmission retain existing explicit consent, owner/revision checks, one-shot safety ledgers and authorization boundaries.
+
+## Release boundary
+GitHub CI is source/fixture evidence only. No OVH deploy or real employer post is implied. New default applies to newly created workspaces after release, not pre-existing drafts.
+
+## Legacy test fixtures updated after CI security check
+Some older synthetic tests bypassed the applicant save step by directly constructing a first-revision workspace containing a manually written letter and then asserting browser readiness. SP85 deliberately rejects that: a first-revision document has not been saved after review even if its prose reads as finished. The shared PostgreSQL/OIDC/browser partner fixtures now use the real repository `edit` compare-and-swap operation to advance to revision 2; a Greenhouse-only in-memory acceptance test uses `update_documents`. This preserves the stricter production gate and tests the proper applicant-driven lifecycle rather than disabling the guard.
