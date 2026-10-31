@@ -952,3 +952,58 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .master-cv-history li { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
 .master-cv-history a { display: inline-flex; align-items: center; gap: 5px; color: #175c49; text-decoration: underline; }
 @media (max-width: 1120px) { .master-cv-columns { grid-template-columns: 1fr; } .master-cv-edit textarea, .master-cv-paper { min-height: 300px; } }
+
+
+/* SP80: structured CV composer on the same retained master document. */
+.master-cv-mode-switch { display: inline-flex; max-width: 100%; gap: 4px;
+  border: 1px solid #c5d9cc; border-radius: 12px; padding: 4px;
+  background: #eff6f1; margin: 10px 0 15px; }
+.master-cv-mode-switch button { min-height: 42px; padding: 8px 16px;
+  border: 0; border-radius: 9px; background: transparent; color: #364c42;
+  font-size: 14px; font-weight: 700; cursor: pointer; }
+.master-cv-mode-switch button.selected { color: #142e22; background: #fff;
+  box-shadow: 0 2px 9px rgba(26,61,39,.12); }
+.master-cv-mode-switch button:focus-visible,
+.structured-cv-form button:focus-visible,
+.structured-cv-form input:focus-visible,
+.structured-cv-form textarea:focus-visible,
+.structured-cv-form select:focus-visible { outline: 3px solid #1457c6; outline-offset: 2px; }
+.master-cv-columns-structured { grid-template-columns: minmax(0, 1.5fr) minmax(0, .85fr); }
+.structured-cv-form { display: grid; gap: 18px; }
+.structured-cv-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px 14px; }
+.structured-cv-form label { display: grid; gap: 7px; color: #24392e;
+  font-size: 14px; font-weight: 650; line-height: 1.45; }
+.structured-cv-form input, .structured-cv-form textarea,
+.structured-cv-form select { width: 100%; padding: 11px 12px;
+  min-height: 44px; border: 1px solid #a8b9ae; border-radius: 9px;
+  background: #fff; color: #182b22; font: 15px/1.5 Inter, "Segoe UI", sans-serif; }
+.structured-cv-form textarea { min-height: 80px; resize: vertical; }
+.structured-cv-sections-heading { display: flex; align-items: end; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; padding: 18px 0 0; border-top: 1px solid #d5e5d9; }
+.structured-cv-sections-heading > div:first-child { display: grid; gap: 4px; }
+.structured-cv-sections-heading strong { font-size: 17px; color: #162e22; }
+.structured-cv-sections-heading small { font-size: 13px; color: #4f695a; }
+.structured-cv-add-section { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.structured-cv-section { position: relative; margin: 0; border: 1px solid #d1e0d4;
+  border-radius: 13px; padding: 16px; background: #f8fbf8; min-width: 0; }
+.structured-cv-section legend { padding: 0 6px; color: #174936;
+  font-weight: 750; font-size: 16px; }
+.structured-cv-order { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.structured-cv-order button { display: grid; place-items: center; width: 36px; height: 36px;
+  border: 1px solid #c2d2c5; border-radius: 8px; color: #325541; background: #fff; cursor: pointer; }
+.structured-cv-order button:disabled { opacity: .3; cursor: default; }
+.structured-cv-entry { display: grid; gap: 12px; padding: 12px; border: 1px solid #e0e9df;
+  background: #fff; border-radius: 11px; margin: 10px 0 14px; }
+.structured-cv-entry-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.structured-cv-entry-header > strong { font-size: 14px; font-weight: 750; color: #204733; }
+.structured-cv-import { border: 1px solid #dfd1a9; border-radius: 11px;
+  background: #fffaf0; padding: 14px; font-size: 14px; line-height: 1.6; }
+.structured-cv-import > p { margin: 0 0 10px; }
+.master-cv-hint { padding: 12px; background: #fff8ed; border-left: 3px solid #a26713;
+  color: #754d14; font-size: 13px; line-height: 1.55; margin: 12px 0; }
+@media (max-width: 1220px) { .master-cv-columns-structured { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .structured-cv-field-grid { grid-template-columns: 1fr; }
+  .structured-cv-add-section { width: 100%; }
+  .structured-cv-add-section select { flex: 1; }
+  .structured-cv-section { padding: 12px; }
+}

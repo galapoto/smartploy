@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, FileText, History, Plus, RefreshCw, Save, ShieldCheck } from "lucide-react";
 import { getCVEditor, getSession } from "./api";
+import StructuredCVForm from "./StructuredCVForm";
+import {
+  cvHasApplicantContent, renderStructuredCV, structuredFromSource,
+  type StructuredCV,
+} from "./structured_cv";
 import type { CVDocument, CVEditorArchive, CVEditorDocument, CVEditorSaved } from "./types";
 
 const HEADINGS = ["PROFILE", "EXPERIENCE", "EDUCATION", "SKILLS", "PROJECTS", "CERTIFICATIONS", "LANGUAGES"];
@@ -20,6 +25,9 @@ export default function MasterCVEditor(props: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [mode, setMode] = useState<"text" | "structured">("text");
+  const [structured, setStructured] = useState<StructuredCV | null>(null);
+  const [conversionNote, setConversionNote] = useState("");
   const inFlight = useRef(false);
   const requestGeneration = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -49,10 +57,14 @@ export default function MasterCVEditor(props: {
       setSnapshot(data);
       setText(data.text);
       setOriginalText(data.text);
+      setStructured(null);
+      setMode("text");
+      setConversionNote("");
     } catch (exc) {
       if (token !== requestGeneration.current) return;
       // Don't keep showing private previous-account text on failure.
       setSnapshot(null); setText(""); setOriginalText("");
+      setStructured(null); setMode("text"); setConversionNote("");
       setError(exc instanceof Error ? exc.message : "Unable to load your CV editor.");
     } finally {
       if (token === requestGeneration.current) setLoading(false);
@@ -70,8 +82,41 @@ export default function MasterCVEditor(props: {
   }, [refresh, cv.sha256, cv.present]);
 
   const dirty = text !== originalText;
+  const validStructured = mode !== "structured" ||
+    (!!structured && cvHasApplicantContent(structured));
   const canSave = !!snapshot && !loading && !saving &&
-    dirty && text.trim().length >= 20 && text.trim().length <= MAX_CHARS;
+    dirty && validStructured &&
+    text.trim().length >= 20 && text.trim().length <= MAX_CHARS;
+
+  function openStructuredEditor() {
+    if (loading || saving || !snapshot || mode === "structured") return;
+    const proposal = structuredFromSource(text);
+    if (proposal.origin === "imported" && !window.confirm(
+      "SmartPloy cannot safely infer structured fields from every uploaded CV. " +
+      "Your entire existing CV text will be kept under Imported source text, " +
+      "and the previous original file remains in private version history after saving. " +
+      "Continue to the structured editor?"
+    )) return;
+    setStructured(proposal.model);
+    setText(renderStructuredCV(proposal.model));
+    setMode("structured");
+    setConversionNote(proposal.origin === "imported"
+      ? "Your original CV text has been kept in Imported source text. " +
+        "Review it and enter structured details before saving; nothing was discarded."
+      : "Structured fields are synced with your document preview. Save explicitly when ready.");
+  }
+
+  function updateStructured(next: StructuredCV) {
+    setStructured(next);
+    setText(renderStructuredCV(next));
+  }
+
+  function openTextEditor() {
+    if (mode === "text") return;
+    setMode("text");
+    setStructured(null);
+    setConversionNote("");
+  }
 
   function addHeading(heading: string) {
     if (loading || saving || !snapshot) return;
@@ -142,7 +187,20 @@ export default function MasterCVEditor(props: {
     {loading ? <p role="status">Loading your private CV editor…</p> : null}
     {error ? <p role="alert" className="master-cv-message error">{error}</p> : null}
     {snapshot && !loading ? <>
-      <div className="master-cv-toolbar">
+      <div className="master-cv-mode-switch" role="group" aria-label="CV editing mode">
+        <button type="button" aria-pressed={mode === "structured"}
+          className={mode === "structured" ? "selected" : ""}
+          disabled={saving} onClick={openStructuredEditor}>
+          Structured editor
+        </button>
+        <button type="button" aria-pressed={mode === "text"}
+          className={mode === "text" ? "selected" : ""}
+          disabled={saving} onClick={openTextEditor}>
+          Text editor
+        </button>
+      </div>
+      {conversionNote ? <p className="master-cv-message" role="status">{conversionNote}</p> : null}
+      {mode === "text" ? <div className="master-cv-toolbar">
         <label htmlFor="master-cv-add-section">Add a section</label>
         <select id="master-cv-add-section" aria-label="Choose CV section to insert"
           defaultValue="" onChange={(event) => {
@@ -158,17 +216,26 @@ export default function MasterCVEditor(props: {
           <RefreshCw size={15} /> Reload
         </button>
       </div>
-      <div className="master-cv-columns">
+      {mode === "text" ? </div> : null}
+      <div className={"master-cv-columns" +
+        (mode === "structured" ? " master-cv-columns-structured" : "")}>
         <div className="master-cv-edit">
+          {mode === "text" ? <>
           <label htmlFor="master-cv-text">Editable master CV text</label>
           <textarea id="master-cv-text" ref={textareaRef}
             value={text} onChange={(event) => setText(event.target.value)}
             rows={19} maxLength={MAX_CHARS} readOnly={saving}
             placeholder="Write your name, contact details, experience, education and skills. Insert section headings above as needed." />
+          </> : structured ? <StructuredCVForm
+            value={structured} onChange={updateStructured} disabled={saving} /> : null}
           <div className="master-cv-metadata">
             <span>{text.length.toLocaleString()} / {MAX_CHARS.toLocaleString()} characters</span>
             <span>{dirty ? "Unsaved changes" : snapshot.present ? "Saved version" : "New document"}</span>
           </div>
+          {mode === "structured" && structured && !cvHasApplicantContent(structured)
+            ? <p className="master-cv-hint">Enter your full name and at least one truthful
+                summary, career entry or imported source text before saving.</p>
+            : null}
         </div>
         <div className="master-cv-preview">
           <strong><FileText size={16} /> Live document preview</strong>
