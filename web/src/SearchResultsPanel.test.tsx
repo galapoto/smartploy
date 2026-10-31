@@ -287,14 +287,14 @@ describe("Finland-first IT, planning, and explicit all-jobs choice", () => {
   it("links external Finnish boards without implying indexed or auto-applied postings", () => {
     render(<SearchResultsPanel {...common} data={focused} />);
     expect(screen.getByRole("region", { name: "Additional Finland job sources" }).textContent)
-      .toMatch(/doesn't yet ingest/i);
+      .toMatch(/When the official KEHA connector is enabled/i);
     for (const label of ["Duunitori", "Työmarkkinatori", "LinkedIn"]) {
       const a = screen.getByRole("link", { name: new RegExp(label) });
       expect(a.getAttribute("href")).toMatch(/^https:\/\//);
       expect(a.getAttribute("target")).toBe("_blank");
       expect(a.getAttribute("rel")).toContain("noopener");
     }
-    expect(screen.getByText(/not counted above or used for unattended applications/i)).toBeTruthy();
+    expect(screen.getByText(/visiting them does not import more jobs/i)).toBeTruthy();
   });
 });
 
