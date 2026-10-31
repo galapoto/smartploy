@@ -750,3 +750,44 @@ def test_sp79_cv_editor_same_email_oidc_isolation_and_same_origin(reviewed_case)
     finally:
         api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
         api.delete("/api/v1/profile/cv", headers=headers)
+
+
+def test_sp82_cv_restore_denies_changed_origin_and_same_email_other_oidc_subject(reviewed_case):
+    """Archived CV belongs to the signed-in original OIDC subject, never an email alias."""
+    case = reviewed_case
+    api, headers = case["api"], case["headers"]
+    original = "Synthetic original CV with verified SQL and QA experience."
+    newer = "Synthetic updated CV with Python, SQL and verified data analysis."
+    try:
+        first = api.put("/api/v1/profile/cv/editor", headers=headers, json={
+            "expected_sha256": "", "text": original, "confirmed_replace": True,
+        })
+        assert first.status_code == 200, first.text
+        old = first.json()["cv"]["sha256"]
+        second = api.put("/api/v1/profile/cv/editor", headers=headers, json={
+            "expected_sha256": old, "text": newer, "confirmed_replace": True,
+        })
+        assert second.status_code == 200, second.text
+        current = second.json()["cv"]["sha256"]
+        url = "/api/v1/profile/cv/history/" + old + "/restore"
+        body = {"expected_sha256": current, "confirmed_restore": True}
+        spoofed = api.post(
+            url, headers={**headers, "Origin": "https://attacker.invalid"},
+            json=body,
+        )
+        assert spoofed.status_code == 403
+        api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
+        assert api.get("/api/v1/profile/cv/editor").json()["present"] is False
+        assert api.post(url, headers=headers, json=body).status_code == 403
+        assert api.get("/api/v1/profile/cv/history/" + old).status_code == 404
+        api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+        assert api.get("/api/v1/profile/cv/editor").json()["sha256"] == current
+        restored = api.post(url, headers=headers, json=body)
+        assert restored.status_code == 200, restored.text
+        assert restored.json()["text"] == original
+        assert restored.json()["cv"]["sha256"] == old
+        assert restored.json()["history"][0]["sha256"] == current
+        assert restored.json()["employer_actions_performed"] == 0
+    finally:
+        api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+        api.delete("/api/v1/profile/cv", headers=headers)
