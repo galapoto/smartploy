@@ -142,6 +142,7 @@ def reviewed_case(monkeypatch):
             "expected_revision": work.revision,
             "expected_document_sha256": packet["document_sha256"],
             "expected_cv_pdf_sha256": packet["cv_pdf_sha256"],
+            "expected_fields_sha256": packet["approved_fields_sha256"],
             "confirm_reviewed_application": True,
             "acknowledge_manual_only": True,
         }
@@ -247,8 +248,8 @@ def test_sp38_job_specific_language_proposal_is_owner_bound_and_does_not_send(re
         f"/api/v1/application-workspaces/{work.workspace_id}",
     ).json()["workspace"]
     for language, prefix, evidence in (
-        ("fi", "Hei rekrytointitiimi", "Osaaminen: Python SQL"),
-        ("en", "Dear Hiring Team", "Skill: Python SQL"),
+        ("fi", "Hei rekrytointitiimi", "Python SQL"),
+        ("en", "Dear Hiring Team", "Python SQL"),
     ):
         result = api.post(
             route, headers=headers,
@@ -260,6 +261,10 @@ def test_sp38_job_specific_language_proposal_is_owner_bound_and_does_not_send(re
         assert data["language"] == language
         assert data["cover_letter"].startswith(prefix)
         assert evidence in data["cover_letter"]
+        assert "[" not in data["cover_letter"] and "•" not in data["cover_letter"]
+        assert data["complete"] is True
+        assert data["missing_information"] == []
+        assert len(data["evidence_fact_ids"]) == 1
         assert data["review_required"] is True
         assert data["saved"] is False
         assert data["workspace_revision"] == work.revision
@@ -717,3 +722,145 @@ def test_sp32_explicit_autoapply_queue_creates_one_private_agent_per_selected_jo
     assert unavailable.json()["agent_tracking"]["state"] == "unavailable"
     assert unavailable.json()["agent_tracking"]["worker_wake_verified"] is False
     assert unavailable.json()["workspace"]["workspace_id"] == work.workspace_id
+
+
+def test_sp81_oidc_applicant_review_does_not_survive_approved_contact_drift(reviewed_case):
+    """A new approved phone makes a previously reviewed, unchanged CV unapproved.
+
+    This is a signed-in OIDC + real Postgres acceptance case, not employer I/O.
+    """
+    case = reviewed_case
+    api, headers, work = case["api"], case["headers"], case["work"]
+    review_route = case["review_route"]
+    # A legacy client cannot record a new review without the exact approved
+    # contact fingerprint, even when its CV and PDF hashes are current.
+    legacy_body = dict(case["review_body"])
+    legacy_body.pop("expected_fields_sha256")
+    assert api.post(review_route, headers=headers, json=legacy_body).status_code == 422
+    first = api.post(review_route, headers=headers, json=case["review_body"])
+    assert first.status_code == 200, first.text
+    assert api.get(review_route).json()["review_recorded"] is True
+    partner_before = api.get(
+        f"/api/v1/application-workspaces/{work.workspace_id}/partner-lever-readiness"
+    )
+    assert partner_before.status_code == 200, partner_before.text
+    assert partner_before.json()["current_applicant_review_recorded"] is True
+    snapshot = case["packet"]
+    assert first.json()["browser_grant_issued"] is False
+
+    # Updating an approved contact fact doesn't increment workspace revision.
+    # Old read-only statuses must not continue to call this a current review.
+    profile = PostgresProfileRepository(DSN, profile_id=case["a"].profile_id)
+    profile.upsert_fact(ProfileFact("phone", "+358 40 123 9876", "user-entered", approved=True))
+    latest = api.get(review_route)
+    assert latest.status_code == 200, latest.text
+    assert latest.json()["review_state"] == "stale"
+    assert latest.json()["review_recorded"] is False
+    assert latest.json()["expires_at"] == ""
+    posture = api.get(
+        f"/api/v1/application-workspaces/{work.workspace_id}/final-action-readiness"
+    )
+    assert posture.status_code == 200, posture.text
+    assert posture.json()["current_applicant_review_recorded"] is False
+    assert posture.json()["final_browser_click_authorized"] is False
+    partner_after = api.get(
+        f"/api/v1/application-workspaces/{work.workspace_id}/partner-lever-readiness"
+    )
+    assert partner_after.status_code == 200, partner_after.text
+    assert partner_after.json()["current_applicant_review_recorded"] is False
+    assert partner_after.json()["eligible_for_explicit_partner_submit"] is False
+
+    # The old applicant-review packet cannot be used with new contact facts.
+    assert api.post(review_route, headers=headers, json=case["review_body"]).status_code == 409
+    verified = api.post(
+        f"/api/v1/application-workspaces/{work.workspace_id}/verify-reviewed-packet",
+        headers=headers, json={
+            "expected_revision": work.revision,
+            "expected_document_sha256": snapshot["document_sha256"],
+            "expected_cv_pdf_sha256": snapshot["cv_pdf_sha256"],
+            "expected_cv_pdf_size": snapshot["cv_pdf_size"],
+            "expected_fields_sha256": snapshot["approved_fields_sha256"],
+            "expected_application_url_sha256":
+                sha256(snapshot["application_url"].encode("utf-8")).hexdigest(),
+        },
+    )
+    assert verified.status_code == 409
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(
+        case["a"], work.canonical_key
+    ) is None
+
+
+def test_sp79_cv_editor_same_email_oidc_isolation_and_same_origin(reviewed_case):
+    """Two different ZITADEL/OIDC subjects must never share a CV by email."""
+    case = reviewed_case
+    api, headers = case["api"], case["headers"]
+    original = "Synthetic Applicant\n\nSKILLS\nPython SQL and reliable reporting."
+    request_body = {
+        "expected_sha256": "", "text": original, "confirmed_replace": True,
+    }
+    try:
+        no_origin = api.put(
+            "/api/v1/profile/cv/editor",
+            headers={**headers, "Origin": "https://attacker.invalid"},
+            json=request_body,
+        )
+        assert no_origin.status_code == 403
+        confirmed = api.put("/api/v1/profile/cv/editor",
+                            headers=headers, json=request_body)
+        assert confirmed.status_code == 200, confirmed.text
+        own_digest = confirmed.json()["cv"]["sha256"]
+        assert api.get("/api/v1/profile/cv/editor").json()["text"] == original
+        api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
+        assert api.get("/api/v1/profile/cv/editor").json()["present"] is False
+        assert api.get("/api/v1/profile/cv/history/" + own_digest).status_code == 404
+        assert api.put(
+            "/api/v1/profile/cv/editor",
+            headers=headers, json=request_body,
+        ).status_code in (403, 409)
+        assert api.get("/api/v1/profile/cv").json() == {"present": False}
+    finally:
+        api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+        api.delete("/api/v1/profile/cv", headers=headers)
+
+
+def test_sp82_cv_restore_denies_changed_origin_and_same_email_other_oidc_subject(reviewed_case):
+    """Archived CV belongs to the signed-in original OIDC subject, never an email alias."""
+    case = reviewed_case
+    api, headers = case["api"], case["headers"]
+    original = "Synthetic original CV with verified SQL and QA experience."
+    newer = "Synthetic updated CV with Python, SQL and verified data analysis."
+    try:
+        first = api.put("/api/v1/profile/cv/editor", headers=headers, json={
+            "expected_sha256": "", "text": original, "confirmed_replace": True,
+        })
+        assert first.status_code == 200, first.text
+        old = first.json()["cv"]["sha256"]
+        second = api.put("/api/v1/profile/cv/editor", headers=headers, json={
+            "expected_sha256": old, "text": newer, "confirmed_replace": True,
+        })
+        assert second.status_code == 200, second.text
+        current = second.json()["cv"]["sha256"]
+        url = "/api/v1/profile/cv/history/" + old + "/restore"
+        body = {"expected_sha256": current, "confirmed_restore": True}
+        spoofed = api.post(
+            url, headers={**headers, "Origin": "https://attacker.invalid"},
+            json=body,
+        )
+        assert spoofed.status_code == 403
+        api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
+        assert api.get("/api/v1/profile/cv/editor").json()["present"] is False
+        # Existing account-switch guard may reject before route binding (409)
+        # or within the route (403); either is a hard denial, never a restore.
+        assert api.post(url, headers=headers, json=body).status_code in (403, 409)
+        assert api.get("/api/v1/profile/cv/history/" + old).status_code == 404
+        api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+        assert api.get("/api/v1/profile/cv/editor").json()["sha256"] == current
+        restored = api.post(url, headers=headers, json=body)
+        assert restored.status_code == 200, restored.text
+        assert restored.json()["text"] == original
+        assert restored.json()["cv"]["sha256"] == old
+        assert restored.json()["history"][0]["sha256"] == current
+        assert restored.json()["employer_actions_performed"] == 0
+    finally:
+        api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+        api.delete("/api/v1/profile/cv", headers=headers)

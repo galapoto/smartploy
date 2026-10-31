@@ -215,9 +215,11 @@ beforeEach(() => {
   );
   vi.mocked(api.proposeEvidenceLetter).mockImplementation(async (_, revision, language) => ({
     cover_letter: language === "fi"
-      ? "Hei rekrytointitiimi,\\n\\nOsaaminen: Python\\n[Kerro omin sanoin]"
-      : "Dear Hiring Team,\\n\\nSkill: Python\\n[Explain in your own words]",
-    language, workspace_revision: revision,
+      ? "Hei rekrytointitiimi,\\n\\nTehtävään liittyvä osaamiseni sisältää Pythonin.\\n\\nYstävällisin terveisin,\\nAlex Applicant"
+      : "Dear Hiring Team,\\n\\nMy confirmed skills include Python.\\n\\nKind regards,\\nAlex Applicant",
+    language, complete: true, missing_information: [],
+    evidence_fact_ids: ["fact-approved-python"], review_notes: ["Review all wording."],
+    workspace_revision: revision,
     review_required: true, saved: false,
     external_actions_performed: 0, employer_contacts: 0,
   }));
@@ -569,7 +571,7 @@ describe("Application Studio private-read account boundary", () => {
     });
     fireEvent.click(review);
     await waitFor(()=>expect(api.recordEmployerReviewIntent).toHaveBeenCalledWith(
-      "workspace-A",1,"a".repeat(64),"b".repeat(64),"usr-a"
+      "workspace-A",1,"a".repeat(64),"b".repeat(64),"c".repeat(64),"usr-a"
     ));
     expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
@@ -721,6 +723,7 @@ describe("Application Studio private-read account boundary", () => {
       company: "Synthetic", role_title: "Review Test",
       workspace_id: "workspace-A", revision: 1,
       document_sha256: "a".repeat(64), cv_pdf_sha256: "b".repeat(64),
+      approved_fields_sha256: "c".repeat(64),
       cv_pdf_size: 1024,
       fields: {full_name:"Test Applicant", first_name:"Test", last_name:"Applicant",
         email:"test@example.invalid", phone:"", location:"", linkedin:"",github:"",
@@ -742,7 +745,7 @@ describe("Application Studio private-read account boundary", () => {
     await waitFor(()=>expect((record as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(record);
     await waitFor(()=>expect(api.recordEmployerReviewIntent).toHaveBeenCalledWith(
-      "workspace-A", 1, "a".repeat(64), "b".repeat(64), "usr-a"
+      "workspace-A", 1, "a".repeat(64), "b".repeat(64), "c".repeat(64), "usr-a"
     ));
     expect(await screen.findByText(/Review recorded temporarily/)).toBeTruthy();
     expect(screen.getByLabelText("Employer final-action permission").textContent)
@@ -757,12 +760,32 @@ describe("Application Studio private-read account boundary", () => {
     expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
   });
 
+  it("SP81 offers safe cancellation when approved applicant contact changes after review", async () => {
+    vi.mocked(api.getEmployerReviewIntent).mockResolvedValue({
+      review_recorded: false, review_state: "stale", expires_at: "",
+      automatic_employer_submit_authorized: false, external_actions_performed: false,
+      browser_grant_issued: false,
+    });
+    studio();
+    expect(await screen.findByRole("heading", {name:"A private role"})).toBeTruthy();
+    const warning = await screen.findByRole("alert");
+    expect(warning.textContent).toContain("previous applicant review is outdated");
+    expect(warning.textContent).toContain("Nothing was submitted");
+    fireEvent.click(screen.getByRole("button", {name: "Cancel outdated review"}));
+    await waitFor(() => expect(api.cancelEmployerReviewIntent).toHaveBeenCalledWith(
+      "workspace-A", "usr-a"
+    ));
+    expect(api.recordEmployerReviewIntent).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
   it("never records the old account's reviewed packet after sign-in changes", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({
       packet: {
         workspace_id:"workspace-A", revision:1,
         document_sha256:"a".repeat(64), cv_pdf_sha256:"b".repeat(64),
+        approved_fields_sha256:"c".repeat(64),
         expires_at:"2099-01-01T00:00:00Z",
       } as Awaited<ReturnType<typeof api.createBrowserHandoffPacket>>["packet"],
       external_actions_performed:false,
@@ -904,6 +927,8 @@ describe("Application Studio private-read account boundary", () => {
       name: "Editable cover letter text",
     }) as HTMLTextAreaElement;
     await waitFor(() => expect(letter.value).toContain("Hei rekrytointitiimi"));
+    expect(letter.value).not.toContain("[Kerro");
+    expect(letter.value).not.toContain("Osaaminen:");
     expect((screen.getByRole("textbox", {
       name: "Editable CV text",
     }) as HTMLTextAreaElement).value).toBe(originalCV);

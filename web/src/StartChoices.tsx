@@ -6,6 +6,7 @@ export default function StartChoices(props: {
   onMode: (mode: ApplicationFlowMode) => void;
   onBrowse: () => void;
   onUpload?: () => void;
+  onCreateCV?: () => void;
   busyBrowse?: boolean;
   cvPresent?: boolean;
 }) {
@@ -19,10 +20,15 @@ export default function StartChoices(props: {
       <CheckCircle2 size={20} aria-hidden="true"/>
       <span><strong>CV connected.</strong> Choose Manual, Assisted or Automatic below. You do not need to upload again.</span>
     </div> : <div className="flow-start-how">
-      <p>Your CV is not connected yet. You can upload it first, or choose a mode and upload on the next screen.</p>
-      {props.onUpload ? <button type="button" className="primary-btn" onClick={props.onUpload}>
-        Upload CV first <ArrowRight size={16} aria-hidden="true"/>
-      </button> : null}
+      <p>You can upload a CV, create one from scratch, or browse jobs before preparing an application.</p>
+      <div className="row-actions">
+        {props.onUpload ? <button type="button" className="primary-btn" onClick={props.onUpload}>
+          Upload CV first <ArrowRight size={16} aria-hidden="true"/>
+        </button> : null}
+        {props.onCreateCV ? <button type="button" className="outline-btn" onClick={props.onCreateCV}>
+          Create CV from scratch <ArrowRight size={16} aria-hidden="true"/>
+        </button> : null}
+      </div>
     </div>}
     <div className="flow-start-grid">
       <button type="button" className="flow-start-card"

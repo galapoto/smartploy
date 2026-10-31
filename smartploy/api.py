@@ -28,9 +28,10 @@ from .auto_draft_shortlist import prepare_profile_shortlist
 from .training_directory import TrainingDirectoryError, load_training_programs
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import (
-    WorkspaceError, WorkspaceRevisionConflict, cover_letter_proposal,
+    WorkspaceError, WorkspaceRevisionConflict,
     new_workspace, render_document,
 )
+from .complete_letter import compose_completed_letter
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from .application_agents import ApplicationAgentConflict, PostgresApplicationAgentRepository
 from .browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
@@ -58,7 +59,8 @@ from .browser_receipt_storage import (
 from .local_drafting import LocalDraftClient, LocalDraftError, LocalDraftSettings
 from .cv_import import CVImportError, parse_cv
 from .cv_job_matching import cv_job_matches
-from .cv_storage import MemoryCVRepository, PostgresCVRepository
+from .cv_storage import CVArchiveNotFound, CVRevisionConflict, MemoryCVRepository, PostgresCVRepository
+from .cv_editor import render_editor_cv
 from .profile import FACT_TYPES, ProfileFact
 from .identity import (
     AuthenticatedPrincipal,
@@ -186,6 +188,19 @@ class CVUploadPayload(BaseModel):
     content_base64: str = Field(min_length=24, max_length=7_000_000)
 
 
+class CVEditorPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_sha256: str = Field(pattern=r"^(?:[0-9a-f]{64})?$")
+    text: str = Field(min_length=20, max_length=30000)
+    confirmed_replace: StrictBool
+
+
+class CVRestorePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    confirmed_restore: StrictBool
+
+
 class PrivateSavedJobPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     company: str = Field(min_length=1, max_length=160)
@@ -283,6 +298,7 @@ class EmployerReviewIntentPayload(BaseModel):
     expected_revision: int = Field(ge=1)
     expected_document_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_cv_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_fields_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     confirm_reviewed_application: StrictBool
     acknowledge_manual_only: StrictBool
 
@@ -960,6 +976,136 @@ def create_app(
         tenant, _ = tenant_context(request)
         item = app.state.cv_repository.get(tenant.profile_repository.profile_id)
         return item.summary() if item else {"present": False}
+
+    @app.get("/api/v1/profile/cv/editor")
+    def get_cv_editor(request: Request) -> JSONResponse:
+        """Full text only to verified owner; no AI processing or employer I/O."""
+        tenant, _ = tenant_context(request)
+        pid = tenant.profile_repository.profile_id
+        stored = app.state.cv_repository.get(pid)
+        return JSONResponse({
+            "present": stored is not None,
+            "sha256": stored.digest if stored else "",
+            "text": stored.text if stored else "",
+            "filename": stored.filename if stored else "",
+            "created_by_editor": (
+                stored.filename == "smartploy-master-cv.docx" if stored else False
+            ),
+            "history": app.state.cv_repository.history(pid),
+            "approved_profile_facts_added": 0,
+            "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
+
+    @app.put("/api/v1/profile/cv/editor")
+    def save_cv_editor(
+        payload: CVEditorPayload, request: Request,
+    ) -> JSONResponse:
+        """CAS save of the active CV; preserve original/version for recovery."""
+        tenant, binding = tenant_context(request)
+        if payload.confirmed_replace is not True:
+            raise HTTPException(
+                status_code=422, detail="Confirm that this text becomes your active CV",
+            )
+        if binding is None and authentication.mode != "disabled":
+            raise HTTPException(status_code=403, detail="Verified account required")
+        if binding is not None and (
+            request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Origin", "") != public_origin
+            or request.headers.get("Sec-Fetch-Site", "").casefold()
+               not in {"", "same-origin", "none"}
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin account action required")
+        pid = tenant.profile_repository.profile_id
+        try:
+            saved = app.state.cv_repository.save_editor_text(
+                pid, expected_sha256=payload.expected_sha256, text=payload.text,
+            )
+        except CVRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return JSONResponse({
+            "cv": saved.summary(),
+            "history": app.state.cv_repository.history(pid),
+            "approved_profile_facts_added": 0,
+            "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
+
+    @app.get("/api/v1/profile/cv/editor/download/{file_format}")
+    def download_editor_cv(file_format: str, request: Request) -> Response:
+        tenant, _ = tenant_context(request)
+        stored = app.state.cv_repository.get(tenant.profile_repository.profile_id)
+        if stored is None:
+            raise HTTPException(status_code=404, detail="No CV available")
+        try:
+            data = render_editor_cv(stored.text, file_format=file_format)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        media_type = (
+            "application/pdf" if file_format == "pdf"
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        return Response(content=data, media_type=media_type, headers={
+            "Content-Disposition":
+                'attachment; filename="smartploy-master-cv.' + file_format + '"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        })
+
+    @app.get("/api/v1/profile/cv/history/{digest}")
+    def download_archived_cv(digest: str, request: Request) -> Response:
+        tenant, _ = tenant_context(request)
+        item = app.state.cv_repository.get_archived(
+            tenant.profile_repository.profile_id, digest,
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="Archived CV version not found")
+        ext = "pdf" if item.media_type == "application/pdf" else "docx"
+        return Response(content=item.content, media_type=item.media_type, headers={
+            "Content-Disposition":
+                'attachment; filename="smartploy-previous-cv.' + ext + '"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        })
+
+    @app.post("/api/v1/profile/cv/history/{digest}/restore")
+    def restore_archived_cv(
+        digest: str, payload: CVRestorePayload, request: Request,
+    ) -> JSONResponse:
+        """Restore exact owner-private historical bytes, never an employer action.
+
+        The caller must explicitly confirm, present the current content SHA,
+        and still own the same account under the existing OIDC+origin binding.
+        """
+        tenant, binding = tenant_context(request)
+        if payload.confirmed_restore is not True:
+            raise HTTPException(status_code=422, detail="Explicit CV restore confirmation required")
+        if binding is None and authentication.mode != "disabled":
+            raise HTTPException(status_code=403, detail="Verified account required")
+        if binding is not None and (
+            request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Origin", "") != public_origin
+            or request.headers.get("Sec-Fetch-Site", "").casefold()
+               not in {"", "same-origin", "none"}
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin CV restore required")
+        pid = tenant.profile_repository.profile_id
+        try:
+            restored = app.state.cv_repository.restore_archived(
+                pid, digest=digest, expected_sha256=payload.expected_sha256,
+            )
+        except CVRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except CVArchiveNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return JSONResponse({
+            "cv": restored.summary(), "text": restored.text,
+            "restored_sha256": restored.digest,
+            "history": app.state.cv_repository.history(pid),
+            "approved_profile_facts_added": 0, "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"})
 
     @app.get("/api/v1/profile/cv/matches")
     def cv_first_job_matches(
@@ -1688,7 +1834,7 @@ def create_app(
     def preview_evidence_letter(
         workspace_id: str, payload: EvidenceLetterPayload, request: Request,
     ) -> JSONResponse:
-        """Applicant-selected Finnish/English draft, no AI or document write.
+        """Applicant-selected complete Finnish/English letter, no AI or document write.
 
         Reuses the exact original workspace owner, posting-fingerprint and
         approved-facts boundaries used by existing Application Studio drafts.
@@ -1727,7 +1873,10 @@ def create_app(
         approved_before = tuple(
             sorted((f.fact_id, f.fact_type, f.value) for f in profile.approved_facts)
         )
-        proposed = cover_letter_proposal(
+        # Explicit user-requested proposal: complete prose, with missing
+        # evidence returned separately. The original initial draft retains
+        # review markers until a separately reviewed readiness migration.
+        proposed = compose_completed_letter(
             candidate, profile, language=payload.language,
         )
         # Do not return old approved facts after a deletion/approval change or
@@ -1748,8 +1897,7 @@ def create_app(
             )
         return JSONResponse(
             {
-                "cover_letter": proposed,
-                "language": payload.language,
+                **proposed.to_dict(),
                 "workspace_revision": latest.revision,
                 "review_required": True,
                 "saved": False,
@@ -1905,6 +2053,21 @@ def create_app(
             "expires_at": "", "automatic_employer_submit_authorized": False,
             "external_actions_performed": False, "browser_grant_issued": False,
         }
+        if item is not None and status["review_recorded"]:
+            tenant, _ = tenant_context(request)
+            try:
+                packet = make_browser_packet(
+                    workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+                )
+            except HandoffError:
+                packet = {}
+            if not item.matches_current_packet(
+                packet, workspace_id=workspace_id, revision=workspace.revision,
+            ):
+                status = {
+                    **status, "review_recorded": False,
+                    "review_state": "stale", "expires_at": "",
+                }
         return JSONResponse(
             status, headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"},
         )
@@ -1940,8 +2103,9 @@ def create_app(
         if (
             packet["document_sha256"] != payload.expected_document_sha256
             or packet["cv_pdf_sha256"] != payload.expected_cv_pdf_sha256
+            or packet["approved_fields_sha256"] != payload.expected_fields_sha256
         ):
-            raise HTTPException(status_code=409, detail="Reviewed CV/document hashes changed")
+            raise HTTPException(status_code=409, detail="Reviewed CV, contact or document hashes changed")
         try:
             item, fresh = repo.prepare(
                 binding, workspace_id=workspace_id,
@@ -1950,6 +2114,7 @@ def create_app(
                 expected_job_fingerprint=workspace.job_fingerprint,
                 expected_document_sha256=packet["document_sha256"],
                 expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                expected_fields_sha256=packet["approved_fields_sha256"],
                 explicit_user_review=True, acknowledge_no_automatic_submit=True,
             )
         except EmployerReviewIntentDenied as exc:
@@ -2015,15 +2180,26 @@ def create_app(
             raise HTTPException(
                 status_code=503, detail="Employer action readiness unavailable"
             ) from exc
+        tenant, _ = tenant_context(request)
+        try:
+            packet = make_browser_packet(
+                workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+            )
+        except HandoffError:
+            packet = {}
         reviewed = bool(
-            review and review.public_status(
-                workspace_id=workspace_id, revision=workspace.revision
-            )["review_recorded"]
+            review and review.matches_current_packet(
+                packet, workspace_id=workspace_id, revision=workspace.revision,
+            )
         )
         final_approved = bool(
-            approval and approval.public_status(
-                workspace_id=workspace_id, revision=workspace.revision
+            approval and packet
+            and approval.public_status(
+                workspace_id=workspace_id, revision=workspace.revision,
             )["approval_recorded"]
+            and approval.document_sha256 == packet.get("document_sha256")
+            and approval.cv_pdf_sha256 == packet.get("cv_pdf_sha256")
+            and approval.approved_fields_sha256 == packet.get("approved_fields_sha256")
         )
         reasons: list[str] = []
         if not policy["operator_permission_reviewed"]:
@@ -2102,11 +2278,6 @@ def create_app(
             raise HTTPException(
                 status_code=503, detail="Partner-readiness lookup unavailable"
             ) from exc
-        reviewed = bool(
-            review and review.public_status(
-                workspace_id=workspace_id, revision=workspace.revision
-            )["review_recorded"]
-        )
         packet = None
         try:
             packet = make_browser_packet(
@@ -2114,6 +2285,12 @@ def create_app(
             )
         except HandoffError:
             pass
+        reviewed = bool(
+            review and packet is not None
+            and review.matches_current_packet(
+                packet, workspace_id=workspace_id, revision=workspace.revision,
+            )
+        )
         current = packet is not None
         authorized = bool(
             config["partner_api_configured"] and rights["operator_permission_reviewed"]
@@ -2523,6 +2700,7 @@ def create_app(
                 expected_job_fingerprint=workspace.job_fingerprint,
                 expected_document_sha256=packet["document_sha256"],
                 expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                expected_fields_sha256=packet["approved_fields_sha256"],
             )
         except EmployerReviewIntentDenied as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

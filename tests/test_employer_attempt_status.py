@@ -98,6 +98,7 @@ def test_review_intent_api_never_allows_unauthenticated_or_nonorigin_creation(mo
     body={
         "expected_revision":1,
         "expected_document_sha256":"a"*64,"expected_cv_pdf_sha256":"b"*64,
+        "expected_fields_sha256":"c"*64,
         "confirm_reviewed_application":True,"acknowledge_manual_only":True,
     }
     api.cookies.clear()
@@ -124,6 +125,7 @@ def test_review_intent_api_raises_503_when_postgres_is_not_configured(monkeypatc
     payload={
         "expected_revision":1,"expected_document_sha256":"a"*64,
         "expected_cv_pdf_sha256":"b"*64,
+        "expected_fields_sha256":"c"*64,
         "confirm_reviewed_application":True,"acknowledge_manual_only":True,
     }
     identity=api.get("/api/v1/session").json()

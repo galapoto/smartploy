@@ -3,6 +3,9 @@ import type {
   Dashboard,
   HealthResponse,
   CVDocument,
+  CVEditorDocument,
+  CVEditorSaved,
+  CVEditorRestored,
   CVJobMatches,
   CandidateFact,
   ProfileFactsResponse,
@@ -170,6 +173,42 @@ export function getProfileFacts(): Promise<ProfileFactsResponse> {
   return request<ProfileFactsResponse>("/api/v1/profile/facts");
 }
 
+/** SP79: full, private editable CV, not the limited 6,000-char preview. */
+export function getCVEditor(): Promise<CVEditorDocument> {
+  return request<CVEditorDocument>("/api/v1/profile/cv/editor");
+}
+
+export function saveCVEditor(
+  text: string, expectedSha256: string, expectedUserId: string,
+): Promise<CVEditorSaved> {
+  if (text.trim().length < 20 || text.trim().length > 30000 ||
+      !/^(?:[a-f0-9]{64})?$/.test(expectedSha256)) {
+    return Promise.reject(new Error("Please review your CV text and current revision"));
+  }
+  return request<CVEditorSaved>("/api/v1/profile/cv/editor", {
+    method: "PUT",
+    body: JSON.stringify({
+      expected_sha256: expectedSha256, text, confirmed_replace: true,
+    }),
+  }, expectedUserId);
+}
+
+/** Restore exact historical bytes without regenerating a CV or contacting employers. */
+export function restoreCVEditor(
+  digest: string, expectedSha256: string, expectedUserId: string,
+): Promise<CVEditorRestored> {
+  if (!/^[a-f0-9]{64}$/.test(digest) ||
+      !/^[a-f0-9]{64}$/.test(expectedSha256) || digest === expectedSha256) {
+    return Promise.reject(new Error("Select an archived CV and verify the current revision"));
+  }
+  return request<CVEditorRestored>(
+    "/api/v1/profile/cv/history/" + encodeURIComponent(digest) + "/restore",
+    { method: "POST", body: JSON.stringify({
+      expected_sha256: expectedSha256, confirmed_restore: true,
+    }) }, expectedUserId,
+  );
+}
+
 export async function uploadCV(file: File, expectedUserId: string): Promise<CVDocument> {
   if (file.size > 5 * 1024 * 1024) {
     throw new Error("Your CV is too large. Please use a PDF or DOCX under 5 MB.");
@@ -267,6 +306,11 @@ export function startApplicationWorkspace(
 export type EvidenceLetterProposal = {
   cover_letter: string;
   language: "fi" | "en";
+  /** SP78: the letter body is always prose, while missing facts stay outside it. */
+  complete?: boolean;
+  missing_information?: string[];
+  evidence_fact_ids?: string[];
+  review_notes?: string[];
   workspace_revision: number;
   review_required: true;
   saved: false;
@@ -663,7 +707,7 @@ export function getEmployerFinalActionReadiness(
 /** Non-submitting 10-minute final-review record. No extension bearer/grant. */
 export type EmployerReviewIntentState = {
   review_recorded: boolean;
-  review_state: "not_recorded" | "pending" | "cancelled" | "expired";
+  review_state: "not_recorded" | "pending" | "cancelled" | "expired" | "stale";
   expires_at: string;
   automatic_employer_submit_authorized: false;
   external_actions_performed: false;
@@ -679,7 +723,7 @@ export function getEmployerReviewIntent(workspaceId: string): Promise<EmployerRe
 
 export function recordEmployerReviewIntent(
   workspaceId: string, revision: number, documentSha256: string,
-  cvPdfSha256: string, expectedUserId: string,
+  cvPdfSha256: string, fieldsSha256: string, expectedUserId: string,
 ): Promise<EmployerReviewIntentState> {
   return request<EmployerReviewIntentState>(
     "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/submit-review-intent",
@@ -687,6 +731,7 @@ export function recordEmployerReviewIntent(
       expected_revision: revision,
       expected_document_sha256: documentSha256,
       expected_cv_pdf_sha256: cvPdfSha256,
+      expected_fields_sha256: fieldsSha256,
       confirm_reviewed_application: true,
       acknowledge_manual_only: true,
     }) }, expectedUserId

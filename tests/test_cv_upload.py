@@ -109,3 +109,11 @@ def test_postgres_cv_repository_enforces_profile_isolation():
         assert repository.get("cv-test-profile-a").content == data
     finally:
         repository.delete("cv-test-profile-a")
+
+
+def test_sp78_oversized_extracted_cv_text_is_rejected_not_silently_truncated():
+    # The original PDF/DOCX is never overwritten or shortened by parsing.
+    long_document = docx("Python " + ("A" * 30000) + " NOT QUALIFIED AS A DRIVER")
+    with pytest.raises(CVImportError, match="30,000 text characters"):
+        parse_cv("long.docx", payload(long_document)["content_base64"])
+    assert b"NOT QUALIFIED AS A DRIVER" in long_document

@@ -19,6 +19,9 @@ vi.mock("./api", () => ({
   getJobAIConsents: vi.fn(), getJobAIConsentEvents: vi.fn(),
   grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
+vi.mock("./MasterCVEditor", () => ({
+  default: () => <div data-testid="master-cv-editor">Private CV editor</div>,
+}));
 vi.mock("./ApplicationStudio", () => ({
   default: ({ focusId }: { focusId: string }) =>
     <div data-testid="application-editor" data-workspace={focusId}>Application editor</div>,
@@ -162,6 +165,18 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     fireEvent.click(screen.getByText(/Advanced: customize search preferences/i));
     expect(screen.getByRole("radio", { name: /general job search/i })).toBeTruthy();
     expect(vi.mocked(api.getSearchResults)).toHaveBeenCalled();
+  });
+
+  it("opens standalone CV creator from first use without needing a file upload", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", {
+      name: "Apply for jobs in four simple steps."
+    })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: /Create CV from scratch/}));
+    expect(await screen.findByTestId("master-cv-editor")).toBeTruthy();
+    expect(api.uploadCV).not.toHaveBeenCalled();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
   });
 
   it("offers deliberate sign-out to OIDC users without logging out from navigation", async () => {

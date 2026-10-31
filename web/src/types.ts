@@ -218,6 +218,39 @@ export interface CVDocument {
   updated_at?: string;
   text_preview?: string;
   text_extracted?: boolean;
+  created_by_editor?: boolean;
+}
+
+/** Full owner-private editor text; unlike the small public-UI CV preview. */
+export interface CVEditorArchive {
+  sha256: string;
+  filename: string;
+  media_type: string;
+  size_bytes: number;
+  archived_at?: string;
+  updated_at?: string;
+  archived: true;
+}
+export interface CVEditorDocument {
+  present: boolean;
+  text: string;
+  sha256: string;
+  filename: string;
+  created_by_editor: boolean;
+  history: CVEditorArchive[];
+  employer_actions_performed: 0;
+  approved_profile_facts_added: 0;
+}
+export interface CVEditorSaved {
+  cv: CVDocument;
+  history: CVEditorArchive[];
+  employer_actions_performed: 0;
+  approved_profile_facts_added: 0;
+}
+
+export interface CVEditorRestored extends CVEditorSaved {
+  text: string;
+  restored_sha256: string;
 }
 
 export interface CandidateFact {
