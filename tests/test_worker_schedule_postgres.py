@@ -265,3 +265,137 @@ def test_due_source_tasks_take_priority_without_losing_lease_fairness(repository
             max_backoff_seconds=3600, now=now,
         )
     assert ids == ["source:a", "source:z", "application:auto-draft-shortlist"]
+
+
+def _sp92_private_draft_spec(runner=None, *, metadata=None):
+    """Real task policy; no CVs, ATS or external actions are used here."""
+    return WorkerTaskSpec(
+        task_id="application:auto-draft-shortlist",
+        task_kind="application_draft",
+        cadence_seconds=600,
+        runner=runner or (lambda: WorkerTaskResult("healthy", {"created": 0})),
+        metadata=metadata if metadata is not None else {
+            "private_opt_in_required": True,
+            "processing": "local_only",
+            "external_actions_authorized": False,
+        },
+    )
+
+
+def _sp92_existing_healthy_cycle(repository, *, now, draft):
+    repository.register(draft, now=now)
+    leased = repository.claim_due(
+        owner="old-worker", lease_seconds=900, limit=1, now=now,
+        task_id=draft.task_id,
+    )
+    assert len(leased) == 1
+    repository.complete(
+        draft.task_id, owner="old-worker", status="healthy",
+        max_backoff_seconds=3600, now=now,
+    )
+
+
+def test_sp92_restart_uses_original_lease_without_waiting_for_persisted_cadence(repository):
+    now = moment()
+    startup = now + timedelta(seconds=25)
+    observed = []
+    draft = _sp92_private_draft_spec(
+        lambda: (observed.append("auto-draft") or WorkerTaskResult("healthy", {"created": 0}))
+    )
+    _sp92_existing_healthy_cycle(repository, now=now, draft=draft)
+    assert repository.get(draft.task_id).next_run_at == now + timedelta(seconds=600)
+
+    source = spec("source:due", cadence=600, runner=lambda: (
+        observed.append("source") or WorkerTaskResult("healthy")
+    ))
+    repository.register(source, now=startup)
+    worker = ContinuousWorker(repository, [draft, source], owner="new-worker",
+                              claim_limit=8, lease_seconds=900)
+    worker.synchronize(now=startup)
+    assert repository.request_private_auto_draft_startup(now=startup) is True
+    assert repository.get(draft.task_id).next_run_at == startup
+
+    catchup = worker.run_once(now=startup, only_task_id=draft.task_id)
+    assert catchup.claimed == catchup.completed == 1
+    assert catchup.failed == 0
+    assert observed == ["auto-draft"]
+    assert repository.get(draft.task_id).last_completed_at == startup
+    assert repository.get(draft.task_id).next_run_at == startup + timedelta(seconds=600)
+    assert repository.get(source.task_id).last_completed_at is None
+
+    # Ordinary scheduling is unchanged and does not process the draft twice.
+    regular = worker.run_once(now=startup + timedelta(seconds=1))
+    assert regular.claimed == regular.completed == 1
+    assert observed == ["auto-draft", "source"]
+
+
+def test_sp92_first_boot_preserves_source_first_and_does_not_invent_a_receipt(repository):
+    now = moment()
+    draft = _sp92_private_draft_spec()
+    repository.register(draft, now=now)
+    assert repository.request_private_auto_draft_startup(now=now) is False
+    assert repository.get(draft.task_id).last_completed_at is None
+    # The existing first-boot integration test proves source-first behaviour.
+
+
+def test_sp92_restart_does_not_steal_an_unexpired_lease(repository):
+    now = moment()
+    draft = _sp92_private_draft_spec()
+    _sp92_existing_healthy_cycle(repository, now=now, draft=draft)
+    due = now + timedelta(seconds=600)
+    assert len(repository.claim_due(
+        owner="still-processing", lease_seconds=900, limit=1, now=due,
+        task_id=draft.task_id,
+    )) == 1
+    new_start = due + timedelta(seconds=5)
+    assert repository.request_private_auto_draft_startup(now=new_start) is False
+    assert repository.claim_due(
+        owner="new-worker", lease_seconds=900, limit=1,
+        now=new_start, task_id=draft.task_id,
+    ) == []
+    assert repository.get(draft.task_id).lease_owner == "still-processing"
+
+
+def test_sp92_restart_refuses_disabled_and_unapproved_private_task(repository):
+    now = moment()
+    good = _sp92_private_draft_spec()
+    _sp92_existing_healthy_cycle(repository, now=now, draft=good)
+    invalid_metadata = {
+        "private_opt_in_required": True,
+        "processing": "remote_ai",
+        "external_actions_authorized": True,
+    }
+    repository.register(_sp92_private_draft_spec(metadata=invalid_metadata), now=now)
+    assert repository.request_private_auto_draft_startup(now=now + timedelta(seconds=5)) is False
+
+    repository.disable_absent(set())
+    assert repository.request_private_auto_draft_startup(now=now + timedelta(seconds=6)) is False
+
+
+def test_sp92_restart_does_not_override_failure_backoff(repository):
+    now = moment()
+    draft = _sp92_private_draft_spec()
+    repository.register(draft, now=now)
+    repository.claim_due(
+        owner="old-worker", lease_seconds=900, limit=1, now=now,
+        task_id=draft.task_id,
+    )
+    failed = repository.complete(
+        draft.task_id, owner="old-worker", status="failed",
+        error="synthetic failure", max_backoff_seconds=3600, now=now,
+    )
+    assert repository.request_private_auto_draft_startup(
+        now=now + timedelta(seconds=10)
+    ) is False
+    assert repository.get(draft.task_id).next_run_at == failed.next_run_at
+
+
+def test_sp92_target_claim_rejects_unknown_runner_and_invalid_task_identity(repository):
+    now = moment()
+    worker = ContinuousWorker(repository, [spec("source:present")],
+                              owner="worker", claim_limit=2)
+    with pytest.raises(ValueError, match="not registered"):
+        worker.run_once(now=now, only_task_id="application:unknown")
+    with pytest.raises(ValueError, match="invalid"):
+        repository.claim_due(owner="worker", lease_seconds=60, limit=1,
+                             now=now, task_id="")
