@@ -382,6 +382,14 @@ export default function App() {
   const navigate = (target: Page) => { setPage(target); setMobileNav(false); setNotice(""); };
 
   function startApplyFlow(chosen: ApplicationFlowMode, jobKey = "") {
+    // A job-card shortcut never skips the CV-first gate. Creating a draft
+    // without a CV is impossible and must not visually select a method.
+    if (!cv.present) {
+      setFlowMode(null); setFlowSelectedJob("");
+      navigate("apply");
+      setNotice("Step 1: upload or create your CV. Manual, Assisted and Automatic unlock after your CV is connected.");
+      return;
+    }
     setFlowMode(chosen);
     setFlowSelectedJob(jobKey);
     navigate("apply");
@@ -596,11 +604,11 @@ export default function App() {
     try {
       const uploaded = await runPrivateMutation((userId) => uploadCV(file, userId));
       setCV(uploaded); setCVPreview(false);
-       // A direct upload does not imply Manual mode. Keep an earlier deliberate
-       // choice only when the user is already inside the guided Apply journey.
-       if (page !== "apply") setFlowMode(null);
-       navigate("apply");
-      setNotice("CV uploaded. Matching your CV against current jobs now. Choose Manual, Assisted or Automatic to continue; nothing was sent.");
+      // A replacement CV invalidates any old method/job selection, even when
+      // uploaded from Apply. Step 2 must be a fresh applicant choice.
+      setFlowMode(null); setFlowSelectedJob("");
+      navigate("apply");
+      setNotice("CV connected. Step 2: choose Manual, Assisted or Automatic. Your CV has not been sent to any employer.");
       await load(true);
       // An uploaded CV is not automatically approved as career evidence.
       // CV upload never starts background employer work. It is now a clear
@@ -621,7 +629,8 @@ export default function App() {
     try {
       await runPrivateMutation((userId) => deleteCV(userId));
       setCV({ present: false }); setCVPreview(false);
-      setNotice("Your uploaded CV has been removed.");
+      setFlowMode(null); setFlowSelectedJob("");
+      setNotice("Your CV was removed. Connect a new CV before selecting an application method.");
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged)) {
         setNotice(exc instanceof Error ? exc.message : "Unable to remove CV.");
@@ -1180,28 +1189,17 @@ export default function App() {
         {notice ? <div className="toast-notice" role="status"><Activity size={16} /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X size={17} /></button></div> : null}
         {error ? <div className="toast-notice error" role="alert"><AlertCircle size={16} /><span>{error}</span><button type="button" onClick={() => void load()} aria-label="Retry"><RefreshCw size={17} /></button></div> : null}
         {page === "dashboard" ? <>
-          <section className="welcome-banner">
-            <div className="welcome-copy"><p className="section-kicker">YOUR NORDIC CAREER WORKSPACE</p><h1>Make your next move.<br /><em>With clarity.</em></h1><p>Discover Finnish opportunities, build a trusted career profile and prepare the next step with SmartPloy.</p></div>
-            <img className="helsinki-art" src="/helsinki-skyline.svg" alt="" />
-            <div className="hero-tag"><span className="flag-finland" aria-hidden="true" /> Built for the Finnish job market</div>
-          </section>
+          {/* Make the actual CV-first application journey the first thing
+              a signed-in applicant sees, not a hero followed by mode cards. */}
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
             cvPresent={cv.present} onUpload={onUploadClick}
             onCreateCV={() => navigate("profile")}/>
-          <div className="flow-home-cv">
-            {cv.present ? <button className="primary-btn" type="button"
-              onClick={() => navigate("apply")}>
-              Continue with my connected CV <ArrowRight size={16}/>
-            </button> : null}
-            <button className="outline-btn" type="button" onClick={onUploadClick}
-              disabled={busyCV}><UploadCloud size={16}/>
-              {busyCV ? "Uploading…" : cv.present ? "Replace your CV" : "Upload your CV"}
-            </button>
-            <button className="outline-btn" type="button" onClick={() => navigate("profile")}>
-              <FileText size={16}/> Manage your CV
-            </button>
-          </div>
+          {cv.present ? <section className="welcome-banner" aria-label="Finnish job discovery">
+            <div className="welcome-copy"><p className="section-kicker">YOUR NORDIC CAREER WORKSPACE</p><h1>Make your next move.<br /><em>With clarity.</em></h1><p>Discover Finnish opportunities, build a trusted career profile and prepare the next step with SmartPloy.</p></div>
+            <img className="helsinki-art" src="/helsinki-skyline.svg" alt="" />
+            <div className="hero-tag"><span className="flag-finland" aria-hidden="true" /> Built for the Finnish job market</div>
+          </section> : null}
           <div className="stats-grid">
             <Stat label={preferences?.mode === "general" ? "Available jobs" : "Preference matches"}
               value={preferences?.mode === "general" ? discovery?.available_count || 0 : discovery?.recommendations.length || 0}
@@ -1247,8 +1245,17 @@ export default function App() {
                 (userId) => restoreCVEditor(digest, expectedSha256, userId)
               )}
               onSaved={(saved) => {
+                const firstCV = !cv.present && saved.present;
                 setCV(saved); setCVPreview(false);
-                setNotice("Your master CV was saved privately. Matching and new application drafts now use this version.");
+                setFlowMode(null); setFlowSelectedJob("");
+                if (firstCV) {
+                  // Creating a CV is equivalent to uploading one: immediately
+                  // continue to Step 2, without forcing a separate search setup.
+                  navigate("apply");
+                  setNotice("Your new CV is saved. Step 2: choose Manual, Assisted or Automatic.");
+                } else {
+                  setNotice("Master CV saved. Revisit your application method and job documents before sending.");
+                }
               }} />
             {factPanel}</div><aside>{sidePanel}</aside></div> : null}
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}

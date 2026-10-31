@@ -20,7 +20,12 @@ vi.mock("./api", () => ({
   grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
 vi.mock("./MasterCVEditor", () => ({
-  default: () => <div data-testid="master-cv-editor">Private CV editor</div>,
+  default: ({ onSaved }: { onSaved: (saved: { present: boolean; filename: string; sha256: string }) => void }) =>
+    <div data-testid="master-cv-editor">Private CV editor
+      <button type="button" onClick={() =>
+        onSaved({ present: true, filename: "CreatedCV.pdf", sha256: "saved-created-cv" })
+      }>Save synthetic created CV</button>
+    </div>,
 }));
 vi.mock("./ApplicationStudio", () => ({
   default: ({ focusId }: { focusId: string }) =>
@@ -155,13 +160,17 @@ function switchableSession() {
 }
 
 describe("actual SmartPloy App first-use and application handoff", () => {
-  it("renders the first-use chooser even if optional AI status never returns", async () => {
+  it("SP87 starts with a CV even when optional AI is unavailable; modes remain locked", async () => {
     vi.mocked(api.getLocalAIStatus).mockImplementation(
       () => new Promise(() => { /* simulate stalled private model */ })
     );
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "Apply for jobs in four simple steps." })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Apply manually/i })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Upload CV first/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Create CV from scratch/i })).toBeTruthy();
+    expect(screen.getByText(/Step 2 unlocks after your CV is saved/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Apply manually/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Automatic.*AutoApply/i })).toBeNull();
     fireEvent.click(screen.getByText(/Advanced: customize search preferences/i));
     expect(screen.getByRole("radio", { name: /general job search/i })).toBeTruthy();
     expect(vi.mocked(api.getSearchResults)).toHaveBeenCalled();
@@ -170,13 +179,39 @@ describe("actual SmartPloy App first-use and application handoff", () => {
   it("opens standalone CV creator from first use without needing a file upload", async () => {
     render(<App />);
     expect(await screen.findByRole("heading", {
-      name: "Apply for jobs in four simple steps."
+      name: "Start with your CV."
     })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", {name: /Create CV from scratch/}));
     expect(await screen.findByTestId("master-cv-editor")).toBeTruthy();
     expect(api.uploadCV).not.toHaveBeenCalled();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
     expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+  });
+
+  it("SP87 new CV created from scratch goes directly to Step 2 without selecting a method or employer", async () => {
+    render(<App/>);
+    fireEvent.click(await screen.findByRole("button", { name: /Create CV from scratch/i }));
+    expect(await screen.findByTestId("master-cv-editor")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save synthetic created CV" }));
+    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Choose application method" })).toBeTruthy();
+    expect(screen.getByText("Your CV is connected. Choose a method to continue.")).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+  });
+
+  it("SP87 previously uploaded CV unlocks method cards on the first-use screen", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "PreviouslyUploaded.pdf", sha256: "stored-test-cv",
+    });
+    render(<App/>);
+    expect(await screen.findByRole("heading", {
+      name: "CV connected. Choose how to apply.",
+    })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Assisted · Apply with AI/i }));
+    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(screen.getByText(/Apply with AI help selected/)).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
   it("offers deliberate sign-out to OIDC users without logging out from navigation", async () => {
@@ -1561,7 +1596,7 @@ describe("first opt-in creates private IT applications immediately", () => {
       })] },
     });
     await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText(/CV uploaded\. Matching your CV against current jobs now/i)).toBeTruthy();
+    expect(await screen.findByText(/CV connected\. Step 2: choose Manual, Assisted or Automatic/i)).toBeTruthy();
     expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
     expect(screen.queryByTestId("application-editor")).toBeNull();
   });
