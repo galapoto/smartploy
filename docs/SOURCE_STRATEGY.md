@@ -69,6 +69,14 @@ redirects and endpoint overrides outside the official hosts/path are rejected.
 Incremental polling queries PUBLISHED and ARCHIVED separately using the modified interval. Omission from
 a partial PUBLISHED result never closes a job. ARCHIVED records retire a known source external ID.
 
+The scheduled worker and one-shot ingestion poller enable a **bounded, aggregate-only quarantine**
+for published records missing a mandatory external ID or employer/title identity. Up to
+`min(25, max(2, received_count // 20))` such records may be skipped per complete response;
+the poll is recorded as degraded with count-only metadata and no rejected posting bodies or
+secrets. Exceeding the budget, malformed JSON, unexpected schema errors, and missing archived
+external IDs remain fatal before ingestion, preserving the cursor for a later safe retry.
+Standalone credential smoke probes keep the original strict parser behavior.
+
 Job Market Finland terms require the displayed original-source attribution, so Smartploy preserves:
 "Source: Job Market Finland's customer information system".
 
