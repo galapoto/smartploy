@@ -406,3 +406,28 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
   .flow-start-card, .flow-mode { transition: none !important; }
   .flow-start-card:hover { transform: none !important; }
 }
+
+/* A keyboard-first shortcut bypasses the ten-item signed-in navigation. */
+.skip-to-content:not(:focus) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.skip-to-content:focus {
+  position: fixed;
+  z-index: 120;
+  top: 12px;
+  left: 16px;
+  width: auto;
+  height: auto;
+  padding: 13px 19px;
+  border-radius: 10px;
+  color: #0b2634;
+  background: #bff7ed;
+  box-shadow: 0 8px 20px rgba(0,0,0,.18);
+  clip-path: none;
+  font-weight: 800;
+}
