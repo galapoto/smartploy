@@ -110,7 +110,8 @@ describe("SP79 owner-private CV creator/editor", () => {
     expect(window.confirm).toHaveBeenCalled();
     const imported = screen.getByRole("textbox", {name: "Imported source text"}) as HTMLTextAreaElement;
     expect(imported.value).toBe(original);
-    expect(screen.getByLabelText("CV preview").textContent).toContain(original);
+    expect(screen.getByLabelText("CV preview").textContent)
+      .toContain("Python and SQL verified projects.");
     fireEvent.change(screen.getByRole("textbox", {name: "Full name"}), {
       target: {value: "Synthetic Candidate"},
     });
