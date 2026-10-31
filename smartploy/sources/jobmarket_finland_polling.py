@@ -27,6 +27,7 @@ class JobMarketFinlandPollSummary:
     modified_from: str
     modified_to: str
     error: str = ""
+    quarantined_count: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -39,6 +40,7 @@ class JobMarketFinlandPollSummary:
             "blocked_count": self.blocked_count,
             "retired_count": self.retired_count,
             "unknown_archived_count": self.unknown_archived_count,
+            "quarantined_count": self.quarantined_count,
             "attempted_at": self.attempted_at,
             "modified_from": self.modified_from,
             "modified_to": self.modified_to,
@@ -104,7 +106,7 @@ def poll_jobmarket_finland(
 
     discovered = 0
     filtered = 0
-    blocked = 0
+    blocked = published.quarantined_count
     for observation in published.observations:
         result = service.ingest(observation, filters=filters)
         if result.status == "discovered":
@@ -128,7 +130,7 @@ def poll_jobmarket_finland(
             retired += 1
 
     status = "degraded" if blocked else "healthy"
-    error = f"{blocked} P67 published items blocked during normalization" if blocked else ""
+    error = f"{blocked} P67 published items blocked or quarantined" if blocked else ""
     service.repository.record_source_attempt(
         adapter.source_id,
         status=status,
@@ -141,6 +143,8 @@ def poll_jobmarket_finland(
             "source_attribution": ORIGINAL_SOURCE_LABEL,
             "external_ai_forwarding_allowed": False,
             "published_count": published.item_count,
+            "published_received_count": published.item_count + published.quarantined_count,
+            "quarantined_count": published.quarantined_count,
             "archived_count": archived.item_count,
             "discovered_count": discovered,
             "filtered_count": filtered,
@@ -166,4 +170,5 @@ def poll_jobmarket_finland(
         modified_from=modified_from,
         modified_to=modified_to,
         error=error,
+        quarantined_count=published.quarantined_count,
     )

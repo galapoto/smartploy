@@ -54,6 +54,8 @@ class JobMarketFinlandBatch:
     status: str
     observations: tuple[SourceObservation, ...] = ()
     archived: tuple[ArchivedPosting, ...] = ()
+    # Aggregate-only quarantine; rejected posting bodies are never retained.
+    quarantined_count: int = 0
 
     @property
     def item_count(self) -> int:
@@ -234,6 +236,7 @@ def parse_ndjson(
     locale_preference: tuple[str, ...] = ("fi", "en", "sv"),
     max_bytes: int = DEFAULT_MAX_BYTES,
     max_items: int = DEFAULT_MAX_ITEMS,
+    quarantine_missing_identity: bool = False,
 ) -> JobMarketFinlandBatch:
     mode = str(status or "").strip().upper()
     if mode not in SUPPORTED_STATUSES:
@@ -245,6 +248,7 @@ def parse_ndjson(
     observations: list[SourceObservation] = []
     archived: list[ArchivedPosting] = []
     item_count = 0
+    quarantined_count = 0
 
     for line_number, raw_line in enumerate(content.splitlines(), start=1):
         line = raw_line.strip()
@@ -261,14 +265,25 @@ def parse_ndjson(
             raise JobMarketFinlandAPIError(f"P67 NDJSON line {line_number} is not an object")
 
         if mode == "PUBLISHED":
-            observations.append(
-                _published_observation(
+            try:
+                observation = _published_observation(
                     record,
                     endpoint=endpoint,
                     observed_at=timestamp,
                     locale_preference=locale_preference,
                 )
-            )
+            except JobMarketFinlandAPIError as exc:
+                # Only the two confirmed identity omissions are eligible.
+                # Invalid JSON, unexpected schemas and archived IDs remain fatal.
+                allowed_reasons = {
+                    "P67 published item is missing metadata.externalId",
+                    "P67 published item is missing employer/title identity",
+                }
+                if not quarantine_missing_identity or str(exc) not in allowed_reasons:
+                    raise
+                quarantined_count += 1
+                continue
+            observations.append(observation)
             continue
 
         metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
@@ -283,10 +298,17 @@ def parse_ndjson(
             )
         )
 
+    # Fail closed if invalid upstream data is more than a small minority.
+    # Perform this check before returning any records to ingestion so a
+    # threshold failure cannot cause partial DB commits in this window.
+    if quarantined_count > min(25, max(2, item_count // 20)):
+        raise JobMarketFinlandAPIError("P67 published missing-identity quarantine limit exceeded")
+
     return JobMarketFinlandBatch(
         status=mode,
         observations=tuple(observations),
         archived=tuple(archived),
+        quarantined_count=quarantined_count,
     )
 
 
@@ -418,8 +440,10 @@ class JobMarketFinlandAdapter:
         settings: JobMarketFinlandSettings,
         *,
         http_client: httpx.Client | None = None,
+        quarantine_missing_identity: bool = False,
     ) -> None:
         self.settings = settings
+        self.quarantine_missing_identity = bool(quarantine_missing_identity)
         self.environment = settings.environment
         self._client = http_client or httpx.Client(
             timeout=settings.timeout_seconds,
@@ -504,4 +528,5 @@ class JobMarketFinlandAdapter:
             locale_preference=self.settings.posting_languages or ("fi", "en", "sv"),
             max_bytes=self.settings.max_bytes,
             max_items=self.settings.max_items,
+            quarantine_missing_identity=self.quarantine_missing_identity,
         )
