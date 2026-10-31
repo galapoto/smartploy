@@ -167,6 +167,18 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(vi.mocked(api.getSearchResults)).toHaveBeenCalled();
   });
 
+  it("opens standalone CV creator from first use without needing a file upload", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", {
+      name: "Apply for jobs in four simple steps."
+    })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: /Create CV from scratch/}));
+    expect(await screen.findByTestId("master-cv-editor")).toBeTruthy();
+    expect(api.uploadCV).not.toHaveBeenCalled();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+  });
+
   it("offers deliberate sign-out to OIDC users without logging out from navigation", async () => {
     currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
     vi.mocked(api.getSession).mockResolvedValue({

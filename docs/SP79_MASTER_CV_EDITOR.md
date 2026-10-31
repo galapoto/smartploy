@@ -65,3 +65,7 @@ This is a branch and PR deliverable. A green GitHub run is not proof of
 Woodpecker qualification, independent review, protected main, pinned
 OVH deployment, authenticated live applicant acceptance or a genuine
 employer acknowledgment. No employer automated submission was enabled.
+
+## First-use navigation
+
+The initial chooser now presents an explicit **Create CV from scratch** action alongside upload. This opens the new master editor without a prior CV or any employer submission; ordinary job browsing remains available.
