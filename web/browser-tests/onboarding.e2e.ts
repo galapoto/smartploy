@@ -753,10 +753,11 @@ test("saved private jobs do not enter ATS discovery and vanish after account swi
 
   state.userId = "synthetic-user-b"; // same email, different authenticated ID
   await page.getByRole("button", { name: "Refresh workspace" }).click();
-  // Account B has no CV; its journey must reset to Step 1 rather than
-  // displaying the original user's mode selection or CV.
+  // Account B has no CV; the START JOURNEY must reset to Step 1.
+  // General search cards may still offer an "Apply manually" shortcut,
+  // but that route is separately guarded and cannot select a mode pre-CV.
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Apply manually/i })).toHaveCount(0);
+  await expect(page.locator(".flow-start-grid-methods")).toHaveCount(0);
   await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByText("PRIVATE-BOOKMARK-A")).toHaveCount(0);
   await expect(page.getByText(/No private saved jobs yet/i)).toBeVisible();
