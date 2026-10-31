@@ -16,7 +16,7 @@ from pypdf import PdfReader
 import pytest
 
 from smartploy.api import create_app
-from smartploy.cv_editor import render_editor_cv, validate_editor_text
+from smartploy.cv_editor import render_editor_cv
 from smartploy.cv_storage import (
     CVRevisionConflict, MemoryCVRepository, PostgresCVRepository,
 )

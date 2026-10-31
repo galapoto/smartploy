@@ -60,9 +60,14 @@ export default function MasterCVEditor(props: {
   }, [verifyAccount]);
 
   useEffect(() => {
-    void refresh();
+    // A successful save already installed its verified response locally.
+    // The parent's CV summary update must not erase the save receipt or edits.
+    if (!snapshot || snapshot.sha256 !== (cv.sha256 || "") ||
+        snapshot.present !== cv.present) {
+      void refresh();
+    }
     return () => { requestGeneration.current += 1; };
-  }, [refresh, cv.sha256]);
+  }, [refresh, cv.sha256, cv.present]);
 
   const dirty = text !== originalText;
   const canSave = !!snapshot && !loading && !saving &&
