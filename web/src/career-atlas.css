@@ -431,3 +431,137 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
   clip-path: none;
   font-weight: 800;
 }
+
+
+/* SP93 | Keep the established signed-in sidebar. Surface the entire real
+   CV -> Manual/Assisted/Automatic journey in the first viewport. Borrow
+   Komplyint's grid, spacing and legibility discipline, never its identity. */
+.smartploy-app .nav-item { font-size: 13.5px; min-height: 48px; line-height: 1.4; }
+.smartploy-app .nav-item-copy { display: flex; flex-direction: column; align-items: start; gap: 3px; min-width: 0; }
+.smartploy-app .nav-item-hint { color: #96c8cd; font-size: 10.5px; font-weight: 600; letter-spacing: normal; }
+.smartploy-app .nav-item.active .nav-item-hint { color: #286675; }
+.smartploy-app .nav-item.nav-apply-entry:not(.active) { background: #132f40; border-color: #35546a; }
+.smartploy-app .nav-item.nav-apply-entry:hover { background: #1d4151; }
+.smartploy-app .nav-item.nav-apply-entry.active { background: #c7f4ee; }
+.flow-dashboard-setup { margin: 19px 0 23px; width: min(1090px, 100%); }
+.flow-dashboard-setup > summary { font-size: 14px; min-height: 46px; }
+.smartploy-app .flow-start {
+  max-width: 1130px;
+  padding: clamp(20px, 2.6vw, 32px);
+  box-shadow: 0 6px 26px rgba(19,70,78,.05);
+}
+.flow-start-masthead { margin-bottom: 17px; padding-bottom: 12px; }
+.flow-start-heading { max-width: 740px; margin-bottom: 18px; }
+.flow-start-heading h1 {
+  font-size: clamp(32px, 3.65vw, 47px);
+  line-height: 1.12;
+  margin-bottom: 10px;
+  letter-spacing: -.018em;
+}
+.flow-start-heading p { font-size: 15px; line-height: 1.6; max-width: 67ch; }
+.flow-start-progress { margin-bottom: 15px; }
+.flow-start-progress li { padding: 10px 12px; font-size: 12px; }
+.flow-start-how { padding: 17px 19px; margin: 0 0 11px; gap: 12px; }
+.flow-start-how .primary-btn, .flow-start-how .outline-btn {
+  min-height: 46px;
+  font-size: 13.5px;
+}
+.flow-start-how .flow-start-cv-copy { max-width: 470px; }
+.flow-start-how .flow-start-cv-copy strong { font-size: 16px; }
+.flow-start-how .flow-start-cv-copy p { font-size: 13px; line-height: 1.55; }
+.flow-start-locked, .flow-start-ready { padding: 11px 14px; margin: 0 0 15px; font-size: 13.5px; }
+.flow-start-method-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 12px 22px;
+  flex-wrap: wrap;
+  margin: 12px 0 15px;
+}
+.flow-start-method-heading h2 {
+  font-size: clamp(21px, 2.1vw, 28px);
+  color: #143746;
+  line-height: 1.25;
+  letter-spacing: -.025em;
+  margin: 3px 0 7px;
+}
+.flow-start-method-heading p:last-child { margin: 0; color: #4e6a74; font-size: 14px; line-height: 1.5; }
+.flow-start-method-heading .section-kicker { margin: 0; font-size: 11px; }
+.flow-start-method-status {
+  color: #285b6a;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 8px 12px;
+  background: #eff7f6;
+  border: 1px solid #d2e5e3;
+  border-radius: 999px;
+  flex: none;
+}
+.flow-start-method-status.ready { color: #1b655a; background: #eaf9ee; border-color: #b9ddc9; }
+.flow-start-grid.flow-start-grid-methods {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 12px;
+}
+.flow-start-grid-methods .flow-start-card {
+  min-width: 0;
+  min-height: 250px;
+  height: auto;
+  padding: 19px;
+  gap: 9px;
+  box-shadow: none;
+}
+.flow-start-grid-methods .flow-start-card strong { font-size: 17px; line-height: 1.35; }
+.flow-start-grid-methods .flow-start-card span:not(.flow-start-index) {
+  font-size: 13px; line-height: 1.5;
+}
+.flow-start-grid-methods .flow-start-card small { font-size: 11px; line-height: 1.5; }
+.flow-start-grid-methods .flow-start-card .flow-card-cta {
+  color: var(--flow-tone);
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.flow-start-grid-methods .flow-start-card:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  background: #f8faf9;
+  border-color: #d1dedf;
+  border-top-color: var(--flow-tone);
+  box-shadow: none;
+}
+.flow-start-grid-methods .flow-start-card:disabled:hover { transform: none; box-shadow: none; }
+.flow-start-grid-methods .flow-start-card:disabled .flow-card-cta { color: #5a707a; }
+.flow-start-grid-methods .flow-start-card:disabled > svg:last-child { opacity: .35; }
+.application-flow .flow-mode:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  background: #f6f8f8;
+  border-color: #d8e3e3;
+  border-top-color: var(--flow-tone);
+}
+.application-flow .flow-mode:disabled:hover { box-shadow: none; }
+.application-flow .flow-mode:disabled .flow-mode-choice {
+  background: #f2f6f5;
+  color: #536972;
+  border-color: #d7e4e4;
+}
+.application-flow .flow-mode strong { font-size: 16px; line-height: 1.35; }
+.application-flow .flow-mode small { font-size: 13px; line-height: 1.55; }
+.application-flow .flow-mode-next { font-size: 12px; }
+.application-flow .flow-mode-responsibility { font-size: 13px; line-height: 1.5; }
+@media (max-width: 1100px) {
+  .flow-start-grid-methods .flow-start-card { padding: 16px; }
+  .flow-start-grid-methods .flow-start-card strong { font-size: 15.5px; }
+  .flow-start-grid-methods .flow-start-card span:not(.flow-start-index) { font-size: 12.5px; }
+}
+@media (max-width: 850px) {
+  .flow-start-grid.flow-start-grid-methods { grid-template-columns: repeat(3, minmax(0,1fr)); }
+}
+@media (max-width: 700px) {
+  .flow-start-grid.flow-start-grid-methods { grid-template-columns: 1fr; }
+  .flow-start-grid-methods .flow-start-card { min-height: 0; }
+  .flow-start-masthead { margin-bottom: 12px; }
+  .flow-start-method-heading { align-items: start; }
+  .smartploy-app .flow-start { padding: 18px 15px; }
+}

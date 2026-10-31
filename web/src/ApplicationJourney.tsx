@@ -468,7 +468,7 @@ export default function ApplicationJourney(props: {
     <section className="panel flow-intro">
       <div className="panel-heading"><div>
         <p className="section-kicker">YOUR APPLICATION GUIDE</p>
-        <h2>Upload your CV. Choose your method. Apply.</h2>
+        <h2>From your CV to a complete application.</h2>
         <p>One clear route, from your connected CV to an application outcome.
           Pick how much work SmartPloy should do; no mode choice sends anything to an employer.</p>
       </div></div>
@@ -535,11 +535,10 @@ export default function ApplicationJourney(props: {
       </div></div>
       {!props.cv.present ? <div className="flow-decision flow-cv-required" role="status">
         <CircleHelp size={20} aria-hidden="true"/>
-        <p><strong>Step 2 is locked until your CV is saved.</strong> Return to Step 1
-          to upload your CV or create one from scratch. Your application
-          method is not selected automatically.</p>
-      </div> : <>
-      {!props.mode ? <div className="flow-decision" role="status">
+        <p id="flow-choose-require-cv"><strong>All three application methods are visible below.</strong>
+          {" "}First upload or create your CV in Step 1. The choices become active
+          after your CV is saved; no method is preselected.</p>
+      </div> : !props.mode ? <div className="flow-decision" role="status">
         <CircleHelp size={20} aria-hidden="true"/>
         <p><strong>Your CV is connected. Choose a method to continue.</strong>
           {" "}Manual means you submit; Assisted supports CV/letter and forms;
@@ -556,7 +555,8 @@ export default function ApplicationJourney(props: {
             data-flow-mode={choice}
             className={"flow-mode" + (props.mode === choice ? " selected" : "")}
             aria-pressed={props.mode === choice}
-            disabled={props.queueBusy || !!queueInFlight.current}
+            disabled={!props.cv.present || props.queueBusy || !!queueInFlight.current}
+            aria-describedby={!props.cv.present ? "flow-choose-require-cv" : undefined}
             onClick={() => props.onMode(choice)}>
             <span className="flow-mode-head">
               <Icon size={23} aria-hidden="true"/>
@@ -570,7 +570,7 @@ export default function ApplicationJourney(props: {
           </button>;
         })}
       </div>
-      {props.mode === "assisted" ? <fieldset className="flow-assistance">
+      {props.cv.present && props.mode === "assisted" ? <fieldset className="flow-assistance">
         <legend>How much help do you want?</legend>
         {([
           ["filter", "Filter jobs only"],
@@ -582,7 +582,7 @@ export default function ApplicationJourney(props: {
         <p>Supported browser form filling requires a reviewed handoff. Final browser submission stays manual;
           authorized partner submission has separate per-job approval and confirmation.</p>
       </fieldset> : null}
-      {props.mode === "automatic" ? <div className="flow-boundary" role="note">
+      {props.cv.present && props.mode === "automatic" ? <div className="flow-boundary" role="note">
         <ShieldCheck size={20} aria-hidden="true"/>
         <p><strong>AutoApply prepares selected jobs first.</strong>{" "}
           It saves a CV and letter for review, with an in-app tracking agent per job.
@@ -591,7 +591,6 @@ export default function ApplicationJourney(props: {
           Jobs without rights remain Assisted/Manual. No automatic background
           employer send, unknown-form answers or retries occur here.</p>
       </div> : null}
-      </>}
     </section>
     <section className="panel flow-matches">
       <div className="panel-heading"><div>

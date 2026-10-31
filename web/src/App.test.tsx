@@ -168,12 +168,47 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Upload CV first/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Create CV from scratch/i })).toBeTruthy();
-    expect(screen.getByText(/Step 2 unlocks after your CV is saved/i)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Apply manually/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Automatic.*AutoApply/i })).toBeNull();
-    fireEvent.click(screen.getByText(/Advanced: customize search preferences/i));
+    expect(screen.getByText(/The three application paths are shown below/i)).toBeTruthy();
+    const sidebar = screen.getByRole("navigation", { name: "Main navigation" });
+    expect(sidebar).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Apply for jobs" })).toBeTruthy();
+    for (const mode of ["manual", "assisted", "automatic"]) {
+      const card = document.querySelector(`button.flow-start-card[data-flow-mode="${mode}"]`);
+      expect(card).toBeTruthy();
+      expect((card as HTMLButtonElement).disabled).toBe(true);
+    }
+    fireEvent.click(screen.getByText(/Optional: set your job search preferences/i));
     expect(screen.getByRole("radio", { name: /general job search/i })).toBeTruthy();
     expect(vi.mocked(api.getSearchResults)).toHaveBeenCalled();
+  });
+
+  it("SP93 shows all three real paths in the preserved sidebar workspace even before a CV", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Apply for jobs" })).toBeTruthy();
+    expect(document.querySelectorAll("button.flow-start-card[data-flow-mode]")).toHaveLength(3);
+    fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
+    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(document.querySelectorAll("button.flow-mode[data-flow-mode]")).toHaveLength(3);
+    for (const button of document.querySelectorAll("button.flow-mode[data-flow-mode]")) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(screen.getByText(/All three application methods are visible below/i)).toBeTruthy();
+    expect(api.getCVJobMatches).not.toHaveBeenCalled();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create CV from scratch" }));
+    expect(await screen.findByTestId("master-cv-editor")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save synthetic created CV" }));
+    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    for (const button of document.querySelectorAll("button.flow-mode[data-flow-mode]")) {
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+    }
+    fireEvent.click(screen.getByRole("button", { name: /Apply with AI help/i }));
+    expect(await screen.findByText(/Apply with AI help selected/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Apply for jobs" })).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
   it("opens standalone CV creator from first use without needing a file upload", async () => {
@@ -249,7 +284,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       present: true, filename: "synthetic-CV.pdf", sha256: "test-cv-only"
     });
     render(<App />);
-    fireEvent.click(await screen.findByText(/Advanced: customize search preferences/i));
+    fireEvent.click(await screen.findByText(/Optional: set your job search preferences/i));
     fireEvent.click(await screen.findByRole("radio", { name: /general job search/i }));
     fireEvent.click(await screen.findByRole("button", { name: /browse all jobs/i }));
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
@@ -622,7 +657,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     }));
 
     render(<App />);
-    fireEvent.click(await screen.findByText(/Advanced: customize search preferences/i));
+    fireEvent.click(await screen.findByText(/Optional: set your job search preferences/i));
     const generalRadio = await screen.findByRole("radio", { name: /general job search/i });
     fireEvent.click(generalRadio);
     expect((generalRadio as HTMLInputElement).checked).toBe(true);
@@ -828,7 +863,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 
   it("saves new personalized settings and transparently changes ranked results", async () => {
     render(<App />);
-    fireEvent.click(await screen.findByText(/Advanced: customize search preferences/i));
+    fireEvent.click(await screen.findByText(/Optional: set your job search preferences/i));
     fireEvent.change(await screen.findByPlaceholderText(/Data analyst, Junior software tester/), {
       target: { value: "Data Analyst" },
     });
@@ -1352,7 +1387,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 describe("first opt-in creates private IT applications immediately", () => {
   const openOptIn = async () => {
     render(<App />);
-    fireEvent.click(await screen.findByText(/Advanced: customize search preferences/i));
+    fireEvent.click(await screen.findByText(/Optional: set your job search preferences/i));
     fireEvent.click(await screen.findByRole("button", { name: /Use nationwide junior IT & planning targets/i }));
     fireEvent.click(screen.getByRole("checkbox", {
       name: /Automatically prepare suitable job drafts/i,

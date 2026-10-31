@@ -379,9 +379,12 @@ test("SP87 CV-less job-card shortcut cannot bypass upload and choose Manual", as
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   const card = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
   await card.getByRole("button", { name: /Apply manually/i }).click();
-  await expect(page.getByRole("heading", { name: "Upload your CV. Choose your method. Apply." })).toBeVisible();
-  await expect(page.getByText(/Step 2 is locked until your CV is saved/)).toBeVisible();
-  await expect(page.getByRole("group", { name: "Choose application method" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "From your CV to a complete application." })).toBeVisible();
+  await expect(page.getByText(/All three application methods are visible below/)).toBeVisible();
+  await expect(page.getByRole("group", { name: "Choose application method" })).toBeVisible();
+  for (const mode of ["manual", "assisted", "automatic"]) {
+    await expect(page.locator(`.flow-mode[data-flow-mode="${mode}"]`)).toBeDisabled();
+  }
   expect(state.applicationWorkspaceCreates).toEqual([]);
 });
 
@@ -389,7 +392,8 @@ test("CV-first manual application goes from upload to real matching and selected
   const state = await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Apply manually/i })).toHaveCount(0);
+  await expect(page.locator('.flow-start-card[data-flow-mode="manual"]')).toBeVisible();
+  await expect(page.locator('.flow-start-card[data-flow-mode="manual"]')).toBeDisabled();
   await page.locator("input[aria-label='Select CV to upload']").setInputFiles({
     name: "Synthetic-IT-CV.docx",
     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -399,7 +403,7 @@ test("CV-first manual application goes from upload to real matching and selected
   await expect(page.getByRole("group", { name: "Choose application method" })).toBeVisible();
   await page.getByRole("button", { name: /Apply manually/i }).click();
   await expect(page.getByRole("heading", {
-    name: "Upload your CV. Choose your method. Apply.",
+    name: "From your CV to a complete application.",
   })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
@@ -563,13 +567,13 @@ test("existing job-search cards open the requested assisted journey without crea
   await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   const analystCard = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
   await analystCard.getByRole("button", { name: /Apply with AI/i }).click();
-  await expect(page.getByRole("heading", { name: "Upload your CV. Choose your method. Apply." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "From your CV to a complete application." })).toBeVisible();
   await expect(page.locator(".flow-mode.selected")).toContainText("Apply with AI help");
   await expect(page.locator(".flow-job.highlighted")).toContainText("Junior Data Analyst");
   expect(state.applicationWorkspaceCreates).toEqual([]);
 });
 
-test("SP87 production build puts CV first, locks methods, and renders the actual start choices", async ({ page }) => {
+test("SP93 production build shows all three CV-locked methods with the full sidebar", async ({ page }) => {
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
@@ -580,11 +584,15 @@ test("SP87 production build puts CV first, locks methods, and renders the actual
   expect(bounds?.height).toBeGreaterThan(20);
   await expect(page.getByRole("button", { name: /Upload CV first/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /Create CV from scratch/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /apply manually/i })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /apply with AI/i })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /autoapply/i })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Apply for jobs" })).toBeVisible();
+  for (const mode of ["manual", "assisted", "automatic"]) {
+    const card = page.locator(`.flow-start-card[data-flow-mode="${mode}"]`);
+    await expect(card).toBeVisible();
+    await expect(card).toBeDisabled();
+  }
   await expect(page.getByRole("button", { name: /just find jobs/i })).toBeVisible();
-  await page.getByText(/Advanced: customize search preferences/i).click();
+  await page.getByText(/Optional: set your job search preferences/i).click();
   await expect(page.getByRole("radio", { name: /Personalized jobs/i })).toBeChecked();
   await expect(page.getByRole("radio", { name: /General job search/i })).toBeVisible();
 
@@ -771,7 +779,8 @@ test("saved private jobs do not enter ATS discovery and vanish after account swi
   // General search cards may still offer an "Apply manually" shortcut,
   // but that route is separately guarded and cannot select a mode pre-CV.
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
-  await expect(page.locator(".flow-start-grid-methods")).toHaveCount(0);
+  await expect(page.locator(".flow-start-grid-methods .flow-start-card")).toHaveCount(3);
+  await expect(page.locator('.flow-start-card[data-flow-mode="automatic"]')).toBeDisabled();
   await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByText("PRIVATE-BOOKMARK-A")).toHaveCount(0);
   await expect(page.getByText(/No private saved jobs yet/i)).toBeVisible();
