@@ -72,6 +72,7 @@ function freshPartnerEvidence(
 export default function ApplicationStudio(props: {
   focusId: string; expectedUserId: string; expectedAuthSource: string; onFindJobs: () => void;
   mode?: ApplicationFlowMode | null;
+  onModeChange?: (mode: ApplicationFlowMode) => void;
 }) {
   const [workspaces, setWorkspaces] = useState<ApplicationWorkspace[]>([]);
   const [selectedId, setSelectedId] = useState(props.focusId);
@@ -908,6 +909,42 @@ export default function ApplicationStudio(props: {
     </div>
     {error ? <div className="studio-alert error" role="alert"><AlertCircle size={16}/>{error}</div> : null}
     {message ? <div className="studio-alert" role="status"><CheckCircle2 size={16}/>{message}</div> : null}
+    {workspaces.some((item) => item.status === "draft") && props.onModeChange ? (
+      <section className="studio-resume-methods" aria-label="Choose how to finish saved applications">
+        <div className="studio-resume-intro">
+          <span className="section-kicker">YOUR SAVED APPLICATIONS</span>
+          <h3>Continue with Manual, Assisted or Automatic</h3>
+          <p>Choose how to complete your saved drafts, even after signing in again.
+            No method is inferred from an old session, and choosing one never sends an application.</p>
+        </div>
+        <div className="studio-resume-cards" role="group"
+          aria-label="Choose application completion method">
+          {([
+            ["manual", "Manual", "Open the employer site and record your result."],
+            ["assisted", "Assisted", "Use your reviewed CV, letter and browser form help."],
+            ["automatic", "Automatic", "Check independently authorized employer submission routes."],
+          ] as const).map(([value, title, description]) => (
+            <button className={"studio-resume-card" +
+              (props.mode === value ? " selected" : "")}
+              type="button" key={value} data-resume-mode={value}
+              aria-pressed={props.mode === value}
+              onClick={() => props.onModeChange?.(value)}>
+              <strong>{title}</strong><span>{description}</span>
+              <small>{props.mode === value ? "Selected" : "Choose method"}</small>
+            </button>
+          ))}
+        </div>
+        <p className="studio-resume-boundary" role="status">
+          {props.mode === "automatic"
+            ? "AutoApply: check eligible reviewed drafts below. Only an independently authorized employer API and your separate final approval permit a send."
+            : props.mode === "assisted"
+              ? "Assisted: review your exact CV and letter, then use employer form assistance. Final submission remains under your control."
+              : props.mode === "manual"
+                ? "Manual: open the employer posting and submit yourself. Mark the outcome only after you actually apply."
+                : "Select a method above to reveal its guided completion actions. Your saved drafts are preserved."}
+        </p>
+      </section>
+    ) : null}
     {workspaces.length > 0 ? <>
       {props.mode === "automatic" ? <AuthorizedAutoApplyBatch
         workspaces={workspaces} expectedUserId={props.expectedUserId}
