@@ -26,3 +26,6 @@ Uses the existing matching/scoring, approved evidence, CV/application workspace 
 
 ## Release boundary
 GitHub CI is source/fixture evidence only. No OVH deploy or real employer post is implied. New default applies to newly created workspaces after release, not pre-existing drafts.
+
+## Legacy test fixtures updated after CI security check
+Some older synthetic tests bypassed the applicant save step by directly constructing a first-revision workspace containing a manually written letter and then asserting browser readiness. SP85 deliberately rejects that: a first-revision document has not been saved after review even if its prose reads as finished. The shared PostgreSQL/OIDC/browser partner fixtures now use the real repository `edit` compare-and-swap operation to advance to revision 2; a Greenhouse-only in-memory acceptance test uses `update_documents`. This preserves the stricter production gate and tests the proper applicant-driven lifecycle rather than disabling the guard.

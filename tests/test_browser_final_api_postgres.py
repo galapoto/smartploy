@@ -92,6 +92,13 @@ def reviewed_case(monkeypatch):
             ),
         )
         assert workspaces.create_or_get(work)[1] is True
+        # Simulate the applicant's real saved, revision-checked review.
+        # Manually authored prose in a new revision-1 workspace is not enough.
+        work = workspaces.edit(
+            a.profile_id, work.workspace_id, expected_revision=work.revision,
+            cv_text=work.cv_text, cover_letter_text=work.cover_letter_text,
+        )
+        assert work is not None and work.revision == 2
         packet = make_browser_packet(work, job, profile.profile())
 
         monkeypatch.setenv("SMARTPLOY_ENVIRONMENT", "production")

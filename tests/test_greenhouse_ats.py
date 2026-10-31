@@ -222,7 +222,7 @@ def test_sp43_real_greenhouse_public_finnish_job_reaches_reviewed_browser_handof
     """Reuse the actual SP20 read-only adapter, source policy, CV workspace and packet."""
     from dataclasses import replace
     from datetime import datetime, timezone
-    from smartploy.application_workspace import new_workspace
+    from smartploy.application_workspace import new_workspace, update_documents
     from smartploy.browser_handoff import make_browser_packet, review_handoff
     from smartploy.domain import normalize_observation
     from smartploy.profile import CandidateProfile, ProfileFact
@@ -254,11 +254,13 @@ def test_sp43_real_greenhouse_public_finnish_job_reaches_reviewed_browser_handof
         space=new_workspace(candidate,person,source_cv_text=(
             "Reviewed Candidate, SQL and Python experience, Helsinki."
         ))
-        space=replace(space,cover_letter_text=(
+        # Explicit applicant document edit advances the in-memory revision.
+        space=update_documents(space,cv_text=space.cv_text,cover_letter_text=(
             "Dear Hiring Team, I reviewed this Junior Data Engineer position. "
             "My SQL and Python experience supports its requirements. "
             "Kind regards, Reviewed Candidate."
         ))
+        assert space.revision == 2
         assert review_handoff(space,candidate,person)["ready"] is True
         packet=make_browser_packet(space,candidate,person)
         assert packet["application_url"]==source["absolute_url"]
