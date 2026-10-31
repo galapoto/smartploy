@@ -375,16 +375,18 @@ describe("SP21 application journey", () => {
     expect(onBrowse).toHaveBeenCalledTimes(1);
   });
 
-  it("SP87 first-time landing refuses to offer any application mode without CV", () => {
+  it("SP93 first-time landing shows all three options locked until CV is connected", () => {
     const onMode = vi.fn(), onBrowse = vi.fn(), onUpload = vi.fn(), onCreateCV = vi.fn();
     render(<StartChoices onMode={onMode} onBrowse={onBrowse} cvPresent={false}
       onUpload={onUpload} onCreateCV={onCreateCV}/>);
     expect(screen.getByRole("heading", { name: "Start with your CV." })).toBeTruthy();
     expect(screen.getByRole("list", { name: "Application journey steps" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Apply manually/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Assisted · Apply with AI/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Automatic · AutoApply/ })).toBeNull();
-    expect(screen.getByText(/Step 2 unlocks after your CV is saved/)).toBeTruthy();
+    for (const mode of ["manual", "assisted", "automatic"]) {
+      const card = document.querySelector(`button.flow-start-card[data-flow-mode="${mode}"]`);
+      expect(card).toBeTruthy();
+      expect((card as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(screen.getByText(/The three application paths are shown below/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Upload CV first/i }));
     fireEvent.click(screen.getByRole("button", { name: /Create CV from scratch/i }));
     expect(onUpload).toHaveBeenCalledTimes(1);
