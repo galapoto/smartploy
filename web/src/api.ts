@@ -5,6 +5,7 @@ import type {
   CVDocument,
   CVEditorDocument,
   CVEditorSaved,
+  CVEditorRestored,
   CVJobMatches,
   CandidateFact,
   ProfileFactsResponse,
@@ -190,6 +191,22 @@ export function saveCVEditor(
       expected_sha256: expectedSha256, text, confirmed_replace: true,
     }),
   }, expectedUserId);
+}
+
+/** Restore exact historical bytes without regenerating a CV or contacting employers. */
+export function restoreCVEditor(
+  digest: string, expectedSha256: string, expectedUserId: string,
+): Promise<CVEditorRestored> {
+  if (!/^[a-f0-9]{64}$/.test(digest) ||
+      !/^[a-f0-9]{64}$/.test(expectedSha256) || digest === expectedSha256) {
+    return Promise.reject(new Error("Select an archived CV and verify the current revision"));
+  }
+  return request<CVEditorRestored>(
+    "/api/v1/profile/cv/history/" + encodeURIComponent(digest) + "/restore",
+    { method: "POST", body: JSON.stringify({
+      expected_sha256: expectedSha256, confirmed_restore: true,
+    }) }, expectedUserId,
+  );
 }
 
 export async function uploadCV(file: File, expectedUserId: string): Promise<CVDocument> {
