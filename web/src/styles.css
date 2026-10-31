@@ -924,3 +924,31 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .studio-letter-language > span { color: #52718f;
   font-size: 11px; font-weight: 700; margin-right: 2px; }
 .studio-letter-language button { min-width: 95px; }
+
+
+/* SP79: premium, readable, independently editable master CV. */
+.master-cv-editor { background: #fcfcf9; border-color: #d9e7de; }
+.master-cv-editor h2 { color: #182623; letter-spacing: -0.025em; }
+.master-cv-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
+.master-cv-toolbar label { font-size: 14px; font-weight: 700; color: #324842; }
+.master-cv-toolbar select { min-width: 160px; min-height: 44px; padding: 8px 12px; border: 1px solid #9baea5; border-radius: 9px; background: #fff; color: #182623; font-size: 15px; }
+.master-cv-columns { display: grid; grid-template-columns: minmax(0, 1.03fr) minmax(0, 1fr); gap: 18px; }
+.master-cv-edit, .master-cv-preview { min-width: 0; }
+.master-cv-edit label { display: block; font-size: 16px; font-weight: 700; margin-bottom: 9px; color: #22342e; }
+.master-cv-edit textarea { display: block; width: 100%; min-height: 480px; resize: vertical; border: 1px solid #9baea5; border-radius: 10px; padding: 16px; background: #fff; color: #182623; font: 16px/1.55 Inter, "Segoe UI", sans-serif; }
+.master-cv-edit textarea:focus-visible, .master-cv-toolbar select:focus-visible, .master-cv-actions a:focus-visible { outline: 3px solid #1457c6; outline-offset: 2px; }
+.master-cv-metadata { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; color: #52675f; font-size: 13px; }
+.master-cv-preview > strong { display: flex; align-items: center; gap: 8px; margin: 0 0 9px; color: #22342e; font-size: 15px; }
+.master-cv-paper { min-height: 480px; padding: 28px 23px; background: #fff; border: 1px solid #d9e2dc; box-shadow: 0 9px 24px rgba(24,38,35,.06); }
+.master-cv-paper pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font: 14px/1.65 Inter, "Segoe UI", sans-serif; color: #202d29; }
+.master-cv-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
+.master-cv-actions a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+.master-cv-message { margin: 12px 0; padding: 10px 12px; border-left: 3px solid #268668; background: #f0faf4; font-size: 14px; color: #1b5542; }
+.master-cv-message.error { border-left-color: #b22f39; background: #fff2f1; color: #8f2630; }
+.master-cv-privacy, .master-cv-starter { margin-top: 16px; display: flex; gap: 8px; align-items: flex-start; color: #445950; font-size: 13px; line-height: 1.6; }
+.master-cv-history { margin-top: 17px; border-top: 1px solid #d9e7de; padding-top: 12px; font-size: 14px; color: #243e32; }
+.master-cv-history summary { display: flex; align-items: center; gap: 8px; font-weight: 700; cursor: pointer; }
+.master-cv-history ul { list-style: none; padding: 0; display: grid; gap: 12px; }
+.master-cv-history li { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.master-cv-history a { display: inline-flex; align-items: center; gap: 5px; color: #175c49; text-decoration: underline; }
+@media (max-width: 1120px) { .master-cv-columns { grid-template-columns: 1fr; } .master-cv-edit textarea, .master-cv-paper { min-height: 300px; } }

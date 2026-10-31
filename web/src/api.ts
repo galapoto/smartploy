@@ -3,6 +3,8 @@ import type {
   Dashboard,
   HealthResponse,
   CVDocument,
+  CVEditorDocument,
+  CVEditorSaved,
   CVJobMatches,
   CandidateFact,
   ProfileFactsResponse,
@@ -168,6 +170,26 @@ export function getCV(): Promise<CVDocument> {
 
 export function getProfileFacts(): Promise<ProfileFactsResponse> {
   return request<ProfileFactsResponse>("/api/v1/profile/facts");
+}
+
+/** SP79: full, private editable CV, not the limited 6,000-char preview. */
+export function getCVEditor(): Promise<CVEditorDocument> {
+  return request<CVEditorDocument>("/api/v1/profile/cv/editor");
+}
+
+export function saveCVEditor(
+  text: string, expectedSha256: string, expectedUserId: string,
+): Promise<CVEditorSaved> {
+  if (text.trim().length < 20 || text.trim().length > 30000 ||
+      !/^(?:[a-f0-9]{64})?$/.test(expectedSha256)) {
+    return Promise.reject(new Error("Please review your CV text and current revision"));
+  }
+  return request<CVEditorSaved>("/api/v1/profile/cv/editor", {
+    method: "PUT",
+    body: JSON.stringify({
+      expected_sha256: expectedSha256, text, confirmed_replace: true,
+    }),
+  }, expectedUserId);
 }
 
 export async function uploadCV(file: File, expectedUserId: string): Promise<CVDocument> {

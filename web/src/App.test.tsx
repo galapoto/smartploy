@@ -19,6 +19,9 @@ vi.mock("./api", () => ({
   getJobAIConsents: vi.fn(), getJobAIConsentEvents: vi.fn(),
   grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
+vi.mock("./MasterCVEditor", () => ({
+  default: () => <div data-testid="master-cv-editor">Private CV editor</div>,
+}));
 vi.mock("./ApplicationStudio", () => ({
   default: ({ focusId }: { focusId: string }) =>
     <div data-testid="application-editor" data-workspace={focusId}>Application editor</div>,

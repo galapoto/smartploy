@@ -9,7 +9,7 @@ import {
 import {
   addManualJob, approveFact, createFact, deleteCV, deleteFact, deletePrivateSavedJob, getApplications,
   getCV, getDashboard, getHealth, getJobs, getPrivateSavedJobs, getProfileFacts, getSession,
-  startApplicationWorkspace, uploadCV, getJobAIConsents, getJobAIConsentEvents,
+  startApplicationWorkspace, uploadCV, saveCVEditor, getJobAIConsents, getJobAIConsentEvents,
   grantJobAIConsent, revokeJobAIConsent,
   getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus,
   prepareMyMatchingDrafts, type AutoDraftResult
@@ -19,6 +19,7 @@ import {
   sectorLabel, type DisplayMode, type SectorFilter
 } from "./lib";
 import ApplicationStudio from "./ApplicationStudio";
+import MasterCVEditor from "./MasterCVEditor";
 import ApplicationJourney from "./ApplicationJourney";
 import { describeAutoApplyBatchIssue } from "./autoapply_batch_errors";
 import StartChoices from "./StartChoices";
@@ -1233,7 +1234,18 @@ export default function App() {
           /> : null}
           {page === "jobs" ? <div className="stacked"><div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>{privateSavedJobsPanel}</div> : null}
           {page === "training" ? <TrainingProgramsPanel /> : null}
-          {page === "profile" ? <div className="secondary-grid"><div className="stacked">{cvBlock}{factPanel}</div><aside>{sidePanel}</aside></div> : null}
+          {page === "profile" ? <div className="secondary-grid"><div className="stacked">
+            {cvBlock}
+            <MasterCVEditor key={accountViewKey} expectedUserId={session?.user_id || ""}
+              cv={cv}
+              onSave={(text, expectedSha256) => runPrivateMutation(
+                (userId) => saveCVEditor(text, expectedSha256, userId)
+              )}
+              onSaved={(saved) => {
+                setCV(saved); setCVPreview(false);
+                setNotice("Your master CV was saved privately. Matching and new application drafts now use this version.");
+              }} />
+            {factPanel}</div><aside>{sidePanel}</aside></div> : null}
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}
           {page === "applications" ? <div className="stacked">
