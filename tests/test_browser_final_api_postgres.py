@@ -717,3 +717,36 @@ def test_sp32_explicit_autoapply_queue_creates_one_private_agent_per_selected_jo
     assert unavailable.json()["agent_tracking"]["state"] == "unavailable"
     assert unavailable.json()["agent_tracking"]["worker_wake_verified"] is False
     assert unavailable.json()["workspace"]["workspace_id"] == work.workspace_id
+
+
+def test_sp79_cv_editor_same_email_oidc_isolation_and_same_origin(reviewed_case):
+    """Two different ZITADEL/OIDC subjects must never share a CV by email."""
+    case = reviewed_case
+    api, headers = case["api"], case["headers"]
+    original = "Synthetic Applicant\n\nSKILLS\nPython SQL and reliable reporting."
+    request_body = {
+        "expected_sha256": "", "text": original, "confirmed_replace": True,
+    }
+    try:
+        no_origin = api.put(
+            "/api/v1/profile/cv/editor",
+            headers={**headers, "Origin": "https://attacker.invalid"},
+            json=request_body,
+        )
+        assert no_origin.status_code == 403
+        confirmed = api.put("/api/v1/profile/cv/editor",
+                            headers=headers, json=request_body)
+        assert confirmed.status_code == 200, confirmed.text
+        own_digest = confirmed.json()["cv"]["sha256"]
+        assert api.get("/api/v1/profile/cv/editor").json()["text"] == original
+        api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
+        assert api.get("/api/v1/profile/cv/editor").json()["present"] is False
+        assert api.get("/api/v1/profile/cv/history/" + own_digest).status_code == 404
+        assert api.put(
+            "/api/v1/profile/cv/editor",
+            headers=headers, json=request_body,
+        ).status_code in (403, 409)
+        assert api.get("/api/v1/profile/cv").json() == {"present": False}
+    finally:
+        api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
+        api.delete("/api/v1/profile/cv", headers=headers)
