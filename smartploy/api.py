@@ -58,7 +58,7 @@ from .browser_receipt_storage import (
 from .local_drafting import LocalDraftClient, LocalDraftError, LocalDraftSettings
 from .cv_import import CVImportError, parse_cv
 from .cv_job_matching import cv_job_matches
-from .cv_storage import CVRevisionConflict, MemoryCVRepository, PostgresCVRepository
+from .cv_storage import CVArchiveNotFound, CVRevisionConflict, MemoryCVRepository, PostgresCVRepository
 from .cv_editor import render_editor_cv
 from .profile import FACT_TYPES, ProfileFact
 from .identity import (
@@ -192,6 +192,12 @@ class CVEditorPayload(BaseModel):
     expected_sha256: str = Field(pattern=r"^(?:[0-9a-f]{64})?$")
     text: str = Field(min_length=20, max_length=30000)
     confirmed_replace: StrictBool
+
+
+class CVRestorePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    confirmed_restore: StrictBool
 
 
 class PrivateSavedJobPayload(BaseModel):
@@ -1059,6 +1065,45 @@ def create_app(
             "X-Content-Type-Options": "nosniff",
             "Cache-Control": "private, no-store",
         })
+
+    @app.post("/api/v1/profile/cv/history/{digest}/restore")
+    def restore_archived_cv(
+        digest: str, payload: CVRestorePayload, request: Request,
+    ) -> JSONResponse:
+        """Restore exact owner-private historical bytes, never an employer action.
+
+        The caller must explicitly confirm, present the current content SHA,
+        and still own the same account under the existing OIDC+origin binding.
+        """
+        tenant, binding = tenant_context(request)
+        if payload.confirmed_restore is not True:
+            raise HTTPException(status_code=422, detail="Explicit CV restore confirmation required")
+        if binding is None and authentication.mode != "disabled":
+            raise HTTPException(status_code=403, detail="Verified account required")
+        if binding is not None and (
+            request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Origin", "") != public_origin
+            or request.headers.get("Sec-Fetch-Site", "").casefold()
+               not in {"", "same-origin", "none"}
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin CV restore required")
+        pid = tenant.profile_repository.profile_id
+        try:
+            restored = app.state.cv_repository.restore_archived(
+                pid, digest=digest, expected_sha256=payload.expected_sha256,
+            )
+        except CVRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except CVArchiveNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return JSONResponse({
+            "cv": restored.summary(), "text": restored.text,
+            "restored_sha256": restored.digest,
+            "history": app.state.cv_repository.history(pid),
+            "approved_profile_facts_added": 0, "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"})
 
     @app.get("/api/v1/profile/cv/matches")
     def cv_first_job_matches(
