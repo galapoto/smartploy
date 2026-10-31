@@ -1805,3 +1805,71 @@ def test_sp53_ashby_changed_between_preflight_and_send_is_still_not_submitted(
     assert api.post(route+"/partner-ashby-apply",
         json=_partner_submit_payload(packet),headers=headers).status_code==409
     assert calls==["/jobPosting.info","/jobPosting.info"]
+
+
+def test_sp81_new_approved_contact_after_review_requires_fresh_applicant_consent(scoped):
+    """Even a NEW matching client hash cannot reuse the previous reviewed contact."""
+    a, args = final_fixture(scoped)
+    repo = PostgresEmployerReviewIntentRepository(DSN)
+    original = repo.get(a, args["expected_application_url"])
+    assert original is not None
+    assert original.approved_fields_sha256 == args["expected_fields_sha256"]
+    assert original.matches_current_packet({
+        "document_sha256": args["expected_document_sha256"],
+        "cv_pdf_sha256": args["expected_cv_pdf_sha256"],
+        "approved_fields_sha256": args["expected_fields_sha256"],
+    }, workspace_id=args["workspace_id"], revision=1)
+
+    store = PostgresProfileRepository(DSN, profile_id=a.profile_id)
+    store.upsert_fact(
+        ProfileFact("phone", "+358 50 111 2222", "user-entered", approved=True)
+    )
+    updated = {
+        "full_name": "Synthetic Applicant", "first_name": "Synthetic",
+        "last_name": "Applicant", "email": "same@example.invalid",
+        "phone": "+358 50 111 2222", "location": "",
+        "linkedin": "", "github": "",
+        "cover_letter": scoped[7][:10000],
+    }
+    fresh_fields = approved_fields_sha256(updated)
+    assert fresh_fields != original.approved_fields_sha256
+    assert original.matches_current_packet({
+        "document_sha256": args["expected_document_sha256"],
+        "cv_pdf_sha256": args["expected_cv_pdf_sha256"],
+        "approved_fields_sha256": fresh_fields,
+    }, workspace_id=args["workspace_id"], revision=1) is False
+
+    new_args = {**args, "expected_fields_sha256": fresh_fields}
+    gate = PostgresEmployerFinalActionGate(DSN)
+    with pytest.raises(EmployerFinalActionDenied, match="applicant contact|approval|review"):
+        gate.approve(
+            a, **new_args, explicit_final_user_approval=True,
+            acknowledge_external_employer_transfer=True,
+        )
+    assert gate.get(a, args["expected_application_url"]) is None
+    with pytest.raises(EmployerReviewIntentDenied, match="inconsistent"):
+        repo.verify_for_companion(a, **{
+            k: v for k, v in new_args.items() if k != "expected_fields_sha256"
+        })
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(a, scoped[4]) is None
+
+    # Cancel old review, record new contact snapshot, then the original gate
+    # may approve again, without making any external employer request.
+    repo.cancel(a, application_url=args["expected_application_url"])
+    renewed, created = repo.prepare(
+        a, **{
+            k: v for k, v in new_args.items() if k != "expected_fields_sha256"
+        },
+        expected_fields_sha256=fresh_fields,
+        explicit_user_review=True, acknowledge_no_automatic_submit=True,
+    )
+    assert created and renewed.approved_fields_sha256 == fresh_fields
+    approval, fresh = gate.approve(
+        a, **new_args, explicit_final_user_approval=True,
+        acknowledge_external_employer_transfer=True,
+    )
+    assert fresh and approval.state == "approved"
+    assert approval.public_status(
+        workspace_id=args["workspace_id"], revision=1
+    )["final_browser_click_authorized"] is False
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(a, scoped[4]) is None
