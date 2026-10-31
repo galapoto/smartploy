@@ -56,7 +56,7 @@ beforeEach(() => {
   });
   vi.mocked(api.getCVJobMatches).mockResolvedValue(data);
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("SP21 application journey", () => {
   it("starts from an explicit mode and uploaded CV, then offers one-click manual employer link", async () => {
@@ -242,6 +242,67 @@ describe("SP21 application journey", () => {
       ["current-planner"], expect.any(Function), expect.any(Function), false,
     ));
     expect(screen.queryByRole("button", { name: /submit application to employer/i })).toBeNull();
+  });
+
+  it("SP94: quick private AutoApply preview requires exact-job confirmation and never sends on cancel", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const p = { ...props(), mode: "automatic" as const };
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    const quick = screen.getByRole("button", { name: "Prepare 1 private draft now" });
+    expect((quick as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(quick);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("IT-suunnittelija · Public Sector Test Oy"));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("NOT contact an employer"));
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+    expect(screen.getByText("0 of 15 vacancies selected")).toBeTruthy();
+  });
+
+  it("SP94: one confirmed click passes only safe CV-title keys through existing private per-job preparation", async () => {
+    const driver: SearchJobCard = {
+      ...listing, canonical_key: "driver-job", reasons: ["Keywords: Python"],
+      job: { ...listing.job, role_title: "Courier Driver" },
+    };
+    const retired: SearchJobCard = {
+      ...listing, canonical_key: "retired-job",
+      job: { ...listing.job, source_current: false },
+    };
+    const badLink: SearchJobCard = {
+      ...listing, canonical_key: "unsafe-link",
+      job: { ...listing.job, application_url: "javascript:alert(1)" },
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, recommended: [listing, driver, retired, badLink],
+      recommended_count: 4, other_jobs: [],
+    });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const p = { ...props(), mode: "automatic" as const };
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("Courier Driver");
+    fireEvent.click(screen.getByRole("button", { name: "Prepare 1 private draft now" }));
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledTimes(1));
+    expect(p.onPrepareSelected).toHaveBeenCalledWith(
+      ["current-planner"], expect.any(Function), expect.any(Function), false,
+    );
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: /submit application to employer/i })).toBeNull();
+  });
+
+  it("SP94: private quick action does not prepare skill-only or unlinked vacancies", async () => {
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data,
+      recommended: [{
+        ...listing, reasons: ["Keywords: Power BI"],
+      }],
+      other_jobs: [], recommended_count: 1,
+    });
+    const p = { ...props(), mode: "automatic" as const };
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    expect((screen.getByRole("button", { name: "Prepare 0 private drafts now" }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect(screen.getByText(/No safe title-matched vacancies are loaded/i)).toBeTruthy();
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
   });
 
   it("SP75: adds up to 15 exact CV-title matches without drivers, stale or unrelated jobs", async () => {
