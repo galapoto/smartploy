@@ -571,7 +571,7 @@ describe("Application Studio private-read account boundary", () => {
     });
     fireEvent.click(review);
     await waitFor(()=>expect(api.recordEmployerReviewIntent).toHaveBeenCalledWith(
-      "workspace-A",1,"a".repeat(64),"b".repeat(64),"usr-a"
+      "workspace-A",1,"a".repeat(64),"b".repeat(64),"c".repeat(64),"usr-a"
     ));
     expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
@@ -723,6 +723,7 @@ describe("Application Studio private-read account boundary", () => {
       company: "Synthetic", role_title: "Review Test",
       workspace_id: "workspace-A", revision: 1,
       document_sha256: "a".repeat(64), cv_pdf_sha256: "b".repeat(64),
+      approved_fields_sha256: "c".repeat(64),
       cv_pdf_size: 1024,
       fields: {full_name:"Test Applicant", first_name:"Test", last_name:"Applicant",
         email:"test@example.invalid", phone:"", location:"", linkedin:"",github:"",
@@ -744,7 +745,7 @@ describe("Application Studio private-read account boundary", () => {
     await waitFor(()=>expect((record as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(record);
     await waitFor(()=>expect(api.recordEmployerReviewIntent).toHaveBeenCalledWith(
-      "workspace-A", 1, "a".repeat(64), "b".repeat(64), "usr-a"
+      "workspace-A", 1, "a".repeat(64), "b".repeat(64), "c".repeat(64), "usr-a"
     ));
     expect(await screen.findByText(/Review recorded temporarily/)).toBeTruthy();
     expect(screen.getByLabelText("Employer final-action permission").textContent)
@@ -759,12 +760,32 @@ describe("Application Studio private-read account boundary", () => {
     expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
   });
 
+  it("SP81 offers safe cancellation when approved applicant contact changes after review", async () => {
+    vi.mocked(api.getEmployerReviewIntent).mockResolvedValue({
+      review_recorded: false, review_state: "stale", expires_at: "",
+      automatic_employer_submit_authorized: false, external_actions_performed: false,
+      browser_grant_issued: false,
+    });
+    studio();
+    expect(await screen.findByRole("heading", {name:"A private role"})).toBeTruthy();
+    const warning = await screen.findByRole("alert");
+    expect(warning.textContent).toContain("previous applicant review is outdated");
+    expect(warning.textContent).toContain("Nothing was submitted");
+    fireEvent.click(screen.getByRole("button", {name: "Cancel outdated review"}));
+    await waitFor(() => expect(api.cancelEmployerReviewIntent).toHaveBeenCalledWith(
+      "workspace-A", "usr-a"
+    ));
+    expect(api.recordEmployerReviewIntent).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
   it("never records the old account's reviewed packet after sign-in changes", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({
       packet: {
         workspace_id:"workspace-A", revision:1,
         document_sha256:"a".repeat(64), cv_pdf_sha256:"b".repeat(64),
+        approved_fields_sha256:"c".repeat(64),
         expires_at:"2099-01-01T00:00:00Z",
       } as Awaited<ReturnType<typeof api.createBrowserHandoffPacket>>["packet"],
       external_actions_performed:false,

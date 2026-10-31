@@ -576,12 +576,15 @@ export default function ApplicationStudio(props: {
    * manual browser handoff and official partner API. A success is NOT submit.
    */
   async function storeReviewedEvidence(
-    ticket: DraftTicket, evidence: {document_sha256:string;cv_pdf_sha256:string}
+    ticket: DraftTicket, evidence: {
+      document_sha256: string; cv_pdf_sha256: string; approved_fields_sha256: string;
+    }
   ) {
     if (!selected) return;
     const item = await runPrivateAction(() => recordEmployerReviewIntent(
       selected.workspace_id,selected.revision,
-      evidence.document_sha256,evidence.cv_pdf_sha256,props.expectedUserId
+      evidence.document_sha256,evidence.cv_pdf_sha256,
+      evidence.approved_fields_sha256,props.expectedUserId
     ),ticket);
     if (!isCurrentDraft(ticket)) return;
     setFinalReview(item);
@@ -606,7 +609,8 @@ export default function ApplicationStudio(props: {
   /** One click to review a partner job, with no clipboard/extension dependency. */
   async function recordPartnerReview() {
     const provider = selected ? partnerKind(selected.application_url) : null;
-    if (!selected || !provider || dirty || !handoff?.ready || !finalReview || reviewBusy ||
+    if (!selected || !provider || dirty || !handoff?.ready || !finalReview ||
+        finalReview.review_state === "stale" || reviewBusy ||
         partnerBusy || browserReceipt || partnerReceipt ||
         partnerReadiness?.partner_provider !== provider ||
         employerAttempt?.previous_attempt_reserved ||
@@ -636,19 +640,22 @@ export default function ApplicationStudio(props: {
   /** Records exact reviewed CV/letter, but never authorizes an employer submission. */
   async function recordFinalReview() {
     if (!selected || !handoffPacketText || dirty || !handoff?.ready ||
-        !finalReview || employerAttempt?.previous_attempt_reserved ||
+        !finalReview || finalReview.review_state === "stale" ||
+        employerAttempt?.previous_attempt_reserved ||
         reviewBusy || browserReceipt) return;
     let packet;
     try {
       packet = JSON.parse(handoffPacketText) as {
         workspace_id: string; revision: number; expires_at: string;
         document_sha256: string; cv_pdf_sha256: string;
+        approved_fields_sha256: string;
       };
       if (packet.workspace_id !== selected.workspace_id ||
           packet.revision !== selected.revision ||
           Date.parse(packet.expires_at) <= Date.now() ||
           !/^[a-f0-9]{64}$/.test(packet.document_sha256) ||
-          !/^[a-f0-9]{64}$/.test(packet.cv_pdf_sha256)) {
+          !/^[a-f0-9]{64}$/.test(packet.cv_pdf_sha256) ||
+          !/^[a-f0-9]{64}$/.test(packet.approved_fields_sha256)) {
         throw new Error("Your reviewed application packet changed or expired. Generate a new packet.");
       }
     } catch (exc) {
@@ -670,7 +677,9 @@ export default function ApplicationStudio(props: {
   }
 
   async function cancelFinalReview() {
-    if (!selected || !finalReview?.review_recorded || reviewBusy) return;
+    if (!selected || !finalReview ||
+        (finalReview.review_state !== "stale" && !finalReview.review_recorded)
+        || reviewBusy) return;
     const ticket = captureDraft(selected);
     setReviewBusy(true); setError(""); setMessage("");
     try {
@@ -1182,6 +1191,18 @@ export default function ApplicationStudio(props: {
               {!employerAttempt ? " The server attempt status is currently unavailable." : ""}
             </p>
           )}
+          {finalReview?.review_state === "stale" ? <div className="studio-handoff-blockers"
+            role="alert">
+            <strong>Your previous applicant review is outdated.</strong>
+            <p>Approved contact details or application contents have changed.
+              Cancel the old review and inspect the current CV, cover letter and
+              approved contact details before recording a fresh review. Nothing
+              was submitted to an employer.</p>
+            <button className="outline-btn compact" type="button"
+              disabled={reviewBusy} onClick={() => void cancelFinalReview()}>
+              {reviewBusy ? "Cancelling…" : "Cancel outdated review"}
+            </button>
+          </div> : null}
           {handoff?.blockers.length ? <div className="studio-handoff-blockers">
             <strong>Before applying, complete:</strong>
             <ul>{handoff.blockers.map((item) => <li key={item}>{item}</li>)}</ul>
@@ -1229,7 +1250,8 @@ export default function ApplicationStudio(props: {
                 Cancel recorded review
               </button>
             </> : <button type="button" className="secondary-btn"
-              disabled={reviewBusy || !finalReview || !handoff?.ready || dirty ||
+              disabled={reviewBusy || !finalReview || finalReview.review_state === "stale" ||
+                !handoff?.ready || dirty ||
                 employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void recordFinalReview()}>
               {reviewBusy ? "Recording…" : "Record exact CV and job review (no submit)"}
@@ -1285,7 +1307,8 @@ export default function ApplicationStudio(props: {
                   Date.parse(finalReview.expires_at) <= Date.now() ? <>
                 <button type="button" className="secondary-btn"
                   disabled={reviewBusy || partnerBusy || !handoff?.ready || dirty ||
-                    !finalReview || employerAttempt?.previous_attempt_reserved === true ||
+                    !finalReview || finalReview.review_state === "stale" ||
+                    employerAttempt?.previous_attempt_reserved === true ||
                     !!browserReceipt}
                   onClick={() => void recordPartnerReview()}>
                   {reviewBusy ? "Recording review…" : "Record reviewed CV, letter and job (no submit)"}

@@ -17,6 +17,7 @@ from uuid import uuid4
 from psycopg import connect
 
 from .browser_handoff import HandoffError, _assisted_posting_url
+from .employer_contact_snapshot import approved_fields_fingerprint_locked
 from .employer_submit_claim_storage import (
     EmployerSubmitClaimDenied, _employer_job_key_sha256,
     verified_employer_submit_preflight,
@@ -45,6 +46,20 @@ class EmployerReviewIntent:
     created_at: datetime
     expires_at: datetime
     updated_at: datetime
+    approved_fields_sha256: str = ""
+
+    def matches_current_packet(
+        self, packet: dict[str, object], *, workspace_id: str, revision: int,
+    ) -> bool:
+        """Bind the read-only status to exact owner-approved CV/contact data."""
+        if not self.public_status(workspace_id=workspace_id, revision=revision)["review_recorded"]:
+            return False
+        return (
+            bool(_SHA.fullmatch(self.approved_fields_sha256))
+            and self.document_sha256 == packet.get("document_sha256")
+            and self.cv_pdf_sha256 == packet.get("cv_pdf_sha256")
+            and self.approved_fields_sha256 == packet.get("approved_fields_sha256")
+        )
 
     def public_status(self, *, workspace_id: str, revision: int) -> dict[str, object]:
         now = datetime.now(timezone.utc)
@@ -72,7 +87,8 @@ class PostgresEmployerReviewIntentRepository:
     def _select() -> str:
         return """SELECT intent_id,user_id,profile_id,employer_job_key_sha256,
                          workspace_id,document_revision,document_sha256,
-                         cv_pdf_sha256,state,created_at,expires_at,updated_at
+                         cv_pdf_sha256,state,created_at,expires_at,updated_at,
+                         approved_fields_sha256
                   FROM smartploy_employer_review_intents"""
 
     @staticmethod
@@ -83,6 +99,7 @@ class PostgresEmployerReviewIntentRepository:
             revision=int(row[5]), document_sha256=str(row[6]),
             cv_pdf_sha256=str(row[7]), state=str(row[8]),
             created_at=row[9], expires_at=row[10], updated_at=row[11],
+            approved_fields_sha256=str(row[12]),
         )
 
     @staticmethod
@@ -143,6 +160,7 @@ class PostgresEmployerReviewIntentRepository:
         expected_application_url: str, expected_job_fingerprint: str,
         expected_document_sha256: str, expected_cv_pdf_sha256: str,
         explicit_user_review: bool, acknowledge_no_automatic_submit: bool,
+        expected_fields_sha256: str | None = None,
     ) -> tuple[EmployerReviewIntent, bool]:
         if explicit_user_review is not True or acknowledge_no_automatic_submit is not True:
             raise EmployerReviewIntentDenied("Two explicit final-review acknowledgements are required")
@@ -173,6 +191,15 @@ class PostgresEmployerReviewIntentRepository:
                 reviewed = sha256((cv_text + "\0" + letter_text).encode("utf-8")).hexdigest()
                 if reviewed != expected_document_sha256:
                     raise EmployerReviewIntentDenied("Reviewed application digest changed")
+                contact_digest = approved_fields_fingerprint_locked(
+                    cur, binding, letter_text, require_contact=False,
+                )
+                if expected_fields_sha256 is not None and (
+                    not isinstance(expected_fields_sha256, str)
+                    or not _SHA.fullmatch(expected_fields_sha256)
+                    or expected_fields_sha256 != contact_digest
+                ):
+                    raise EmployerReviewIntentDenied("Approved contact changed since applicant review")
                 cur.execute(
                     """SELECT 1 FROM smartploy_employer_submit_claims
                        WHERE user_id=%s AND profile_id=%s
@@ -188,8 +215,8 @@ class PostgresEmployerReviewIntentRepository:
                     """INSERT INTO smartploy_employer_review_intents (
                          intent_id,user_id,profile_id,employer_job_key_sha256,
                          workspace_id,document_revision,document_sha256,cv_pdf_sha256,
-                         state,expires_at
-                       ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'pending',
+                         approved_fields_sha256,state,expires_at
+                       ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',
                                  now()+interval '10 minutes')
                        ON CONFLICT (user_id,profile_id,employer_job_key_sha256)
                        DO UPDATE SET
@@ -197,6 +224,7 @@ class PostgresEmployerReviewIntentRepository:
                          document_revision=EXCLUDED.document_revision,
                          document_sha256=EXCLUDED.document_sha256,
                          cv_pdf_sha256=EXCLUDED.cv_pdf_sha256,
+                         approved_fields_sha256=EXCLUDED.approved_fields_sha256,
                          state='pending',created_at=now(),
                          expires_at=now()+interval '10 minutes',updated_at=now()
                        WHERE smartploy_employer_review_intents.expires_at<=now()
@@ -205,6 +233,7 @@ class PostgresEmployerReviewIntentRepository:
                     (
                         new_id,binding.user_id,binding.profile_id,employer_key,
                         workspace_id,expected_revision,reviewed,expected_cv_pdf_sha256,
+                        contact_digest,
                     ),
                 )
                 inserted_or_replaced = cur.fetchone() is not None
@@ -224,6 +253,7 @@ class PostgresEmployerReviewIntentRepository:
                     or item.revision != expected_revision
                     or item.document_sha256 != reviewed
                     or item.cv_pdf_sha256 != expected_cv_pdf_sha256
+                    or item.approved_fields_sha256 != contact_digest
                 ):
                     raise EmployerReviewIntentDenied(
                         "A different review is active. Cancel or allow it to expire."
@@ -263,6 +293,7 @@ class PostgresEmployerReviewIntentRepository:
         workspace_id: str, expected_revision: int,
         expected_application_url: str, expected_job_fingerprint: str,
         expected_document_sha256: str, expected_cv_pdf_sha256: str,
+        expected_fields_sha256: str | None = None,
     ) -> EmployerReviewIntent:
         """Recheck signed-in review against current employer/job/documents.
 
@@ -295,6 +326,15 @@ class PostgresEmployerReviewIntentRepository:
                 latest_doc = sha256((cv_text + "\0" + letter_text).encode("utf-8")).hexdigest()
                 if latest_doc != expected_document_sha256:
                     raise EmployerReviewIntentDenied("Reviewed documents changed")
+                latest_contact = approved_fields_fingerprint_locked(
+                    cur, binding, letter_text, require_contact=False,
+                )
+                if expected_fields_sha256 is not None and (
+                    not isinstance(expected_fields_sha256, str)
+                    or not _SHA.fullmatch(expected_fields_sha256)
+                    or expected_fields_sha256 != latest_contact
+                ):
+                    raise EmployerReviewIntentDenied("Approved applicant contact changed")
                 cur.execute(
                     self._select() + """
                       WHERE user_id=%s AND profile_id=%s
@@ -316,6 +356,7 @@ class PostgresEmployerReviewIntentRepository:
                     or item.revision != expected_revision
                     or item.document_sha256 != latest_doc
                     or item.cv_pdf_sha256 != expected_cv_pdf_sha256
+                    or item.approved_fields_sha256 != latest_contact
                 ):
                     raise EmployerReviewIntentDenied(
                         "Review cancelled, expired or inconsistent with this application"

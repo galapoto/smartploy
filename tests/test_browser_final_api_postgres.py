@@ -142,6 +142,7 @@ def reviewed_case(monkeypatch):
             "expected_revision": work.revision,
             "expected_document_sha256": packet["document_sha256"],
             "expected_cv_pdf_sha256": packet["cv_pdf_sha256"],
+            "expected_fields_sha256": packet["approved_fields_sha256"],
             "confirm_reviewed_application": True,
             "acknowledge_manual_only": True,
         }
@@ -721,6 +722,72 @@ def test_sp32_explicit_autoapply_queue_creates_one_private_agent_per_selected_jo
     assert unavailable.json()["agent_tracking"]["state"] == "unavailable"
     assert unavailable.json()["agent_tracking"]["worker_wake_verified"] is False
     assert unavailable.json()["workspace"]["workspace_id"] == work.workspace_id
+
+
+def test_sp81_oidc_applicant_review_does_not_survive_approved_contact_drift(reviewed_case):
+    """A new approved phone makes a previously reviewed, unchanged CV unapproved.
+
+    This is a signed-in OIDC + real Postgres acceptance case, not employer I/O.
+    """
+    case = reviewed_case
+    api, headers, work = case["api"], case["headers"], case["work"]
+    review_route = case["review_route"]
+    # A legacy client cannot record a new review without the exact approved
+    # contact fingerprint, even when its CV and PDF hashes are current.
+    legacy_body = dict(case["review_body"])
+    legacy_body.pop("expected_fields_sha256")
+    assert api.post(review_route, headers=headers, json=legacy_body).status_code == 422
+    first = api.post(review_route, headers=headers, json=case["review_body"])
+    assert first.status_code == 200, first.text
+    assert api.get(review_route).json()["review_recorded"] is True
+    partner_before = api.get(
+        f"/api/v1/application-workspaces/{work.workspace_id}/partner-lever-readiness"
+    )
+    assert partner_before.status_code == 200, partner_before.text
+    assert partner_before.json()["current_applicant_review_recorded"] is True
+    snapshot = case["packet"]
+    assert first.json()["browser_grant_issued"] is False
+
+    # Updating an approved contact fact doesn't increment workspace revision.
+    # Old read-only statuses must not continue to call this a current review.
+    profile = PostgresProfileRepository(DSN, profile_id=case["a"].profile_id)
+    profile.upsert_fact(ProfileFact("phone", "+358 40 123 9876", "user-entered", approved=True))
+    latest = api.get(review_route)
+    assert latest.status_code == 200, latest.text
+    assert latest.json()["review_state"] == "stale"
+    assert latest.json()["review_recorded"] is False
+    assert latest.json()["expires_at"] == ""
+    posture = api.get(
+        f"/api/v1/application-workspaces/{work.workspace_id}/final-action-readiness"
+    )
+    assert posture.status_code == 200, posture.text
+    assert posture.json()["current_applicant_review_recorded"] is False
+    assert posture.json()["final_browser_click_authorized"] is False
+    partner_after = api.get(
+        f"/api/v1/application-workspaces/{work.workspace_id}/partner-lever-readiness"
+    )
+    assert partner_after.status_code == 200, partner_after.text
+    assert partner_after.json()["current_applicant_review_recorded"] is False
+    assert partner_after.json()["eligible_for_explicit_partner_submit"] is False
+
+    # The old applicant-review packet cannot be used with new contact facts.
+    assert api.post(review_route, headers=headers, json=case["review_body"]).status_code == 409
+    verified = api.post(
+        f"/api/v1/application-workspaces/{work.workspace_id}/verify-reviewed-packet",
+        headers=headers, json={
+            "expected_revision": work.revision,
+            "expected_document_sha256": snapshot["document_sha256"],
+            "expected_cv_pdf_sha256": snapshot["cv_pdf_sha256"],
+            "expected_cv_pdf_size": snapshot["cv_pdf_size"],
+            "expected_fields_sha256": snapshot["approved_fields_sha256"],
+            "expected_application_url_sha256":
+                sha256(snapshot["application_url"].encode("utf-8")).hexdigest(),
+        },
+    )
+    assert verified.status_code == 409
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(
+        case["a"], work.canonical_key
+    ) is None
 
 
 def test_sp79_cv_editor_same_email_oidc_isolation_and_same_origin(reviewed_case):
