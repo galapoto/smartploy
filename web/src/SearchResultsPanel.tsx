@@ -216,8 +216,10 @@ export default function SearchResultsPanel(props: {
     </p> : null}
     {general ? <section className="studio-packet-fallback" aria-label="Additional Finland job sources">
       <strong>Explore more Finland-wide vacancies</strong>
-      <p>SmartPloy doesn't yet ingest Duunitori, Työmarkkinatori or LinkedIn listings automatically.
-        These links open their independent searches; their jobs are not counted above or used for unattended applications.</p>
+      <p>When the official KEHA connector is enabled, successfully imported Työmarkkinatori jobs
+        are already counted in SmartPloy's listings. The links below open independent searches
+        on Duunitori, Työmarkkinatori and LinkedIn; visiting them does not import more jobs
+        or submit an application.</p>
       <div className="row-actions">
         <a href="https://duunitori.fi/tyopaikat?haku=data%20engineer" target="_blank"
           rel="noopener noreferrer" className="text-link">Duunitori <ArrowUpRight size={15}/></a>

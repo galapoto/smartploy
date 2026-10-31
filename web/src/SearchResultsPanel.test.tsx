@@ -63,6 +63,15 @@ describe("job discovery mode semantics", () => {
     expect(screen.getAllByText("General listing")).toHaveLength(2);
   });
 
+  it("accurately distinguishes imported KEHA jobs from external search links", () => {
+    render(<SearchResultsPanel {...common} data={general} />);
+    expect(screen.getByText(/When the official KEHA connector is enabled/i)).toBeTruthy();
+    expect(screen.getByText(/already counted in SmartPloy's listings/i)).toBeTruthy();
+    expect(screen.queryByText(/doesn't yet ingest Duunitori, Työmarkkinatori/i)).toBeNull();
+    expect(screen.getByRole("link", { name: /Työmarkkinatori/i })).toBeTruthy();
+    expect(screen.getByText(/visiting them does not import more jobs/i)).toBeTruthy();
+  });
+
   it("filters current listings client side without changing saved preferences", () => {
     render(<SearchResultsPanel {...common} data={general} search="tester" />);
     expect(screen.queryByText("Junior Data Analyst")).toBeNull();
@@ -278,14 +287,14 @@ describe("Finland-first IT, planning, and explicit all-jobs choice", () => {
   it("links external Finnish boards without implying indexed or auto-applied postings", () => {
     render(<SearchResultsPanel {...common} data={focused} />);
     expect(screen.getByRole("region", { name: "Additional Finland job sources" }).textContent)
-      .toMatch(/doesn't yet ingest/i);
+      .toMatch(/When the official KEHA connector is enabled/i);
     for (const label of ["Duunitori", "Työmarkkinatori", "LinkedIn"]) {
       const a = screen.getByRole("link", { name: new RegExp(label) });
       expect(a.getAttribute("href")).toMatch(/^https:\/\//);
       expect(a.getAttribute("target")).toBe("_blank");
       expect(a.getAttribute("rel")).toContain("noopener");
     }
-    expect(screen.getByText(/not counted above or used for unattended applications/i)).toBeTruthy();
+    expect(screen.getByText(/visiting them does not import more jobs/i)).toBeTruthy();
   });
 });
 
