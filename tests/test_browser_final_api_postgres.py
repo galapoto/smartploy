@@ -778,7 +778,9 @@ def test_sp82_cv_restore_denies_changed_origin_and_same_email_other_oidc_subject
         assert spoofed.status_code == 403
         api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["b"])
         assert api.get("/api/v1/profile/cv/editor").json()["present"] is False
-        assert api.post(url, headers=headers, json=body).status_code == 403
+        # Existing account-switch guard may reject before route binding (409)
+        # or within the route (403); either is a hard denial, never a restore.
+        assert api.post(url, headers=headers, json=body).status_code in (403, 409)
         assert api.get("/api/v1/profile/cv/history/" + old).status_code == 404
         api.cookies.set(SESSION_COOKIE_NAME, case["tokens"]["a"])
         assert api.get("/api/v1/profile/cv/editor").json()["sha256"] == current
