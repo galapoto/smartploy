@@ -978,30 +978,6 @@ export default function App() {
   if (loading && !dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><span className="spinner" /><p>Preparing your workspace…</p></div>;
   if (!dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><h1>SmartPloy isn't available</h1><p>{error}</p><button className="primary-btn" onClick={() => void load()} type="button">Try again</button></div>;
 
-  if (preferences && !preferences.completed && page === "dashboard") {
-    return <main className="setup-landing flow-first-use">
-      <input ref={uploadRef} type="file" className="visually-hidden"
-        aria-label="Select CV to upload"
-        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        onChange={(event) => void onCVUpload(event)} />
-      <div className="setup-brand"><BrandMark/><span><strong>SmartPloy</strong>
-        <small>Simple job applications for Finland</small></span></div>
-      <StartChoices onMode={(choice) => startApplyFlow(choice)}
-        onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
-            onOpenApplications={() => navigate("applications")}
-            cvPresent={cv.present} onUpload={onUploadClick}
-            onCreateCV={() => navigate("profile")}/>
-      <ReleaseStatus apiRevision={health?.release_revision} />
-      {error ? <p className="setup-error" role="alert">{error}</p> : null}
-      <details className="flow-advanced-setup">
-        <summary>Advanced: customize search preferences (optional)</summary>
-        <SearchSetup key={session?.user_id || session?.profile_id || session?.subject_fingerprint || "unidentified"}
-          initial={preferences} onSave={saveSearchPreferences}/>
-      </details>
-      <p className="setup-privacy"><LockKeyhole size={14}/> Find jobs without a CV, or upload one for private matching.</p>
-    </main>;
-  }
-
   const accountViewKey = session?.user_id || session?.profile_id || session?.subject_fingerprint || "unidentified";
   const approved = facts.filter((item) => item.approved);
   const skills = approved.filter((item) => item.fact_type === "skill");
@@ -1170,10 +1146,10 @@ export default function App() {
       </button>
       <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-label">WORKSPACE</div>
-        {NAV.slice(0, 7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", page === item.id && "active")} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
+        {NAV.slice(0, 7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span className="nav-item-copy"><span>{item.label}</span>{item.id === "apply" ? <small aria-hidden="true" className="nav-item-hint">Manual · Assisted · Auto</small> : null}</span></button>; })}
         <div className="nav-divider" />
         <div className="nav-label">MANAGE</div>
-        {NAV.slice(7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", page === item.id && "active")} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
+        {NAV.slice(7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
       </nav>
       <div className="sidebar-bottom"><span className="country-chip"><span className="flag-finland" aria-hidden="true" /> Finland</span><span className="session-profile"><span className="avatar">{avatar}</span><span><strong>{session?.email ? session.email.split("@")[0] : "Your workspace"}</strong><small>{session?.authenticated ? "Signed in" : "Private workspace"}</small></span></span></div>
     </aside>
@@ -1200,6 +1176,11 @@ export default function App() {
             onOpenApplications={() => navigate("applications")}
             cvPresent={cv.present} onUpload={onUploadClick}
             onCreateCV={() => navigate("profile")}/>
+          {preferences && !preferences.completed ? <details className="flow-advanced-setup flow-dashboard-setup">
+            <summary>Optional: set your job search preferences</summary>
+            <SearchSetup key={accountViewKey} initial={preferences}
+              onSave={saveSearchPreferences}/>
+          </details> : null}
           <ReleaseStatus apiRevision={health?.release_revision} />
           {cv.present ? <section className="welcome-banner" aria-label="Finnish job discovery">
             <div className="welcome-copy"><p className="section-kicker">YOUR NORDIC CAREER WORKSPACE</p><h1>Make your next move.<br /><em>With clarity.</em></h1><p>Discover Finnish opportunities, build a trusted career profile and prepare the next step with SmartPloy.</p></div>
