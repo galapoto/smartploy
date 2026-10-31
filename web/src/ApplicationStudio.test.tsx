@@ -398,6 +398,44 @@ describe("Application Studio private-read account boundary", () => {
   });
 
 
+  it("SP94: a reopened saved draft offers all three finishing methods without a persisted mode or employer POST", async () => {
+    const onModeChange = vi.fn();
+    const instance = render(<ApplicationStudio
+      focusId="" expectedUserId="usr-a" expectedAuthSource="oidc"
+      onFindJobs={vi.fn()} mode={null} onModeChange={onModeChange}
+    />);
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const resume = screen.getByRole("region", { name: "Choose how to finish saved applications" });
+    const chooser = within(resume).getByRole("group", {
+      name: "Choose application completion method",
+    });
+    const choices = [...chooser.querySelectorAll("button[data-resume-mode]")];
+    expect(choices).toHaveLength(3);
+    for (const button of choices) expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(resume.textContent).toContain("Your saved drafts are preserved");
+    expect(screen.queryByRole("region", { name: "Authorized AutoApply batch" })).toBeNull();
+    fireEvent.click(within(chooser).getByRole("button", { name: /Assisted/i }));
+    expect(onModeChange).toHaveBeenLastCalledWith("assisted");
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+    instance.rerender(<ApplicationStudio
+      focusId="" expectedUserId="usr-a" expectedAuthSource="oidc"
+      onFindJobs={vi.fn()} mode="assisted" onModeChange={onModeChange}
+    />);
+    expect(await screen.findByRole("region", { name: "Assisted application walkthrough" })).toBeTruthy();
+    expect(within(chooser).getByRole("button", { name: /Assisted/i })
+      .getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(within(chooser).getByRole("button", { name: /Automatic/i }));
+    expect(onModeChange).toHaveBeenLastCalledWith("automatic");
+    instance.rerender(<ApplicationStudio
+      focusId="" expectedUserId="usr-a" expectedAuthSource="oidc"
+      onFindJobs={vi.fn()} mode="automatic" onModeChange={onModeChange}
+    />);
+    expect(screen.getByRole("region", { name: "Authorized AutoApply batch" })).toBeTruthy();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+    expect(api.submitAuthorizedAutoApplyBatch).not.toHaveBeenCalled();
+  });
+
   it("SP86: Assisted mode exposes document review and actual browser-fill steps without an employer POST", async () => {
     studio("assisted");
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();

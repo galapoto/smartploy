@@ -541,6 +541,48 @@ test("SP75: one-click CV-matched AutoApply shortlist prepares only reviewed curr
   await evidence(page, "sp75-private-shortlist-draft-after-preparation.png");
 });
 
+test("SP94: private quick preparation works then Assisted/Automatic completion survives browser reload", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Fictional-IT-CV.pdf",
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  await page.locator('.flow-mode[data-flow-mode="automatic"]').click();
+  const quick = page.getByRole("button", { name: "Prepare 1 private draft now" });
+  await expect(quick).toBeEnabled();
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+  page.once("dialog", async (dialog) => {
+    expect(dialog.type()).toBe("confirm");
+    expect(dialog.message()).toContain("Junior Data Analyst · Example Oy");
+    expect(dialog.message()).toContain("NOT contact an employer");
+    await dialog.accept();
+  });
+  await quick.click();
+  await expect.poll(() => state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  await expect(page.getByRole("region", { name: "Application review queue" }))
+    .toContainText("1 private draft to finish");
+  await evidence(page, "sp94-quick-private-autoapply-draft.png");
+
+  // A fresh browser load has no remembered method, but the private
+  // application survives in the owner's server-side workspace.
+  await page.reload();
+  await page.getByRole("button", { name: "My applications" }).click();
+  const resume = page.getByRole("region", { name: "Choose how to finish saved applications" });
+  await expect(resume).toBeVisible();
+  const methods = resume.getByRole("group", { name: "Choose application completion method" });
+  await expect(methods.locator("button")).toHaveCount(3);
+  await expect(methods.locator('button[aria-pressed="true"]')).toHaveCount(0);
+  await methods.locator('button[data-resume-mode="assisted"]').click();
+  await expect(page.getByRole("region", { name: "Assisted application walkthrough" })).toBeVisible();
+  await methods.locator('button[data-resume-mode="automatic"]').click();
+  await expect(page.getByRole("region", { name: "Authorized AutoApply batch" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Application review queue" }))
+    .toContainText("0 employer-acknowledged");
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  await evidence(page, "sp94-saved-draft-resume-after-reload.png");
+});
+
 test("SP75: a changed CV match search clears the prior AutoApply shortlist before preparation", async ({ page }) => {
   const state = await installSyntheticApi(page, {
     initial: { completed: true, mode: "general", revision: 1 },

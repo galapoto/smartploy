@@ -565,3 +565,98 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
   .flow-start-method-heading { align-items: start; }
   .smartploy-app .flow-start { padding: 18px 15px; }
 }
+
+
+/* SP94 | Resume the actual saved-application journey after a fresh sign-in.
+   Keep the established Career Atlas sidebar, color and type scales. */
+.studio-resume-methods {
+  margin: 0 0 22px;
+  padding: clamp(18px, 2.4vw, 26px);
+  border: 1px solid #cadfdf;
+  background: linear-gradient(120deg, #f8fdfb, #eff9f8);
+  border-radius: 17px;
+}
+.studio-resume-intro h3 {
+  color: #163844;
+  font-family: var(--sp-display);
+  font-size: clamp(24px, 2.5vw, 31px);
+  line-height: 1.25;
+  font-weight: 600;
+  margin: 5px 0 9px;
+}
+.studio-resume-intro p {
+  color: #4b6874;
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 72ch;
+  margin: 0 0 16px;
+}
+.studio-resume-cards {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 12px;
+}
+.studio-resume-card {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 9px;
+  min-width: 0;
+  min-height: 142px;
+  padding: 16px;
+  text-align: left;
+  background: #fff;
+  color: #184051;
+  border: 1px solid #cddedd;
+  border-top: 3px solid #15869a;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.studio-resume-card:hover { background: #f4fbfa; border-color: #168fa1; }
+.studio-resume-card strong { font-size: 16px; line-height: 1.35; }
+.studio-resume-card span { font-size: 13px; color: #486572; line-height: 1.55; }
+.studio-resume-card small {
+  margin-top: auto;
+  font-size: 12px;
+  font-weight: 800;
+  color: #0c7186;
+}
+.studio-resume-card.selected {
+  border-color: #087b8b;
+  background: #e9faf7;
+  box-shadow: inset 0 0 0 1px #66b5b4;
+}
+.studio-resume-card.selected small { color: #125e67; }
+.studio-resume-boundary {
+  border-top: 1px solid #cbdedc;
+  margin: 14px 0 0;
+  padding-top: 13px;
+  color: #3c6069;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.flow-quick-private-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #c4e0dc;
+  border-radius: 12px;
+  background: #e9f8f5;
+  padding: 16px;
+  margin: 15px 0;
+}
+.flow-quick-private-start .flow-quick-copy { flex: 1 1 240px; min-width: 0; }
+.flow-quick-private-start strong {
+  color: #174c56;
+  font-size: 15px;
+  line-height: 1.45;
+}
+.flow-quick-private-start p { color: #4c6971; font-size: 12.5px; margin: 5px 0 0; line-height: 1.6; }
+.flow-quick-private-start button { min-height: 46px; white-space: normal; flex: 0 1 330px; }
+@media (max-width: 720px) {
+  .studio-resume-cards { grid-template-columns: 1fr; }
+  .studio-resume-card { min-height: 0; padding: 15px; }
+  .flow-quick-private-start { padding: 14px; }
+  .flow-quick-private-start button { flex: 1 1 100%; }
+}
