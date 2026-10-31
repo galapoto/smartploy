@@ -92,6 +92,7 @@ export default function StartChoices(props: {
           <strong>Apply manually</strong>
           <span>Find CV-matched jobs, open the original employer form and submit it yourself.</span>
           <small>MANUAL · You send the application</small>
+          <span className="flow-card-cta">{hasCV ? "Choose manual" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
         <button type="button" className="flow-start-card" data-flow-mode="assisted"
@@ -103,6 +104,7 @@ export default function StartChoices(props: {
           <strong>Assisted · Apply with AI</strong>
           <span>Prepare a job-specific CV and complete cover letter. Review and fill supported employer forms with the browser companion.</span>
           <small>ASSISTED · You review before sending</small>
+          <span className="flow-card-cta">{hasCV ? "Choose assisted" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
         <button type="button" className="flow-start-card" data-flow-mode="automatic"
@@ -114,6 +116,7 @@ export default function StartChoices(props: {
           <strong>Automatic · AutoApply</strong>
           <span>Prepare multiple matched jobs, then approve exact reviewed submissions where the employer has authorized a Lever/Ashby integration.</span>
           <small>AUTOMATIC · Employer-specific authorization required</small>
+          <span className="flow-card-cta">{hasCV ? "Choose automatic" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
       </div>
