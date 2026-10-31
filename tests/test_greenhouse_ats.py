@@ -220,7 +220,6 @@ def test_greenhouse_foreign_location_is_not_overridden_by_finnish_office():
 
 def test_sp43_real_greenhouse_public_finnish_job_reaches_reviewed_browser_handoff():
     """Reuse the actual SP20 read-only adapter, source policy, CV workspace and packet."""
-    from dataclasses import replace
     from datetime import datetime, timezone
     from smartploy.application_workspace import new_workspace, update_documents
     from smartploy.browser_handoff import make_browser_packet, review_handoff
