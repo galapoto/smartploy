@@ -11,7 +11,7 @@ describe("SP89: saved application entry in the CV-first journey", () => {
     const onMode = vi.fn();
     render(<StartChoices cvPresent={false} onMode={onMode}
       onBrowse={vi.fn()} onOpenApplications={onOpenApplications} />);
-    fireEvent.click(screen.getByRole("button", { name: /My applications & cover letters/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue saved drafts & letters/i }));
     expect(onOpenApplications).toHaveBeenCalledOnce();
     expect(onMode).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: /^Apply manually/i })).toBeNull();
@@ -21,13 +21,13 @@ describe("SP89: saved application entry in the CV-first journey", () => {
     const onOpenApplications = vi.fn();
     render(<StartChoices cvPresent onMode={vi.fn()}
       onBrowse={vi.fn()} onOpenApplications={onOpenApplications} />);
-    fireEvent.click(screen.getByRole("button", { name: /My applications & cover letters/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue saved drafts & letters/i }));
     expect(onOpenApplications).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: /^Apply manually/i })).toBeTruthy();
   });
 
   it("does not advertise an unwired shortcut", () => {
     render(<StartChoices cvPresent={false} onMode={vi.fn()} onBrowse={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: /My applications & cover letters/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Continue saved drafts & letters/i })).toBeNull();
   });
 });
