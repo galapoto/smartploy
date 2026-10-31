@@ -30,6 +30,7 @@ vi.mock("./api", () => ({
   getAshbyPartnerReadiness: vi.fn(),
   getAshbyPartnerReceipt: vi.fn(),
   sendAshbyPartnerApplication: vi.fn(),
+  submitAuthorizedAutoApplyBatch: vi.fn(),
   recordEmployerReviewIntent: vi.fn(),
   cancelEmployerReviewIntent: vi.fn(),
   getBrowserReceipt: vi.fn(),
@@ -394,6 +395,24 @@ describe("Application Studio private-read account boundary", () => {
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
     expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
     expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+  });
+
+
+  it("SP86: Assisted mode exposes document review and actual browser-fill steps without an employer POST", async () => {
+    studio("assisted");
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const section = screen.getByRole("region", { name: "Assisted application walkthrough" });
+    expect(section.textContent).toContain("Assisted application · finish this exact job");
+    expect(section.textContent).toContain("Chrome companion");
+    expect(within(section).getByRole("link", { name: /Review CV/ })
+      .getAttribute("href")).toBe("#smartploy-cv-review");
+    expect(within(section).getByRole("link", { name: /Review cover letter/ })
+      .getAttribute("href")).toBe("#smartploy-letter-review");
+    expect(within(section).getByRole("link", { name: /Open exact employer posting/ })
+      .getAttribute("href")).toBe("https://jobs.lever.co/synthetic-fi/job-A");
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.submitAuthorizedAutoApplyBatch).not.toHaveBeenCalled();
   });
 
   it("SP71: a reserved employer attempt always shows reconcile, never submit again", async () => {
