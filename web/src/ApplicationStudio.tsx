@@ -422,6 +422,12 @@ export default function ApplicationStudio(props: {
   async function save() {
     if (!selected || selected.status !== "draft" || browserReceipt ||
         partnerReceipt || employerAttempt?.previous_attempt_reserved) return;
+    if (!dirty && selected.revision > 1) return;
+    if (!dirty && selected.revision === 1 && !window.confirm(
+      "Have you personally reviewed the complete CV and cover letter for " +
+      selected.company + "? Save the exact documents as your reviewed version. " +
+      "No employer application will be sent by this confirmation."
+    )) return;
     const ticket = captureDraft(selected);
     setBusy(true); setMessage(""); setError("");
     try {
@@ -1053,6 +1059,9 @@ export default function ApplicationStudio(props: {
             <a href="#smartploy-outcome-step">Record or verify outcome</a>
           </nav>
           <p className="studio-journey-boundary">
+            {selected.status === "draft" && selected.revision === 1
+              ? "This is an unreviewed first draft, even when the letter reads as finished prose. Inspect both documents, then save or confirm the draft before browser assistance can be prepared. "
+              : ""}
             Selecting Manual, Assisted or AutoApply never authorizes a send.
             The final employer action requires its own reviewed, allowed path.
           </p>
@@ -1413,9 +1422,11 @@ export default function ApplicationStudio(props: {
         <div className="studio-footer" id="smartploy-outcome-step">
           <span><LockKeyhole size={14}/> Private workspace · revision {selected.revision}</span>
           {selected.status === "draft" ? <div className="studio-actions">
-            <button type="button" className="primary-btn" disabled={busy || !dirty || !!browserReceipt ||
+            <button type="button" className="primary-btn" disabled={busy ||
+                (!dirty && selected.revision > 1) || !!browserReceipt ||
                 !!partnerReceipt || employerAttempt?.previous_attempt_reserved === true}
-              onClick={() => void save()}><Save size={16}/>{busy ? "Working…" : "Save changes"}</button>
+              onClick={() => void save()}><Save size={16}/>{busy ? "Working…" :
+                !dirty && selected.revision === 1 ? "Confirm CV & letter review" : "Save changes"}</button>
             <button type="button" className="navy-btn" disabled={busy ||
                 !!partnerReceipt ||
                 (employerAttempt?.previous_attempt_reserved === true && !browserReceipt)}

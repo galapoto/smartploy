@@ -1097,6 +1097,24 @@ describe("Application Studio private-read account boundary", () => {
 
 
 describe("Application Studio delayed mutation and private clipboard safeguards", () => {
+  it("SP85: first complete prose draft stays unreviewed until applicant explicitly confirms", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const action = screen.getByRole("button", { name: "Confirm CV & letter review" }) as HTMLButtonElement;
+    expect(action.disabled).toBe(false);
+    fireEvent.click(action);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("personally reviewed"));
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    fireEvent.click(action);
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", 1, "PRIVATE-CV-A", "PRIVATE-LETTER-A", "usr-a"
+    ));
+    expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
   it("saves a same-user draft and retains editable text, using A's user precondition", async () => {
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();

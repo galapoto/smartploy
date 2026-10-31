@@ -55,8 +55,8 @@ def profile(pid="person-a"):
 def ready_workspace():
     p = profile()
     item = new_workspace(candidate(), p, source_cv_text="This is an uploaded CV. Private."),
-    # Starter letter contains review prompts; simulate an explicit owner edit
-    return replace(item[0], cover_letter_text=(
+    # Simulate a deliberate owner save after reviewing the documents.
+    return replace(item[0], revision=2, cover_letter_text=(
         "Dear Hiring Team,\n\nI am applying for the Junior Data Analyst role. "
         "I have reviewed the letter and want to discuss my approved Python skills.\n\n"
         "Kind regards,\nTest Candidate"
@@ -111,7 +111,7 @@ def test_missing_contact_or_unreviewed_letter_prevents_handoff():
     item = new_workspace(candidate(), profile())
     initial = review_handoff(item, candidate(), profile())
     assert initial["ready"] is False
-    assert any("placeholders" in b for b in initial["blockers"])
+    assert any("personally reviewing" in b for b in initial["blockers"])
     with pytest.raises(HandoffError, match="not ready"):
         make_browser_packet(item, candidate(), profile())
 
@@ -151,19 +151,41 @@ def test_sp38_real_finnish_initial_letter_never_counts_as_reviewed_handoff():
         replace(job, job=replace(job.job, language="Finnish")), p,
     )
     assert initial.cover_letter_text.startswith("Hei rekrytointitiimi")
-    assert "[Kerro omin sanoin" in initial.cover_letter_text
-    assert "Osaaminen: Python" in initial.cover_letter_text
+    assert "[Kerro omin sanoin" not in initial.cover_letter_text
+    assert "Python" in initial.cover_letter_text
     readiness = review_handoff(initial, job, p)
     assert readiness["ready"] is False
-    assert any("placeholders" in text for text in readiness["blockers"])
-    # An approved fact is not permission to bypass personal review.
-    completed = replace(initial, cover_letter_text=(
+    assert any("personally reviewing" in text for text in readiness["blockers"])
+    # An approved fact and finished prose are NOT permission to bypass review.
+    completed = replace(initial, revision=2, cover_letter_text=(
         "Hei rekrytointitiimi,\\n\\n"
         "Haen Junior Data Analyst -tehtävää. Osaamiseni sisältää Pythonin. "
         "Olen perehtynyt työnkuvaan ja tarkistanut väitteeni.\\n\\n"
         "Ystävällisin terveisin, Test Candidate"
     ))
     assert review_handoff(completed, job, p)["ready"] is True
+
+
+def test_sp85_finished_first_draft_never_enables_browser_handoff_without_review():
+    p, job = profile(), candidate()
+    fresh = new_workspace(job, p)
+    assert fresh.revision == 1
+    assert "[" not in fresh.cover_letter_text
+    first = review_handoff(fresh, job, p)
+    assert first["ready"] is False
+    assert first["employer_submission_performed"] is False
+    assert any("personally reviewing" in item for item in first["blockers"])
+    with pytest.raises(HandoffError, match="not ready"):
+        make_browser_packet(fresh, job, p)
+    # A deliberate revision-checked applicant save is the minimum review step;
+    # it does not permit an employer submit without further independent rights.
+    confirmed = replace(fresh, revision=2)
+    after = review_handoff(confirmed, job, p)
+    assert after["ready"] is True
+    assert after["employer_submission_performed"] is False
+    packet = make_browser_packet(confirmed, job, p)
+    assert packet["revision"] == 2
+    assert packet["privacy"]["employer_submit_allowed_without_new_approval"] is False
 
 
 def test_changed_job_expired_listing_or_url_mismatch_blocks():
@@ -206,6 +228,10 @@ def test_browser_api_requires_explicit_confirmation_and_saved_revision():
     assert starter.status_code == 200, starter.text
     w = starter.json()["workspace"]
     wid = w["workspace_id"]
+    untouched = client.get(f"/api/v1/application-workspaces/{wid}/handoff-readiness")
+    assert untouched.status_code == 200
+    assert untouched.json()["ready"] is False
+    assert any("personally reviewing" in x for x in untouched.json()["blockers"])
     changed = client.put("/api/v1/application-workspaces/" + wid, json={
         "expected_revision": w["revision"],
         "cv_text": "Test Candidate\nPython analyst",

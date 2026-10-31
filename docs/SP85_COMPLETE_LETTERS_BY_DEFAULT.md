@@ -9,6 +9,8 @@ New application workspaces previously started with review-guide placeholders suc
 - Keep applicant qualifications constrained to approved job-matched facts. If the evidence/name is missing, the composer produces incomplete **prose**, not invented credentials or embedded editing commands. The explicit language proposal still returns `complete` and `missing_information` separately.
 - Existing database workspaces, applicant-edited text, revision numbers and employer-review state are not automatically rewritten. The visible language buttons can replace older drafts only by applicant action and confirmation.
 - UI explicitly explains incomplete evidence, old drafts, manual editing, save/review and no employer contact.
+- `review_handoff` explicitly blocks **any revision-1 workspace**, even when the letter has no guide markers. Only a deliberate signed-in revision-checked document save can advance it. This prevents treating machine-prepared prose as applicant approval.
+- A fresh unchanged draft now exposes **Confirm CV & letter review**. The user must confirm before the unchanged documents are saved; an edited draft still requires an explicit Save. The server never treats initial complete prose as permission for an employer action.
 - No new network calls, AI requirements, employer forms, employer claims, source ingestion or migrations.
 
 ## Reuse-first
@@ -19,6 +21,7 @@ Uses the existing matching/scoring, approved evidence, CV/application workspace 
 - No `[Explain...]` or `[Kerro...]` coaching text enters newly generated letters or PDF/DOCX.
 - Unapproved/unmatched facts do not become applicant claims.
 - Unknown or mixed advertised language doesn't force Finnish.
+- Fresh initial review/readiness fails closed despite finished prose; owner-confirmed save advances the revision without employer transfer.
 - Saving and final employer transmission retain existing explicit consent, owner/revision checks, one-shot safety ledgers and authorization boundaries.
 
 ## Release boundary

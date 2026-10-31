@@ -105,7 +105,8 @@ def test_sp38_finnish_initial_letter_uses_only_relevant_approved_facts():
     assert first.cover_letter_text.startswith("Hei rekrytointitiimi")
     assert "Haen tehtävää Junior Data Analyst" in first.cover_letter_text
     assert "Tehtävään liittyvää vahvistettua osaamistani ovat" in first.cover_letter_text
-    assert "Python ja SQL" in first.cover_letter_text
+    assert "Python" in first.cover_letter_text
+    assert "SQL" in first.cover_letter_text
     assert "Ruby" not in first.cover_letter_text
     assert "Long-distance vehicle delivery" not in first.cover_letter_text
     assert "Bachelor of Environmental Engineering" not in first.cover_letter_text

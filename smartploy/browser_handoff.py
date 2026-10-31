@@ -160,6 +160,13 @@ def review_handoff(
         blockers.append("A public HTTPS employer application URL is required")
     if not workspace.cv_text.strip():
         blockers.append("A completed CV is required")
+    # Finished first-draft prose is NOT applicant review. Both the original
+    # guide-style drafts and SP85's real-prose drafts start at revision 1.
+    # The owner must deliberately save their inspected documents (CAS write)
+    # before browser form handoff or a separately authorized partner action.
+    # Never infer review from the absence of placeholders or from approved facts.
+    if workspace.revision < 2:
+        blockers.append("Save the CV and cover letter after personally reviewing them")
     if PLACEHOLDERS.search(workspace.cover_letter_text):
         blockers.append("Replace the marked cover-letter placeholders with reviewed wording")
     if len(workspace.cover_letter_text.strip()) < 60:
