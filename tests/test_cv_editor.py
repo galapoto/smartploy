@@ -18,7 +18,7 @@ import pytest
 from smartploy.api import create_app
 from smartploy.cv_editor import render_editor_cv
 from smartploy.cv_storage import (
-    CVRevisionConflict, MemoryCVRepository, PostgresCVRepository,
+    CVArchiveNotFound, CVRevisionConflict, MemoryCVRepository, PostgresCVRepository,
 )
 from smartploy.service import SmartployService
 from smartploy.storage import PostgresJobRepository
@@ -192,3 +192,147 @@ def test_postgres_editor_atomic_revision_and_archive_is_owner_scoped():
     finally:
         repo.delete(a)
         repo.delete(b)
+
+
+def test_restore_older_cv_exact_bytes_and_keep_newer_private_history():
+    repo = MemoryCVRepository()
+    old_bytes = docx("Synthetic applicant original experience with SQL and QA.")
+    original = repo.put(
+        "owner", "original.docx", DOCX_MIME, old_bytes,
+        "Synthetic applicant original experience with SQL and QA.",
+    )
+    newer = repo.save_editor_text(
+        "owner", expected_sha256=original.digest,
+        text="Synthetic applicant edited master CV: Python and verified QA.",
+    )
+    assert repo.get_archived("owner", original.digest).content == old_bytes
+    assert repo.get_archived("other-owner", original.digest) is None
+    with pytest.raises(CVRevisionConflict):
+        repo.restore_archived(
+            "owner", digest=original.digest, expected_sha256=original.digest,
+        )
+    with pytest.raises(CVArchiveNotFound):
+        repo.restore_archived(
+            "owner", digest="0" * 64, expected_sha256=newer.digest,
+        )
+    restored = repo.restore_archived(
+        "owner", digest=original.digest, expected_sha256=newer.digest,
+    )
+    assert restored.content == old_bytes
+    assert restored.text == original.text
+    assert restored.digest == original.digest
+    assert restored.filename == original.filename
+    assert repo.get_archived("owner", newer.digest).content == newer.content
+    assert repo.get_archived("owner", original.digest) is None
+    assert [row["sha256"] for row in repo.history("owner")] == [newer.digest]
+    with pytest.raises(CVRevisionConflict):
+        repo.restore_archived(
+            "owner", digest=newer.digest, expected_sha256=newer.digest,
+        )
+    assert repo.delete("owner")
+    assert repo.history("owner") == []
+
+
+def test_archive_restore_api_requires_confirmation_exact_revision_and_does_not_submit():
+    api = TestClient(create_app(SmartployService()))
+    original_text = "Synthetic applicant original CV with SQL and verified QA."
+    old_bytes = docx(original_text)
+    upload = api.post("/api/v1/profile/cv", json={
+        "filename": "archived-original.docx",
+        "content_base64": b64encode(old_bytes).decode("ascii"),
+    })
+    assert upload.status_code == 200, upload.text
+    old_digest = upload.json()["sha256"]
+    edited_text = "Synthetic applicant updated CV with Python and additional verified projects."
+    edited = api.put("/api/v1/profile/cv/editor", json={
+        "expected_sha256": old_digest,
+        "text": edited_text,
+        "confirmed_replace": True,
+    })
+    assert edited.status_code == 200, edited.text
+    new_digest = edited.json()["cv"]["sha256"]
+    url = "/api/v1/profile/cv/history/" + old_digest + "/restore"
+    missing_confirmation = api.post(url, json={
+        "expected_sha256": new_digest, "confirmed_restore": False,
+    })
+    assert missing_confirmation.status_code == 422
+    assert api.post(url, json={
+        "expected_sha256": old_digest, "confirmed_restore": True,
+    }).status_code == 409
+    assert api.post("/api/v1/profile/cv/history/" + ("0" * 64) + "/restore", json={
+        "expected_sha256": new_digest, "confirmed_restore": True,
+    }).status_code == 404
+    assert api.post(url, json={
+        "expected_sha256": new_digest, "confirmed_restore": True, "submit": True,
+    }).status_code == 422
+    assert api.get("/api/v1/profile/cv/editor").json()["sha256"] == new_digest
+    restored = api.post(url, json={
+        "expected_sha256": new_digest, "confirmed_restore": True,
+    })
+    assert restored.status_code == 200, restored.text
+    body = restored.json()
+    assert body["restored_sha256"] == old_digest
+    assert body["cv"]["sha256"] == old_digest
+    assert body["text"] == original_text
+    assert body["approved_profile_facts_added"] == 0
+    assert body["employer_actions_performed"] == 0
+    assert [entry["sha256"] for entry in body["history"]] == [new_digest]
+    assert restored.headers["cache-control"] == "private, no-store"
+    assert api.get("/api/v1/profile/cv/download").content == old_bytes
+    assert api.get("/api/v1/profile/status").json()["approved_fact_count"] == 0
+    assert api.post(url, json={
+        "expected_sha256": new_digest, "confirmed_restore": True,
+    }).status_code == 409
+
+
+@pytest.mark.skipif(
+    not os.getenv("SMARTPLOY_TEST_DATABASE_URL"),
+    reason="PostgreSQL integration database required",
+)
+def test_postgres_archive_restore_is_atomic_cross_owner_and_recovers_oldest_retained():
+    dsn = os.environ["SMARTPLOY_TEST_DATABASE_URL"]
+    PostgresJobRepository(dsn).migrate()
+    repo = PostgresCVRepository(dsn)
+    owner, stranger = "sp82-owner-" + uuid4().hex, "sp82-other-" + uuid4().hex
+    old_bytes = docx("Synthetic original version with verified data analytics.")
+    try:
+        original = repo.put(
+            owner, "original.docx", DOCX_MIME, old_bytes,
+            "Synthetic original version with verified data analytics.",
+        )
+        # Preserve a restore target even when a subsequent archive write
+        # would evict it from the bounded twelve-version history.
+        current = original
+        for number in range(12):
+            current = repo.save_editor_text(
+                owner, expected_sha256=current.digest,
+                text=f"Synthetic revision {number} with confirmed Python and SQL facts.",
+            )
+        assert len(repo.history(owner)) == 12
+        assert repo.get_archived(owner, original.digest).content == old_bytes
+        other = repo.put(
+            stranger, "stranger.docx", DOCX_MIME,
+            docx("Other subject separate private CV."),
+            "Other subject separate private CV.",
+        )
+        with pytest.raises(CVArchiveNotFound):
+            repo.restore_archived(
+                stranger, digest=original.digest, expected_sha256=other.digest,
+            )
+        with pytest.raises(CVRevisionConflict):
+            repo.restore_archived(
+                owner, digest=original.digest, expected_sha256=original.digest,
+            )
+        restored = repo.restore_archived(
+            owner, digest=original.digest, expected_sha256=current.digest,
+        )
+        assert restored.content == old_bytes
+        assert restored.digest == original.digest
+        assert restored.text == original.text
+        assert repo.get_archived(owner, current.digest).content == current.content
+        assert all(row["sha256"] != original.digest for row in repo.history(owner))
+        assert len(repo.history(owner)) <= 12
+        assert repo.get(stranger).digest == other.digest
+    finally:
+        repo.delete(owner)
+        repo.delete(stranger)
