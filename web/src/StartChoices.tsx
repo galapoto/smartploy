@@ -12,6 +12,7 @@ import type { ApplicationFlowMode } from "./types";
 export default function StartChoices(props: {
   onMode: (mode: ApplicationFlowMode) => void;
   onBrowse: () => void;
+  onOpenApplications?: () => void;
   onUpload?: () => void;
   onCreateCV?: () => void;
   busyBrowse?: boolean;
@@ -99,6 +100,13 @@ export default function StartChoices(props: {
         </button> : null}
       </div>
     </>}
+    {props.onOpenApplications ? <div className="flow-start-workspaces">
+      <button type="button" className="flow-start-browse-button" onClick={props.onOpenApplications}>
+        <FileText size={19} aria-hidden="true"/>
+        <span><strong>My applications &amp; cover letters</strong><small>Open saved applications, review full letters and return to drafts</small></span>
+        <ArrowRight size={17} aria-hidden="true"/>
+      </button>
+    </div> : null}
     <div className="flow-start-browse">
       <button type="button" className="flow-start-browse-button"
         disabled={props.busyBrowse} onClick={props.onBrowse}>
