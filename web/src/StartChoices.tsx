@@ -20,6 +20,9 @@ export default function StartChoices(props: {
 }) {
   const hasCV = props.cvPresent === true;
   return <section className="flow-start" aria-label="Choose what to do with SmartPloy">
+    <div className="flow-start-masthead" aria-hidden="true">
+      <span>SMARTPLOY / CAREER ATLAS</span><span>FINLAND · PRIVATE WORKSPACE</span>
+    </div>
     <div className="flow-start-heading">
       <p className="section-kicker">YOUR APPLICATION JOURNEY</p>
       <h1>{hasCV ? "CV connected. Choose how to apply." : "Start with your CV."}</h1>
@@ -66,25 +69,28 @@ export default function StartChoices(props: {
       </div>
       <div className="flow-start-grid flow-start-grid-methods" role="group"
         aria-label="Step 2 — choose application type">
-        <button type="button" className="flow-start-card"
+        <button type="button" className="flow-start-card" data-flow-mode="manual"
           onClick={() => props.onMode("manual")}>
           <FileCheck2 size={25} aria-hidden="true"/>
+          <span className="flow-start-index" aria-hidden="true">01</span>
           <strong>Apply manually</strong>
           <span>Find CV-matched jobs, open the original employer form and submit it yourself.</span>
           <small>MANUAL · You send the application</small>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
-        <button type="button" className="flow-start-card"
+        <button type="button" className="flow-start-card" data-flow-mode="assisted"
           onClick={() => props.onMode("assisted")}>
           <WandSparkles size={25} aria-hidden="true"/>
+          <span className="flow-start-index" aria-hidden="true">02</span>
           <strong>Assisted · Apply with AI</strong>
           <span>Prepare a job-specific CV and complete cover letter. Review and fill supported employer forms with the browser companion.</span>
           <small>ASSISTED · You review before sending</small>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
-        <button type="button" className="flow-start-card"
+        <button type="button" className="flow-start-card" data-flow-mode="automatic"
           onClick={() => props.onMode("automatic")}>
           <Bot size={25} aria-hidden="true"/>
+          <span className="flow-start-index" aria-hidden="true">03</span>
           <strong>Automatic · AutoApply</strong>
           <span>Prepare multiple matched jobs, then approve exact reviewed submissions where the employer has authorized a Lever/Ashby integration.</span>
           <small>AUTOMATIC · Employer-specific authorization required</small>
