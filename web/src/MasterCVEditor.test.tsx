@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as api from "./api";
 import MasterCVEditor from "./MasterCVEditor";
+import { parseStructuredCV } from "./structured_cv";
 import type { CVDocument, CVEditorDocument, CVEditorSaved } from "./types";
 
 vi.mock("./api", () => ({
@@ -129,7 +130,7 @@ describe("SP79 owner-private CV creator/editor", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(
       expect.stringContaining("IMPORTED SOURCE TEXT"), HASH,
     ));
-    expect(onSave.mock.calls[0][0]).toContain(original);
+    expect(parseStructuredCV(onSave.mock.calls[0][0])?.importedText).toBe(original);
     expect(onSave.mock.calls[0][0]).toContain("QA automation project");
     expect(onSaved).toHaveBeenCalledTimes(1);
   });
