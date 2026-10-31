@@ -388,6 +388,7 @@ def test_sp46_autoapply_e2e_contract_exact_user_job_and_outcome(contract, outcom
         "expected_revision": saved["revision"],
         "expected_document_sha256": evidence["document_sha256"],
         "expected_cv_pdf_sha256": evidence["cv_pdf_sha256"],
+        "expected_fields_sha256": evidence["approved_fields_sha256"],
         "confirm_reviewed_application": True,
         "acknowledge_manual_only": True,
     }

@@ -663,7 +663,7 @@ export function getEmployerFinalActionReadiness(
 /** Non-submitting 10-minute final-review record. No extension bearer/grant. */
 export type EmployerReviewIntentState = {
   review_recorded: boolean;
-  review_state: "not_recorded" | "pending" | "cancelled" | "expired";
+  review_state: "not_recorded" | "pending" | "cancelled" | "expired" | "stale";
   expires_at: string;
   automatic_employer_submit_authorized: false;
   external_actions_performed: false;
@@ -679,7 +679,7 @@ export function getEmployerReviewIntent(workspaceId: string): Promise<EmployerRe
 
 export function recordEmployerReviewIntent(
   workspaceId: string, revision: number, documentSha256: string,
-  cvPdfSha256: string, expectedUserId: string,
+  cvPdfSha256: string, fieldsSha256: string, expectedUserId: string,
 ): Promise<EmployerReviewIntentState> {
   return request<EmployerReviewIntentState>(
     "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId) + "/submit-review-intent",
@@ -687,6 +687,7 @@ export function recordEmployerReviewIntent(
       expected_revision: revision,
       expected_document_sha256: documentSha256,
       expected_cv_pdf_sha256: cvPdfSha256,
+      expected_fields_sha256: fieldsSha256,
       confirm_reviewed_application: true,
       acknowledge_manual_only: true,
     }) }, expectedUserId

@@ -614,6 +614,7 @@ def test_signed_in_review_http_to_postgres_end_to_end(scoped, monkeypatch):
             "expected_revision":work.revision,
             "expected_document_sha256":packet["document_sha256"],
             "expected_cv_pdf_sha256":packet["cv_pdf_sha256"],
+            "expected_fields_sha256":packet["approved_fields_sha256"],
             "confirm_reviewed_application":True,
             "acknowledge_manual_only":True,
         }

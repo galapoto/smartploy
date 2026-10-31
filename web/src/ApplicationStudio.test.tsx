@@ -569,7 +569,7 @@ describe("Application Studio private-read account boundary", () => {
     });
     fireEvent.click(review);
     await waitFor(()=>expect(api.recordEmployerReviewIntent).toHaveBeenCalledWith(
-      "workspace-A",1,"a".repeat(64),"b".repeat(64),"usr-a"
+      "workspace-A",1,"a".repeat(64),"b".repeat(64),"c".repeat(64),"usr-a"
     ));
     expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
@@ -742,7 +742,7 @@ describe("Application Studio private-read account boundary", () => {
     await waitFor(()=>expect((record as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(record);
     await waitFor(()=>expect(api.recordEmployerReviewIntent).toHaveBeenCalledWith(
-      "workspace-A", 1, "a".repeat(64), "b".repeat(64), "usr-a"
+      "workspace-A", 1, "a".repeat(64), "b".repeat(64), "c".repeat(64), "usr-a"
     ));
     expect(await screen.findByText(/Review recorded temporarily/)).toBeTruthy();
     expect(screen.getByLabelText("Employer final-action permission").textContent)

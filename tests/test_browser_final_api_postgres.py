@@ -131,6 +131,7 @@ def reviewed_case(monkeypatch):
             "expected_document_sha256": packet["document_sha256"],
             "expected_cv_pdf_sha256": packet["cv_pdf_sha256"],
             "expected_fields_sha256": packet["approved_fields_sha256"],
+            "expected_fields_sha256": packet["approved_fields_sha256"],
             "expected_application_url_sha256":
                 sha256(packet["application_url"].encode("utf-8")).hexdigest(),
             "expected_cv_pdf_size": packet["cv_pdf_size"],

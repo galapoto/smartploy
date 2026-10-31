@@ -573,12 +573,15 @@ export default function ApplicationStudio(props: {
    * manual browser handoff and official partner API. A success is NOT submit.
    */
   async function storeReviewedEvidence(
-    ticket: DraftTicket, evidence: {document_sha256:string;cv_pdf_sha256:string}
+    ticket: DraftTicket, evidence: {
+      document_sha256: string; cv_pdf_sha256: string; approved_fields_sha256: string;
+    }
   ) {
     if (!selected) return;
     const item = await runPrivateAction(() => recordEmployerReviewIntent(
       selected.workspace_id,selected.revision,
-      evidence.document_sha256,evidence.cv_pdf_sha256,props.expectedUserId
+      evidence.document_sha256,evidence.cv_pdf_sha256,
+      evidence.approved_fields_sha256,props.expectedUserId
     ),ticket);
     if (!isCurrentDraft(ticket)) return;
     setFinalReview(item);
@@ -640,12 +643,14 @@ export default function ApplicationStudio(props: {
       packet = JSON.parse(handoffPacketText) as {
         workspace_id: string; revision: number; expires_at: string;
         document_sha256: string; cv_pdf_sha256: string;
+        approved_fields_sha256: string;
       };
       if (packet.workspace_id !== selected.workspace_id ||
           packet.revision !== selected.revision ||
           Date.parse(packet.expires_at) <= Date.now() ||
           !/^[a-f0-9]{64}$/.test(packet.document_sha256) ||
-          !/^[a-f0-9]{64}$/.test(packet.cv_pdf_sha256)) {
+          !/^[a-f0-9]{64}$/.test(packet.cv_pdf_sha256) ||
+          !/^[a-f0-9]{64}$/.test(packet.approved_fields_sha256)) {
         throw new Error("Your reviewed application packet changed or expired. Generate a new packet.");
       }
     } catch (exc) {
