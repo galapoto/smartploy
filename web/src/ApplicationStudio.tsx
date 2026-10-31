@@ -464,10 +464,13 @@ export default function ApplicationStudio(props: {
         throw new Error("The private cover-letter proposal was not safe to use");
       }
       setLetterText(proposal.cover_letter);
-      setMessage(
-        (language === "fi" ? "Finnish" : "English") +
-        " evidence-backed draft inserted. Review every claim, fill the personal " +
-        "motivation prompt and click Save changes. Nothing was sent to an employer."
+      setMessage(proposal.complete === false
+        ? "Letter prose inserted, but it needs more confirmed information: " +
+          (proposal.missing_information || []).join(" ") +
+          " Review the wording and click Save changes. Nothing was sent."
+        : (language === "fi" ? "Finnish" : "English") +
+          " cover letter generated as complete, editable prose. Review each claim, " +
+          "personalize if needed, and click Save changes. Nothing was sent."
       );
     } catch (exc) {
       reportActionError(exc, "Unable to create a private evidence-backed draft.");
@@ -1121,7 +1124,7 @@ export default function ApplicationStudio(props: {
         <div className="studio-document" id="smartploy-letter-review">
           <div className="studio-document-head"><strong><FileCheck2 size={17}/> Cover letter draft</strong><span>{letterText.length.toLocaleString()} / 10,000 characters</span></div>
           {selected.status === "draft" ? <div className="studio-letter-language" aria-label="Cover letter language">
-            <span>Draft using approved experience:</span>
+            <span>Generate a complete letter from approved experience:</span>
             <button className="outline-btn compact" type="button"
               onClick={() => void redraftLetter("fi")}
               disabled={busy || aiBusy || letterBusy || !!browserReceipt ||
@@ -1140,7 +1143,7 @@ export default function ApplicationStudio(props: {
               employerAttempt?.previous_attempt_reserved === true} value={letterText}
             onChange={(event) => setLetterText(event.target.value)}
             placeholder="Your reviewed cover letter" />
-          <small>Only approved job-relevant facts are proposed. Add your personal motivation and verify every claim; replacing the text never saves or submits it automatically.</small>
+          <small>Generated wording contains only approved job-matched facts. Missing information appears separately, not inside the letter. Review and save explicitly; generating does not contact an employer.</small>
           <div className="studio-export">
             <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "letter", "docx")}
               className={"outline-btn compact" + (dirty ? " disabled" : "")}

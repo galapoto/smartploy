@@ -267,6 +267,11 @@ export function startApplicationWorkspace(
 export type EvidenceLetterProposal = {
   cover_letter: string;
   language: "fi" | "en";
+  /** SP78: the letter body is always prose, while missing facts stay outside it. */
+  complete?: boolean;
+  missing_information?: string[];
+  evidence_fact_ids?: string[];
+  review_notes?: string[];
   workspace_revision: number;
   review_required: true;
   saved: false;
