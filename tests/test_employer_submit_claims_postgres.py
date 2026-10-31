@@ -1382,7 +1382,9 @@ def test_sp86_autoapply_batch_requires_all_review_and_permission_before_employer
     assert duplicate.status_code == 409
     assert sent == []
     api.cookies.set(SESSION_COOKIE_NAME, tokens["b"])
-    assert api.post(dest, json=batch, headers=headers).status_code in {403, 404}
+    # The existing account-bound middleware can return 409 for a switched
+    # same-email OIDC subject; all forms fail closed before provider I/O.
+    assert api.post(dest, json=batch, headers=headers).status_code in {403, 404, 409}
     assert sent == []
 
 

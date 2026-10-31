@@ -2732,9 +2732,12 @@ def create_app(
                 )
             evidence = ready["review_evidence"]
             if not isinstance(evidence, dict) or any(
-                evidence.get(key) != getattr(item, "expected_" + key)
-                for key in (
-                    "document_sha256", "cv_pdf_sha256", "fields_sha256", "cv_pdf_size"
+                evidence.get(key) != expected
+                for key, expected in (
+                    ("document_sha256", item.expected_document_sha256),
+                    ("cv_pdf_sha256", item.expected_cv_pdf_sha256),
+                    ("approved_fields_sha256", item.expected_fields_sha256),
+                    ("cv_pdf_size", item.expected_cv_pdf_size),
                 )
             ):
                 raise HTTPException(status_code=409, detail="Reviewed batch document hashes changed")
