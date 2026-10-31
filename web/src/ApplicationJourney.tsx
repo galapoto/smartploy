@@ -184,6 +184,7 @@ export default function ApplicationJourney(props: {
   const currentSelection = visibleCurrentKeys(selected, jobs);
   const staleSelectionCount = selected.length - currentSelection.length;
   const shortlistSuggestion = addCVShortlist(selected, results?.recommended || []);
+  const quickDraftKeys = addCVShortlist([], results?.recommended || []).selected;
   const queryPending = filter.trim() !== activeQuery;
   const hasChosenJob = props.cv.present && !!props.mode &&
     (props.mode === "automatic" ? currentSelection.length > 0 : !!focusedJob);
@@ -300,11 +301,18 @@ export default function ApplicationJourney(props: {
   const runnableSelection = accessInterrupted ? [] :
     currentSelection.filter((key) => !blockedKeys.has(key));
 
-  async function queue() {
-    if (!runnableSelection.length || props.mode !== "automatic" || !results ||
+  async function queue(exactKeys: string[] = runnableSelection) {
+    // Both the manual shortlist and quick path reuse the SAME private,
+    // account-verified, source-current per-job preparation loop. Neither
+    // authorizes an employer submission.
+    if (!exactKeys.length || exactKeys.length > AUTOAPPLY_SELECTION_LIMIT ||
+        new Set(exactKeys).size !== exactKeys.length ||
+        visibleCurrentKeys(exactKeys, jobs).length !== exactKeys.length ||
+        exactKeys.some((key) => blockedKeys.has(key)) || accessInterrupted ||
+        props.mode !== "automatic" || !results || !props.cv.present ||
         loading || paging || queryPending || !!error || staleSelectionCount ||
         props.queueBusy || queueInFlight.current) return;
-    const keys = [...runnableSelection]; // immutable exact selection for this run
+    const keys = [...exactKeys]; // immutable exact selection for this run
     const previous = batchResult; // preserve earlier review-required job failures
     const scope = queueScope.current;
     const batchToken = Symbol("one-private-autoapply-selection");
@@ -373,6 +381,37 @@ export default function ApplicationJourney(props: {
         }
       }
     }
+  }
+
+  function prepareCVMatchedDraftsNow() {
+    // No background mutation: a real user click and exact-job confirmation
+    // are required before preparing even private drafts. Only title-matched,
+    // source-current, linked rows from the loaded CV-derived result qualify.
+    if (!props.cv.present || props.mode !== "automatic" || !results ||
+        loading || paging || queryPending || !!error || accessInterrupted ||
+        selected.length || batchResult || props.queueBusy ||
+        queueInFlight.current || !quickDraftKeys.length) return;
+    const freshKeys = addCVShortlist([], results.recommended).selected;
+    if (freshKeys.length !== quickDraftKeys.length ||
+        freshKeys.some((key, index) => key !== quickDraftKeys[index]) ||
+        visibleCurrentKeys(freshKeys, jobs).length !== freshKeys.length) return;
+    const exactJobs = freshKeys.map((key) => jobs.find((row) =>
+      row.canonical_key === key));
+    if (exactJobs.some((row) => !row || !row.job.source_current)) return;
+    const summary = exactJobs.map((row, index) =>
+      (index + 1) + ". " + row!.job.role_title + " · " + row!.job.company
+    ).join("\n");
+    if (!window.confirm(
+      "PREPARE " + freshKeys.length + " PRIVATE JOB APPLICATION DRAFT(S)?\n\n" +
+      summary + "\n\nSmartPloy will prepare job-specific CV/letter drafts and " +
+      "in-app agents only. It will NOT contact an employer or submit a job application. " +
+      "You must review each document and separately approve any authorized submission."
+    )) return;
+    // Populate the same visible selection as the reviewed two-click path
+    // for retry/stop behaviour, while the already verified immutable keys
+    // are passed directly to queue (React state is asynchronous).
+    setSelected(freshKeys);
+    void queue(freshKeys);
   }
 
   function stopAfterCurrentJob() {
@@ -667,6 +706,31 @@ export default function ApplicationJourney(props: {
           <button className="secondary-btn" type="button" onClick={props.onFindJobs}>
             Browse all jobs <ArrowRight size={16}/>
           </button></div>}
+        {props.mode === "automatic" && results && !loading ? (
+          <div className="flow-quick-private-start"
+            aria-label="Quick CV-matched private application preparation">
+            <div className="flow-quick-copy">
+              <strong>Prepare matching drafts now</strong>
+              <p>SmartPloy can prepare up to {AUTOAPPLY_SELECTION_LIMIT} loaded, current
+                role-title matches as private drafts with agents in one action.
+                Review the exact jobs in the confirmation first. No employer is contacted.</p>
+              {quickDraftKeys.length === 0 ?
+                <p>No safe title-matched vacancies are loaded. Review jobs individually
+                  or adjust your CV and search. Weak skill matches are not bulk-selected.</p> : null}
+            </div>
+            <button type="button" className="navy-btn"
+              disabled={!quickDraftKeys.length || selected.length > 0 || !!batchResult ||
+                loading || paging || queryPending || !!error || staleSelectionCount > 0 ||
+                props.queueBusy || !!queueInFlight.current || accessInterrupted}
+              onClick={prepareCVMatchedDraftsNow}>
+              {props.queueBusy ? "Preparing private drafts…" :
+                selected.length ? "Use your selected jobs below" :
+                "Prepare " + quickDraftKeys.length + " private draft" +
+                (quickDraftKeys.length === 1 ? "" : "s") + " now"}
+              <ArrowRight size={16} aria-hidden="true"/>
+            </button>
+          </div>
+        ) : null}
         {props.mode === "automatic" ? <div className="flow-queue">
           <strong>{selected.length} of {AUTOAPPLY_SELECTION_LIMIT} vacancies selected</strong>
           <p>Each selected job gets its own private application draft and in-app agent.
