@@ -177,7 +177,7 @@ def build_worker_task_specs(dsn: str) -> list[WorkerTaskSpec]:
                 overlap_minutes=settings.overlap_minutes,
             )
             service = SmartployService(repository=repository)
-            adapter = JobMarketFinlandAdapter(settings)
+            adapter = JobMarketFinlandAdapter(settings, quarantine_missing_identity=True)
             try:
                 summary = poll_jobmarket_finland(
                     service,
