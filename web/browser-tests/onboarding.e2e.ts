@@ -371,6 +371,20 @@ test("SP69: first-use Upload CV first is a working button and leads to explicit 
   expect(state.applicationWorkspaceCreates).toEqual([]);
 });
 
+test("SP87 CV-less job-card shortcut cannot bypass upload and choose Manual", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  const card = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
+  await card.getByRole("button", { name: /Apply manually/i }).click();
+  await expect(page.getByRole("heading", { name: "Upload your CV. Choose your method. Apply." })).toBeVisible();
+  await expect(page.getByText(/Step 2 is locked until your CV is saved/)).toBeVisible();
+  await expect(page.getByRole("group", { name: "Choose application method" })).toHaveCount(0);
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+});
+
 test("CV-first manual application goes from upload to real matching and selected private draft", async ({ page }) => {
   const state = await installSyntheticApi(page);
   await page.goto("/");
