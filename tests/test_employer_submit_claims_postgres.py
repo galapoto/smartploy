@@ -1322,6 +1322,144 @@ def test_partner_lever_real_signed_in_provider_acknowledgment_and_cross_device_o
     assert PostgresPartnerApplicationReceipts(DSN).get(a,url).application_id=="app-1234567890abcdef"
 
 
+
+def _sp86_batch_payload(packet):
+    return {
+        "items": [{
+            "workspace_id": packet["workspace_id"],
+            "provider": "lever",
+            "expected_revision": packet["revision"],
+            "expected_document_sha256": packet["document_sha256"],
+            "expected_cv_pdf_sha256": packet["cv_pdf_sha256"],
+            "expected_fields_sha256": packet["approved_fields_sha256"],
+            "expected_cv_pdf_size": packet["cv_pdf_size"],
+        }],
+        "confirm_each_exact_employer_and_job": True,
+        "confirm_reviewed_documents_and_form": True,
+        "approve_each_employer_data_transfer": True,
+        "acknowledge_no_automatic_retry": True,
+    }
+
+
+def test_sp86_autoapply_batch_requires_all_review_and_permission_before_employer_io(
+    signed_in_partner_workflow,
+):
+    api, app, route, headers, a, b, packet, url, nonce, tokens, key = signed_in_partner_workflow
+    sent = []
+    app.state.partner_lever_transport = LeverPartnerTransport(
+        httpx.MockTransport(
+            lambda request: sent.append(request.method)
+            or httpx.Response(200, json={"applicationId": "should-not-be-sent"})
+        ),
+    )
+    batch = _sp86_batch_payload(packet)
+    dest = "/api/v1/autoapply/submit-reviewed-batch"
+    # Initial workspace revision 2 has not yet received a short-lived,
+    # owner-scoped employer review intent.
+    missing_review = api.post(dest, json=batch, headers=headers)
+    assert missing_review.status_code == 409
+    assert sent == []
+    _partner_review(api, route, headers, packet)
+    # One signed-in batch gesture cannot ever stand in for proper consent.
+    for key_name in (
+        "confirm_each_exact_employer_and_job",
+        "confirm_reviewed_documents_and_form",
+        "approve_each_employer_data_transfer",
+        "acknowledge_no_automatic_retry",
+    ):
+        denied = api.post(dest, json={**batch, key_name: False}, headers=headers)
+        assert denied.status_code == 422
+        assert sent == []
+    assert api.post(dest, json=batch, headers={
+        **headers, "Origin": "https://untrusted.invalid",
+    }).status_code == 403
+    assert api.post(dest, json={**batch, "items": [
+        {**batch["items"][0], "expected_document_sha256": "c" * 64},
+    ]}, headers=headers).status_code == 409
+    duplicate = api.post(dest, json={
+        **batch, "items": batch["items"] * 2,
+    }, headers=headers)
+    assert duplicate.status_code == 409
+    assert sent == []
+    api.cookies.set(SESSION_COOKIE_NAME, tokens["b"])
+    # The existing account-bound middleware can return 409 for a switched
+    # same-email OIDC subject; all forms fail closed before provider I/O.
+    assert api.post(dest, json=batch, headers=headers).status_code in {403, 404, 409}
+    assert sent == []
+
+
+def test_sp86_autoapply_batch_real_lever_ack_is_durable_and_never_replayed(
+    signed_in_partner_workflow,
+):
+    api, app, route, headers, a, b, packet, url, nonce, tokens, key = signed_in_partner_workflow
+    sent = []
+    def handler(request):
+        sent.append(request.method)
+        if request.method == "GET":
+            return httpx.Response(200, json={"id": nonce, "applyUrl": url})
+        assert request.method == "POST" and request.url.host == "api.lever.co"
+        return httpx.Response(200, json={
+            "ok": True, "applicationId": "app-sp86-reviewed-1234567",
+        })
+    app.state.partner_lever_transport = LeverPartnerTransport(httpx.MockTransport(handler))
+    _partner_review(api, route, headers, packet)
+    batch = _sp86_batch_payload(packet)
+    route_batch = "/api/v1/autoapply/submit-reviewed-batch"
+    result = api.post(route_batch, json=batch, headers=headers)
+    assert result.status_code == 200, result.text
+    state = result.json()
+    assert state["selected_count"] == state["attempted_count"] == 1
+    assert state["provider_acknowledged_count"] == 1
+    assert state["unattempted_count"] == 0
+    assert state["stopped"] is False and state["stop_reason"] == ""
+    assert state["automatic_retry_authorized"] is False
+    assert state["unattended_auto_apply_enabled"] is False
+    assert state["results"] == [{
+        "workspace_id": packet["workspace_id"], "provider": "lever",
+        "state": "provider_acknowledged",
+        "provider_application_id": "app-sp86-reviewed-1234567",
+    }]
+    assert sent == ["GET", "POST"]
+    assert app.state.workspace_repository.get(a.profile_id, packet["workspace_id"]).status == (
+        "provider_acknowledged"
+    )
+    assert api.get(route + "/partner-lever-receipt").json()["receipt"][
+        "provider_application_id"
+    ] == "app-sp86-reviewed-1234567"
+    # The original sticky claim still denies a batch replay.
+    assert api.post(route_batch, json=batch, headers=headers).status_code == 409
+    assert sent == ["GET", "POST"]
+    assert "app-sp86" not in str(api.get(route_batch).text)
+
+
+def test_sp86_autoapply_batch_uncertain_provider_stops_with_no_retry(
+    signed_in_partner_workflow,
+):
+    api, app, route, headers, a, b, packet, url, nonce, tokens, key = signed_in_partner_workflow
+    sent = []
+    def handler(request):
+        sent.append(request.method)
+        if request.method == "GET":
+            return httpx.Response(200, json={"id": nonce, "applyUrl": url})
+        return httpx.Response(429, json={"error": "rate_limited"})
+    app.state.partner_lever_transport = LeverPartnerTransport(httpx.MockTransport(handler))
+    _partner_review(api, route, headers, packet)
+    batch = _sp86_batch_payload(packet)
+    dest = "/api/v1/autoapply/submit-reviewed-batch"
+    result = api.post(dest, json=batch, headers=headers)
+    assert result.status_code == 200, result.text
+    assert result.json()["stopped"] is True
+    assert result.json()["stop_reason"] == "employer_outcome_uncertain"
+    assert result.json()["provider_acknowledged_count"] == 0
+    assert result.json()["results"][0]["state"] == "outcome_uncertain"
+    assert result.json()["automatic_retry_authorized"] is False
+    assert sent == ["GET", "POST"]
+    assert PostgresEmployerSubmitClaimRepository(DSN).get_for_employer_url(a, url).state == "uncertain"
+    assert app.state.workspace_repository.get(a.profile_id, packet["workspace_id"]).status == "draft"
+    assert api.post(dest, json=batch, headers=headers).status_code == 409
+    assert sent == ["GET", "POST"]
+
+
 def test_partner_lever_rate_limit_outcome_sticky_and_no_second_post(signed_in_partner_workflow):
     api,app,route,headers,a,b,packet,url,nonce,tokens,key=signed_in_partner_workflow
     methods=[]

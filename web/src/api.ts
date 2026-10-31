@@ -682,6 +682,56 @@ export function sendAshbyPartnerApplication(
   );
 }
 
+/** SP86: opt-in foreground AutoApply for up to three EXACT pre-reviewed
+ * Lever/Ashby partner jobs. The server checks every authorization and
+ * persists an immutable claim before each real provider POST. No background
+ * submissions, no retries, no unsupported job boards.
+ */
+export type AuthorizedAutoApplyItem = {
+  workspace_id: string;
+  provider: "lever" | "ashby";
+  expected_revision: number;
+  expected_document_sha256: string;
+  expected_cv_pdf_sha256: string;
+  expected_fields_sha256: string;
+  expected_cv_pdf_size: number;
+};
+
+export type AuthorizedAutoApplyResult = {
+  results: Array<{
+    workspace_id: string; provider: "lever" | "ashby";
+    state: "provider_acknowledged" | "outcome_uncertain" | "stopped_unverified";
+    provider_application_id?: string;
+    http_status?: number;
+  }>;
+  selected_count: number;
+  attempted_count: number;
+  provider_acknowledged_count: number;
+  unattempted_count: number;
+  stopped: boolean;
+  stop_reason: string;
+  unattended_auto_apply_enabled: false;
+  automatic_retry_authorized: false;
+};
+
+export function submitAuthorizedAutoApplyBatch(
+  items: AuthorizedAutoApplyItem[], expectedUserId: string
+): Promise<AuthorizedAutoApplyResult> {
+  if (items.length < 1 || items.length > 3) {
+    return Promise.reject(new Error("Select one to three reviewed employer applications."));
+  }
+  return request<AuthorizedAutoApplyResult>(
+    "/api/v1/autoapply/submit-reviewed-batch",
+    { method: "POST", body: JSON.stringify({
+      items,
+      confirm_each_exact_employer_and_job: true,
+      confirm_reviewed_documents_and_form: true,
+      approve_each_employer_data_transfer: true,
+      acknowledge_no_automatic_retry: true,
+    }) }, expectedUserId,
+  );
+}
+
 /** Read-only independent employer-rights posture. There is NO submit capability. */
 export type EmployerFinalActionReadiness = {
   operator_permission_reviewed: boolean;

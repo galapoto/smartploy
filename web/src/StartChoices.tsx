@@ -51,8 +51,8 @@ export default function StartChoices(props: {
         onClick={() => props.onMode("automatic")}>
         <Bot size={25} aria-hidden="true" />
         <strong>Automatic · AutoApply</strong>
-        <span>Select jobs for private drafts and tracking agents. Employer sending requires separate authorization.</span>
-        <small>AUTOMATIC · Not an automatic employer send</small>
+        <span>Prepare matched private drafts, then submit a reviewed batch automatically where the employer has approved an ATS integration.</span>
+        <small>AUTOMATIC · Real send only for authorized Lever/Ashby jobs</small>
         <ArrowRight size={17} aria-hidden="true" />
       </button>
       <button type="button" className="flow-start-card" disabled={props.busyBrowse}

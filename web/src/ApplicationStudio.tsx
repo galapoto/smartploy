@@ -18,6 +18,7 @@ import {
 import ApplicationAgentCard from "./ApplicationAgentCard";
 import ApplicationAgentInbox from "./ApplicationAgentInbox";
 import ApplicationAttemptAudit from "./ApplicationAttemptAudit";
+import AuthorizedAutoApplyBatch from "./AuthorizedAutoApplyBatch";
 import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import { applicationNextStep } from "./applicationNextStep";
@@ -908,6 +909,19 @@ export default function ApplicationStudio(props: {
     {error ? <div className="studio-alert error" role="alert"><AlertCircle size={16}/>{error}</div> : null}
     {message ? <div className="studio-alert" role="status"><CheckCircle2 size={16}/>{message}</div> : null}
     {workspaces.length > 0 ? <>
+      {props.mode === "automatic" ? <AuthorizedAutoApplyBatch
+        workspaces={workspaces} expectedUserId={props.expectedUserId}
+        verifyAccount={verifyAccount} providerForUrl={partnerKind}
+        hasUnsavedEdits={dirty} onOpen={(id) => pick(id)}
+        onCompleted={(result) => {
+          setMessage(result.provider_acknowledged_count +
+            " genuine employer-acknowledged AutoApply case(s); " +
+            result.unattempted_count + " job(s) were not attempted. " +
+            (result.stopped ? "An outcome needs review; do not retry." :
+              "The employer submission receipts were saved privately."));
+          void reload();
+        }}
+      /> : null}
       <ApplicationAgentInbox
         verifyAccount={verifyAccount} expectedUserId={props.expectedUserId}
         onOpen={(id) => void openInboxCase(id)}
@@ -1066,6 +1080,41 @@ export default function ApplicationStudio(props: {
             The final employer action requires its own reviewed, allowed path.
           </p>
         </section>
+        {props.mode === "assisted" && selected.status === "draft" ? (
+          <section className="studio-assisted-guide" aria-label="Assisted application walkthrough">
+            <h4>Assisted application · finish this exact job</h4>
+            <p>SmartPloy can help fill a supported Lever, Ashby or hosted Greenhouse form.
+              Your CV and cover letter remain editable; the applicant makes the final
+              submission unless a separately authorized employer API is available.</p>
+            <div className="studio-assisted-steps">
+              <a href="#smartploy-cv-review">1 · Review CV</a>
+              <a href="#smartploy-letter-review">2 · Review cover letter</a>
+              <a href="#smartploy-employer-step">3 · Open employer form assistance</a>
+            </div>
+            <div className="row-actions">
+              <button className="secondary-btn" type="button"
+                disabled={busy || partnerBusy || !!browserReceipt ||
+                  employerAttempt?.previous_attempt_reserved === true ||
+                  (!dirty && selected.revision > 1)}
+                onClick={() => void save()}>
+                <Save size={16}/>{busy ? "Saving…" :
+                  !dirty && selected.revision === 1 ? "Confirm documents reviewed" : "Save reviewed documents"}
+              </button>
+              <button className="outline-btn" type="button"
+                disabled={!handoff?.ready || dirty || handoffBusy || busy ||
+                  !!browserReceipt || employerAttempt?.previous_attempt_reserved === true}
+                onClick={() => void copyBrowserPacket()}>
+                <ClipboardCopy size={16}/>{handoffBusy ? "Preparing…" : "Copy form-fill packet"}
+              </button>
+              {safePostingLink(selected.application_url) ? <a className="outline-btn"
+                href={safePostingLink(selected.application_url)} target="_blank"
+                rel="noopener noreferrer">Open exact employer posting <ArrowUpRight size={15}/></a> : null}
+            </div>
+            <p className="muted">Install the Chrome companion from the Employer Application section
+              to fill approved fields and attach the exact CV PDF. Inspect required questions,
+              consent and CAPTCHA personally. An autofill does not mean the employer received an application.</p>
+          </section>
+        ) : null}
         <div className="studio-info">
           <ShieldCheck size={18}/>
           <div><strong>Your content, your decision.</strong>
