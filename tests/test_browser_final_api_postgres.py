@@ -728,9 +728,19 @@ def test_sp81_oidc_applicant_review_does_not_survive_approved_contact_drift(revi
     case = reviewed_case
     api, headers, work = case["api"], case["headers"], case["work"]
     review_route = case["review_route"]
+    # A legacy client cannot record a new review without the exact approved
+    # contact fingerprint, even when its CV and PDF hashes are current.
+    legacy_body = dict(case["review_body"])
+    legacy_body.pop("expected_fields_sha256")
+    assert api.post(review_route, headers=headers, json=legacy_body).status_code == 422
     first = api.post(review_route, headers=headers, json=case["review_body"])
     assert first.status_code == 200, first.text
     assert api.get(review_route).json()["review_recorded"] is True
+    partner_before = api.get(
+        f"/api/v1/application-workspaces/{work.workspace_id}/partner-lever-readiness"
+    )
+    assert partner_before.status_code == 200, partner_before.text
+    assert partner_before.json()["current_applicant_review_recorded"] is True
     snapshot = case["packet"]
     assert first.json()["browser_grant_issued"] is False
 
@@ -749,6 +759,12 @@ def test_sp81_oidc_applicant_review_does_not_survive_approved_contact_drift(revi
     assert posture.status_code == 200, posture.text
     assert posture.json()["current_applicant_review_recorded"] is False
     assert posture.json()["final_browser_click_authorized"] is False
+    partner_after = api.get(
+        f"/api/v1/application-workspaces/{work.workspace_id}/partner-lever-readiness"
+    )
+    assert partner_after.status_code == 200, partner_after.text
+    assert partner_after.json()["current_applicant_review_recorded"] is False
+    assert partner_after.json()["eligible_for_explicit_partner_submit"] is False
 
     # The old applicant-review packet cannot be used with new contact facts.
     assert api.post(review_route, headers=headers, json=case["review_body"]).status_code == 409
