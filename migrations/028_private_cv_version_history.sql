@@ -1,5 +1,5 @@
 -- SP79: bounded owner-private archived source CV / edited versions.
--- No email or job source can read this table; all queries require profile_id.
+-- Owner-private CV revisions are always queried with the verified profile_id.
 CREATE TABLE IF NOT EXISTS smartploy_cv_history (
     profile_id text NOT NULL,
     sha256 char(64) NOT NULL,
