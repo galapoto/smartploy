@@ -35,7 +35,7 @@ def main() -> int:
     )
 
     service = SmartployService(repository=repository)
-    adapter = JobMarketFinlandAdapter(settings)
+    adapter = JobMarketFinlandAdapter(settings, quarantine_missing_identity=True)
     try:
         summary = poll_jobmarket_finland(
             service,
