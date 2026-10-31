@@ -553,6 +553,7 @@ export default function ApplicationJourney(props: {
         {(["manual", "assisted", "automatic"] as const).map((choice) => {
           const Icon = choice === "manual" ? FileText : choice === "assisted" ? WandSparkles : Bot;
           return <button type="button" key={choice}
+            data-flow-mode={choice}
             className={"flow-mode" + (props.mode === choice ? " selected" : "")}
             aria-pressed={props.mode === choice}
             disabled={props.queueBusy || !!queueInFlight.current}
