@@ -951,6 +951,10 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .master-cv-history ul { list-style: none; padding: 0; display: grid; gap: 12px; }
 .master-cv-history li { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
 .master-cv-history a { display: inline-flex; align-items: center; gap: 5px; color: #175c49; text-decoration: underline; }
+.master-cv-history li > span { flex: 1 1 190px; overflow-wrap: anywhere; }
+.master-cv-history li > a, .master-cv-history li > button { min-height: 44px; }
+.master-cv-history li > button { display: inline-flex; align-items: center; gap: 7px; }
+.master-cv-history li > button:focus-visible { outline: 3px solid #1457c6; outline-offset: 2px; }
 @media (max-width: 1120px) { .master-cv-columns { grid-template-columns: 1fr; } .master-cv-edit textarea, .master-cv-paper { min-height: 300px; } }
 
 
