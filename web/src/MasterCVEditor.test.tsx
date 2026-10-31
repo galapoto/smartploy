@@ -102,6 +102,73 @@ describe("SP79 owner-private CV creator/editor", () => {
     expect(window.confirm).toHaveBeenCalled();
   });
 
+  it("keeps an imported original verbatim when switching to structured fields", async () => {
+    const {onSave, onSaved} = start();
+    await screen.findByRole("textbox", {name: "Editable master CV text"});
+    fireEvent.click(screen.getByRole("button", {name: "Structured editor"}));
+    expect(window.confirm).toHaveBeenCalled();
+    const imported = screen.getByRole("textbox", {name: "Imported source text"}) as HTMLTextAreaElement;
+    expect(imported.value).toBe(original);
+    expect(screen.getByLabelText("CV preview").textContent).toContain(original);
+    fireEvent.change(screen.getByRole("textbox", {name: "Full name"}), {
+      target: {value: "Synthetic Candidate"},
+    });
+    fireEvent.change(screen.getByRole("combobox", {name: "Section type"}), {
+      target: {value: "projects"},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Add section"}));
+    fireEvent.change(screen.getByRole("textbox", {name: "Projects 1 Project name"}), {
+      target: {value: "QA automation project"},
+    });
+    fireEvent.change(screen.getByRole("textbox", {name: "Projects 1 description"}), {
+      target: {value: "Built actual regression tests."},
+    });
+    expect(screen.getByLabelText("CV preview").textContent)
+      .toContain("Built actual regression tests.");
+    fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.stringContaining("IMPORTED SOURCE TEXT"), HASH,
+    ));
+    expect(onSave.mock.calls[0][0]).toContain(original);
+    expect(onSave.mock.calls[0][0]).toContain("QA automation project");
+    expect(onSaved).toHaveBeenCalledTimes(1);
+  });
+
+  it("declined conversion never changes imported applicant text", async () => {
+    start();
+    const originalBox = await screen.findByRole("textbox", {name: "Editable master CV text"});
+    vi.mocked(window.confirm).mockReturnValue(false);
+    fireEvent.click(screen.getByRole("button", {name: "Structured editor"}));
+    expect((originalBox as HTMLTextAreaElement).value).toBe(original);
+    expect(screen.getByRole("button", {name: "Structured editor"}).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("textbox", {name: "Imported source text"})).toBeNull();
+  });
+
+  it("never allows saving a blank structured document", async () => {
+    vi.mocked(api.getCVEditor).mockResolvedValue({
+      present: false, sha256: "", text: "", filename: "",
+      created_by_editor: false, history: [],
+      approved_profile_facts_added: 0, employer_actions_performed: 0,
+    });
+    const {onSave} = start({cv: {present: false}});
+    await screen.findByRole("textbox", {name: "Editable master CV text"});
+    fireEvent.click(screen.getByRole("button", {name: "Structured editor"}));
+    const saveButton = screen.getByRole("button", {name: "Create master CV"}) as HTMLButtonElement;
+    expect(saveButton.disabled).toBe(true);
+    fireEvent.change(screen.getByRole("textbox", {name: "Full name"}), {
+      target: {value: "Alex Applicant"},
+    });
+    expect(saveButton.disabled).toBe(true);
+    fireEvent.change(screen.getByRole("textbox", {name: "Professional profile / summary"}), {
+      target: {value: "I can verify Python, SQL and spreadsheet reporting."},
+    });
+    expect(saveButton.disabled).toBe(false);
+    fireEvent.click(saveButton);
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(
+      expect.stringContaining("Full name: Alex Applicant"), "",
+    ));
+  });
+
   it("never discards unsaved text if applicant declines reload", async () => {
     start();
     const editor = await screen.findByRole("textbox", {name: "Editable master CV text"});

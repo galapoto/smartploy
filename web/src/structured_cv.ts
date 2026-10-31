@@ -202,7 +202,7 @@ export function structuredFromSource(text: string): {
   const found = parseStructuredCV(text);
   if (found) return {model: found, origin: "structured"};
   const model = emptyStructuredCV();
-  model.importedText = text; // exact applicant text is carried into the new document.
+  model.importedText = text.replace(/\r\n?/g, "\n").trimEnd(); // visible source words preserved
   return {model, origin: "imported"};
 }
 
