@@ -121,6 +121,7 @@ class WorkerTaskRepository(Protocol):
         lease_seconds: int,
         limit: int,
         now: datetime | None = None,
+        task_id: str | None = None,
     ) -> list[WorkerTask]: ...
     def complete(
         self,
@@ -245,6 +246,49 @@ class PostgresWorkerTaskRepository:
             conn.commit()
         return int(count or 0)
 
+    def request_private_auto_draft_startup(
+        self, *, now: datetime | None = None
+    ) -> bool:
+        """Queue one genuine catch-up after worker restart, never bypass a lease.
+
+        Restricted to the ORIGINAL operator-enabled, local-only AutoDraft task,
+        already completed successfully at least once. On a first boot the normal
+        source-first scheduler is preserved. Calling this once at process start
+        does not change the configured cadence, any profile opt-in, task lease,
+        completed receipt, or the employer-action boundary.
+        """
+        timestamp = _aware(now)
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE smartploy_worker_tasks
+                    SET next_run_at = LEAST(next_run_at, %s),
+                        updated_at = %s
+                    WHERE task_id = 'application:auto-draft-shortlist'
+                      AND task_kind = 'application_draft'
+                      AND enabled = true
+                      AND last_status = 'healthy'
+                      AND consecutive_failures = 0
+                      AND last_completed_at IS NOT NULL
+                      AND last_completed_at < %s
+                      AND (lease_until IS NULL OR lease_until <= %s)
+                      AND metadata @> %s
+                    RETURNING task_id
+                    """,
+                    (
+                        timestamp, timestamp, timestamp, timestamp,
+                        Jsonb({
+                            "private_opt_in_required": True,
+                            "processing": "local_only",
+                            "external_actions_authorized": False,
+                        }),
+                    ),
+                )
+                accepted = cur.fetchone() is not None
+            conn.commit()
+        return accepted
+
     def claim_due(
         self,
         *,
@@ -252,14 +296,20 @@ class PostgresWorkerTaskRepository:
         lease_seconds: int,
         limit: int,
         now: datetime | None = None,
+        task_id: str | None = None,
     ) -> list[WorkerTask]:
         owner = str(owner or "").strip()
         if not owner or len(owner) > 200:
             raise ValueError("worker owner is required and must be <= 200 characters")
         if lease_seconds <= 0 or limit <= 0:
             raise ValueError("lease_seconds and limit must be positive")
+        if task_id is not None and (
+            not isinstance(task_id, str) or not task_id or len(task_id) > 200
+        ):
+            raise ValueError("target worker task_id is invalid")
         timestamp = _aware(now)
         lease_until = timestamp + timedelta(seconds=int(lease_seconds))
+        task_filter = "AND task_id = %s" if task_id is not None else ""
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -270,6 +320,7 @@ class PostgresWorkerTaskRepository:
                         WHERE enabled = true
                           AND next_run_at <= %s
                           AND (lease_until IS NULL OR lease_until <= %s)
+                          {task_filter}
                         -- The first AutoApply boot previously ran the
                         -- alphabetically earlier application:draft task
                         -- BEFORE source:* pollers. No fresh jobs existed,
@@ -295,6 +346,7 @@ class PostgresWorkerTaskRepository:
                     (
                         timestamp,
                         timestamp,
+                        *((task_id,) if task_id is not None else ()),
                         int(limit),
                         owner,
                         lease_until,
@@ -438,7 +490,11 @@ class ContinuousWorker:
             self.repository.register(spec, now=now)
         self.repository.disable_absent(active)
 
-    def run_once(self, *, now: datetime | None = None) -> WorkerCycle:
+    def run_once(
+        self, *, now: datetime | None = None, only_task_id: str | None = None
+    ) -> WorkerCycle:
+        if only_task_id is not None and only_task_id not in self.specs:
+            raise ValueError("target worker task is not registered")
         fixed_now = _aware(now) if now is not None else None
         self.synchronize(now=fixed_now)
         results: list[dict[str, Any]] = []
@@ -451,6 +507,7 @@ class ContinuousWorker:
                 lease_seconds=self.lease_seconds,
                 limit=1,
                 now=fixed_now,
+                **({"task_id": only_task_id} if only_task_id is not None else {}),
             )
             if not claimed:
                 break
