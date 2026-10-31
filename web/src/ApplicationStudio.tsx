@@ -1426,7 +1426,9 @@ export default function ApplicationStudio(props: {
                 (!dirty && selected.revision > 1) || !!browserReceipt ||
                 !!partnerReceipt || employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void save()}><Save size={16}/>{busy ? "Working…" :
-                !dirty && selected.revision === 1 ? "Confirm CV & letter review" : "Save changes"}</button>
+                !dirty && selected.revision === 1 && !browserReceipt && !partnerReceipt &&
+                employerAttempt?.previous_attempt_reserved !== true
+                  ? "Confirm CV & letter review" : "Save changes"}</button>
             <button type="button" className="navy-btn" disabled={busy ||
                 !!partnerReceipt ||
                 (employerAttempt?.previous_attempt_reserved === true && !browserReceipt)}
