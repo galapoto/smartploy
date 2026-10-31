@@ -1195,6 +1195,7 @@ def _partner_review(api,route,headers,packet):
         "expected_revision":packet["revision"],
         "expected_document_sha256":packet["document_sha256"],
         "expected_cv_pdf_sha256":packet["cv_pdf_sha256"],
+        "expected_fields_sha256":packet["approved_fields_sha256"],
         "confirm_reviewed_application":True,
         "acknowledge_manual_only":True,
     }
