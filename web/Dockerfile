@@ -1,5 +1,8 @@
 FROM node:22-alpine AS build
 ARG APP_VERSION=dev
+# Embed only the public 12-character build identity in the compiled browser bundle.
+# The later release.json marker independently proves what Caddy is serving.
+ENV VITE_SMARTPLOY_BUILD_REVISION=${APP_VERSION}
 
 # Build-only Python stdlib creates a reproducible first-party Chrome extension
 # ZIP from exactly the same reviewed sources as the API/Node/Chromium tests.
