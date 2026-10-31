@@ -283,6 +283,7 @@ class EmployerReviewIntentPayload(BaseModel):
     expected_revision: int = Field(ge=1)
     expected_document_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_cv_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_fields_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     confirm_reviewed_application: StrictBool
     acknowledge_manual_only: StrictBool
 
@@ -1905,6 +1906,21 @@ def create_app(
             "expires_at": "", "automatic_employer_submit_authorized": False,
             "external_actions_performed": False, "browser_grant_issued": False,
         }
+        if item is not None and status["review_recorded"]:
+            tenant, _ = tenant_context(request)
+            try:
+                packet = make_browser_packet(
+                    workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+                )
+            except HandoffError:
+                packet = {}
+            if not item.matches_current_packet(
+                packet, workspace_id=workspace_id, revision=workspace.revision,
+            ):
+                status = {
+                    **status, "review_recorded": False,
+                    "review_state": "stale", "expires_at": "",
+                }
         return JSONResponse(
             status, headers={"Cache-Control": "private, no-store", "Pragma": "no-cache"},
         )
@@ -1940,8 +1956,9 @@ def create_app(
         if (
             packet["document_sha256"] != payload.expected_document_sha256
             or packet["cv_pdf_sha256"] != payload.expected_cv_pdf_sha256
+            or packet["approved_fields_sha256"] != payload.expected_fields_sha256
         ):
-            raise HTTPException(status_code=409, detail="Reviewed CV/document hashes changed")
+            raise HTTPException(status_code=409, detail="Reviewed CV, contact or document hashes changed")
         try:
             item, fresh = repo.prepare(
                 binding, workspace_id=workspace_id,
@@ -1950,6 +1967,7 @@ def create_app(
                 expected_job_fingerprint=workspace.job_fingerprint,
                 expected_document_sha256=packet["document_sha256"],
                 expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                expected_fields_sha256=packet["approved_fields_sha256"],
                 explicit_user_review=True, acknowledge_no_automatic_submit=True,
             )
         except EmployerReviewIntentDenied as exc:
@@ -2015,15 +2033,26 @@ def create_app(
             raise HTTPException(
                 status_code=503, detail="Employer action readiness unavailable"
             ) from exc
+        tenant, _ = tenant_context(request)
+        try:
+            packet = make_browser_packet(
+                workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+            )
+        except HandoffError:
+            packet = {}
         reviewed = bool(
-            review and review.public_status(
-                workspace_id=workspace_id, revision=workspace.revision
-            )["review_recorded"]
+            review and review.matches_current_packet(
+                packet, workspace_id=workspace_id, revision=workspace.revision,
+            )
         )
         final_approved = bool(
-            approval and approval.public_status(
-                workspace_id=workspace_id, revision=workspace.revision
+            approval and packet
+            and approval.public_status(
+                workspace_id=workspace_id, revision=workspace.revision,
             )["approval_recorded"]
+            and approval.document_sha256 == packet.get("document_sha256")
+            and approval.cv_pdf_sha256 == packet.get("cv_pdf_sha256")
+            and approval.approved_fields_sha256 == packet.get("approved_fields_sha256")
         )
         reasons: list[str] = []
         if not policy["operator_permission_reviewed"]:
@@ -2102,11 +2131,6 @@ def create_app(
             raise HTTPException(
                 status_code=503, detail="Partner-readiness lookup unavailable"
             ) from exc
-        reviewed = bool(
-            review and review.public_status(
-                workspace_id=workspace_id, revision=workspace.revision
-            )["review_recorded"]
-        )
         packet = None
         try:
             packet = make_browser_packet(
@@ -2114,6 +2138,12 @@ def create_app(
             )
         except HandoffError:
             pass
+        reviewed = bool(
+            review and packet is not None
+            and review.matches_current_packet(
+                packet, workspace_id=workspace_id, revision=workspace.revision,
+            )
+        )
         current = packet is not None
         authorized = bool(
             config["partner_api_configured"] and rights["operator_permission_reviewed"]
@@ -2523,6 +2553,7 @@ def create_app(
                 expected_job_fingerprint=workspace.job_fingerprint,
                 expected_document_sha256=packet["document_sha256"],
                 expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
+                expected_fields_sha256=packet["approved_fields_sha256"],
             )
         except EmployerReviewIntentDenied as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
