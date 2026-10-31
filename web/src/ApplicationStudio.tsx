@@ -467,10 +467,10 @@ export default function ApplicationStudio(props: {
       setMessage(proposal.complete === false
         ? "Letter prose inserted, but it needs more confirmed information: " +
           (proposal.missing_information || []).join(" ") +
-          " Review the wording and click Save changes. Nothing was sent."
+          " Review the wording and click Save changes. Nothing was sent to an employer."
         : (language === "fi" ? "Finnish" : "English") +
           " cover letter generated as complete, editable prose. Review each claim, " +
-          "personalize if needed, and click Save changes. Nothing was sent."
+          "personalize if needed, and click Save changes. Nothing was sent to an employer."
       );
     } catch (exc) {
       reportActionError(exc, "Unable to create a private evidence-backed draft.");

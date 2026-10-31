@@ -924,3 +924,34 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .studio-letter-language > span { color: #52718f;
   font-size: 11px; font-weight: 700; margin-right: 2px; }
 .studio-letter-language button { min-width: 95px; }
+
+
+/* SP78 premium working-document foundation from redesign paper §§18-19.
+   Keep existing site design while restoring readable real editing text.
+   This explicit final override also fixes the legacy 11px mobile rule. */
+.studio-document textarea {
+  font-size: 1rem;
+  line-height: 1.5;
+  min-height: 18rem;
+  padding: 1rem 1.125rem;
+  color: #101418;
+  background: #ffffff;
+  border-color: #7a8982;
+}
+.studio-document textarea:focus-visible {
+  outline: 3px solid #1457c6;
+  outline-offset: 2px;
+}
+.studio-document-head strong {
+  font-size: 1rem;
+}
+.studio-document-head span,
+.studio-document small,
+.studio-letter-language > span {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #52615b;
+}
+.studio-letter-language > button {
+  min-height: 44px;
+}

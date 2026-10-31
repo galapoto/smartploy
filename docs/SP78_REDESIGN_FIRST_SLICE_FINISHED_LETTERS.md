@@ -37,3 +37,7 @@ There is no master-CV structured editor, new employer route, batch-submit author
 - Existing browser final action tests and frontend editor tests must remain green.
 - CV DOCX import: an extracted CV over 30,000 characters fails visibly rather than silently losing content.
 - Exact PR-head 5 GitHub checks, independent review, post-merge main checks, ObumDelivery/Woodpecker qualification, pinned OVH deployment, and signed-in acceptance are **separate** steps. No claim of deployment or live employer submission is made by a source commit.
+
+## SP78 visual-token adoption
+
+The existing document editor now uses 16 px base text, 1.5 line height, clear 14 px supporting copy, 44 px letter-action targets and a high-contrast focus ring across mobile and desktop. These are targeted typography/readability upgrades, not a claim of completed full-site token migration. The existing color scheme outside the document workspace remains unchanged pending coherent design-system rollout.
