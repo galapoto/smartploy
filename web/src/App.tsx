@@ -1161,6 +1161,7 @@ export default function App() {
   </aside>;
 
   return <div className="smartploy-app">
+    <a className="skip-to-content" href="#smartploy-main">Skip to main content</a>
     <input ref={uploadRef} type="file" className="visually-hidden" aria-label="Select CV to upload" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => void onCVUpload(event)} />
     <button className={cx("sidebar-scrim", mobileNav && "visible")} type="button" onClick={() => setMobileNav(false)} aria-label="Close navigation" />
     <aside className={cx("sidebar", mobileNav && "open")}>
@@ -1188,7 +1189,7 @@ export default function App() {
           <span className="avatar header-avatar" title={session?.email || "Your account"}>{avatar}</span>
         </div>
       </header>
-      <main className="content">
+      <main className="content" id="smartploy-main" tabIndex={-1}>
         {notice ? <div className="toast-notice" role="status"><Activity size={16} /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X size={17} /></button></div> : null}
         {error ? <div className="toast-notice error" role="alert"><AlertCircle size={16} /><span>{error}</span><button type="button" onClick={() => void load()} aria-label="Retry"><RefreshCw size={17} /></button></div> : null}
         {page === "dashboard" ? <>
