@@ -58,7 +58,8 @@ from .browser_receipt_storage import (
 from .local_drafting import LocalDraftClient, LocalDraftError, LocalDraftSettings
 from .cv_import import CVImportError, parse_cv
 from .cv_job_matching import cv_job_matches
-from .cv_storage import MemoryCVRepository, PostgresCVRepository
+from .cv_storage import CVRevisionConflict, MemoryCVRepository, PostgresCVRepository
+from .cv_editor import render_editor_cv
 from .profile import FACT_TYPES, ProfileFact
 from .identity import (
     AuthenticatedPrincipal,
@@ -184,6 +185,13 @@ class CVUploadPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     filename: str = Field(min_length=1, max_length=160)
     content_base64: str = Field(min_length=24, max_length=7_000_000)
+
+
+class CVEditorPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_sha256: str = Field(pattern=r"^(?:[0-9a-f]{64})?$")
+    text: str = Field(min_length=20, max_length=30000)
+    confirmed_replace: StrictBool
 
 
 class PrivateSavedJobPayload(BaseModel):
@@ -960,6 +968,97 @@ def create_app(
         tenant, _ = tenant_context(request)
         item = app.state.cv_repository.get(tenant.profile_repository.profile_id)
         return item.summary() if item else {"present": False}
+
+    @app.get("/api/v1/profile/cv/editor")
+    def get_cv_editor(request: Request) -> JSONResponse:
+        """Full text only to verified owner; no AI processing or employer I/O."""
+        tenant, _ = tenant_context(request)
+        pid = tenant.profile_repository.profile_id
+        stored = app.state.cv_repository.get(pid)
+        return JSONResponse({
+            "present": stored is not None,
+            "sha256": stored.digest if stored else "",
+            "text": stored.text if stored else "",
+            "filename": stored.filename if stored else "",
+            "created_by_editor": (
+                stored.filename == "smartploy-master-cv.docx" if stored else False
+            ),
+            "history": app.state.cv_repository.history(pid),
+            "approved_profile_facts_added": 0,
+            "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
+
+    @app.put("/api/v1/profile/cv/editor")
+    def save_cv_editor(
+        payload: CVEditorPayload, request: Request,
+    ) -> JSONResponse:
+        """CAS save of the active CV; preserve original/version for recovery."""
+        tenant, binding = tenant_context(request)
+        if payload.confirmed_replace is not True:
+            raise HTTPException(
+                status_code=422, detail="Confirm that this text becomes your active CV",
+            )
+        if binding is None and authentication.mode != "disabled":
+            raise HTTPException(status_code=403, detail="Verified account required")
+        if binding is not None and (
+            request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Origin", "") != public_origin
+            or request.headers.get("Sec-Fetch-Site", "").casefold()
+               not in {"", "same-origin", "none"}
+        ):
+            raise HTTPException(status_code=403, detail="Verified same-origin account action required")
+        pid = tenant.profile_repository.profile_id
+        try:
+            saved = app.state.cv_repository.save_editor_text(
+                pid, expected_sha256=payload.expected_sha256, text=payload.text,
+            )
+        except CVRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return JSONResponse({
+            "cv": saved.summary(),
+            "history": app.state.cv_repository.history(pid),
+            "approved_profile_facts_added": 0,
+            "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
+
+    @app.get("/api/v1/profile/cv/editor/download/{file_format}")
+    def download_editor_cv(file_format: str, request: Request) -> Response:
+        tenant, _ = tenant_context(request)
+        stored = app.state.cv_repository.get(tenant.profile_repository.profile_id)
+        if stored is None:
+            raise HTTPException(status_code=404, detail="No CV available")
+        try:
+            data = render_editor_cv(stored.text, file_format=file_format)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        media_type = (
+            "application/pdf" if file_format == "pdf"
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        return Response(content=data, media_type=media_type, headers={
+            "Content-Disposition":
+                'attachment; filename="smartploy-master-cv.' + file_format + '"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        })
+
+    @app.get("/api/v1/profile/cv/history/{digest}")
+    def download_archived_cv(digest: str, request: Request) -> Response:
+        tenant, _ = tenant_context(request)
+        item = app.state.cv_repository.get_archived(
+            tenant.profile_repository.profile_id, digest,
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="Archived CV version not found")
+        ext = "pdf" if item.media_type == "application/pdf" else "docx"
+        return Response(content=item.content, media_type=item.media_type, headers={
+            "Content-Disposition":
+                'attachment; filename="smartploy-previous-cv.' + ext + '"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        })
 
     @app.get("/api/v1/profile/cv/matches")
     def cv_first_job_matches(

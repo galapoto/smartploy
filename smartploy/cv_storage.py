@@ -34,6 +34,7 @@ class StoredCV:
             "text_preview": self.text[:6000],
             "text_extracted": bool(self.text.strip()),
             "updated_at": self.updated_at,
+            "created_by_editor": self.filename == "smartploy-master-cv.docx",
         }
 
 
