@@ -579,3 +579,25 @@ def test_sp60_keha_qa_access_cannot_enable_production_p67_polling():
     assert "--execute" in probe
     assert "production_database_writes" in probe
     assert "employer_applications_sent" in probe
+
+
+def test_sp92_auto_draft_restart_reuses_same_scheduler_with_lease_and_no_fake_receipt():
+    source = (ROOT / "scripts/source_worker.py").read_text(encoding="utf-8")
+    schedule = (ROOT / "smartploy/worker_schedule.py").read_text(encoding="utf-8")
+    attestation = (ROOT / "smartploy/auto_draft_runtime_acceptance.py").read_text(
+        encoding="utf-8"
+    )
+    assert "if not args.once and not stop.is_set() and any(" in source
+    assert source.index("signal.signal(signal.SIGINT, request_stop)") < source.index("scheduler.request_private_auto_draft_startup()")
+    assert "scheduler.request_private_auto_draft_startup()" in source
+    assert 'only_task_id="application:auto-draft-shortlist"' in source
+    assert '"candidate_drafts_created_verified": False' in source
+    assert '"external_actions_authorized": False' in source
+    assert "def request_private_auto_draft_startup(" in schedule
+    assert "AND (lease_until IS NULL OR lease_until <= %s)" in schedule
+    assert "AND metadata @> %s" in schedule
+    assert "last_completed_at < %s" in schedule
+    assert "AND last_status = 'healthy'" in schedule
+    assert "FOR UPDATE SKIP LOCKED" in schedule
+    assert "AUTO_DRAFT_FRESH_RUN_MISSING" in attestation
+    assert 'if require_run and not healthy:' in attestation
