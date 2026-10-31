@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import * as api from "./api";
 import MasterCVEditor from "./MasterCVEditor";
 import { parseStructuredCV } from "./structured_cv";
-import type { CVDocument, CVEditorDocument, CVEditorSaved } from "./types";
+import type { CVDocument, CVEditorDocument, CVEditorSaved, CVEditorRestored } from "./types";
 
 vi.mock("./api", () => ({
   getCVEditor: vi.fn(),
@@ -53,13 +53,26 @@ afterEach(() => {
 function start(options?: {
   cv?: CVDocument; userId?: string;
   onSave?: (text: string, sha: string) => Promise<CVEditorSaved>;
+  onRestore?: (digest: string, sha: string) => Promise<CVEditorRestored>;
   onSaved?: (cv: CVDocument) => void;
 }) {
   const onSave = vi.fn(options?.onSave ?? (async (text: string) => savedResponse(text)));
+  const onRestore = vi.fn(options?.onRestore ?? (async (digest: string) => ({
+    cv: {...active, sha256: digest},
+    text: original,
+    restored_sha256: digest,
+    history: [{
+      sha256: NEXT, filename: "newer.docx", media_type: active.media_type!,
+      size_bytes: 1200, archived: true as const, archived_at: "2026-10-31T09:00:00Z",
+    }],
+    employer_actions_performed: 0 as const,
+    approved_profile_facts_added: 0 as const,
+  })));
   const onSaved = vi.fn(options?.onSaved ?? (() => {}));
   render(<MasterCVEditor cv={options?.cv || active}
-    expectedUserId={options?.userId || USER} onSave={onSave} onSaved={onSaved}/>);
-  return {onSave, onSaved};
+    expectedUserId={options?.userId || USER}
+    onSave={onSave} onRestore={onRestore} onSaved={onSaved}/>);
+  return {onSave, onRestore, onSaved};
 }
 
 describe("SP79 owner-private CV creator/editor", () => {
@@ -202,6 +215,69 @@ describe("SP79 owner-private CV creator/editor", () => {
     fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect((editor as HTMLTextAreaElement).value).toContain("manually edited");
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP82 applicant-controlled exact CV version restore", () => {
+  const archived = [{
+    sha256: HASH, filename: "original.docx", media_type: active.media_type!,
+    size_bytes: 1024, archived: true as const, archived_at: "2026-10-31T06:00:00Z",
+  }];
+
+  it("restores a selected archived CV only after confirmation with current SHA", async () => {
+    const revised = "Newer synthetic CV with verified Power BI and project evidence.";
+    vi.mocked(api.getCVEditor).mockResolvedValue({
+      ...response, sha256: NEXT, text: revised, filename: "newer.docx", history: archived,
+    });
+    const {onSave, onRestore, onSaved} = start({
+      cv: {...active, sha256: NEXT, filename: "newer.docx"},
+    });
+    expect((await screen.findByRole("textbox", {name: "Editable master CV text"}) as HTMLTextAreaElement).value)
+      .toBe(revised);
+    fireEvent.click(screen.getByText(/Previous CV versions/));
+    fireEvent.click(screen.getByRole("button", {name: "Restore version aaaaaaaa"}));
+    await waitFor(() => expect(onRestore).toHaveBeenCalledWith(HASH, NEXT));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(
+      expect.objectContaining({sha256: HASH}),
+    ));
+    expect((screen.getByRole("textbox", {name: "Editable master CV text"}) as HTMLTextAreaElement).value)
+      .toBe(original);
+    expect(screen.getByLabelText("CV preview").textContent).toContain("Python and SQL");
+    expect(screen.getByText(/Previous CV restored as your active document/)).toBeTruthy();
+    expect(screen.getByRole("button", {name: "Restore version bbbbbbbb"})).toBeTruthy();
+    expect(window.confirm).toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("never restores on a declined confirmation, preserving unsaved changes", async () => {
+    vi.mocked(api.getCVEditor).mockResolvedValue({
+      ...response, sha256: NEXT, history: archived,
+    });
+    const {onRestore} = start({cv: {...active, sha256: NEXT}});
+    const editor = await screen.findByRole("textbox", {name: "Editable master CV text"});
+    fireEvent.change(editor, {target: {value: original + " unsaved extra"}});
+    vi.mocked(window.confirm).mockReturnValue(false);
+    fireEvent.click(screen.getByText(/Previous CV versions/));
+    fireEvent.click(screen.getByRole("button", {name: "Restore version aaaaaaaa"}));
+    expect(onRestore).not.toHaveBeenCalled();
+    expect((editor as HTMLTextAreaElement).value).toContain("unsaved extra");
+  });
+
+  it("does not show a false restored version on a rejected revision conflict", async () => {
+    vi.mocked(api.getCVEditor).mockResolvedValue({
+      ...response, sha256: NEXT, history: archived,
+    });
+    const {onSaved} = start({
+      cv: {...active, sha256: NEXT},
+      onRestore: async () => { throw new Error("CV changed in another tab"); },
+    });
+    const editor = await screen.findByRole("textbox", {name: "Editable master CV text"});
+    fireEvent.click(screen.getByText(/Previous CV versions/));
+    fireEvent.click(screen.getByRole("button", {name: "Restore version aaaaaaaa"}));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect((editor as HTMLTextAreaElement).value).toBe(original);
     expect(onSaved).not.toHaveBeenCalled();
   });
 });
