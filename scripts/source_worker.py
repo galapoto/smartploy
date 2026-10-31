@@ -79,13 +79,22 @@ def main() -> int:
     )
     sleep_seconds = _positive_int("SMARTPLOY_WORKER_LOOP_SECONDS", 15)
 
+    stop = Event()
+
+    def request_stop(signum, frame):
+        del signum, frame
+        stop.set()
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+
     # SP92: a container restart must not wait a full persisted 10-minute
     # AutoDraft cadence merely to prove a new worker executed. This uses the
     # ORIGINAL PostgreSQL lease, scheduler and local-only draft runner.
     # The DB nudge is possible only for an already healthy operator-enabled
     # task with exact private metadata and no unexpired lease. On first boot,
     # the ordinary source-first schedule remains unchanged.
-    if not args.once and any(
+    if not args.once and not stop.is_set() and any(
         spec.task_id == "application:auto-draft-shortlist" for spec in specs
     ):
         worker.synchronize()
@@ -111,15 +120,6 @@ def main() -> int:
                 "external_actions_authorized": False,
                 "candidate_drafts_created_verified": False,
             }, sort_keys=True), flush=True)
-
-    stop = Event()
-
-    def request_stop(signum, frame):
-        del signum, frame
-        stop.set()
-
-    signal.signal(signal.SIGTERM, request_stop)
-    signal.signal(signal.SIGINT, request_stop)
 
     while not stop.is_set():
         cycle = worker.run_once()
