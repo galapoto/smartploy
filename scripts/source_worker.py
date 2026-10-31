@@ -85,7 +85,9 @@ def main() -> int:
     # The DB nudge is possible only for an already healthy operator-enabled
     # task with exact private metadata and no unexpired lease. On first boot,
     # the ordinary source-first schedule remains unchanged.
-    if any(spec.task_id == "application:auto-draft-shortlist" for spec in specs):
+    if not args.once and any(
+        spec.task_id == "application:auto-draft-shortlist" for spec in specs
+    ):
         worker.synchronize()
         accelerated = scheduler.request_private_auto_draft_startup()
         if accelerated:
