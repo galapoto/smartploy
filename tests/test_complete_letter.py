@@ -67,7 +67,7 @@ def test_finnish_is_real_letter_without_coaching_inside_the_document():
     result = compose_completed_letter(job(), person(), language="fi")
     assert result.complete
     assert result.text.startswith("Hei rekrytointitiimi,\n\n")
-    assert "Vahvistettua osaamistani" not in result.text or "Python" in result.text
+    assert "Tehtävään liittyvää vahvistettua osaamistani ovat" in result.text
     assert "Python" in result.text and "SQL" in result.text
     assert "Kerro omin sanoin" not in result.text
     assert "[" not in result.text and "•" not in result.text
@@ -98,7 +98,7 @@ def test_missing_name_makes_letter_incomplete_without_inventing_signature():
     result = compose_completed_letter(job(), p, language="en")
     assert result.complete is False
     assert result.text.endswith("Kind regards,")
-    assert "Confirm one full name" in result.missing_information
+    assert any(note.startswith("Confirm one full name") for note in result.missing_information)
 
 
 def test_hostile_posting_cannot_instruct_letter_to_fabricate_experience_or_send():
