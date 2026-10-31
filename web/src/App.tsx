@@ -1251,6 +1251,7 @@ export default function App() {
           {page === "applications" ? <div className="stacked">
             <ApplicationStudio key={accountViewKey} mode={flowMode} focusId={selectedWorkspaceId}
               expectedUserId={session?.user_id || ""} expectedAuthSource={session?.auth_source || ""}
+              onModeChange={setFlowMode}
               onFindJobs={() => navigate("apply")} />
             <section className="panel"><div className="panel-heading"><div><p className="section-kicker">APPLICATION TRACKER</p><h2>Your application pipeline</h2><p>A preparation draft is never counted as submitted.</p></div><span className="subtle-count">{applications.length} records</span></div>
             {applications.length ? <div className="applications-list">{applications.map((item) => <div className="application-list-row" key={item.application_id}><FileText size={20} /><div><strong>{formatState(item.state)}</strong><small>Job {item.canonical_key} · {item.updated_at ? relativeFreshness(item.updated_at) : "Updated time unknown"}</small></div><span className={cx("state-pill", item.has_been_submitted ? "good" : "waiting")}>{item.has_been_submitted ? "Submitted" : "Not submitted"}</span></div>)}</div> :
