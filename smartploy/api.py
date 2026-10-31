@@ -28,7 +28,7 @@ from .auto_draft_shortlist import prepare_profile_shortlist
 from .training_directory import TrainingDirectoryError, load_training_programs
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import (
-    WorkspaceError, WorkspaceRevisionConflict, cover_letter_proposal,
+    WorkspaceError, WorkspaceRevisionConflict,
     new_workspace, render_document,
 )
 from .complete_letter import compose_completed_letter
