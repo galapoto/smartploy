@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from psycopg import connect
 
-from .browser_handoff import _approved_contact, approved_fields_sha256
+from .employer_contact_snapshot import ApprovedContactUnavailable, approved_fields_fingerprint_locked
 from .employer_automation_rights import (
     ACTION, ALLOWED_ACTIONS, ASHBY_API_ACTION, EmployerRightsDenied, approved_employer_rights_locked, employer_job_key,
 )
@@ -25,7 +25,6 @@ from .employer_submit_claim_storage import (
     reserve_employer_claim_locked, verified_employer_submit_preflight,
 )
 from .identity import UserProfileBinding
-from .profile import CandidateProfile, ProfileFact
 
 SHA = re.compile(r"^[a-f0-9]{64}$")
 FINAL_APPROVAL_LIFETIME_SECONDS = 90
@@ -116,35 +115,20 @@ def _request_checks(
 
 
 def _approved_fields_locked(cur, binding: UserProfileBinding, letter: str) -> str:
-    """Reuse approved-contact mapping, but read fresh owner-scoped facts in TX.
-
-    Locks existing rows. A future browser grant must still recheck permission,
-    account and exact fields at the real click boundary.
-    """
-    cur.execute(
-        """SELECT fact_type,value FROM smartploy_profile_facts
-           WHERE profile_id=%s AND approved=true
-           ORDER BY fact_type,value FOR SHARE""",
-        (binding.profile_id,),
-    )
-    facts = tuple(
-        ProfileFact(str(row[0]), str(row[1]), "reviewed-storage", approved=True)
-        for row in cur.fetchall()
-    )
-    approved = _approved_contact(CandidateProfile(binding.profile_id, facts))
-    if (
-        not approved["full_name"]
-        or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", approved["email"])
-    ):
-        raise EmployerFinalActionDenied("Approved applicant name and email are required")
-    return approved_fields_sha256({**approved, "cover_letter": letter[:10000]})
+    """Final-action fields are derived identically to original applicant review."""
+    try:
+        return approved_fields_fingerprint_locked(
+            cur, binding, letter, require_contact=True,
+        )
+    except ApprovedContactUnavailable as exc:
+        raise EmployerFinalActionDenied(str(exc)) from exc
 
 
 def _review_locked(
     cur, binding: UserProfileBinding, *,
     employer_hash: str, workspace_id: str,
     expected_revision: int, expected_doc: str,
-    expected_pdf: str,
+    expected_pdf: str, expected_fields: str,
 ) -> None:
     cur.execute(
         PostgresEmployerReviewIntentRepository._select() + """
@@ -166,8 +150,12 @@ def _review_locked(
         or current.revision != expected_revision
         or current.document_sha256 != expected_doc
         or current.cv_pdf_sha256 != expected_pdf
+        or current.approved_fields_sha256 != expected_fields
+        or not SHA.fullmatch(current.approved_fields_sha256)
     ):
-        raise EmployerFinalActionDenied("Applicant review changed, expired or was cancelled")
+        raise EmployerFinalActionDenied(
+            "Reviewed CV, applicant contact, or approval changed, expired or was cancelled"
+        )
 
 
 class PostgresEmployerFinalActionGate:
@@ -255,6 +243,7 @@ class PostgresEmployerFinalActionGate:
                     cur,binding,employer_hash=employer_hash,
                     workspace_id=workspace_id,expected_revision=expected_revision,
                     expected_doc=doc_hash,expected_pdf=expected_cv_pdf_sha256,
+                    expected_fields=fields_hash,
                 )
                 cur.execute(
                     """SELECT 1 FROM smartploy_employer_submit_claims
@@ -410,6 +399,7 @@ class PostgresEmployerFinalActionGate:
                     cur,binding,employer_hash=employer_hash,workspace_id=workspace_id,
                     expected_revision=expected_revision,
                     expected_doc=doc_hash,expected_pdf=expected_cv_pdf_sha256,
+                    expected_fields=fields_hash,
                 )
                 cur.execute(
                     self._select()+"""
