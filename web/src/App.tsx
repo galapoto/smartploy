@@ -1189,28 +1189,17 @@ export default function App() {
         {notice ? <div className="toast-notice" role="status"><Activity size={16} /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X size={17} /></button></div> : null}
         {error ? <div className="toast-notice error" role="alert"><AlertCircle size={16} /><span>{error}</span><button type="button" onClick={() => void load()} aria-label="Retry"><RefreshCw size={17} /></button></div> : null}
         {page === "dashboard" ? <>
-          <section className="welcome-banner">
-            <div className="welcome-copy"><p className="section-kicker">YOUR NORDIC CAREER WORKSPACE</p><h1>Make your next move.<br /><em>With clarity.</em></h1><p>Discover Finnish opportunities, build a trusted career profile and prepare the next step with SmartPloy.</p></div>
-            <img className="helsinki-art" src="/helsinki-skyline.svg" alt="" />
-            <div className="hero-tag"><span className="flag-finland" aria-hidden="true" /> Built for the Finnish job market</div>
-          </section>
+          {/* Make the actual CV-first application journey the first thing
+              a signed-in applicant sees, not a hero followed by mode cards. */}
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
             cvPresent={cv.present} onUpload={onUploadClick}
             onCreateCV={() => navigate("profile")}/>
-          <div className="flow-home-cv">
-            {cv.present ? <button className="primary-btn" type="button"
-              onClick={() => navigate("apply")}>
-              Continue with my connected CV <ArrowRight size={16}/>
-            </button> : null}
-            <button className="outline-btn" type="button" onClick={onUploadClick}
-              disabled={busyCV}><UploadCloud size={16}/>
-              {busyCV ? "Uploading…" : cv.present ? "Replace your CV" : "Upload your CV"}
-            </button>
-            <button className="outline-btn" type="button" onClick={() => navigate("profile")}>
-              <FileText size={16}/> Manage your CV
-            </button>
-          </div>
+          {cv.present ? <section className="welcome-banner" aria-label="Finnish job discovery">
+            <div className="welcome-copy"><p className="section-kicker">YOUR NORDIC CAREER WORKSPACE</p><h1>Make your next move.<br /><em>With clarity.</em></h1><p>Discover Finnish opportunities, build a trusted career profile and prepare the next step with SmartPloy.</p></div>
+            <img className="helsinki-art" src="/helsinki-skyline.svg" alt="" />
+            <div className="hero-tag"><span className="flag-finland" aria-hidden="true" /> Built for the Finnish job market</div>
+          </section> : null}
           <div className="stats-grid">
             <Stat label={preferences?.mode === "general" ? "Available jobs" : "Preference matches"}
               value={preferences?.mode === "general" ? discovery?.available_count || 0 : discovery?.recommendations.length || 0}
