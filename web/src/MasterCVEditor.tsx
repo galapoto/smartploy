@@ -6,7 +6,9 @@ import {
   cvHasApplicantContent, renderStructuredCV, structuredFromSource,
   type StructuredCV,
 } from "./structured_cv";
-import type { CVDocument, CVEditorArchive, CVEditorDocument, CVEditorSaved } from "./types";
+import type {
+  CVDocument, CVEditorArchive, CVEditorDocument, CVEditorSaved, CVEditorRestored,
+} from "./types";
 
 const HEADINGS = ["PROFILE", "EXPERIENCE", "EDUCATION", "SKILLS", "PROJECTS", "CERTIFICATIONS", "LANGUAGES"];
 const MAX_CHARS = 30000;
@@ -15,9 +17,10 @@ export default function MasterCVEditor(props: {
   cv: CVDocument;
   expectedUserId: string;
   onSave: (text: string, currentSha256: string) => Promise<CVEditorSaved>;
+  onRestore: (digest: string, currentSha256: string) => Promise<CVEditorRestored>;
   onSaved: (cv: CVDocument) => void;
 }) {
-  const { cv, expectedUserId, onSave, onSaved } = props;
+  const { cv, expectedUserId, onSave, onRestore, onSaved } = props;
   const [snapshot, setSnapshot] = useState<CVEditorDocument | null>(null);
   const [text, setText] = useState("");
   const [originalText, setOriginalText] = useState("");
@@ -175,6 +178,59 @@ export default function MasterCVEditor(props: {
     }
   }
 
+  async function restoreArchived(digest: string) {
+    if (!snapshot?.present || loading || saving || inFlight.current ||
+        !/^[a-f0-9]{64}$/.test(digest) || digest === snapshot.sha256) return;
+    if (!window.confirm(
+      "Restore this exact previous CV as your active document? " +
+      "The current saved CV will be preserved in version history. " +
+      (dirty ? "Your unsaved editor changes will be discarded. " : "") +
+      "No employer will be contacted and no qualifications approved."
+    )) return;
+    const current = snapshot;
+    inFlight.current = true;
+    setSaving(true); setError(""); setNotice("");
+    const token = ++requestGeneration.current;
+    try {
+      await verifyAccount();
+      const restored = await onRestore(digest, current.sha256);
+      await verifyAccount();
+      if (token !== requestGeneration.current) return;
+      if (restored.employer_actions_performed !== 0 ||
+          restored.approved_profile_facts_added !== 0 ||
+          !restored.cv.present || restored.cv.sha256 !== digest ||
+          restored.restored_sha256 !== digest ||
+          typeof restored.text !== "string" || !Array.isArray(restored.history)) {
+        throw new Error("Restored CV response did not pass verification. Reload to inspect your CV.");
+      }
+      const fresh: CVEditorDocument = {
+        present: true,
+        sha256: digest,
+        text: restored.text,
+        filename: restored.cv.filename || "restored-cv",
+        created_by_editor: restored.cv.created_by_editor === true,
+        history: restored.history,
+        employer_actions_performed: 0,
+        approved_profile_facts_added: 0,
+      };
+      setSnapshot(fresh);
+      setText(fresh.text);
+      setOriginalText(fresh.text);
+      setStructured(null);
+      setMode("text");
+      setConversionNote("");
+      onSaved(restored.cv);
+      setNotice("Previous CV restored as your active document. The newer version remains in history.");
+    } catch (exc) {
+      if (token === requestGeneration.current) {
+        setError(exc instanceof Error ? exc.message : "Could not restore the selected CV.");
+      }
+    } finally {
+      inFlight.current = false;
+      if (token === requestGeneration.current) setSaving(false);
+    }
+  }
+
   const history: CVEditorArchive[] = snapshot?.history ?? [];
   return <section className="master-cv-editor panel" aria-label="Master CV editor">
     <div className="panel-heading">
@@ -269,6 +325,12 @@ export default function MasterCVEditor(props: {
             <a href={"/api/v1/profile/cv/history/" + encodeURIComponent(item.sha256)}>
               <Download size={14}/> Download previous version
             </a>
+            <button type="button" className="outline-btn compact"
+              disabled={saving || !snapshot.present}
+              aria-label={"Restore version " + item.sha256.slice(0, 8)}
+              onClick={() => void restoreArchived(item.sha256)}>
+              <History size={14}/> Restore version
+            </button>
           </li>
         ))}</ul>
       </details> : null}
