@@ -1354,10 +1354,17 @@ test("SP107: exact saved PDFs are previewable without employer submission or sta
   await expect(cvPreview).toHaveAttribute("target", "_blank");
   await expect(cvPreview).toHaveAttribute("rel", "noopener noreferrer");
   await expect(cvPreview).toHaveAttribute("href", /\/preview\/cv\/pdf\?expected_revision=1$/);
-  const first = await page.request.get(await cvPreview.getAttribute("href") as string);
-  expect(first.status()).toBe(200);
-  expect(first.headers()["content-type"]).toContain("application/pdf");
-  expect(first.headers()["content-disposition"]).toContain("inline");
+  // Browser-context fetch exercises the installed account-scoped synthetic
+  // page route. Playwright's separate page.request API bypasses page.route.
+  const previewRequest = async (url: string) => page.evaluate(async (href) => {
+    const result = await fetch(href, { credentials: "same-origin", cache: "no-store" });
+    return {status: result.status, media: result.headers.get("content-type"),
+      disposition: result.headers.get("content-disposition")};
+  }, url);
+  const first = await previewRequest((await cvPreview.getAttribute("href"))!);
+  expect(first.status).toBe(200);
+  expect(first.media).toContain("application/pdf");
+  expect(first.disposition).toContain("inline");
 
   const editor = page.getByRole("textbox", {name: "Editable cover letter text"});
   await editor.fill("Revised applicant-owned complete letter text for a synthetic employer.");
@@ -1369,12 +1376,12 @@ test("SP107: exact saved PDFs are previewable without employer submission or sta
   await page.getByRole("button", {name: /^Save changes$/}).click();
   await expect(cvPreview).toHaveAttribute("href", /\/preview\/cv\/pdf\?expected_revision=2$/);
   await expect(letterPreview).toHaveAttribute("href", /\/preview\/letter\/pdf\?expected_revision=2$/);
-  const latest = await page.request.get(await letterPreview.getAttribute("href") as string);
-  expect(latest.status()).toBe(200);
-  const stale = await page.request.get(
-    (await cvPreview.getAttribute("href") as string).replace("expected_revision=2", "expected_revision=1")
+  const latest = await previewRequest((await letterPreview.getAttribute("href"))!);
+  expect(latest.status).toBe(200);
+  const stale = await previewRequest(
+    (await cvPreview.getAttribute("href"))!.replace("expected_revision=2", "expected_revision=1")
   );
-  expect(stale.status()).toBe(409);
+  expect(stale.status).toBe(409);
   expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
   expect(state.privateWorkspaces[state.userId][0].revision).toBe(2);
   expect(state.privateWorkspaces[state.userId][0].status).toBe("draft");
