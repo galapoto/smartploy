@@ -1764,3 +1764,36 @@ describe("first opt-in creates private IT applications immediately", () => {
     expect(screen.queryByTestId("application-editor")).toBeNull();
   });
 });
+
+
+describe("SP97: AI writing tools have an honest, working CV-first entry", () => {
+  it("opens the correct CV gate without pretending an unavailable model is mandatory", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CV & AI tools" }));
+    expect(screen.getByLabelText("Private AI writing readiness").textContent)
+      .toContain("Complete English/Finnish letters from approved career evidence");
+    const ai = screen.getByRole("button", { name: /AI writing assistant/i });
+    expect(ai).toBeTruthy();
+    fireEvent.click(ai);
+    expect(screen.getByText(/Step 1: upload or create your CV/i)).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Choose application method" })).toBeTruthy();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("advertises actual private model readiness even if the separate ObumAI gateway is unconfigured", async () => {
+    vi.mocked(api.getLocalAIStatus).mockResolvedValue({
+      configured: true, ready: true, provider: "local_obumai_ollama",
+      model: "synthetic-ready-model", external_ai_forwarding: false,
+      failure_category: "ready",
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CV & AI tools" }));
+    expect(await screen.findByText("Private local writing model is available")).toBeTruthy();
+    const status = screen.getByLabelText("Private AI writing readiness");
+    expect(status.textContent).toContain("SmartPloy's private Ollama writing model");
+    expect(status.textContent).toContain("ObumAI service integration is not configured");
+  });
+});

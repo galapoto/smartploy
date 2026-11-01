@@ -20,6 +20,7 @@ import ApplicationAgentInbox from "./ApplicationAgentInbox";
 import ApplicationAttemptAudit from "./ApplicationAttemptAudit";
 import AuthorizedAutoApplyBatch from "./AuthorizedAutoApplyBatch";
 import DocumentCoach from "./DocumentCoach";
+import DocumentComparison from "./DocumentComparison";
 import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import { applicationNextStep } from "./applicationNextStep";
@@ -35,6 +36,22 @@ class StudioSelectionChanged extends Error {}
 // A draft's identity is its workspace ID, revision, AND the viewer's
 // selection epoch. Switching away and back must not resurrect late results.
 type DraftTicket = { key: string; epoch: number };
+type EvidenceLetterPreview = {
+  key: string;
+  language: "fi" | "en";
+  text: string;
+  complete: boolean;
+  missingInformation: string[];
+  reviewNotes: string[];
+};
+type DocumentUndo = {
+  key: string;
+  kind: "private AI" | "letter proposal";
+  beforeCV: string;
+  beforeLetter: string;
+  afterCV: string;
+  afterLetter: string;
+};
 
 const safePostingLink = safeExternalJobUrl;
 
@@ -89,6 +106,8 @@ export default function ApplicationStudio(props: {
   const [letterBusy, setLetterBusy] = useState(false);
   const [aiStatus, setAIStatus] = useState<LocalAIStatus | null>(null);
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
+  const [letterProposal, setLetterProposal] = useState<EvidenceLetterPreview | null>(null);
+  const [documentUndo, setDocumentUndo] = useState<DocumentUndo | null>(null);
   const [handoff, setHandoff] = useState<BrowserHandoffReadiness | null>(null);
   const [employerAttempt, setEmployerAttempt] = useState<EmployerAttemptState | null>(null);
   const [finalReview, setFinalReview] = useState<EmployerReviewIntentState | null>(null);
@@ -111,6 +130,8 @@ export default function ApplicationStudio(props: {
   const accountBlockedRef = useRef(false);
   const reloadGenerationRef = useRef(0);
   const selectedDraftRef = useRef<DraftTicket>({ key: "", epoch: 0 });
+  // A private read must never commit stale text over local keystrokes made while awaiting identity.
+  const editEpochRef = useRef(0);
   const currentSelectedId = useRef(props.focusId);
   useEffect(() => { currentSelectedId.current = selectedId; }, [selectedId]);
 
@@ -132,8 +153,10 @@ export default function ApplicationStudio(props: {
     accountBlockedRef.current = true;
     ++reloadGenerationRef.current;
     ++selectedDraftRef.current.epoch;
+    ++editEpochRef.current;
     setWorkspaces([]); setSelectedId("");
     setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
+    setLetterProposal(null); setDocumentUndo(null);
     setHandoff(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
     setPartnerReadiness(null); setPartnerReceipt(null); setPartnerBusy(false); setHandoffPacketText("");
     setBrowserReceipt(null); setReceiptOpen(false); setReceiptInput("");
@@ -272,8 +295,10 @@ export default function ApplicationStudio(props: {
     ]) : "";
     if (selectedDraftRef.current.key !== key) {
       selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
+      ++editEpochRef.current;
       setBusy(false); setAIBusy(false); setLetterBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
       setAISuggestion(null);
+      setLetterProposal(null); setDocumentUndo(null);
       setCvText(selected?.cv_text || "");
       setLetterText(selected?.cover_letter_text || "");
       setHandoffPacketText(""); setFinalReview(null); setFinalAction(null);
@@ -440,6 +465,7 @@ export default function ApplicationStudio(props: {
       ), ticket);
       if (!isCurrentDraft(ticket)) return;
       updateItem(result.workspace);
+      setDocumentUndo(null); setLetterProposal(null);
       setMessage("Your edits were saved. Downloaded documents will contain this version.");
     } catch (exc) {
       reportActionError(exc, "Draft could not be saved.");
@@ -451,15 +477,15 @@ export default function ApplicationStudio(props: {
         aiBusy || !!browserReceipt || !!partnerReceipt ||
         employerAttempt?.previous_attempt_reserved) return;
     if (dirty && !window.confirm(
-      "Replace your current unsaved cover-letter changes with a new " +
-      (language === "fi" ? "Finnish" : "English") +
-      " draft? Unsaved CV edits will remain in the editor, but neither " +
-      "document will be saved automatically."
+      "Generate a separate " + (language === "fi" ? "Finnish" : "English") +
+      " letter preview from your approved career facts? Your unsaved CV and " +
+      "letter edits will stay unchanged. You decide whether to use the proposal."
     )) return;
     const ticket = captureDraft(selected);
+    // Any older acceptance waiting for identity verification is now superseded.
+    ++editEpochRef.current;
     setLetterBusy(true); setError(""); setMessage("");
     try {
-      // Reuse the same account- and saved-revision checks that guard edits.
       const proposal = await runPrivateAction(
         () => proposeEvidenceLetter(
           selected.workspace_id, selected.revision, language,
@@ -470,23 +496,78 @@ export default function ApplicationStudio(props: {
       if (proposal.workspace_revision !== selected.revision ||
           !proposal.review_required || proposal.saved ||
           proposal.employer_contacts !== 0 ||
-          proposal.external_actions_performed !== 0) {
-        throw new Error("The private cover-letter proposal was not safe to use");
+          proposal.external_actions_performed !== 0 ||
+          typeof proposal.cover_letter !== "string" ||
+          !proposal.cover_letter.trim() ||
+          proposal.cover_letter.length > 10000) {
+        throw new Error("The private cover-letter proposal was not safe to preview");
       }
-      setLetterText(proposal.cover_letter);
-      setMessage(proposal.complete === false
-        ? "Letter prose inserted, but it needs more confirmed information: " +
-          (proposal.missing_information || []).join(" ") +
-          " Review the wording and click Save changes. Nothing was sent to an employer."
-        : (language === "fi" ? "Finnish" : "English") +
-          " cover letter generated as complete, editable prose. Review each claim, " +
-          "personalize if needed, and click Save changes. Nothing was sent to an employer."
-      );
+      setLetterProposal({
+        key: ticket.key,
+        language,
+        text: proposal.cover_letter,
+        complete: proposal.complete !== false,
+        missingInformation: proposal.missing_information || [],
+        reviewNotes: proposal.review_notes || [],
+      });
+      setMessage((language === "fi" ? "Finnish" : "English") +
+        " letter proposal ready for comparison. Your current CV and cover " +
+        "letter were NOT changed. Inspect the preview and explicitly use it " +
+        "only if the facts are correct; no employer was contacted.");
     } catch (exc) {
-      reportActionError(exc, "Unable to create a private evidence-backed draft.");
+      reportActionError(exc, "Unable to create a private evidence-backed proposal.");
     } finally {
-      setLetterBusy(false);
+      if (isCurrentDraft(ticket)) setLetterBusy(false);
     }
+  }
+
+  async function useLetterProposal() {
+    if (!selected || !letterProposal || selected.status !== "draft" ||
+        busy || aiBusy || letterBusy || !!browserReceipt || !!partnerReceipt ||
+        employerAttempt?.previous_attempt_reserved) return;
+    const ticket = captureDraft(selected);
+    const editEpoch = editEpochRef.current;
+    if (letterProposal.key !== ticket.key) return;
+    if (letterText !== selected.cover_letter_text && !window.confirm(
+      "Replace your UNSAVED cover-letter edits with this reviewed proposal? " +
+      "You can undo the replacement before saving. Your CV will not change."
+    )) return;
+    if (!letterProposal.complete && !window.confirm(
+      "Some information in this letter still needs confirmation: " +
+      letterProposal.missingInformation.join(" ") +
+      " Continue with the editable letter and review every claim?"
+    )) return;
+    try { await verifyAccount(); } catch { return; }
+    if (!isCurrentDraft(ticket) || editEpochRef.current !== editEpoch) return;
+    const proposed = letterProposal.text;
+    ++editEpochRef.current;
+    setDocumentUndo({
+      key: ticket.key, kind: "letter proposal",
+      beforeCV: cvText, beforeLetter: letterText,
+      afterCV: cvText, afterLetter: proposed,
+    });
+    setLetterText(proposed);
+    setLetterProposal(null);
+    setMessage("Reviewed letter inserted as an UNSAVED edit. Verify each claim " +
+      "and save deliberately. You can undo this insertion before saving.");
+  }
+
+  async function undoGeneratedEdit() {
+    if (!selected || !documentUndo || selected.status !== "draft" ||
+        busy || aiBusy || letterBusy || !!browserReceipt || !!partnerReceipt ||
+        employerAttempt?.previous_attempt_reserved) return;
+    const ticket = captureDraft(selected);
+    const editEpoch = editEpochRef.current;
+    if (documentUndo.key !== ticket.key ||
+        documentUndo.afterCV !== cvText ||
+        documentUndo.afterLetter !== letterText) return;
+    try { await verifyAccount(); } catch { return; }
+    if (!isCurrentDraft(ticket) || editEpochRef.current !== editEpoch) return;
+    ++editEpochRef.current;
+    setCvText(documentUndo.beforeCV);
+    setLetterText(documentUndo.beforeLetter);
+    setDocumentUndo(null);
+    setMessage("Last generated edit undone. Your prior unsaved wording is restored. Nothing was sent.");
   }
 
   async function askLocalAI() {
@@ -500,6 +581,7 @@ export default function ApplicationStudio(props: {
     );
     if (!ok) return;
     const ticket = captureDraft(selected);
+    ++editEpochRef.current;
     setAIBusy(true); setError(""); setMessage(""); setAISuggestion(null);
     try {
       const response = await runPrivateAction(() =>
@@ -507,8 +589,16 @@ export default function ApplicationStudio(props: {
         ticket
       );
       if (!isCurrentDraft(ticket)) return;
+      if (response.workspace_revision !== selected.revision ||
+          response.suggestion?.requires_owner_review !== true ||
+          response.suggestion?.external_actions_performed !== false ||
+          response.suggestion?.suggestions_applied !== false ||
+          response.suggestion?.proposal?.schema !== "smartploy.local_draft.v1") {
+        throw new Error("The private AI response did not pass review-only validation");
+      }
       setAISuggestion(response.suggestion);
-      setMessage("Local AI returned draft suggestions. Review them and choose whether to insert them.");
+      setMessage("Local AI returned a private proposal. Compare the current wording " +
+        "before inserting anything. No changes are saved or sent.");
     } catch (exc) {
       reportActionError(exc, "Local AI is currently unavailable.");
     } finally { if (isCurrentDraft(ticket)) setAIBusy(false); }
@@ -532,27 +622,50 @@ export default function ApplicationStudio(props: {
 
   async function insertAISuggestion(target: "both" | "cv" | "letter" = "both") {
     if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt ||
-        employerAttempt?.previous_attempt_reserved) return;
+        partnerReceipt || employerAttempt?.previous_attempt_reserved || busy) return;
     const draft = aiSuggestion.proposal;
     const ticket = captureDraft(selected);
+    const editEpoch = editEpochRef.current;
     const prompt = target === "both"
-      ? "Insert these AI suggestions into your editable CV and cover letter? " +
-        "They may contain mistakes. Nothing is saved or sent until you review and click Save changes."
+      ? "Insert this AI-generated CV summary and REPLACE the current cover letter? " +
+        "Review the comparison first. Neither document is saved or submitted. " +
+        "You can undo before saving."
       : "Insert only the AI-proposed " + (target === "cv" ? "CV summary" : "cover letter") +
-        " for this job? Review every claim before saving. No employer is contacted.";
+        " for this job? Review every claim. The change is unsaved and undoable.";
     if (!window.confirm(prompt)) return;
     try { await verifyAccount(); } catch { return; }
-    if (!isCurrentDraft(ticket)) return;
-    if (target !== "letter") {
-      setCvText((old) =>
-        "TARGET ROLE: " + selected.role_title + " — " + selected.company +
-        "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
-        "\n\n" + old
-      );
+    if (!isCurrentDraft(ticket) || editEpochRef.current !== editEpoch) return;
+
+    // Legacy generated CV summaries are not reliably delimited, and may be
+    // manually edited. Never add a duplicate or silently guess its bounds.
+    if (target !== "letter" &&
+        cvText.includes("PROFILE SUMMARY (review AI wording):")) {
+      setMessage("This CV already contains an AI-written summary. Edit that section " +
+        "yourself rather than stacking another summary. The letter-only action remains available.");
+      return;
     }
-    if (target !== "cv") setLetterText(draft.cover_letter);
+    const nextCV = target === "letter" ? cvText :
+      "TARGET ROLE: " + selected.role_title + " — " + selected.company +
+      "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
+      "\n\n" + cvText;
+    const nextLetter = target === "cv" ? letterText : draft.cover_letter;
+    if (nextCV.length > 30000 || nextLetter.length > 10000 ||
+        (target !== "cv" && !nextLetter.trim())) {
+      setMessage("This AI proposal exceeds the safe document editor limits. " +
+        "Use a shorter version or edit the existing documents manually.");
+      return;
+    }
+    ++editEpochRef.current;
+    setDocumentUndo({
+      key: ticket.key, kind: "private AI",
+      beforeCV: cvText, beforeLetter: letterText,
+      afterCV: nextCV, afterLetter: nextLetter,
+    });
+    if (target !== "letter") setCvText(nextCV);
+    if (target !== "cv") setLetterText(nextLetter);
     setAISuggestion(null);
-    setMessage("Your chosen AI wording is now an unsaved edit. Verify every fact, then Save changes.");
+    setMessage("Your selected AI wording was inserted as an UNSAVED edit. " +
+      "Check every factual claim. You can undo before saving.");
   }
 
   async function copyBrowserPacket() {
@@ -1125,6 +1238,7 @@ export default function ApplicationStudio(props: {
               <small>Record the outcome. Only a verified employer acknowledgment counts as independently submitted.</small></div></li>
           </ol>
           <nav className="studio-journey-links" aria-label="Jump to application step">
+            {selected.status === "draft" ? <a href="#smartploy-ai-writer">AI writing support</a> : null}
             <a href="#smartploy-cv-review">Review CV</a>
             <a href="#smartploy-letter-review">Review letter</a>
             {selected.status === "draft" ?
@@ -1187,10 +1301,10 @@ export default function ApplicationStudio(props: {
           expectedUserId={props.expectedUserId}
           verifyAccount={verifyAccount}
         />
-        <section className="studio-ai-card" aria-label="Optional local AI writing support">
+        <section className="studio-ai-card" id="smartploy-ai-writer" aria-label="Optional local AI writing support">
           <div className="studio-ai-heading">
             <span className="studio-ai-icon"><Sparkles size={19}/></span>
-            <div><strong>ObumAI local writing assistant</strong>
+            <div><strong>SmartPloy private writing assistant</strong>
               <p>{aiStatus?.ready
                 ? "Local model available · review-only suggestions from approved facts"
                 : aiStatus?.configured
@@ -1236,6 +1350,38 @@ export default function ApplicationStudio(props: {
             applied or submitted automatically.
             {dirty ? " Save your document edits before requesting a new private-model suggestion." : ""}
           </p>
+          {letterProposal && letterProposal.key === selectedDraftRef.current.key &&
+            selected.status === "draft" ? <section className="studio-letter-proposal"
+              id="smartploy-letter-proposal" aria-label="Review generated cover letter">
+            <strong>{letterProposal.language === "fi" ? "Finnish" : "English"} cover letter ready · review before use</strong>
+            <p>This is complete, editable letter prose generated from approved profile evidence,
+              not a private-model response. The existing letter is still unchanged.</p>
+            <DocumentComparison title="Compare original and proposed cover letters"
+              current={letterText} proposed={letterProposal.text}
+              source="approved_evidence" />
+            {!letterProposal.complete ? <div role="status">
+              <strong>Information to confirm before using:</strong>
+              <ul>{letterProposal.missingInformation.map((item, index) =>
+                <li key={index}>{item}</li>)}</ul>
+            </div> : null}
+            {letterProposal.reviewNotes.length ? <details>
+              <summary>Review notes</summary>
+              <ul>{letterProposal.reviewNotes.map((item, index) =>
+                <li key={index}>{item}</li>)}</ul>
+            </details> : null}
+            <div className="row-actions" role="group" aria-label="Review cover letter proposal actions">
+              <button type="button" className="navy-btn compact"
+                disabled={busy || aiBusy || letterBusy || !!browserReceipt ||
+                  employerAttempt?.previous_attempt_reserved === true}
+                onClick={() => void useLetterProposal()}>
+                Use proposed {letterProposal.language === "fi" ? "Finnish" : "English"} letter
+              </button>
+              <button type="button" className="outline-btn compact"
+                onClick={() => { ++editEpochRef.current; setLetterProposal(null); }}>
+                Keep my current letter
+              </button>
+            </div>
+          </section> : null}
           {aiSuggestion ? <div className="studio-ai-preview">
             <div className="studio-ai-preview-title">
               <strong>Unverified AI proposal · {aiSuggestion.model}</strong>
@@ -1257,8 +1403,17 @@ export default function ApplicationStudio(props: {
               <small>Choose exactly what to insert. All AI output remains editable
                 and unsaved until you review and save it.</small>
             </div>
-            <details><summary>Read generated cover letter</summary>
-              <pre>{aiSuggestion.proposal.cover_letter}</pre></details>
+            <details><summary>Read generated cover letter and compare</summary>
+              <DocumentComparison title="Compare current letter with private AI proposal"
+                current={letterText} proposed={aiSuggestion.proposal.cover_letter}
+                source="private_ai" />
+            </details>
+            {aiSuggestion.proposal.review_notes.length ? <details
+              className="studio-ai-review-notes">
+              <summary>AI review notes ({aiSuggestion.proposal.review_notes.length})</summary>
+              <ul>{aiSuggestion.proposal.review_notes.map((item, index) =>
+                <li key={index}>{item}</li>)}</ul>
+            </details> : null}
             {aiSuggestion.proposal.highlights.length ? <details><summary>Evidence citations</summary>
               <ul>{aiSuggestion.proposal.highlights.map((row, index) =>
                 <li key={index}>{row.text} <small>Evidence IDs: {row.evidence_fact_ids.join(", ")}</small></li>)}
@@ -1269,12 +1424,29 @@ export default function ApplicationStudio(props: {
             </div> : null}
           </div> : null}
         </section>
+        {documentUndo && documentUndo.key === selectedDraftRef.current.key &&
+          selected.status === "draft" &&
+          documentUndo.afterCV === cvText && documentUndo.afterLetter === letterText &&
+          !browserReceipt && !partnerReceipt &&
+          !employerAttempt?.previous_attempt_reserved ? <div
+            className="studio-document-undo" role="status">
+            <div>
+              <strong>Generated change not yet saved</strong>
+              <small>Restore your wording from before the last {documentUndo.kind} insertion.
+                This changes only the private editor, not the employer application.</small>
+            </div>
+            <button type="button" className="outline-btn compact"
+              disabled={busy || aiBusy || letterBusy}
+              onClick={() => void undoGeneratedEdit()}>
+              Undo last generated edit
+            </button>
+          </div> : null}
         <div className="studio-document" id="smartploy-cv-review">
           <div className="studio-document-head"><strong><FileText size={17}/> CV draft</strong><span>{cvText.length.toLocaleString()} / 30,000 characters</span></div>
           <textarea aria-label="Editable CV text" rows={15} maxLength={30000}
             readOnly={selected.status !== "draft" || !!browserReceipt ||
               employerAttempt?.previous_attempt_reserved === true} value={cvText}
-            onChange={(event) => setCvText(event.target.value)}
+            onChange={(event) => { ++editEpochRef.current; setDocumentUndo(null); setCvText(event.target.value); }}
             placeholder="Your reviewed CV content" />
           <small>Started from your uploaded CV, when available; otherwise only approved profile facts.</small>
           <DocumentCoach kind="job_cv" text={cvText} roleTitle={selected.role_title}
@@ -1304,11 +1476,15 @@ export default function ApplicationStudio(props: {
                 !!partnerReceipt || !!employerAttempt?.previous_attempt_reserved}>
               {letterBusy ? "Preparing…" : "English draft"}
             </button>
+            {letterProposal && letterProposal.key === selectedDraftRef.current.key ?
+              <a className="outline-btn compact" href="#smartploy-letter-proposal">
+                Review proposed {letterProposal.language === "fi" ? "Finnish" : "English"} letter above
+              </a> : null}
           </div> : null}
           <textarea aria-label="Editable cover letter text" rows={13} maxLength={10000}
             readOnly={selected.status !== "draft" || !!browserReceipt ||
               employerAttempt?.previous_attempt_reserved === true} value={letterText}
-            onChange={(event) => setLetterText(event.target.value)}
+            onChange={(event) => { ++editEpochRef.current; setDocumentUndo(null); setLetterText(event.target.value); }}
             placeholder="Your reviewed cover letter" />
           <DocumentCoach kind="cover_letter" text={letterText} roleTitle={selected.role_title}
             company={selected.company} />

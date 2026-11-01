@@ -966,36 +966,45 @@ describe("Application Studio private-read account boundary", () => {
   });
 
 
-  it("previews approved-evidence Finnish text without changing uploaded CV or saving automatically", async () => {
+  it("compares approved-evidence Finnish letter before replacing editor text, with undo before save", async () => {
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
     const originalCV = (screen.getByRole("textbox", {
       name: "Editable CV text",
     }) as HTMLTextAreaElement).value;
-    const initialLetter = (screen.getByRole("textbox", {
+    const letter = screen.getByRole("textbox", {
       name: "Editable cover letter text",
-    }) as HTMLTextAreaElement).value;
-    expect(initialLetter).toBe("PRIVATE-LETTER-A");
+    }) as HTMLTextAreaElement;
+    expect(letter.value).toBe("PRIVATE-LETTER-A");
     fireEvent.click(screen.getByRole("button", { name: "Finnish draft" }));
     await waitFor(() => expect(api.proposeEvidenceLetter).toHaveBeenCalledWith(
       "workspace-A", 1, "fi", "usr-a",
     ));
-    const letter = screen.getByRole("textbox", {
-      name: "Editable cover letter text",
-    }) as HTMLTextAreaElement;
+    const proposal = await screen.findByRole("region", { name: "Review generated cover letter" });
+    expect(proposal.textContent).toContain("Hei rekrytointitiimi");
+    expect(proposal.textContent).toContain("PRIVATE-LETTER-A");
+    expect(letter.value).toBe("PRIVATE-LETTER-A");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Use proposed Finnish letter" }));
     await waitFor(() => expect(letter.value).toContain("Hei rekrytointitiimi"));
     expect(letter.value).not.toContain("[Kerro");
-    expect(letter.value).not.toContain("Osaaminen:");
     expect((screen.getByRole("textbox", {
       name: "Editable CV text",
     }) as HTMLTextAreaElement).value).toBe(originalCV);
-    expect(screen.getByText(/Nothing was sent to an employer/)).toBeTruthy();
+    const undo = screen.getByRole("button", { name: "Undo last generated edit" });
+    fireEvent.click(undo);
+    await waitFor(() => expect(letter.value).toBe("PRIVATE-LETTER-A"));
     expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
-    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Finnish draft" }));
+    await screen.findByRole("region", { name: "Review generated cover letter" });
+    fireEvent.click(screen.getByRole("button", { name: "Use proposed Finnish letter" }));
+    await waitFor(() => expect(letter.value).toContain("Hei rekrytointitiimi"));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
       "workspace-A", 1, originalCV, expect.stringContaining("Hei rekrytointitiimi"), "usr-a",
     ));
+    expect(screen.queryByRole("button", { name: "Undo last generated edit" })).toBeNull();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 
   it("never overwrites unsaved applicant wording after declined language confirmation", async () => {
@@ -1937,5 +1946,121 @@ describe("SP96: prominent private writing tools and selective AI review", () => 
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
     expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
     expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP97: document proposals are non-destructive and account-scoped", () => {
+  it("keeps applicant wording while a letter request is in flight and offers an explicit discard", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.proposeEvidenceLetter>>>();
+    vi.mocked(api.proposeEvidenceLetter).mockReturnValueOnce(pending.promise);
+    studio();
+    const letter = await screen.findByRole("textbox", { name: "Editable cover letter text" }) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole("button", { name: "English draft" }));
+    await waitFor(() => expect(api.proposeEvidenceLetter).toHaveBeenCalledTimes(1));
+    fireEvent.change(letter, { target: { value: "My own new wording while AI is preparing" } });
+    await act(async () => {
+      pending.resolve({
+        cover_letter: "Dear Hiring Team,\n\nPrivate evidence-backed proposal.\n\nKind regards,",
+        language: "en", workspace_revision: 1, complete: true,
+        missing_information: [], review_notes: [],
+        review_required: true, saved: false,
+        external_actions_performed: 0, employer_contacts: 0,
+      });
+    });
+    const preview = await screen.findByRole("region", { name: "Review generated cover letter" });
+    expect(preview.textContent).toContain("My own new wording while AI is preparing");
+    expect(preview.textContent).toContain("Private evidence-backed proposal.");
+    expect(letter.value).toBe("My own new wording while AI is preparing");
+    fireEvent.click(screen.getByRole("button", { name: "Keep my current letter" }));
+    expect(screen.queryByRole("region", { name: "Review generated cover letter" })).toBeNull();
+    expect(letter.value).toBe("My own new wording while AI is preparing");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("cancels pending letter acceptance when the applicant chooses Keep my current letter", async () => {
+    studio();
+    const letter = await screen.findByRole("textbox", {
+      name: "Editable cover letter text",
+    }) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole("button", { name: "Finnish draft" }));
+    await screen.findByRole("region", { name: "Review generated cover letter" });
+    const pendingVerification = deferred<SessionInfo>();
+    let verifying = false;
+    vi.mocked(api.getSession).mockImplementationOnce(() => {
+      verifying = true;
+      return pendingVerification.promise;
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use proposed Finnish letter" }));
+    await waitFor(() => expect(verifying).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Keep my current letter" }));
+    await act(async () => { pendingVerification.resolve(session("usr-a")); });
+    expect(letter.value).toBe("PRIVATE-LETTER-A");
+    expect(screen.queryByRole("button", { name: "Undo last generated edit" })).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("lets the user undo selective AI letter insertion, then clears undo after a manual edit", async () => {
+    vi.mocked(api.getLocalAIStatus).mockResolvedValue({
+      configured: true, ready: true, provider: "local_obumai_ollama",
+      model: "synthetic-fixture", external_ai_forwarding: false,
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    const letter = await screen.findByRole("textbox", { name: "Editable cover letter text" }) as HTMLTextAreaElement;
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: /Suggest tailored wording/,
+    }).hasAttribute("disabled")).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: /Suggest tailored wording/ }));
+    await screen.findByText("Synthetic approved evidence");
+    fireEvent.click(screen.getByRole("button", { name: "Use cover letter only" }));
+    await waitFor(() => expect(letter.value).toBe("Synthetic cover letter"));
+    fireEvent.click(screen.getByRole("button", { name: "Undo last generated edit" }));
+    await waitFor(() => expect(letter.value).toBe("PRIVATE-LETTER-A"));
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Suggest tailored wording/ }));
+    await screen.findByText("Synthetic approved evidence");
+    fireEvent.click(screen.getByRole("button", { name: "Use cover letter only" }));
+    await waitFor(() => expect(letter.value).toBe("Synthetic cover letter"));
+    fireEvent.change(letter, { target: { value: "New personally authored sentence" } });
+    expect(screen.queryByRole("button", { name: "Undo last generated edit" })).toBeNull();
+    expect(letter.value).toBe("New personally authored sentence");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("rejects AI output that falsely reports an employer action or an already applied suggestion", async () => {
+    vi.mocked(api.getLocalAIStatus).mockResolvedValue({
+      configured: true, ready: true, provider: "local_obumai_ollama",
+      model: "synthetic-model", external_ai_forwarding: false,
+    });
+    const invalid = {
+      workspace_revision: 1,
+      suggestion: {
+        provider: "local_obumai_ollama", model: "synthetic-model", approved_evidence_ids: [],
+        external_actions_performed: true, suggestions_applied: true,
+        requires_owner_review: false,
+        proposal: {
+          schema: "smartploy.local_draft.v1" as const, cv_headline: "Invalid",
+          cv_summary: "Invalid proposal", cover_letter: "Invalid draft",
+          highlights: [], risks: [], review_notes: [],
+        },
+      },
+    };
+    vi.mocked(api.requestLocalAISuggestions).mockResolvedValueOnce(invalid as never);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    await screen.findByRole("heading", { name: "A private role" });
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: /Suggest tailored wording/,
+    }).hasAttribute("disabled")).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: /Suggest tailored wording/ }));
+    expect(await screen.findByText(/private AI response did not pass review-only validation/i)).toBeTruthy();
+    expect(screen.queryByText("Invalid proposal")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Use cover letter only" })).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 });

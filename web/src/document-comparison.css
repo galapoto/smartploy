@@ -1,0 +1,105 @@
+/* SP97 | SmartPloy Career Atlas: private, review-before-use writing workspace. */
+.document-comparison {
+  margin: 13px 0;
+  padding: 15px;
+  border: 1px solid #bddee0;
+  border-radius: 14px;
+  background: linear-gradient(125deg, #f1faf9, #fff);
+  color: #174052;
+}
+.document-comparison-heading { display: flex; gap: 10px; align-items: flex-start; }
+.document-comparison-heading > svg { color: #137987; margin-top: 2px; flex: none; }
+.document-comparison-heading > div { display: grid; gap: 3px; }
+.document-comparison-heading strong { font-size: 14px; }
+.document-comparison-heading small { font-size: 12px; color: #526e7b; line-height: 1.5; }
+.document-comparison-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.document-comparison-columns > div {
+  background: #fff;
+  border: 1px solid #dbe9e8;
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 0;
+}
+.document-comparison-columns span {
+  padding: 10px 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 750;
+  color: #285968;
+  border-bottom: 1px solid #e0eceb;
+}
+.document-comparison-columns pre {
+  margin: 0;
+  padding: 12px 13px;
+  min-height: 92px;
+  max-height: 260px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.65;
+  color: #324c57;
+}
+.document-comparison-boundary {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: #556e78;
+  line-height: 1.55;
+}
+.studio-letter-proposal {
+  padding: 16px;
+  margin: 12px 0;
+  border: 1px solid #b5dadd;
+  border-radius: 14px;
+  background: #f1faf9;
+}
+.studio-letter-proposal > strong { color: #164c5c; font-size: 14px; }
+.studio-letter-proposal p { margin: 7px 0; color: #476978; line-height: 1.6; }
+.studio-letter-proposal ul { padding-left: 20px; color: #704d20; line-height: 1.65; }
+.studio-letter-proposal .row-actions { display: flex; gap: 9px; flex-wrap: wrap; }
+.studio-letter-proposal .row-actions button { min-height: 40px; }
+.studio-document-undo {
+  margin: 12px 0;
+  border: 1px solid #cadfdd;
+  border-radius: 12px;
+  padding: 12px 15px;
+  background: #f8fcfb;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.studio-document-undo > div { flex: 1 1 190px; display: grid; gap: 3px; }
+.studio-document-undo strong { color: #214a56; font-size: 13px; }
+.studio-document-undo small { color: #526e78; font-size: 12px; line-height: 1.5; }
+.studio-ai-review-notes { margin: 13px 0; color: #466774; }
+.studio-ai-review-notes ul { padding-left: 19px; line-height: 1.65; }
+.studio-ai-review-notes li { margin-bottom: 5px; }
+.tools-ai-readiness {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid #c4e4e1;
+  border-radius: 12px;
+  background: #f1faf8;
+  padding: 16px;
+  margin-top: 17px;
+}
+.tools-ai-readiness svg { flex: none; color: #148290; margin-top: 2px; }
+.tools-ai-readiness > div { display: grid; gap: 4px; }
+.tools-ai-readiness strong { color: #174a56; font-size: 13px; }
+.tools-ai-readiness p { color: #4d6b77; font-size: 12px; margin: 0; line-height: 1.6; }
+@media (max-width: 780px) {
+  .document-comparison-columns { grid-template-columns: 1fr; }
+  .document-comparison { padding: 12px; }
+  .studio-letter-proposal { padding: 12px; }
+}
