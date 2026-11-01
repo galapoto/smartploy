@@ -319,3 +319,61 @@ def test_sp98_self_test_disabled_and_api_rejects_anonymous_or_nonconsented_reque
     blocked = app.post(url, json={"acknowledge_synthetic_inference": True})
     assert blocked.status_code == 403
     assert app.get(url).status_code == 405
+
+
+def test_sp98_inference_api_requires_exact_owner_origin_and_enforces_cooldown(monkeypatch):
+    import smartploy.api as api_module
+    from smartploy.identity import AuthenticatedPrincipal, stable_user_id
+
+    principal = AuthenticatedPrincipal(
+        issuer="https://synthetic-oidc.invalid",
+        subject="synthetic-inference-owner",
+        auth_source="oidc",
+        email="owner@example.invalid",
+    )
+    monkeypatch.setattr(api_module, "_principal_from_request", lambda _request: principal)
+    monkeypatch.setenv("SMARTPLOY_PUBLIC_ORIGIN", "https://smartploy.example.invalid")
+    app = create_app(SmartployService())
+    calls = []
+
+    class StubInference:
+        settings = LocalDraftSettings(
+            enabled=True, base_url="http://ollama:11434", model="qwen3:4b",
+        )
+
+        def self_test_inference(self):
+            calls.append(True)
+            return {
+                "inference_succeeded": True, "model": "qwen3:4b",
+                "provider": "local_obumai_ollama", "synthetic_only": True,
+                "applicant_data_transferred": False,
+                "external_actions_performed": 0, "documents_changed": False,
+            }
+
+    app.state.local_ai = StubInference()
+    client = TestClient(app)
+    url = "/api/v1/local-ai/self-test"
+    owner_id = stable_user_id(principal.issuer, principal.subject)
+    good = {
+        "X-Smartploy-Expected-User-Id": owner_id,
+        "Origin": "https://smartploy.example.invalid",
+        "Sec-Fetch-Site": "same-origin",
+    }
+    payload = {"acknowledge_synthetic_inference": True}
+    wrong_account = {**good, "X-Smartploy-Expected-User-Id": "usr-another"}
+    wrong_origin = {**good, "Origin": "https://untrusted.invalid"}
+    wrong_site = {**good, "Sec-Fetch-Site": "cross-site"}
+    for headers in (wrong_account, wrong_origin, wrong_site):
+        assert client.post(url, json=payload, headers=headers).status_code == 403
+    assert calls == []
+
+    accepted = client.post(url, json=payload, headers=good)
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.headers["cache-control"] == "private, no-store"
+    assert accepted.json()["inference_succeeded"] is True
+    assert accepted.json()["applicant_data_transferred"] is False
+    assert calls == [True]
+
+    repeated = client.post(url, json=payload, headers=good)
+    assert repeated.status_code == 429
+    assert calls == [True]
