@@ -3120,6 +3120,43 @@ def create_app(
         app.state.browser_receipts.delete(profile_id, workspace_id)
         return {"deleted": True}
 
+    @app.get("/api/v1/application-workspaces/{workspace_id}/preview/{kind}/pdf")
+    def preview_application_pdf(
+        workspace_id: str, kind: str, request: Request,
+        expected_revision: int = Query(..., ge=1),
+    ) -> Response:
+        # Preview is a private, read-only view of the exact saved revision.
+        # Never infer applicant approval or employer submission from a GET.
+        tenant, _ = tenant_context(request)
+        item = app.state.workspace_repository.get(
+            tenant.profile_repository.profile_id, workspace_id,
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        if kind not in {"cv", "letter"}:
+            raise HTTPException(status_code=404, detail="Document kind not available")
+        if item.revision != expected_revision:
+            raise HTTPException(
+                status_code=409,
+                detail="Saved application changed. Refresh and review the current documents.",
+            )
+        try:
+            content, mime, filename = render_document(
+                item, kind=kind, file_format="pdf",
+            )
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return Response(content=content, media_type=mime, headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+            "X-Frame-Options": "DENY",
+            "Cross-Origin-Resource-Policy": "same-origin",
+            "Referrer-Policy": "no-referrer",
+        })
+
     @app.get("/api/v1/application-workspaces/{workspace_id}/download/package.zip")
     def download_application_package(workspace_id: str, request: Request) -> Response:
         tenant, _ = tenant_context(request)

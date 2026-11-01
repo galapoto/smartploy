@@ -364,6 +364,45 @@ def test_api_application_documents_review_and_download_does_not_fake_submission(
             assert download.headers["x-content-type-options"] == "nosniff"
             assert download.headers["content-disposition"].startswith("attachment;")
             assert len(download.content) > 200
+    # SP107: the genuine PDF renderer in a separate read-only exact-revision view.
+    for kind, expected in (("cv", "Approved SQL and data analytics"),
+                           ("letter", "I have SQL skills and want to join your team.")):
+        preview = api.get(
+            f"/api/v1/application-workspaces/{kid}/preview/{kind}/pdf"
+            "?expected_revision=2"
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.headers["content-type"].startswith("application/pdf")
+        assert preview.headers["content-disposition"].startswith("inline;")
+        assert preview.headers["cache-control"] == "private, no-store"
+        assert preview.headers["x-content-type-options"] == "nosniff"
+        assert preview.headers["x-frame-options"] == "DENY"
+        assert preview.headers["cross-origin-resource-policy"] == "same-origin"
+        assert preview.headers["referrer-policy"] == "no-referrer"
+        assert preview.content.startswith(b"%PDF-")
+        text = "\n".join(page.extract_text() or ""
+                         for page in PdfReader(BytesIO(preview.content)).pages)
+        assert expected in text
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/preview/cv/pdf"
+        "?expected_revision=1"
+    ).status_code == 409  # before the saved revision-2 edit
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/preview/cv/pdf"
+    ).status_code == 422  # revision precondition is mandatory
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/preview/cv/pdf"
+        "?expected_revision=0"
+    ).status_code == 422
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/preview/other/pdf"
+        "?expected_revision=2"
+    ).status_code == 404
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}-not-owned/preview/cv/pdf"
+        "?expected_revision=2"
+    ).status_code == 404
+    assert api.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
     # SP106: the exact same saved job-specific files in one owner-scoped ZIP.
     package = api.get(f"/api/v1/application-workspaces/{kid}/download/package.zip")
     assert package.status_code == 200, package.text
