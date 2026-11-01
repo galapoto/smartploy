@@ -995,9 +995,13 @@ export default function App() {
           : "Open your selected application to edit and download its CV and cover letter.");
       } else {
         startApplyFlow("assisted");
-        setNotice(name === "AI Writing"
-          ? "Choose an Assisted job below. You can then compare editable English/Finnish letter drafts and request private model suggestions with consent."
-          : "Select a job below to open its CV and cover-letter editor.");
+        if (cv.present) {
+          setNotice(name === "AI Writing"
+            ? "Choose an Assisted job below. You can then compare editable English/Finnish letter drafts and request private model suggestions with consent."
+            : "Select a job below to open its CV and cover-letter editor.");
+        }
+        // Without a CV, startApplyFlow already displayed the mandatory upload
+        // gate. Never overwrite that instruction with a misleading job/AI CTA.
       }
     } else if (name === "Application prep") navigate("applications");
     else if (name === "Career insights") navigate("insights");
