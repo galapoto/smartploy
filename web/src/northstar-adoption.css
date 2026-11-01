@@ -1,0 +1,235 @@
+/* Northstar: opt-in progressive visual layer.
+ * Base: first-party SmartPloy SP99, user-provided Prismatic design kit.
+ * Preserve existing React/SPA behaviour, logo, CV-first guards, dark-mode hook,
+ * OIDC scoping and employer authorization. No font/image imports or API calls.
+ * Display falls back to established DM Sans until licensed self-hosted assets
+ * are reviewed. Scoped to existing classes; no production claim.
+ */
+:root {
+  --ns-display: "Bricolage Grotesque", "DM Sans", system-ui, sans-serif;
+  --ns-body: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ns-paper: #f3f6f5; --ns-surface: #fff; --ns-ink: #15314b;
+  --ns-muted: #526c7e; --ns-line: #d9e5e7; --ns-accent: #145d6b;
+  --ns-shadow: 0 18px 45px -26px rgba(10,46,66,.29),0 4px 18px -9px rgba(12,51,66,.10);
+  --ns-lift: 0 25px 55px -24px rgba(10,46,66,.27),0 10px 20px -10px rgba(10,46,66,.17);
+  --sp-font: var(--ns-body); --sp-display: var(--ns-display);
+  --sp-paper: var(--ns-paper); --sp-ink: var(--ns-ink);
+  --sp-ink-muted: var(--ns-muted); --sp-line: var(--ns-line);
+  --line: var(--ns-line); --canvas: var(--ns-paper);
+}
+.smartploy-app {
+  font-family: var(--ns-body); color: #294459; background:var(--ns-paper);
+  grid-template-columns:250px minmax(0,1fr);
+}
+.smartploy-app .sidebar {background:var(--ns-surface);border-color:var(--ns-line)}
+.smartploy-app .site-header {
+  height:74px;background:rgba(255,255,255,.94);
+  border-color:var(--ns-line);backdrop-filter:blur(14px);
+}
+.smartploy-app .content {max-width:1500px;padding:28px clamp(18px,3vw,42px) 70px}
+.smartploy-app .nav-item {
+  min-height:46px;border-radius:12px;padding:11px 13px;
+  color:#425f71;font-size:13px;font-weight:700;
+  transition:background-color .16s ease,color .16s ease;
+}
+.smartploy-app .nav-item:hover {color:#105a68;background:#edf7f6}
+.smartploy-app .nav-item.active,
+.smartploy-app .nav-item.nav-apply-entry.active {
+  background:#e8f4f2;border-color:#c8e5e2;color:#125867;
+}
+.smartploy-app .nav-item.active::before {background:#167784}
+.smartploy-app :is(
+ .sp99-identity-text strong,.site-brand strong,.page-intro h1,
+ .flow-start-heading h1,.flow-start-method-heading h2,
+ .studio-resume-intro h3,.welcome-banner h1
+) {
+  font-family:var(--ns-display);letter-spacing:-.038em;
+  font-weight:700;font-synthesis:none;
+}
+.smartploy-app .sp99-identity-text strong {font-size:clamp(27px,2.6vw,37px)}
+.smartploy-app .section-kicker {
+  color:#416b76;font-size:11px;line-height:1.4;
+  letter-spacing:.11em;font-weight:800;
+}
+.smartploy-app :is(
+ .panel,.flow-start,.application-flow,.search-setup,
+ .tool-tile,.stat-card,.action-card:not(.featured),.job-item,
+ .master-cv-editor,.studio-document,.studio-resume-card,
+ .document-comparison
+) {
+  background:var(--ns-surface);border:1px solid var(--ns-line);
+  border-radius:18px;box-shadow:var(--ns-shadow);
+}
+.smartploy-app .panel {padding:clamp(18px,2vw,27px)}
+.smartploy-app .panel-heading h2,
+.smartploy-app .small-heading h3 {
+  font-family:var(--ns-display);color:var(--ns-ink);
+  letter-spacing:-.025em;line-height:1.22;font-weight:700;
+}
+.smartploy-app .panel-heading p:last-child {
+  font-size:13px;line-height:1.55;color:var(--ns-muted);
+}
+.smartploy-app .flow-start {
+  max-width:1120px;margin:0 auto;
+  padding:clamp(21px,3vw,39px);border-radius:22px;
+}
+.smartploy-app .flow-start::before {display:none}
+.smartploy-app .flow-start-heading h1 {
+  max-width:16ch;font-size:clamp(31px,3.3vw,47px);
+  line-height:1.11;letter-spacing:-.043em;
+  color:var(--ns-ink);margin-bottom:14px;
+}
+.smartploy-app .flow-start-heading p {
+  max-width:67ch;font-size:15px;line-height:1.65;color:var(--ns-muted);
+}
+.smartploy-app .flow-start-progress {gap:9px;margin-bottom:23px}
+.smartploy-app .flow-start-progress li {
+  min-height:44px;border-radius:12px;border-color:var(--ns-line);
+  background:#f8faf9;font-size:12px;line-height:1.38;padding:12px;
+}
+.smartploy-app .flow-start-progress li.current {
+  background:#e7f4f2;border-color:#b7d8d7;color:#125565;
+}
+.smartploy-app .flow-start-progress li.done {
+  background:#eff8f3;border-color:#c7e3d1;color:#126b50;
+}
+.smartploy-app .flow-start-how {
+  background:linear-gradient(120deg,#183c4a,#0d3040);
+  border:1px solid #386271;border-radius:17px;
+  padding:clamp(18px,2.3vw,27px);
+}
+.smartploy-app .flow-start-method-heading h2 {
+  font-size:clamp(23px,2.25vw,30px);
+  line-height:1.17;color:var(--ns-ink);
+}
+.smartploy-app .flow-start-method-heading p:last-child {
+  max-width:65ch;line-height:1.57;color:var(--ns-muted);
+}
+.smartploy-app .flow-start-grid.flow-start-grid-methods {gap:16px}
+.smartploy-app .flow-start-grid-methods .flow-start-card {
+  --flow-tone:#166976;position:relative;min-height:247px;
+  border-radius:18px;border:1px solid var(--ns-line);
+  background:var(--ns-surface);padding:22px 20px;
+  box-shadow:var(--ns-shadow);text-align:left;
+  transition:border-color .18s,box-shadow .18s,transform .18s;
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card[data-flow-mode="assisted"] {
+  --flow-tone:#216e65;border-color:#b6d7d0;
+  box-shadow:var(--ns-shadow),0 0 0 2px rgba(27,115,105,.045);
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card[data-flow-mode="automatic"] {
+  --flow-tone:#91653c;
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card > svg:first-child {
+  background:#e7f3f2;color:var(--flow-tone);
+  border-radius:14px;padding:7px;box-sizing:content-box;
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card strong {
+  font-family:var(--ns-display);font-size:19px;line-height:1.27;
+  letter-spacing:-.02em;color:var(--ns-ink);
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card span:not(.flow-start-index) {
+  font-size:13.5px;line-height:1.56;color:var(--ns-muted);
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card .flow-card-cta {
+  font-size:12px;color:#116475;font-weight:800;
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card small {
+  color:#547180;font-size:11px;letter-spacing:.035em;
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card:disabled {
+  cursor:not-allowed;opacity:.78;background:#f7faf9;box-shadow:none;
+}
+.smartploy-app :is(
+  .primary-btn,.navy-btn,.outline-btn,.secondary-btn
+) {min-height:44px;padding:11px 16px;border-radius:11px;font-size:13px;line-height:1.3}
+.smartploy-app :is(.primary-btn,.navy-btn) {
+  background:#145d6b;border-color:#145d6b;color:#fff;
+}
+.smartploy-app :is(.primary-btn,.navy-btn):hover {
+  background:#0b4a5b;border-color:#0b4a5b;color:#fff;
+}
+.smartploy-app :is(.outline-btn,.secondary-btn) {
+  background:#fff;color:#145d6b;border-color:#b8d3d7;
+}
+.smartploy-app :is(.outline-btn,.secondary-btn):hover {
+  background:#eaf7f6;color:#0f5261;
+}
+.smartploy-app :is(button,a,input,textarea,select):focus-visible {
+  outline:3px solid #2e9aa7;outline-offset:3px;
+}
+@media (hover:hover) and (prefers-reduced-motion:no-preference) {
+ .smartploy-app .flow-start-grid-methods .flow-start-card:not(:disabled):hover,
+ .smartploy-app :is(.tool-tile,.job-item,.action-card:not(.featured)):hover {
+   transform:translateY(-3px);border-color:#a2c5c8;
+   box-shadow:var(--ns-lift);
+ }
+}
+html[data-smartploy-theme="dark"] {
+  --ns-paper:#0d1b2a;--ns-surface:#162a3a;
+  --ns-ink:#edf7f9;--ns-muted:#b9ced7;
+  --ns-line:#325063;--ns-shadow:0 18px 42px -26px rgba(0,0,0,.6);
+  --ns-lift:0 19px 40px -16px rgba(0,0,0,.65);
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.sidebar,.site-header) {
+  background:#102435;border-color:#29495a;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.nav-item.active,.nav-item.nav-apply-entry.active) {
+  color:#ebfaff;background:#204657;border-color:#376d78;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item:hover {
+  color:#ecfaff;background:#224458;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li {
+  color:#bfd4dc;background:#182f40;border-color:#365465;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li.current {
+  background:#21505c;color:#f0fcff;border-color:#3d7b87;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li.done {
+  background:#1b413e;color:#c1f7e1;border-color:#326e62;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-how {
+  background:#173c49;border-color:#3c6c76;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods .flow-start-card {
+  background:#172e40;border-color:#365766;color:#eaf5f8;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods .flow-start-card:disabled {
+  background:#172b3a;box-shadow:none;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods .flow-start-card span:not(.flow-start-index),
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods .flow-start-card small {
+  color:#b9ced7;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods .flow-start-card .flow-card-cta {
+  color:#a2e5e7;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.primary-btn,.navy-btn) {
+  color:#0b2b38;background:#9ae0de;border-color:#9ae0de;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.primary-btn,.navy-btn):hover {
+  color:#0b2b38;background:#c0f4ef;border-color:#c0f4ef;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.outline-btn,.secondary-btn) {
+  color:#e9f9fc;background:#233f52;border-color:#456e7d;
+}
+@media (max-width:850px) {
+  .smartploy-app {display:block}
+  .smartploy-app .content {padding:19px 18px 56px}
+  .smartploy-app .flow-start {padding:19px}
+}
+@media (max-width:620px) {
+  .smartploy-app .flow-start-grid.flow-start-grid-methods {grid-template-columns:1fr}
+  .smartploy-app .flow-start-grid-methods .flow-start-card {min-height:196px;padding:18px}
+  .smartploy-app .flow-start-progress {grid-template-columns:repeat(2,minmax(0,1fr))}
+  .smartploy-app .flow-start-heading h1 {font-size:clamp(29px,7.8vw,39px)}
+  .smartploy-app .site-header {height:67px}
+  .smartploy-app .content {padding:16px 14px 50px}
+}
+@media (prefers-reduced-motion:reduce) {
+  .smartploy-app *, .smartploy-app *::before, .smartploy-app *::after {
+    transition-duration:.01ms!important;animation-duration:.01ms!important;
+    scroll-behavior:auto!important;
+  }
+}
