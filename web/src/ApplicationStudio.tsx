@@ -580,7 +580,7 @@ export default function ApplicationStudio(props: {
 
   async function askLocalAI() {
     if (!selected || dirty || selected.status !== "draft" || browserReceipt ||
-        employerAttempt?.previous_attempt_reserved || !aiStatus?.ready) return;
+        employerAttempt?.previous_attempt_reserved || aiProofBusy || !aiStatus?.ready) return;
     const ok = window.confirm(
       "Send the job description and your approved profile facts to the configured " +
       "private local ObumAI/Ollama model? Your uploaded CV file, unapproved profile " +
@@ -612,9 +612,43 @@ export default function ApplicationStudio(props: {
     } finally { if (isCurrentDraft(ticket)) setAIBusy(false); }
   }
 
+  async function testLocalAIGeneration() {
+    if (!selected || !aiStatus?.ready || aiProofBusy || aiBusy ||
+        aiRefreshing || busy || accountBlockedRef.current) return;
+    if (!window.confirm(
+      "Run one small REAL generation using the configured PRIVATE Ollama model? " +
+      "The test sends only a fixed synthetic word prompt—NO CV, approved facts, " +
+      "cover letter, job description or employer details. It does not save or " +
+      "send an application. A short per-account cooldown limits model use."
+    )) return;
+    const ticket = captureDraft(selected);
+    setAIProofBusy(true); setAIProof(null); setError(""); setMessage("");
+    try {
+      const result = await runPrivateAction(
+        () => runLocalAIInferenceProof(props.expectedUserId), ticket,
+      );
+      if (!isCurrentDraft(ticket)) return;
+      if (!result.inference_succeeded || !result.synthetic_only ||
+          result.applicant_data_transferred !== false ||
+          result.external_actions_performed !== 0 ||
+          result.documents_changed !== false) {
+        throw new Error("Private model test did not return valid read-only proof");
+      }
+      setAIProof(result);
+      setMessage("Real private-model generation succeeded with synthetic text only. " +
+        "Your applicant documents and employer application were untouched. " +
+        "Job-specific AI suggestions still require separate consent and review.");
+    } catch (exc) {
+      reportActionError(exc, "The synthetic private-model generation test did not complete.");
+    } finally {
+      if (isCurrentDraft(ticket)) setAIProofBusy(false);
+    }
+  }
+
   async function refreshAIReadiness() {
     if (aiRefreshing || accountBlockedRef.current) return;
     setAIRefreshing(true);
+    setAIProof(null);
     try {
       // Read model readiness only; do not send any CV, letter or job data.
       await verifyAccount();
