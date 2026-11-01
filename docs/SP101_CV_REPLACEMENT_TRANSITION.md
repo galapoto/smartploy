@@ -26,3 +26,10 @@
 Added focused tests for paused choices, restored mode activation, cleared old job focus and an in-flight batch stop callback. CI / Web build and backend source gates must pass at the exact PR SHA. Production sign-in, 2-account isolation, browser keyboard/mobile/zoom checks and exact-SHA deployment evidence remain separate required gates.
 
 **Status:** proposed for review; not deployed; no employer application sent.
+
+
+## SP102 continuation — asynchronous response isolation
+
+The first SP101 CI finished green at `6164de68a4a9caf128f68134d8683d81075cb2ec`: 73 synthetic browser tests passed and the backend, web, and Compose build jobs succeeded. The subsequent incremental code changes here use an immediate parent ref-level CV revision, instead of waiting for React state or a new SHA. Starting an upload, deletion, editor save, or editor restore invalidates the old CV selection. Late single-job Assisted/Manual responses and opted-in private draft scans cannot change navigation or notices for the newer CV. A multi-job AutoApply loop cannot start another job after the CV revision changes.
+
+Existing private drafts already created by an in-flight request remain durable and review-required; the client cannot reverse a server commit. The changes do not authorize employer actions, bypass account identity, or invent cancellation. New synthetic integration tests cover delayed Assisted responses and a pending AutoApply batch during CV replacement. Further CI and signed-in production acceptance remain required before deployment.
