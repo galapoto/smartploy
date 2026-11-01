@@ -7,7 +7,7 @@ import {
 import {
   applicationDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
   getApplicationWorkspaces, getApplicationWorkspaceById, markApplicationManuallySent,
-  getLocalAIStatus, requestLocalAISuggestions, proposeEvidenceLetter,
+  getLocalAIStatus, runLocalAIInferenceProof, requestLocalAISuggestions, proposeEvidenceLetter,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
   getEmployerAttemptStatus, getEmployerReviewIntent, getEmployerFinalActionReadiness,
   getLeverPartnerReadiness, getLeverPartnerReceipt, sendLeverPartnerApplication,
@@ -21,7 +21,8 @@ import ApplicationAttemptAudit from "./ApplicationAttemptAudit";
 import AuthorizedAutoApplyBatch from "./AuthorizedAutoApplyBatch";
 import DocumentCoach from "./DocumentCoach";
 import DocumentComparison from "./DocumentComparison";
-import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
+import { prepareAISummaryCV } from "./aiSummaryReview";
+import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, LocalAIInferenceProof, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import { applicationNextStep } from "./applicationNextStep";
 import { summarizeApplicationReviewQueue, type ApplicationReviewFilter } from "./applicationReviewQueue";
@@ -103,6 +104,8 @@ export default function ApplicationStudio(props: {
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAIBusy] = useState(false);
   const [aiRefreshing, setAIRefreshing] = useState(false);
+  const [aiProofBusy, setAIProofBusy] = useState(false);
+  const [aiProof, setAIProof] = useState<LocalAIInferenceProof | null>(null);
   const [letterBusy, setLetterBusy] = useState(false);
   const [aiStatus, setAIStatus] = useState<LocalAIStatus | null>(null);
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
@@ -156,6 +159,7 @@ export default function ApplicationStudio(props: {
     ++editEpochRef.current;
     setWorkspaces([]); setSelectedId("");
     setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
+    setAIProof(null); setAIProofBusy(false);
     setLetterProposal(null); setDocumentUndo(null);
     setHandoff(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
     setPartnerReadiness(null); setPartnerReceipt(null); setPartnerBusy(false); setHandoffPacketText("");
@@ -286,6 +290,9 @@ export default function ApplicationStudio(props: {
     [workspaces, selectedId]
   );
   const selectedPartner = selected ? partnerKind(selected.application_url) : null;
+  const aiCvPlan = selected && aiSuggestion
+    ? prepareAISummaryCV(cvText, selected.role_title, selected.company, aiSuggestion.proposal.cv_summary)
+    : null;
   // Clear draft-local editor content, receipt/packet previews AND pending
   // indicators before a different draft can paint. The old draft's promise
   // may still finish; its completion must never unlock the new draft.
@@ -298,6 +305,7 @@ export default function ApplicationStudio(props: {
       ++editEpochRef.current;
       setBusy(false); setAIBusy(false); setLetterBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
       setAISuggestion(null);
+      setAIProof(null); setAIProofBusy(false);
       setLetterProposal(null); setDocumentUndo(null);
       setCvText(selected?.cv_text || "");
       setLetterText(selected?.cover_letter_text || "");
