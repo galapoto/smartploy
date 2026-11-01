@@ -666,30 +666,30 @@ export default function ApplicationStudio(props: {
     if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt ||
         partnerReceipt || employerAttempt?.previous_attempt_reserved || busy) return;
     const draft = aiSuggestion.proposal;
+    const plan = target === "letter" ? null :
+      prepareAISummaryCV(cvText, selected.role_title, selected.company, draft.cv_summary);
+    if (plan?.mode === "blocked") {
+      setMessage(plan.reason + " The cover-letter-only option remains available.");
+      return;
+    }
     const ticket = captureDraft(selected);
     const editEpoch = editEpochRef.current;
+    const cvVerb = plan?.mode === "replace"
+      ? "REPLACE the precisely identified previous AI summary without altering the rest of your CV"
+      : "ADD the proposed AI summary above your unchanged CV";
     const prompt = target === "both"
-      ? "Insert this AI-generated CV summary and REPLACE the current cover letter? " +
-        "Review the comparison first. Neither document is saved or submitted. " +
-        "You can undo before saving."
-      : "Insert only the AI-proposed " + (target === "cv" ? "CV summary" : "cover letter") +
-        " for this job? Review every claim. The change is unsaved and undoable.";
+      ? cvVerb + " AND replace the cover letter with the proposed text? " +
+        "Review both comparisons first. Nothing is saved or submitted. You can undo before saving."
+      : target === "cv"
+        ? cvVerb + "? Review the original and proposed CV side by side first. " +
+          "The change is unsaved and undoable."
+        : "Replace only the current cover letter with the AI-proposed letter? " +
+          "Review every claim. The change is unsaved and undoable.";
     if (!window.confirm(prompt)) return;
     try { await verifyAccount(); } catch { return; }
     if (!isCurrentDraft(ticket) || editEpochRef.current !== editEpoch) return;
 
-    // Legacy generated CV summaries are not reliably delimited, and may be
-    // manually edited. Never add a duplicate or silently guess its bounds.
-    if (target !== "letter" &&
-        cvText.includes("PROFILE SUMMARY (review AI wording):")) {
-      setMessage("This CV already contains an AI-written summary. Edit that section " +
-        "yourself rather than stacking another summary. The letter-only action remains available.");
-      return;
-    }
-    const nextCV = target === "letter" ? cvText :
-      "TARGET ROLE: " + selected.role_title + " — " + selected.company +
-      "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
-      "\n\n" + cvText;
+    const nextCV = plan?.text ?? cvText;
     const nextLetter = target === "cv" ? letterText : draft.cover_letter;
     if (nextCV.length > 30000 || nextLetter.length > 10000 ||
         (target !== "cv" && !nextLetter.trim())) {
@@ -706,8 +706,8 @@ export default function ApplicationStudio(props: {
     if (target !== "letter") setCvText(nextCV);
     if (target !== "cv") setLetterText(nextLetter);
     setAISuggestion(null);
-    setMessage("Your selected AI wording was inserted as an UNSAVED edit. " +
-      "Check every factual claim. You can undo before saving.");
+    setMessage("The chosen AI wording is now an UNSAVED edit. Verify every claim, " +
+      "then save deliberately. Undo is available until you type or save.");
   }
 
   async function copyBrowserPacket() {
