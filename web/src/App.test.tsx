@@ -1778,7 +1778,7 @@ describe("SP97: AI writing tools have an honest, working CV-first entry", () => 
     fireEvent.click(ai);
     expect(screen.getByText(/Step 1: upload or create your CV/i)).toBeTruthy();
     expect(screen.getByRole("group", { name: "Choose application method" })).toBeTruthy();
-    expect(api.requestLocalAISuggestions).toBeUndefined();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
