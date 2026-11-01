@@ -641,7 +641,7 @@ test("SP93 production build shows all three CV-locked methods with the full side
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
-  const logo = page.locator("svg[aria-label='SmartPloy turquoise and navy mark']");
+  const logo = page.locator(".sp99-identity .sp99-identity-mark");
   await expect(logo).toBeVisible();
   const bounds = await logo.boundingBox();
   expect(bounds?.width).toBeGreaterThan(20);
@@ -873,7 +873,7 @@ test("a same-email account change resets unsaved criteria and private CV details
   await page.getByRole("button", { name: "Refresh workspace" }).click();
   // Switching signed-in accounts always closes the previous account's
   // editor/Settings and returns to the new user's clean dashboard.
-  await expect(page.getByRole("heading", { name: /Make your next move/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "CV connected. Choose how to apply." })).toBeVisible();
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await expect(page.getByRole("radio", { name: /General job search/i })).toBeChecked();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
@@ -980,7 +980,7 @@ test("same-email account switch removes the previous user's private application 
   await page.getByRole("button", { name: "Refresh workspace" }).click();
 
   await expect(page.getByRole("textbox", { name: "Editable CV text" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: /Make your next move/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "CV connected. Choose how to apply." })).toBeVisible();
   await expect(page.getByText("ACCOUNT-A-CV.pdf")).toHaveCount(0);
   await page.getByRole("button", { name: "My applications" }).click();
   await expect(page.getByRole("textbox", { name: "Editable CV text" }))
@@ -994,7 +994,7 @@ test("mobile onboarding remains usable when the optional local AI endpoint fails
   await page.setViewportSize({ width: 390, height: 844 });
   await installSyntheticApi(page, { unavailableAI: true });
   await page.goto("/");
-  await expect(page.locator("svg[aria-label='SmartPloy turquoise and navy mark']")).toBeVisible();
+  await expect(page.locator(".sp99-identity .sp99-identity-mark")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   await page.getByRole("button", { name: /Just find jobs/i }).click();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
@@ -1059,4 +1059,83 @@ test("SP98: real inference is an explicit synthetic-only action inside a saved A
   expect(privateModelDrafts).toEqual([]);
   expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
   await evidence(page, "sp98-private-model-synthetic-generation-proof.png");
+});
+
+
+test("SP99 original Finnish panorama and complete logo restore the earlier page without hiding CV flow", async ({ page }) => {
+  await installSyntheticApi(page);
+  await page.goto("/");
+  const panorama = page.getByRole("region", { name: "Finland winter archipelago cover" });
+  await expect(panorama).toBeVisible();
+  const image = panorama.getByRole("img", { name: /Original artwork: rose-gold winter light/ });
+  await expect(image).toBeVisible();
+  const loaded = await image.evaluate((node) => {
+    const picture = node as HTMLImageElement;
+    return { complete: picture.complete, naturalWidth: picture.naturalWidth };
+  });
+  expect(loaded.complete).toBe(true);
+  expect(loaded.naturalWidth).toBeGreaterThan(100);
+  const avif = await page.request.get("/finland-archipelago-winter.avif");
+  expect(avif.ok()).toBe(true);
+  expect((await avif.body()).byteLength).toBeGreaterThan(2000);
+  const svg = await page.request.get("/finland-archipelago-winter.svg");
+  expect(svg.ok()).toBe(true);
+  expect(await svg.text()).toContain("Original Finland winter archipelago");
+  const fullLogo = page.getByRole("group", { name: "SmartPloy complete page logo" });
+  await expect(fullLogo).toBeVisible();
+  const brandMark = fullLogo.locator(".sp99-identity-mark");
+  await expect(brandMark).toBeVisible();
+  const logoRect = await brandMark.boundingBox();
+  expect(logoRect?.width).toBeGreaterThanOrEqual(48);
+  expect(logoRect?.height).toBeGreaterThanOrEqual(48);
+  const pageLogo = fullLogo.locator(".sp99-identity-text strong");
+  await expect(pageLogo).toHaveText("SmartPloy");
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
+  await expect(page.locator('.flow-start-card[data-flow-mode="assisted"]')).toBeDisabled();
+  await evidence(page, "sp99-finland-cover-full-logo-cv-first-light.png");
+});
+
+test("SP99 dark/light mode is usable, persists after reload, and does not remove the sidebar", async ({ page }) => {
+  await installSyntheticApi(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  const panel = page.locator(".flow-start");
+  const lightSurface = await panel.evaluate((el) => getComputedStyle(el).backgroundColor);
+  const toggle = page.getByRole("button", { name: "Switch to dark mode" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await toggle.click();
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
+  const darkSurface = await panel.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(darkSurface).not.toBe(lightSurface);
+  await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeVisible();
+  await evidence(page, "sp99-finland-cover-full-logo-dark.png");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
+  await expect(page.getByRole("button", { name: "Switch to light mode" })).toBeVisible();
+  await page.getByRole("button", { name: "Switch to light mode" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "light");
+  const restored = await panel.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(restored).toBe(lightSurface);
+});
+
+test("SP99 mobile has visible whole logo and an operable theme toggle without losing navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installSyntheticApi(page);
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "Finland winter archipelago cover" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Switch to dark mode" })).toBeVisible();
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
+  await expect(page.locator(".sidebar .site-brand-mark")).toBeVisible();
+  await page.getByRole("button", { name: "Close navigation" }).click();
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  const horizontalOverflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(horizontalOverflow).toBe(false);
+  await evidence(page, "sp99-finland-mobile-dark-logo.png");
 });
