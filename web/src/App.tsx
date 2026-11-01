@@ -987,13 +987,17 @@ export default function App() {
   const avatar = (session?.email?.charAt(0) || "U").toUpperCase();
   const counts = dashboard.applications;
   const onTool = (name: string) => {
-    if (name === "CV Tailor" || name === "Cover Letter") {
+    if (name === "CV Tailor" || name === "Cover Letter" || name === "AI Writing") {
       if (selectedWorkspaceId) {
         navigate("applications");
-        setNotice("Open your selected application to edit and download its CV and cover letter.");
+        setNotice(name === "AI Writing"
+          ? "Your private AI writing tools are in the selected application studio. Review the exact job, then choose a model suggestion or evidence-backed letter draft."
+          : "Open your selected application to edit and download its CV and cover letter.");
       } else {
         startApplyFlow("assisted");
-        setNotice("Select a job below to open its CV and cover-letter editor.");
+        setNotice(name === "AI Writing"
+          ? "Choose an Assisted job below. You can then compare editable English/Finnish letter drafts and request private model suggestions with consent."
+          : "Select a job below to open its CV and cover-letter editor.");
       }
     } else if (name === "Application prep") navigate("applications");
     else if (name === "Career insights") navigate("insights");
@@ -1065,11 +1069,29 @@ export default function App() {
     <div className="tool-grid">
       <Tool title="CV editor" description="Review and export a job-specific CV in PDF/DOCX" icon={FileText} ready={cv.present || approved.length > 0} onClick={() => onTool("CV Tailor")} />
       <Tool title="Cover letter editor" description="Edit and download a role-specific letter" icon={WandSparkles} ready={cv.present || approved.length > 0} onClick={() => onTool("Cover Letter")} />
+      <Tool title="AI writing assistant" description="Compare factual English/Finnish letters and review private model suggestions for an exact job" icon={Sparkles} ready={true} onClick={() => onTool("AI Writing")} />
       <Tool title="Application prep" description="Track and review draft packages" icon={FileCheck2} ready={true} onClick={() => onTool("Application prep")} />
       <Tool title="Interview prep" description="AI-assisted practice (planned)" icon={Sparkles} ready={false} onClick={() => onTool("Interview prep")} />
       <Tool title="Career insights" description="Explore your evidence and gaps" icon={ChartNoAxesColumn} ready={true} onClick={() => onTool("Career insights")} />
     </div>
-    {!obumReady ? <div className="info-strip"><AlertCircle size={17} /> ObumAI service integration is not configured. AI generation tools stay unavailable until secure machine authentication is enabled.</div> : null}
+    <div className="tools-ai-readiness" aria-label="Private AI writing readiness">
+      <Sparkles size={20} aria-hidden="true" />
+      <div>
+        <strong>{localAI?.ready
+          ? "Private local writing model is available"
+          : localAI?.configured
+            ? "Private writing model is configured but not ready"
+            : "Local model suggestions are optional"}</strong>
+        <p>{localAI?.ready
+          ? "SmartPloy's private Ollama writing model can propose job-specific wording when you explicitly approve each request. Approve accurate career facts first. Suggestions never save or submit themselves."
+          : localAI?.configured
+            ? localAI.failure_category === "model_not_installed"
+              ? "The configured local model is not installed. Full Finnish/English letters from approved evidence remain available in the application studio."
+              : "The private model endpoint is not currently ready. You can still generate complete English/Finnish letters from approved evidence and edit them without a model."
+            : "Private model suggestions are not enabled. Complete English/Finnish letters from approved career evidence and live document reviews still work."}</p>
+        {!health?.obumai_configured ? <p>ObumAI service integration is not configured; that separate gateway does not determine whether SmartPloy's private model or evidence-based letter editor works.</p> : null}
+      </div>
+    </div>
   </section>;
 
   const privateSavedJobsPanel = <section className="panel sources-panel" aria-label="Your private saved jobs">
