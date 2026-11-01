@@ -225,3 +225,17 @@ describe("SP50 original HTTP client preserves private mutation failure status", 
     }
   });
 });
+
+
+describe("SP107 exact-revision PDF preview URL (pure GET, no data transfer)", () => {
+  it("percent-encodes the private workspace ID and binds to one document revision", () => {
+    const url = api.applicationPdfPreviewUrl("private/owner #1", "cv", 7);
+    expect(url).toContain(
+      "/api/v1/application-workspaces/private%2Fowner%20%231/preview/cv/pdf?expected_revision=7"
+    );
+    expect(api.applicationPdfPreviewUrl("job-one", "letter", 3)).toContain(
+      "/job-one/preview/letter/pdf?expected_revision=3"
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

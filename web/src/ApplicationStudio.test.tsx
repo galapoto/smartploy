@@ -46,6 +46,9 @@ vi.mock("./api", () => ({
   applicationDownloadUrl: vi.fn(() => "/synthetic-download"),
   applicationPackageDownloadUrl: vi.fn((id: string) =>
     "/api/v1/application-workspaces/" + encodeURIComponent(id) + "/download/package.zip"),
+  applicationPdfPreviewUrl: vi.fn((id: string, kind: "cv" | "letter", rev: number) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id) +
+    "/preview/" + kind + "/pdf?expected_revision=" + rev),
 }));
 
 function job(tag: string): ApplicationWorkspace {
@@ -111,6 +114,9 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(api.applicationPackageDownloadUrl).mockImplementation((id) =>
     "/api/v1/application-workspaces/" + encodeURIComponent(id) + "/download/package.zip");
+  vi.mocked(api.applicationPdfPreviewUrl).mockImplementation((id, kind, rev) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id) +
+    "/preview/" + kind + "/pdf?expected_revision=" + rev);
   activeUser = "usr-a";
   vi.mocked(api.getSession).mockImplementation(async () => session(activeUser));
   vi.mocked(api.getApplicationWorkspaces).mockResolvedValue(draft("A"));
@@ -2417,5 +2423,71 @@ describe("SP106 complete application package controls", () => {
     fireEvent.click(screen.getByRole("button", {name: "Refresh drafts"}));
     expect(await screen.findByRole("heading", {name: "Account verification required"})).toBeTruthy();
     expect(screen.queryByRole("region", {name: "Complete application file package"})).toBeNull();
+  });
+});
+
+
+describe("SP107 printable PDFs for exact saved, owner-private application revision", () => {
+  const cvLabel = "Preview saved CV PDF in a new tab";
+  const letterLabel = "Preview saved cover letter PDF in a new tab";
+
+  it("offers both printable PDFs with a pinned saved revision and safe new-tab boundary", async () => {
+    studio("assisted");
+    await screen.findByRole("heading", {name: "A private role"});
+    const panel = screen.getByRole("region", {name: "Complete application file package"});
+    const cv = within(panel).getByRole("link", {name: cvLabel});
+    const letter = within(panel).getByRole("link", {name: letterLabel});
+    expect(cv.getAttribute("href")).toBe(
+      "/api/v1/application-workspaces/workspace-A/preview/cv/pdf?expected_revision=1"
+    );
+    expect(letter.getAttribute("href")).toBe(
+      "/api/v1/application-workspaces/workspace-A/preview/letter/pdf?expected_revision=1"
+    );
+    for (const link of [cv, letter]) {
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+      expect(link.getAttribute("aria-disabled")).toBe("false");
+    }
+    expect(panel.textContent).toContain("Nothing is submitted to an employer");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("suppresses both PDFs until all current edits are saved and binds revised links to revision 2", async () => {
+    studio("manual");
+    await screen.findByRole("heading", {name: "A private role"});
+    const panel = screen.getByRole("region", {name: "Complete application file package"});
+    fireEvent.change(screen.getByRole("textbox", {name: "Editable CV text"}), {
+      target: {value: "PRIVATE-CV-A with a verified change"},
+    });
+    const cv = within(panel).getByLabelText(cvLabel);
+    const letter = within(panel).getByLabelText(letterLabel);
+    for (const link of [cv, letter]) {
+      expect(link.getAttribute("href")).toBeNull();
+      expect(link.getAttribute("aria-disabled")).toBe("true");
+      expect(link.getAttribute("tabindex")).toBe("-1");
+    }
+    expect(within(panel).getByText(/Save your CV and cover-letter edits before downloading or previewing/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: /^Save changes$/}));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", 1, "PRIVATE-CV-A with a verified change", "PRIVATE-LETTER-A", "usr-a"
+    ));
+    await waitFor(() => expect(
+      within(panel).getByRole("link", {name: cvLabel}).getAttribute("href")
+    ).toContain("expected_revision=2"));
+    expect(within(panel).getByRole("link", {name: letterLabel}).getAttribute("href"))
+      .toContain("expected_revision=2");
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("removes both private PDF preview links on same-email account takeover", async () => {
+    studio("automatic");
+    await screen.findByRole("heading", {name: "A private role"});
+    activeUser = "usr-b";
+    fireEvent.click(screen.getByRole("button", {name: "Refresh drafts"}));
+    expect(await screen.findByRole("heading", {name: "Account verification required"})).toBeTruthy();
+    expect(screen.queryByRole("link", {name: cvLabel})).toBeNull();
+    expect(screen.queryByRole("link", {name: letterLabel})).toBeNull();
   });
 });
