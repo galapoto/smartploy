@@ -721,3 +721,42 @@ describe("SP21 application journey", () => {
 
 
 });
+
+
+describe("SP96: the applicant has one obvious next action at each gate", () => {
+  it("shows a working upload action without silently choosing a method", () => {
+    const p = { ...props(), cv: { present: false }, mode: null };
+    render(<ApplicationJourney {...p} />);
+    const current = screen.getByLabelText("Your next action");
+    expect(current.textContent).toContain("Connect your CV");
+    const upload = screen.getByRole("button", { name: /^Upload CV$/ });
+    fireEvent.click(upload);
+    expect(p.onUpload).toHaveBeenCalledOnce();
+    expect(p.onMode).not.toHaveBeenCalled();
+    expect(p.onPrepare).not.toHaveBeenCalled();
+  });
+
+  it("shows one unambiguous anchor for choosing the method after CV upload", async () => {
+    const p = { ...props(), mode: null };
+    render(<ApplicationJourney {...p} />);
+    const link = screen.getByRole("link", { name: /^Choose application type$/ });
+    expect(link.getAttribute("href")).toBe("#smartploy-flow-choice");
+    expect(document.getElementById("smartploy-flow-choice")).toBeTruthy();
+    await screen.findByText("IT-suunnittelija");
+    expect(p.onPrepare).not.toHaveBeenCalled();
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
+  it("moves the visible next step to matching jobs for a chosen mode", async () => {
+    const p = { ...props(), mode: "assisted" as const };
+    render(<ApplicationJourney {...p} />);
+    await screen.findByText("IT-suunnittelija");
+    expect(screen.getByRole("link", { name: /^Choose matching jobs$/ })
+      .getAttribute("href")).toBe("#smartploy-flow-matches");
+    fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[0]);
+    expect(screen.getByRole("link", { name: /^Continue selected job$/ })
+      .getAttribute("href")).toBe("#smartploy-flow-matches");
+    expect(p.onPrepare).not.toHaveBeenCalled();
+    expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
+  });
+});
