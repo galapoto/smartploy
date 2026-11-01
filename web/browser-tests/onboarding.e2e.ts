@@ -1029,3 +1029,34 @@ test("SP97: Career tools provides a truthful private AI entry but never bypasses
   await evidence(page, "sp97-ai-writing-cv-first-gate.png");
 });
 
+
+test("SP98: real inference is an explicit synthetic-only action inside a saved Assisted draft", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Synthetic-owned-CV.pdf",
+    readyAI: true,
+  });
+  const privateModelDrafts: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/ai-suggestions") && request.method() === "POST") {
+      privateModelDrafts.push(request.url());
+    }
+  });
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  await page.getByRole("button", { name: /Apply with AI help/i }).last().click();
+  await page.getByRole("button", { name: "Choose this job" }).first().click();
+  await page.getByRole("button", { name: /Prepare CV & application/i }).click();
+  await expect(page.getByRole("heading", { name: /My applications/i }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run real AI test" })).toBeEnabled();
+  expect(state.localAIProbeRequests).toBe(0);
+  await page.getByRole("button", { name: "Run real AI test" }).click();
+  await expect(page.getByRole("status", {
+    name: "Private local model inference verified",
+  })).toBeVisible();
+  expect(state.localAIProbeRequests).toBe(1);
+  expect(privateModelDrafts).toEqual([]);
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  await evidence(page, "sp98-private-model-synthetic-generation-proof.png");
+});
