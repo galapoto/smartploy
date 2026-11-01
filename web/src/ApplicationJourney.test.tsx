@@ -786,8 +786,9 @@ describe("SP101: CV replacement safely pauses application preparation", () => {
     expect((screen.getByRole("button", { name: /apply with AI help/i }) as HTMLButtonElement).disabled)
       .toBe(true);
     expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
-    expect((screen.getAllByRole("button", { name: /choose this job/i })[0] as HTMLButtonElement).disabled)
-      .toBe(true);
+    // The old matching rows are removed entirely during a CV mutation.
+    expect(screen.queryByRole("button", { name: /choose this job/i })).toBeNull();
+    expect(screen.getByText(/Updating your CV. Current job matches will refresh/)).toBeTruthy();
     expect(p.onPrepare).not.toHaveBeenCalled();
     view.rerender(<ApplicationJourney {...p} uploading={false}/>);
     expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
@@ -817,8 +818,8 @@ describe("SP101: CV replacement safely pauses application preparation", () => {
 
     view.rerender(<ApplicationJourney {...p} uploading />);
     expect(stop?.()).toBe(true);
-    expect((screen.getByRole("button", { name: /prepare applications & start agents/i }) as HTMLButtonElement).disabled)
-      .toBe(true);
+    expect(screen.queryByRole("button", { name: /prepare applications & start agents/i })).toBeNull();
+    expect(screen.getByText(/Updating your CV. Current job matches will refresh/)).toBeTruthy();
     finish();
     await waitFor(() => expect(onPrepareSelected).toHaveBeenCalledTimes(1));
   });
