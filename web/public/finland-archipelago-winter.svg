@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 230" role="img" aria-label="Original Finland winter archipelago at rose-gold dusk">
+<defs>
+  <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#829cc0"/><stop offset=".29" stop-color="#e0b6bd"/><stop offset=".61" stop-color="#f6cfb2"/><stop offset="1" stop-color="#e7d3d5"/></linearGradient>
+  <linearGradient id="water" x2="0" y2="1"><stop stop-color="#b5a7b5"/><stop offset=".42" stop-color="#93a9c2"/><stop offset="1" stop-color="#577994"/></linearGradient>
+  <linearGradient id="ice" x2="0" y2="1"><stop stop-color="#e9e9e3"/><stop offset="1" stop-color="#afc6d2"/></linearGradient>
+  <linearGradient id="granite" x2="0" y2="1"><stop stop-color="#708296"/><stop offset=".6" stop-color="#3c5368"/><stop offset="1" stop-color="#263c50"/></linearGradient>
+  <radialGradient id="sun-glow"><stop stop-color="#ffedd1" stop-opacity=".78"/><stop offset="1" stop-color="#ffd9cb" stop-opacity="0"/></radialGradient>
+  <filter id="blur"><feGaussianBlur stdDeviation="4"/></filter>
+</defs>
+<rect width="1600" height="230" fill="url(#sky)"/>
+<ellipse cx="700" cy="94" rx="235" ry="105" fill="url(#sun-glow)"/>
+<path d="M0 51C100 39 190 54 315 44S532 51 684 40S905 54 1041 47S1352 43 1600 53" stroke="#f7d0bf" opacity=".65" fill="none" stroke-width="8"/>
+<path d="M0 71C150 64 302 73 453 64S733 74 840 65S1051 76 1215 63S1486 66 1600 61" stroke="#f4bdb3" opacity=".44" fill="none" stroke-width="3"/>
+<rect x="0" y="104" width="1600" height="126" fill="url(#water)"/>
+<path d="M0 110L58 108l31-6 46 3 63-6 54 5 80-3 38 7 62-7 47 6 69-8 58 6 46-4 46 5 61-8 31 7 63-8 39 4 56-5 38 5 52-8 62 5 67-6 99 5 61-8 88 5 62-7 39 7 65-9 75 11v13H0Z" fill="#354757"/>
+<circle cx="701" cy="96" r="7.5" fill="#fff0c6"/>
+<path d="M703 111c-8 17-19 37-10 65l-13 27 18 27h13l-9-27 16-28c5-25-3-49-15-64" fill="#ffe2b5" opacity=".42" filter="url(#blur)"/>
+<path d="M0 129c165-5 254-8 410-3s269-4 416 3 327 7 425-3 265-8 349-3" stroke="#ffe6d5" stroke-width="2.8" opacity=".4" fill="none"/>
+<path d="M0 156c185 4 298-7 490 3s369 2 517-1 373 11 593-2" stroke="#cdd8dd" stroke-width="2.4" opacity=".3" fill="none"/>
+<!-- Distinctive interlocking shore-fast ice, inspired by postglacial Finnish coastlines -->
+<path d="M0 177l61-20 78 12 37-8 78 16 46-7 71 13 70-7 59 14 67-11 45 16 82-6 35 12 46 2-6 23H0Z" fill="url(#ice)" opacity=".95"/>
+<path d="M0 176l61-19 78 12 37-8 78 16 46-7 71 13 70-7 59 14 67-11 45 16 82-6 35 12" stroke="#dce7ea" fill="none" stroke-width="3"/>
+<path d="M0 199l68-12 43 5 58-8 62 14 49-5 65 15 68-6 51 17 58-8 57 15" fill="none" stroke="#6c96b0" opacity=".5" stroke-width="2"/>
+<path d="M400 179l-18 12 23 13 43-4 14 13 57-11 28 9 18 19M174 161l12 10 13 18 41-12 18 7M603 183l23 8 18-12 34 18 32-2" fill="none" stroke="#6589a4" stroke-width="2" opacity=".6"/>
+<!-- Far island and pine silhouettes; explicitly illustration, not a claimed photograph -->
+<path d="M795 107l12-9 27 3 18-10 32 8 15-7 36 9 16-5 22 9-5 7-84-2-77 3Z" fill="#293f4a"/>
+<path d="M916 108l8-16 8 16m-19 0 11-28 12 28m-52-1 7-19 10 20" fill="#193c41"/>
+<path d="M1232 108l15-7 25 3 16-10 35 8 34-7 21 10 36-5 38 8v5h-220Z" fill="#2d424b"/>
+<!-- Granite foreground on right -->
+<path d="M1160 230c48-43 91-51 141-61 23-26 68-35 112-20 53-23 116-31 187-5v86Z" fill="url(#granite)"/>
+<path d="M1160 230c39-29 74-42 141-61 23-26 68-35 112-20 53-23 116-31 187-5" fill="none" stroke="#aeb7bd" stroke-width="4" opacity=".6"/>
+<path d="M1284 230l65-58m16 58 49-71m41 71 18-67m24 67 52-62" stroke="#263e50" stroke-width="6" opacity=".72"/>
+<path d="M1375 155l30-20 18 8 28-18 21 12 21-5 16 9 20-4 21 13 50-6v14c-78 7-142 3-225-3Z" fill="#e8e6e3"/>
+<!-- Characteristic wind-shaped coastal pine -->
+<path d="M1464 164l-2-39-5-20 5 2 7 21 1 36Z" fill="#263b3f"/>
+<path d="M1467 121l-38-14-18 5 24-11 33 7 31-11 34 3-35 5-30 16Z" fill="#193b3e"/>
+<path d="M1448 104l-34-17 25 6 19-5 27 3 21-9 27 4-35 9-37 9Z" fill="#224d49"/>
+<path d="M1463 101l-30-24 15 5 20 12 34-10 16 3-31 11Z" fill="#284b47"/>
+<path d="M1420 110l-11-9 31 7 28-5 35-12 15 5-46 17Z" fill="#1b4141"/>
+<path d="M1235 215l33-15 56 2 41 28h-130Z" fill="#b3bcc2" opacity=".7"/>
+</svg>
