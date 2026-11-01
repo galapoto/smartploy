@@ -50,6 +50,7 @@ type MockState = {
   privateSavedJobs: Record<string, PrivateSavedJob[]>;
   privateWorkspaces: Record<string, ApplicationWorkspace[]>;
   applicationWorkspaceCreates: string[];
+  localAIProbeRequests: number;
 };
 
 function discovery(state: MockState): SearchResults {
@@ -88,6 +89,7 @@ async function installSyntheticApi(page: Page, options: {
   initial?: Partial<SearchPreferences>;
   cvFilename?: string;
   unavailableAI?: boolean;
+  readyAI?: boolean;
 } = {}): Promise<MockState> {
   const state: MockState = {
     userId: "synthetic-user-a",
@@ -98,6 +100,7 @@ async function installSyntheticApi(page: Page, options: {
     privateSavedJobs: {},
     privateWorkspaces: {},
     applicationWorkspaceCreates: [],
+    localAIProbeRequests: 0,
   };
   const response = async (
     route: import("@playwright/test").Route,
@@ -114,6 +117,23 @@ async function installSyntheticApi(page: Page, options: {
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
+
+    if (path === "/api/v1/local-ai/self-test" && request.method() === "POST") {
+      const body = JSON.parse(request.postData() || "{}");
+      if (!options.readyAI || body.acknowledge_synthetic_inference !== true ||
+          request.headers()["x-smartploy-expected-user-id"] !== state.userId) {
+        await response(route, { detail: "Synthetic proof requires explicit owner approval" }, 403);
+      } else {
+        state.localAIProbeRequests += 1;
+        await response(route, {
+          inference_succeeded: true, model: "synthetic-browser-only-model",
+          provider: "local_obumai_ollama", synthetic_only: true,
+          applicant_data_transferred: false, external_actions_performed: 0,
+          documents_changed: false,
+        });
+      }
+      return;
+    }
 
     if (path === "/api/v1/private-jobs" && request.method() === "POST") {
       const payload = JSON.parse(request.postData() || "{}") as Record<string, string>;
@@ -330,8 +350,10 @@ async function installSyntheticApi(page: Page, options: {
         private: true,
       },
       "/api/v1/local-ai/status": {
-        configured: false, ready: false, provider: "disabled",
-        model: "", external_ai_forwarding: false,
+        configured: Boolean(options.readyAI), ready: Boolean(options.readyAI),
+        provider: options.readyAI ? "local_obumai_ollama" : "disabled",
+        model: options.readyAI ? "synthetic-browser-only-model" : "",
+        external_ai_forwarding: false,
       },
     };
     if (state.unavailableAI && path === "/api/v1/local-ai/status") {
