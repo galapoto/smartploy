@@ -32,7 +32,7 @@ from .training_directory import TrainingDirectoryError, load_training_programs
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import (
     WorkspaceError, WorkspaceRevisionConflict,
-    new_workspace, render_document,
+    new_workspace, render_document, render_application_package,
 )
 from .complete_letter import compose_completed_letter
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
@@ -3119,6 +3119,26 @@ def create_app(
             raise HTTPException(status_code=404, detail="Application workspace not found")
         app.state.browser_receipts.delete(profile_id, workspace_id)
         return {"deleted": True}
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/download/package.zip")
+    def download_application_package(workspace_id: str, request: Request) -> Response:
+        tenant, _ = tenant_context(request)
+        item = app.state.workspace_repository.get(
+            tenant.profile_repository.profile_id, workspace_id,
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        try:
+            archive, filename = render_application_package(item)
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return Response(content=archive, media_type="application/zip", headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+        })
 
     @app.get("/api/v1/application-workspaces/{workspace_id}/download/{kind}/{file_format}")
     def download_application_document(
