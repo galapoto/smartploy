@@ -233,3 +233,37 @@ html[data-smartploy-theme="dark"] .smartploy-app .studio-application-package p {
 @media (max-width: 690px) {
   .studio-application-package > a { width: 100%; flex: 1 1 100%; }
 }
+
+
+/* SP107: explicit printable-PDF previews for the exact saved revision.
+   The preview opens an authenticated, isolated, read-only new tab. */
+.studio-application-preview {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #d3e4ed;
+}
+.studio-application-preview > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  white-space: normal;
+  text-align: center;
+}
+.studio-application-preview > a.disabled {
+  pointer-events: none;
+  cursor: not-allowed;
+  color: #8093a3;
+  background: #ecf2f6;
+  border-color: #d6e1e8;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .studio-application-preview {
+  border-color: #41647e;
+}
+@media (max-width: 690px) {
+  .studio-application-preview > a { flex: 1 1 100%; }
+}

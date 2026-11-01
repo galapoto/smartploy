@@ -5,7 +5,7 @@ import {
   Trash2, AlertCircle, Sparkles, WandSparkles, ClipboardCopy, ExternalLink
 } from "lucide-react";
 import {
-  applicationDownloadUrl, applicationPackageDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
+  applicationDownloadUrl, applicationPackageDownloadUrl, applicationPdfPreviewUrl, deleteApplicationWorkspace, editApplicationWorkspace,
   getApplicationWorkspaces, getApplicationWorkspaceById, markApplicationManuallySent,
   getLocalAIStatus, runLocalAIInferenceProof, requestLocalAISuggestions, proposeEvidenceLetter,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
@@ -1776,10 +1776,36 @@ export default function ApplicationStudio(props: {
             <Download size={17} aria-hidden="true"/>
             Download complete application package · ZIP
           </a>
+          <div className="studio-application-preview" role="group"
+            aria-label="Preview exact saved application PDFs">
+            <a className={"outline-btn compact" + (dirty || busy ||
+                !selected.authority.may_download ? " disabled" : "")}
+              href={dirty || busy || !selected.authority.may_download ? undefined :
+                applicationPdfPreviewUrl(selected.workspace_id, "cv", selected.revision)}
+              aria-disabled={dirty || busy || !selected.authority.may_download}
+              tabIndex={dirty || busy || !selected.authority.may_download ? -1 : undefined}
+              target="_blank" rel="noopener noreferrer"
+              aria-label="Preview saved CV PDF in a new tab">
+              <FileText size={15} aria-hidden="true"/> Preview CV PDF
+            </a>
+            <a className={"outline-btn compact" + (dirty || busy ||
+                !selected.authority.may_download ? " disabled" : "")}
+              href={dirty || busy || !selected.authority.may_download ? undefined :
+                applicationPdfPreviewUrl(selected.workspace_id, "letter", selected.revision)}
+              aria-disabled={dirty || busy || !selected.authority.may_download}
+              tabIndex={dirty || busy || !selected.authority.may_download ? -1 : undefined}
+              target="_blank" rel="noopener noreferrer"
+              aria-label="Preview saved cover letter PDF in a new tab">
+              <FileCheck2 size={15} aria-hidden="true"/> Preview letter PDF
+            </a>
+          </div>
           {dirty ? <p className="studio-application-package-note" role="status">
-            Save your CV and cover-letter edits before downloading; the package contains only the saved version.
+            Save your CV and cover-letter edits before downloading or previewing; the package and
+            PDFs show only the saved version.
           </p> : <p className="studio-application-package-note">
-            Private download only. An unreviewed draft is not a submitted application.
+            Review the exact saved printable PDFs in a new tab. Each preview is tied
+            to this application's revision; if it changes, refresh and review again.
+            Nothing is submitted to an employer.
           </p>}
         </section>
         {selected.status === "draft" ? <section className="studio-handoff" id="smartploy-employer-step"
