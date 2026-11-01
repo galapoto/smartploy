@@ -92,6 +92,7 @@ export default function ApplicationStudio(props: {
   focusId: string; expectedUserId: string; expectedAuthSource: string; onFindJobs: () => void;
   mode?: ApplicationFlowMode | null;
   onModeChange?: (mode: ApplicationFlowMode) => void;
+  onUnsavedChange?: (dirty: boolean) => void;
 }) {
   const [workspaces, setWorkspaces] = useState<ApplicationWorkspace[]>([]);
   const [selectedId, setSelectedId] = useState(props.focusId);
@@ -368,6 +369,10 @@ export default function ApplicationStudio(props: {
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
   ));
+  useEffect(() => {
+    props.onUnsavedChange?.(dirty);
+    return () => props.onUnsavedChange?.(false);
+  }, [dirty, props.onUnsavedChange]);
 
   // Presentation-only: server-owned job rights, reviewed-document hashes,
   // previous attempts, workspace outcome and saved revision remain authoritative.
@@ -1082,7 +1087,12 @@ export default function ApplicationStudio(props: {
         <h2>Application studio</h2>
         <p>Build application documents from your uploaded CV and verified career evidence.</p>
       </div>
-      <button type="button" className="outline-btn compact" onClick={() => void reload()} aria-label="Refresh drafts"><RefreshCw size={16} /> Refresh</button>
+      <button type="button" className="outline-btn compact" onClick={() => {
+        if (dirty && !window.confirm(
+          "Discard unsaved application CV or cover-letter edits and refresh drafts?"
+        )) return;
+        void reload();
+      }} aria-label="Refresh drafts"><RefreshCw size={16} /> Refresh</button>
     </div>
     {error ? <div className="studio-alert error" role="alert"><AlertCircle size={16}/>{error}</div> : null}
     {message ? <div className="studio-alert" role="status"><CheckCircle2 size={16}/>{message}</div> : null}

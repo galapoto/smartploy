@@ -55,6 +55,7 @@ function start(options?: {
   onSave?: (text: string, sha: string) => Promise<CVEditorSaved>;
   onRestore?: (digest: string, sha: string) => Promise<CVEditorRestored>;
   onSaved?: (cv: CVDocument) => void;
+  onUnsavedChange?: (dirty: boolean) => void;
   onWriteStarted?: () => symbol | null;
   onWriteSettled?: (token: symbol) => void;
 }) {
@@ -75,7 +76,8 @@ function start(options?: {
     expectedUserId={options?.userId || USER}
     onSave={onSave} onRestore={onRestore} onSaved={onSaved}
     onWriteStarted={options?.onWriteStarted}
-    onWriteSettled={options?.onWriteSettled}/>);
+    onWriteSettled={options?.onWriteSettled}
+    onUnsavedChange={options?.onUnsavedChange}/>);
   return {onSave, onRestore, onSaved};
 }
 
@@ -333,5 +335,20 @@ describe("SP103 master CV editor write lifecycle", () => {
     fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
     expect(await screen.findByText(/Another CV update is already in progress/)).toBeTruthy();
     expect(onSave).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP104 master CV unsaved reporting", () => {
+  it("reports dirty edits and clears the marker after a verified save", async () => {
+    const onUnsavedChange = vi.fn();
+    const {onSaved} = start({onUnsavedChange});
+    const editor = await screen.findByRole("textbox", {name: "Editable master CV text"});
+    expect(onUnsavedChange).toHaveBeenLastCalledWith(false);
+    fireEvent.change(editor, {target: {value: original + "\nApplicant verified project."}});
+    expect(onUnsavedChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onUnsavedChange).toHaveBeenLastCalledWith(false));
   });
 });

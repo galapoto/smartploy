@@ -2162,3 +2162,26 @@ describe("SP98: verified synthetic local generation and reviewable CV AI edits",
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 });
+
+
+describe("SP104 job-specific CV and cover letter unsaved reporting", () => {
+  it("warns before refreshing unsaved private drafts, and reports clean after saving", async () => {
+    const onUnsavedChange = vi.fn();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<ApplicationStudio focusId="" expectedUserId="usr-a"
+        expectedAuthSource="oidc" onFindJobs={vi.fn()}
+        onUnsavedChange={onUnsavedChange} />);
+      const letter = await screen.findByRole("textbox", {name: "Editable cover letter text"});
+      expect(onUnsavedChange).toHaveBeenLastCalledWith(false);
+      fireEvent.change(letter, {target: {value: "PRIVATE-LETTER-A with real applicant edits"}});
+      expect(onUnsavedChange).toHaveBeenLastCalledWith(true);
+      fireEvent.click(screen.getByRole("button", {name: "Refresh drafts"}));
+      expect(confirm).toHaveBeenCalledWith(
+        "Discard unsaved application CV or cover-letter edits and refresh drafts?"
+      );
+      expect(api.getApplicationWorkspaces).toHaveBeenCalledTimes(1);
+      expect((letter as HTMLTextAreaElement).value).toContain("real applicant edits");
+    } finally { confirm.mockRestore(); }
+  });
+});
