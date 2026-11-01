@@ -482,6 +482,8 @@ export default function ApplicationStudio(props: {
       "letter edits will stay unchanged. You decide whether to use the proposal."
     )) return;
     const ticket = captureDraft(selected);
+    // Any older acceptance waiting for identity verification is now superseded.
+    ++editEpochRef.current;
     setLetterBusy(true); setError(""); setMessage("");
     try {
       const proposal = await runPrivateAction(
@@ -579,6 +581,7 @@ export default function ApplicationStudio(props: {
     );
     if (!ok) return;
     const ticket = captureDraft(selected);
+    ++editEpochRef.current;
     setAIBusy(true); setError(""); setMessage(""); setAISuggestion(null);
     try {
       const response = await runPrivateAction(() =>
@@ -1374,7 +1377,7 @@ export default function ApplicationStudio(props: {
                 Use proposed {letterProposal.language === "fi" ? "Finnish" : "English"} letter
               </button>
               <button type="button" className="outline-btn compact"
-                onClick={() => setLetterProposal(null)}>
+                onClick={() => { ++editEpochRef.current; setLetterProposal(null); }}>
                 Keep my current letter
               </button>
             </div>
