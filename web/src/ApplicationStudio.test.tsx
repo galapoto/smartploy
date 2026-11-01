@@ -20,6 +20,7 @@ vi.mock("./api", () => ({
   createApplicationAgent: vi.fn(),
   changeApplicationAgent: vi.fn(),
   getLocalAIStatus: vi.fn(),
+  runLocalAIInferenceProof: vi.fn(),
   getBrowserHandoffReadiness: vi.fn(),
   getEmployerAttemptStatus: vi.fn(),
   getEmployerReviewIntent: vi.fn(),
@@ -130,6 +131,11 @@ beforeEach(() => {
   vi.mocked(api.getLocalAIStatus).mockResolvedValue({
     configured: false, ready: false, provider: "disabled",
     model: "", external_ai_forwarding: false,
+  });
+  vi.mocked(api.runLocalAIInferenceProof).mockResolvedValue({
+    inference_succeeded: true, model: "synthetic-model", provider: "local_obumai_ollama",
+    synthetic_only: true, applicant_data_transferred: false,
+    external_actions_performed: 0, documents_changed: false,
   });
   vi.mocked(api.getBrowserHandoffReadiness).mockResolvedValue({
     ready: true, blockers: [], document_revision: 1,
