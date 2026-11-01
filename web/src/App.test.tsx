@@ -13,6 +13,7 @@ vi.mock("./api", () => ({
   getCV: vi.fn(), getCVJobMatches: vi.fn(), getDashboard: vi.fn(), getHealth: vi.fn(),
   getJobs: vi.fn(), getProfileFacts: vi.fn(), getSession: vi.fn(),
   startApplicationWorkspace: vi.fn(), uploadCV: vi.fn(),
+  saveCVEditor: vi.fn(), restoreCVEditor: vi.fn(),
   getSearchPreferences: vi.fn(), updateSearchPreferences: vi.fn(),
   getSearchResults: vi.fn(), getLocalAIStatus: vi.fn(),
   prepareMyMatchingDrafts: vi.fn(),
@@ -20,11 +21,25 @@ vi.mock("./api", () => ({
   grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
 vi.mock("./MasterCVEditor", () => ({
-  default: ({ onSaved }: { onSaved: (saved: { present: boolean; filename: string; sha256: string }) => void }) =>
+  default: ({ onSaved, onSave, onWriteStarted, onWriteSettled }: {
+    onSaved: (saved: { present: boolean; filename: string; sha256: string }) => void;
+    onSave: (text: string, digest: string) => Promise<{
+      cv: { present: boolean; filename: string; sha256: string };
+    }>;
+    onWriteStarted?: () => symbol | null;
+    onWriteSettled?: (token: symbol) => void;
+  }) =>
     <div data-testid="master-cv-editor">Private CV editor
       <button type="button" onClick={() =>
         onSaved({ present: true, filename: "CreatedCV.pdf", sha256: "saved-created-cv" })
       }>Save synthetic created CV</button>
+      <button type="button" onClick={() => {
+        const token = onWriteStarted?.();
+        if (!token) return;
+        void onSave("Synthetic applicant with Python and SQL", "previous-cv").then(
+          response => onSaved(response.cv), () => {},
+        ).finally(() => onWriteSettled?.(token));
+      }}>Save synthetic pending CV</button>
     </div>,
 }));
 vi.mock("./ApplicationStudio", () => ({
@@ -1942,5 +1957,48 @@ describe("SP102: parent CV-write barrier against late private results", () => {
     expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
     expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+});
+
+// SP103: The master editor and upload share the same CV-update barrier.
+describe("SP103 editor handoff cannot prepare against the previous CV", () => {
+  it("locks method choices and holds matching requests until the editor save finishes", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "Earlier.pdf", sha256: "previous-cv",
+    });
+    let finishSave!: (value: unknown) => void;
+    vi.mocked(api.saveCVEditor).mockImplementationOnce(
+      () => new Promise(resolve => { finishSave = resolve; }) as never,
+    );
+    render(<App/>);
+    expect(await screen.findByRole("heading", {
+      name: "CV connected. Choose how to apply.",
+    })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save synthetic pending CV" }));
+    await waitFor(() => expect(api.saveCVEditor).toHaveBeenCalledWith(
+      "Synthetic applicant with Python and SQL", "previous-cv", "usr-synthetic-1",
+    ));
+    fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
+    expect(await screen.findByText(/Updating your CV. Current job matches will refresh/)).toBeTruthy();
+    for (const button of document.querySelectorAll("button.flow-mode[data-flow-mode]")) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(api.getCVJobMatches).not.toHaveBeenCalled();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishSave({
+        cv: { present: true, filename: "Edited.pdf", sha256: "new-cv" },
+        history: [], employer_actions_performed: 0, approved_profile_facts_added: 0,
+      });
+    });
+    await waitFor(() => expect(screen.getByText(/Your CV is connected. Choose a method to continue/)).toBeTruthy());
+    await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(1));
+    for (const button of document.querySelectorAll("button.flow-mode[data-flow-mode]")) {
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+    }
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 });

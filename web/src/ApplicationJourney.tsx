@@ -135,7 +135,9 @@ export default function ApplicationJourney(props: {
     const epoch = ++requestEpoch.current;
     setPaging(false);
     setPagingError("");
-    if (!props.cv.present) {
+    if (!props.cv.present || props.uploading) {
+      // Never paint matching jobs from the old CV while the user replaces,
+      // edits or restores it. The next comparison begins after the write.
       setResults(null);
       setLoading(false);
       return () => { active = false; };
@@ -162,7 +164,7 @@ export default function ApplicationJourney(props: {
       if (active && epoch === requestEpoch.current) setLoading(false);
     });
     return () => { active = false; };
-  }, [props.cv.present, props.cv.sha256, props.userId,
+  }, [props.cv.present, props.cv.sha256, props.uploading, props.userId,
       props.selectedJobKey, activeQuery, revision]);
 
   useEffect(() => {
@@ -208,7 +210,7 @@ export default function ApplicationJourney(props: {
   );
 
   async function loadMore() {
-    if (!results || paging || !props.cv.present || !hasMore) return;
+    if (!results || paging || props.uploading || !props.cv.present || !hasMore) return;
     const epoch = requestEpoch.current;
     setPaging(true);
     setPagingError("");
@@ -709,7 +711,9 @@ export default function ApplicationJourney(props: {
         <UploadCloud size={28}/><h3>Your matching jobs appear here</h3>
         <p>Upload your CV above to continue. If you just want to browse, use Find Jobs without uploading anything.</p>
         <button className="secondary-btn" type="button" onClick={props.onFindJobs}>Browse all jobs <ArrowRight size={16}/></button>
-      </div> : loading ? <p className="muted" role="status">
+      </div> : props.uploading ? <p className="muted" role="status">
+        Updating your CV. Current job matches will refresh after the new version is ready.
+      </p> : loading ? <p className="muted" role="status">
         <Loader2 size={16} className="rotate"/> Comparing your CV with current vacancies…
       </p> : error ? <div role="alert" className="flow-error">{error}
         <button className="outline-btn compact" type="button" onClick={() => setRevision(n => n+1)}>

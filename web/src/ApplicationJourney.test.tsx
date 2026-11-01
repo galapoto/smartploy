@@ -823,3 +823,28 @@ describe("SP101: CV replacement safely pauses application preparation", () => {
     await waitFor(() => expect(onPrepareSelected).toHaveBeenCalledTimes(1));
   });
 });
+
+
+describe("SP103 no stale matches during CV mutation", () => {
+  it("clears older CV results during editing and refetches only once the new CV is ready", async () => {
+    const p = props();
+    const view = render(<ApplicationJourney {...p}/>);
+    expect(await screen.findByText("IT-suunnittelija")).toBeTruthy();
+    expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
+    view.rerender(<ApplicationJourney {...p} uploading/>);
+    expect(await screen.findByText(/Updating your CV. Current job matches will refresh/)).toBeTruthy();
+    expect(screen.queryByText("IT-suunnittelija")).toBeNull();
+    expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
+    view.rerender(<ApplicationJourney {...p} cv={{
+      present: true, filename: "Edited.pdf", sha256: "edited-cv",
+    }} uploading={false}/>);
+    await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("IT-suunnittelija")).toBeTruthy();
+  });
+
+  it("never begins a read-only match while the page mounts during an active CV write", async () => {
+    render(<ApplicationJourney {...props()} uploading/>);
+    expect(screen.getByText(/Updating your CV. Current job matches will refresh/)).toBeTruthy();
+    expect(api.getCVJobMatches).not.toHaveBeenCalled();
+  });
+});

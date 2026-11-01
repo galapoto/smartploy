@@ -414,6 +414,27 @@ export default function App() {
     ]);
   }
 
+  // The master editor saves/restores the active CV through a second API
+  // route. Hold the SAME immediate write barrier as upload and deletion,
+  // including its post-save identity check and local document handoff.
+  function beginCVEditorWrite(): symbol | null {
+    if (cvWriteInFlight.current) return null;
+    const token = Symbol("account-scoped-cv-editor-write");
+    cvWriteInFlight.current = token;
+    invalidateCVSelection();
+    setFlowMode(null); setFlowSelectedJob("");
+    setBusyCV(true);
+    return token;
+  }
+
+  function finishCVEditorWrite(token: symbol) {
+    // A late completion from an old account or unmounted editor must never
+    // unlock a newer CV mutation.
+    if (cvWriteInFlight.current !== token) return;
+    cvWriteInFlight.current = null;
+    setBusyCV(false);
+  }
+
   function startApplyFlow(chosen: ApplicationFlowMode, jobKey = "") {
     // A job-card shortcut never skips the CV-first gate. Creating a draft
     // without a CV is impossible and must not visually select a method.
@@ -1334,18 +1355,14 @@ export default function App() {
             {cvBlock}
             <MasterCVEditor key={accountViewKey} expectedUserId={session?.user_id || ""}
               cv={cv}
-              onSave={(text, expectedSha256) => {
-                invalidateCVSelection();
-                return runPrivateMutation(
-                  (userId) => saveCVEditor(text, expectedSha256, userId)
-                );
-              }}
-              onRestore={(digest, expectedSha256) => {
-                invalidateCVSelection();
-                return runPrivateMutation(
-                  (userId) => restoreCVEditor(digest, expectedSha256, userId)
-                );
-              }}
+              onSave={(text, expectedSha256) => runPrivateMutation(
+                (userId) => saveCVEditor(text, expectedSha256, userId)
+              )}
+              onRestore={(digest, expectedSha256) => runPrivateMutation(
+                (userId) => restoreCVEditor(digest, expectedSha256, userId)
+              )}
+              onWriteStarted={beginCVEditorWrite}
+              onWriteSettled={finishCVEditorWrite}
               onSaved={(saved) => {
                 invalidateCVSelection();
                 const firstCV = !cv.present && saved.present;
