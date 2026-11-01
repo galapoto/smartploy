@@ -213,3 +213,167 @@ def test_private_model_status_explains_unreachable_vs_missing_model_without_erro
     assert ready["endpoint_reachable"] is True
     assert ready["ready"] is True
     assert ready["failure_category"] == "ready"
+
+
+def test_sp98_inference_test_runs_real_bounded_model_call_with_synthetic_text_only():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/api/generate"
+        data = json.loads(request.content)
+        seen.append(data)
+        assert data["stream"] is False
+        assert data["think"] is False
+        assert data["options"]["num_predict"] <= 48
+        assert data["options"]["num_ctx"] <= 512
+        assert "READY" in data["prompt"]
+        assert "Python" not in json.dumps(data)
+        assert "Ancient Atlantis" not in json.dumps(data)
+        assert "Junior Developer" not in json.dumps(data)
+        assert "Example Oy" not in json.dumps(data)
+        return httpx.Response(
+            200, json={"done": True, "response": "READY\n"},
+        )
+
+    local = LocalDraftClient(
+        LocalDraftSettings(
+            enabled=True, base_url="http://ollama:11434", model="qwen3:4b",
+        ),
+        client=httpx.Client(
+            base_url="http://ollama:11434", transport=httpx.MockTransport(handler),
+        ),
+    )
+    outcome = local.self_test_inference()
+    assert outcome == {
+        "inference_succeeded": True,
+        "model": "qwen3:4b",
+        "provider": "local_obumai_ollama",
+        "synthetic_only": True,
+        "applicant_data_transferred": False,
+        "external_actions_performed": 0,
+        "documents_changed": False,
+    }
+    assert len(seen) == 1  # An installed-model catalog request is NOT inference.
+
+
+@pytest.mark.parametrize("model_reply", [
+    {"done": False, "response": "READY"},
+    {"done": True, "response": ""},
+    {"done": True, "response": "Hello from an unrelated system"},
+    {"done": True, "response": {"value": "READY"}},
+    {"response": "READY"},
+])
+def test_sp98_synthetic_probe_fails_closed_on_unusable_inference(model_reply):
+    client = httpx.Client(
+        base_url="http://ollama:11434",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json=model_reply),
+        ),
+    )
+    local = LocalDraftClient(
+        LocalDraftSettings(enabled=True, base_url="http://ollama:11434"),
+        client=client,
+    )
+    with pytest.raises(LocalDraftError, match="did not complete|unexpected synthetic"):
+        local.self_test_inference()
+
+
+def test_sp98_synthetic_probe_never_surfaces_ollama_errors_or_unbounded_bodies():
+    def error(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="synthetic PRIVATE_SECRET_TOKEN inside provider error")
+
+    local = LocalDraftClient(
+        LocalDraftSettings(enabled=True, base_url="http://ollama:11434"),
+        client=httpx.Client(
+            base_url="http://ollama:11434", transport=httpx.MockTransport(error),
+        ),
+    )
+    with pytest.raises(LocalDraftError, match="no personal data was sent") as exc:
+        local.self_test_inference()
+    assert "PRIVATE_SECRET_TOKEN" not in str(exc.value)
+
+    oversized = LocalDraftClient(
+        LocalDraftSettings(enabled=True, base_url="http://ollama:11434"),
+        client=httpx.Client(
+            base_url="http://ollama:11434",
+            transport=httpx.MockTransport(
+                lambda _req: httpx.Response(200, content=b"x" * 8193),
+            ),
+        ),
+    )
+    with pytest.raises(LocalDraftError, match="size limit"):
+        oversized.self_test_inference()
+
+
+def test_sp98_self_test_disabled_and_api_rejects_anonymous_or_nonconsented_requests():
+    with pytest.raises(LocalDraftError, match="disabled"):
+        LocalDraftClient(LocalDraftSettings()).self_test_inference()
+    # Auth-disabled unit fixtures have NO verified owner binding. This
+    # expensive endpoint must not be available just because the API is online.
+    app = TestClient(create_app(SmartployService()))
+    url = "/api/v1/local-ai/self-test"
+    assert app.post(url, json={}).status_code == 422
+    assert app.post(url, json={"acknowledge_synthetic_inference": False}).status_code == 422
+    assert app.post(url, json={"acknowledge_synthetic_inference": "true"}).status_code == 422
+    blocked = app.post(url, json={"acknowledge_synthetic_inference": True})
+    assert blocked.status_code == 403
+    assert app.get(url).status_code == 405
+
+
+def test_sp98_inference_api_requires_exact_owner_origin_and_enforces_cooldown(monkeypatch):
+    import smartploy.api as api_module
+    from smartploy.identity import AuthenticatedPrincipal, stable_user_id
+
+    principal = AuthenticatedPrincipal(
+        issuer="https://synthetic-oidc.invalid",
+        subject="synthetic-inference-owner",
+        auth_source="oidc",
+        email="owner@example.invalid",
+    )
+    monkeypatch.setattr(api_module, "_principal_from_request", lambda _request: principal)
+    monkeypatch.setenv("SMARTPLOY_PUBLIC_ORIGIN", "https://smartploy.example.invalid")
+    app = create_app(SmartployService())
+    calls = []
+
+    class StubInference:
+        settings = LocalDraftSettings(
+            enabled=True, base_url="http://ollama:11434", model="qwen3:4b",
+        )
+
+        def self_test_inference(self):
+            calls.append(True)
+            return {
+                "inference_succeeded": True, "model": "qwen3:4b",
+                "provider": "local_obumai_ollama", "synthetic_only": True,
+                "applicant_data_transferred": False,
+                "external_actions_performed": 0, "documents_changed": False,
+            }
+
+    app.state.local_ai = StubInference()
+    client = TestClient(app)
+    url = "/api/v1/local-ai/self-test"
+    owner_id = stable_user_id(principal.issuer, principal.subject)
+    good = {
+        "X-Smartploy-Expected-User-Id": owner_id,
+        "Origin": "https://smartploy.example.invalid",
+        "Sec-Fetch-Site": "same-origin",
+    }
+    payload = {"acknowledge_synthetic_inference": True}
+    wrong_account = {**good, "X-Smartploy-Expected-User-Id": "usr-another"}
+    wrong_origin = {**good, "Origin": "https://untrusted.invalid"}
+    wrong_site = {**good, "Sec-Fetch-Site": "cross-site"}
+    for headers in (wrong_account, wrong_origin, wrong_site):
+        assert client.post(url, json=payload, headers=headers).status_code == 403
+    assert calls == []
+
+    accepted = client.post(url, json=payload, headers=good)
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.headers["cache-control"] == "private, no-store"
+    assert accepted.json()["inference_succeeded"] is True
+    assert accepted.json()["applicant_data_transferred"] is False
+    assert calls == [True]
+
+    repeated = client.post(url, json=payload, headers=good)
+    assert repeated.status_code == 429
+    assert calls == [True]

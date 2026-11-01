@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import os
 import re
+from threading import Lock
+from time import monotonic
 from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import parse_qs, urlsplit
 
@@ -281,6 +283,11 @@ class LocalAISuggestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     acknowledge_local_ai_processing: bool
+
+
+class LocalAISelfTestPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    acknowledge_synthetic_inference: StrictBool
 
 
 class EvidenceLetterPayload(BaseModel):
@@ -626,6 +633,12 @@ def create_app(
     app.state.partner_ashby_transport = AshbyPartnerTransport()
     app.state.partner_ashby_receipts = app.state.partner_lever_receipts
     app.state.local_ai = LocalDraftClient(LocalDraftSettings.from_env())
+    # Each authenticated owner may explicitly trigger a bounded synthetic
+    # generation at most once per 90 seconds, even on concurrent POSTs.
+    # Volatile, per-process and never published to health/logs. Production
+    # runs one API worker; distributed deployments need a shared limiter.
+    local_ai_test_lock = Lock()
+    local_ai_test_last: dict[str, float] = {}
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
     )
@@ -1863,6 +1876,59 @@ def create_app(
     def local_ai_status(request: Request) -> dict[str, Any]:
         tenant_context(request)
         return app.state.local_ai.status()
+
+    @app.post("/api/v1/local-ai/self-test")
+    def local_ai_self_test(
+        payload: LocalAISelfTestPayload, request: Request,
+    ) -> JSONResponse:
+        """Opt-in real model inference using ONLY a synthetic test prompt.
+
+        Must not accept applicant content or reveal model output. This is
+        neither a permission to generate a candidate draft nor a background
+        health check and must never run on an unauthenticated public route.
+        """
+        if payload.acknowledge_synthetic_inference is not True:
+            raise HTTPException(
+                status_code=422, detail="Explicit synthetic inference approval required"
+            )
+        _, binding = tenant_context(request)
+        if binding is None or (
+            request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Origin", public_origin) != public_origin
+            or request.headers.get("Sec-Fetch-Site", "").casefold()
+                not in {"", "same-origin", "none"}
+        ):
+            raise HTTPException(
+                status_code=403, detail="Verified same-origin account action required"
+            )
+        if not app.state.local_ai.settings.enabled:
+            raise HTTPException(
+                status_code=503, detail="Private AI generation is disabled by the operator"
+            )
+        # A repeat request (including a concurrent request) cannot trigger
+        # another costly model call. The gate is consumed even if inference
+        # fails, preventing repeated expensive failures.
+        now = monotonic()
+        with local_ai_test_lock:
+            prior = local_ai_test_last.get(binding.profile_id)
+            if prior is not None and now - prior < 90:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Private AI generation test recently run; retry after 90 seconds",
+                )
+            if len(local_ai_test_last) >= 2048:
+                for key, timestamp in list(local_ai_test_last.items()):
+                    if now - timestamp >= 90:
+                        del local_ai_test_last[key]
+            local_ai_test_last[binding.profile_id] = now
+        try:
+            result = app.state.local_ai.self_test_inference()
+        except LocalDraftError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return JSONResponse(
+            result,
+            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+        )
 
     @app.post("/api/v1/application-workspaces/{workspace_id}/letter-proposal")
     def preview_evidence_letter(

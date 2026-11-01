@@ -20,6 +20,7 @@ vi.mock("./api", () => ({
   createApplicationAgent: vi.fn(),
   changeApplicationAgent: vi.fn(),
   getLocalAIStatus: vi.fn(),
+  runLocalAIInferenceProof: vi.fn(),
   getBrowserHandoffReadiness: vi.fn(),
   getEmployerAttemptStatus: vi.fn(),
   getEmployerReviewIntent: vi.fn(),
@@ -130,6 +131,11 @@ beforeEach(() => {
   vi.mocked(api.getLocalAIStatus).mockResolvedValue({
     configured: false, ready: false, provider: "disabled",
     model: "", external_ai_forwarding: false,
+  });
+  vi.mocked(api.runLocalAIInferenceProof).mockResolvedValue({
+    inference_succeeded: true, model: "synthetic-model", provider: "local_obumai_ollama",
+    synthetic_only: true, applicant_data_transferred: false,
+    external_actions_performed: 0, documents_changed: false,
   });
   vi.mocked(api.getBrowserHandoffReadiness).mockResolvedValue({
     ready: true, blockers: [], document_revision: 1,
@@ -1763,7 +1769,8 @@ describe("Application Studio per-draft result isolation", () => {
     const suggest = screen.getByRole("button", { name: /Suggest tailored wording/ });
     await waitFor(() => expect(suggest.hasAttribute("disabled")).toBe(false));
     fireEvent.click(suggest);
-    expect(await screen.findByText(/Synthetic approved evidence/)).toBeTruthy();
+    expect((await screen.findByRole("region", { name: "Compare current CV with AI-proposed CV" })).textContent)
+      .toContain("Synthetic approved evidence");
     const verification = deferred<SessionInfo>();
     vi.mocked(api.getSession).mockImplementationOnce(() => verification.promise);
     fireEvent.click(screen.getByRole("button", { name: /Insert into editor/ }));
@@ -2061,6 +2068,97 @@ describe("SP97: document proposals are non-destructive and account-scoped", () =
     expect(screen.queryByText("Invalid proposal")).toBeNull();
     expect(screen.queryByRole("button", { name: "Use cover letter only" })).toBeNull();
     expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP98: verified synthetic local generation and reviewable CV AI edits", () => {
+  const ready = {
+    configured: true, ready: true, provider: "local_obumai_ollama" as const,
+    model: "synthetic-model", external_ai_forwarding: false as const,
+    failure_category: "ready" as const,
+  };
+
+  it("distinguishes a catalog check from an actual private inference with no applicant data", async () => {
+    vi.mocked(api.getLocalAIStatus).mockResolvedValue(ready);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    await screen.findByRole("heading", { name: "A private role" });
+    const button = screen.getByRole("button", { name: "Run real AI test" });
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    expect(api.runLocalAIInferenceProof).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("NO CV, approved facts"),
+    );
+    await waitFor(() =>
+      expect(api.runLocalAIInferenceProof).toHaveBeenCalledWith("usr-a"),
+    );
+    const proof = await screen.findByRole("status", {
+      name: "Private local model inference verified",
+    });
+    expect(proof.textContent).toContain("Real private AI generation verified");
+    expect(proof.textContent).toContain("No CV, profile facts");
+    expect(api.requestLocalAISuggestions).not.toHaveBeenCalled();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Generation verified" })
+      .hasAttribute("disabled")).toBe(true);
+  });
+
+  it("never publishes an old account's private inference proof after same-email sign-in changes", async () => {
+    vi.mocked(api.getLocalAIStatus).mockResolvedValue(ready);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const pending = deferred<Awaited<ReturnType<typeof api.runLocalAIInferenceProof>>>();
+    vi.mocked(api.runLocalAIInferenceProof).mockReturnValue(pending.promise);
+    studio();
+    await screen.findByRole("heading", { name: "A private role" });
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: "Run real AI test",
+    }).hasAttribute("disabled")).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Run real AI test" }));
+    await waitFor(() => expect(api.runLocalAIInferenceProof).toHaveBeenCalledTimes(1));
+    activeUser = "usr-b";
+    await act(async () => pending.resolve({
+      inference_succeeded: true, model: "old-user-model",
+      provider: "local_obumai_ollama", synthetic_only: true,
+      applicant_data_transferred: false, external_actions_performed: 0,
+      documents_changed: false,
+    }));
+    expect(await screen.findByRole("heading", {
+      name: "Account verification required",
+    })).toBeTruthy();
+    expect(screen.queryByText("Real private AI generation verified")).toBeNull();
+    expect(screen.queryByText("old-user-model")).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("shows a complete side-by-side CV proposal before selective AI insertion", async () => {
+    vi.mocked(api.getLocalAIStatus).mockResolvedValue(ready);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    const cv = await screen.findByRole("textbox", {
+      name: "Editable CV text",
+    }) as HTMLTextAreaElement;
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: /Suggest tailored wording/,
+    }).hasAttribute("disabled")).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: /Suggest tailored wording/ }));
+    const compare = await screen.findByRole("region", {
+      name: "Compare current CV with AI-proposed CV",
+    });
+    expect(compare.textContent).toContain("PRIVATE-CV-A");
+    expect(compare.textContent).toContain("Synthetic approved evidence");
+    expect(cv.value).toBe("PRIVATE-CV-A"); // preview never modifies the document
+    fireEvent.click(screen.getByRole("button", { name: "Use CV summary only" }));
+    await waitFor(() => expect(cv.value).toContain("PROFILE SUMMARY (review AI wording):"));
+    expect((cv.value.match(/PROFILE SUMMARY \(review AI wording\):/g) || []).length).toBe(1);
+    expect(cv.value.endsWith("PRIVATE-CV-A")).toBe(true);
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Undo last generated edit" }));
+    await waitFor(() => expect(cv.value).toBe("PRIVATE-CV-A"));
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 });

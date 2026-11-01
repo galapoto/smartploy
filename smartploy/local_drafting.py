@@ -208,6 +208,64 @@ class LocalDraftClient:
             pass
         return response
 
+    def self_test_inference(self) -> dict:
+        """Perform a real, bounded local generation without any applicant data.
+
+        GET /api/tags only proves a model name is installed. This explicit
+        inference probe checks the generation path without touching candidate
+        profiles, job listings, stored documents or employer endpoints. The
+        calling API independently authenticates/rate-limits every invocation.
+        """
+        if not self.settings.enabled:
+            raise LocalDraftError("Private AI generation is disabled by the operator")
+        payload = {
+            "model": self.settings.model,
+            "system": "You are running a synthetic local capability check. Reply with only READY.",
+            "prompt": "Synthetic test: return the single word READY. No applicant, CV or job data is included.",
+            "stream": False,
+            "think": False,
+            "options": {"temperature": 0, "num_ctx": 512, "num_predict": 48},
+        }
+        try:
+            with self._http().stream(
+                "POST", "/api/generate", json=payload,
+                timeout=min(self.settings.timeout_seconds, 60.0),
+            ) as response:
+                response.raise_for_status()
+                parts: list[bytes] = []
+                total = 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > 8192:
+                        raise LocalDraftError("Private AI test response exceeded its size limit")
+                    parts.append(chunk)
+            result = json.loads(b"".join(parts))
+            if not isinstance(result, dict) or result.get("done") is not True:
+                raise LocalDraftError("Private AI generation did not complete")
+            raw = result.get("response")
+            if (
+                not isinstance(raw, str) or
+                re.fullmatch(r"READY[.!]?", raw.strip(), flags=re.IGNORECASE) is None
+            ):
+                raise LocalDraftError("Private AI generated an unexpected synthetic reply")
+        except LocalDraftError:
+            raise
+        except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+            # NEVER echo provider bodies, provider URLs, the configured system
+            # prompt or future tenant content into logs or a public API error.
+            raise LocalDraftError(
+                "Private AI inference failed or timed out; no personal data was sent"
+            ) from exc
+        return {
+            "inference_succeeded": True,
+            "model": self.settings.model,
+            "provider": "local_obumai_ollama",
+            "synthetic_only": True,
+            "applicant_data_transferred": False,
+            "external_actions_performed": 0,
+            "documents_changed": False,
+        }
+
     def suggest(self, candidate: JobCandidate, profile: CandidateProfile) -> dict:
         if not self.settings.enabled:
             raise LocalDraftError("Local AI drafting is not enabled by the operator")

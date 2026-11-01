@@ -7,7 +7,7 @@ import {
 import {
   applicationDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
   getApplicationWorkspaces, getApplicationWorkspaceById, markApplicationManuallySent,
-  getLocalAIStatus, requestLocalAISuggestions, proposeEvidenceLetter,
+  getLocalAIStatus, runLocalAIInferenceProof, requestLocalAISuggestions, proposeEvidenceLetter,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
   getEmployerAttemptStatus, getEmployerReviewIntent, getEmployerFinalActionReadiness,
   getLeverPartnerReadiness, getLeverPartnerReceipt, sendLeverPartnerApplication,
@@ -21,7 +21,8 @@ import ApplicationAttemptAudit from "./ApplicationAttemptAudit";
 import AuthorizedAutoApplyBatch from "./AuthorizedAutoApplyBatch";
 import DocumentCoach from "./DocumentCoach";
 import DocumentComparison from "./DocumentComparison";
-import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
+import { prepareAISummaryCV } from "./aiSummaryReview";
+import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, LocalAIInferenceProof, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import { applicationNextStep } from "./applicationNextStep";
 import { summarizeApplicationReviewQueue, type ApplicationReviewFilter } from "./applicationReviewQueue";
@@ -103,6 +104,8 @@ export default function ApplicationStudio(props: {
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAIBusy] = useState(false);
   const [aiRefreshing, setAIRefreshing] = useState(false);
+  const [aiProofBusy, setAIProofBusy] = useState(false);
+  const [aiProof, setAIProof] = useState<LocalAIInferenceProof | null>(null);
   const [letterBusy, setLetterBusy] = useState(false);
   const [aiStatus, setAIStatus] = useState<LocalAIStatus | null>(null);
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
@@ -156,6 +159,7 @@ export default function ApplicationStudio(props: {
     ++editEpochRef.current;
     setWorkspaces([]); setSelectedId("");
     setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
+    setAIProof(null); setAIProofBusy(false);
     setLetterProposal(null); setDocumentUndo(null);
     setHandoff(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
     setPartnerReadiness(null); setPartnerReceipt(null); setPartnerBusy(false); setHandoffPacketText("");
@@ -286,6 +290,9 @@ export default function ApplicationStudio(props: {
     [workspaces, selectedId]
   );
   const selectedPartner = selected ? partnerKind(selected.application_url) : null;
+  const aiCvPlan = selected && aiSuggestion
+    ? prepareAISummaryCV(cvText, selected.role_title, selected.company, aiSuggestion.proposal.cv_summary)
+    : null;
   // Clear draft-local editor content, receipt/packet previews AND pending
   // indicators before a different draft can paint. The old draft's promise
   // may still finish; its completion must never unlock the new draft.
@@ -298,6 +305,7 @@ export default function ApplicationStudio(props: {
       ++editEpochRef.current;
       setBusy(false); setAIBusy(false); setLetterBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
       setAISuggestion(null);
+      setAIProof(null); setAIProofBusy(false);
       setLetterProposal(null); setDocumentUndo(null);
       setCvText(selected?.cv_text || "");
       setLetterText(selected?.cover_letter_text || "");
@@ -572,7 +580,7 @@ export default function ApplicationStudio(props: {
 
   async function askLocalAI() {
     if (!selected || dirty || selected.status !== "draft" || browserReceipt ||
-        employerAttempt?.previous_attempt_reserved || !aiStatus?.ready) return;
+        employerAttempt?.previous_attempt_reserved || aiProofBusy || !aiStatus?.ready) return;
     const ok = window.confirm(
       "Send the job description and your approved profile facts to the configured " +
       "private local ObumAI/Ollama model? Your uploaded CV file, unapproved profile " +
@@ -604,9 +612,43 @@ export default function ApplicationStudio(props: {
     } finally { if (isCurrentDraft(ticket)) setAIBusy(false); }
   }
 
+  async function testLocalAIGeneration() {
+    if (!selected || !aiStatus?.ready || aiProofBusy || aiBusy ||
+        aiRefreshing || busy || accountBlockedRef.current) return;
+    if (!window.confirm(
+      "Run one small REAL generation using the configured PRIVATE Ollama model? " +
+      "The test sends only a fixed synthetic word prompt—NO CV, approved facts, " +
+      "cover letter, job description or employer details. It does not save or " +
+      "send an application. A short per-account cooldown limits model use."
+    )) return;
+    const ticket = captureDraft(selected);
+    setAIProofBusy(true); setAIProof(null); setError(""); setMessage("");
+    try {
+      const result = await runPrivateAction(
+        () => runLocalAIInferenceProof(props.expectedUserId), ticket,
+      );
+      if (!isCurrentDraft(ticket)) return;
+      if (!result.inference_succeeded || !result.synthetic_only ||
+          result.applicant_data_transferred !== false ||
+          result.external_actions_performed !== 0 ||
+          result.documents_changed !== false) {
+        throw new Error("Private model test did not return valid read-only proof");
+      }
+      setAIProof(result);
+      setMessage("Real private-model generation succeeded with synthetic text only. " +
+        "Your applicant documents and employer application were untouched. " +
+        "Job-specific AI suggestions still require separate consent and review.");
+    } catch (exc) {
+      reportActionError(exc, "The synthetic private-model generation test did not complete.");
+    } finally {
+      if (isCurrentDraft(ticket)) setAIProofBusy(false);
+    }
+  }
+
   async function refreshAIReadiness() {
     if (aiRefreshing || accountBlockedRef.current) return;
     setAIRefreshing(true);
+    setAIProof(null);
     try {
       // Read model readiness only; do not send any CV, letter or job data.
       await verifyAccount();
@@ -624,30 +666,30 @@ export default function ApplicationStudio(props: {
     if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt ||
         partnerReceipt || employerAttempt?.previous_attempt_reserved || busy) return;
     const draft = aiSuggestion.proposal;
+    const plan = target === "letter" ? null :
+      prepareAISummaryCV(cvText, selected.role_title, selected.company, draft.cv_summary);
+    if (plan?.mode === "blocked") {
+      setMessage(plan.reason + " The cover-letter-only option remains available.");
+      return;
+    }
     const ticket = captureDraft(selected);
     const editEpoch = editEpochRef.current;
+    const cvVerb = plan?.mode === "replace"
+      ? "REPLACE the precisely identified previous AI summary without altering the rest of your CV"
+      : "ADD the proposed AI summary above your unchanged CV";
     const prompt = target === "both"
-      ? "Insert this AI-generated CV summary and REPLACE the current cover letter? " +
-        "Review the comparison first. Neither document is saved or submitted. " +
-        "You can undo before saving."
-      : "Insert only the AI-proposed " + (target === "cv" ? "CV summary" : "cover letter") +
-        " for this job? Review every claim. The change is unsaved and undoable.";
+      ? cvVerb + " AND replace the cover letter with the proposed text? " +
+        "Review both comparisons first. Nothing is saved or submitted. You can undo before saving."
+      : target === "cv"
+        ? cvVerb + "? Review the original and proposed CV side by side first. " +
+          "The change is unsaved and undoable."
+        : "Replace only the current cover letter with the AI-proposed letter? " +
+          "Review every claim. The change is unsaved and undoable.";
     if (!window.confirm(prompt)) return;
     try { await verifyAccount(); } catch { return; }
     if (!isCurrentDraft(ticket) || editEpochRef.current !== editEpoch) return;
 
-    // Legacy generated CV summaries are not reliably delimited, and may be
-    // manually edited. Never add a duplicate or silently guess its bounds.
-    if (target !== "letter" &&
-        cvText.includes("PROFILE SUMMARY (review AI wording):")) {
-      setMessage("This CV already contains an AI-written summary. Edit that section " +
-        "yourself rather than stacking another summary. The letter-only action remains available.");
-      return;
-    }
-    const nextCV = target === "letter" ? cvText :
-      "TARGET ROLE: " + selected.role_title + " — " + selected.company +
-      "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
-      "\n\n" + cvText;
+    const nextCV = plan?.text ?? cvText;
     const nextLetter = target === "cv" ? letterText : draft.cover_letter;
     if (nextCV.length > 30000 || nextLetter.length > 10000 ||
         (target !== "cv" && !nextLetter.trim())) {
@@ -664,8 +706,8 @@ export default function ApplicationStudio(props: {
     if (target !== "letter") setCvText(nextCV);
     if (target !== "cv") setLetterText(nextLetter);
     setAISuggestion(null);
-    setMessage("Your selected AI wording was inserted as an UNSAVED edit. " +
-      "Check every factual claim. You can undo before saving.");
+    setMessage("The chosen AI wording is now an UNSAVED edit. Verify every claim, " +
+      "then save deliberately. Undo is available until you type or save.");
   }
 
   async function copyBrowserPacket() {
@@ -1317,7 +1359,7 @@ export default function ApplicationStudio(props: {
           <div className="studio-ai-actions" role="group"
               aria-label="Private writing assistant actions">
             <button className="outline-btn studio-ai-trigger" type="button"
-              disabled={!aiStatus?.ready || busy || aiBusy || dirty || selected.status !== "draft" ||
+              disabled={!aiStatus?.ready || busy || aiBusy || aiProofBusy || dirty || selected.status !== "draft" ||
                 !!browserReceipt || employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void askLocalAI()}>
               <WandSparkles size={16}/> {aiBusy ? "Generating with the local model…" : "Suggest tailored wording"}
@@ -1336,16 +1378,37 @@ export default function ApplicationStudio(props: {
               onClick={() => void redraftLetter("fi")}>
               {letterBusy ? "Drafting…" : "Write Finnish letter"}
             </button>
+            <button className="outline-btn compact studio-ai-proof-trigger" type="button"
+              onClick={() => void testLocalAIGeneration()}
+              disabled={!aiStatus?.ready || aiBusy || aiProofBusy || aiRefreshing ||
+                busy || !!aiProof}>
+              <Sparkles size={15} aria-hidden="true" />
+              {aiProofBusy ? "Testing real local generation…" :
+                aiProof ? "Generation verified" : "Run real AI test"}
+            </button>
             <button className="outline-btn compact" type="button"
               onClick={() => void refreshAIReadiness()}
-              disabled={aiRefreshing || aiBusy}>
+              disabled={aiRefreshing || aiBusy || aiProofBusy}>
               <RefreshCw size={15} className={aiRefreshing ? "rotate" : ""}/>
               {aiRefreshing ? "Checking…" : "Check AI connection"}
             </button>
           </div>
+          {aiProof ? <div className="studio-ai-proof" role="status"
+              aria-label="Private local model inference verified">
+            <CheckCircle2 size={18} aria-hidden="true"/>
+            <div><strong>Real private AI generation verified</strong>
+              <p>The model completed a synthetic inference. No CV, profile facts,
+                vacancy, letter or employer data was sent; no document was changed.
+                Job-specific wording still requires separate consent and review.</p>
+            </div>
+          </div> : null}
           <p className="studio-ai-privacy">
-            The live writing coach below checks your text instantly without a model.
-            Private Ollama generation requires your explicit consent every time,
+            Check AI connection inspects only the installed model catalog.
+            Run real AI test performs a short, explicitly approved inference
+            with synthetic data and a per-account cooldown. Neither action
+            sends your CV or a job description. The live writing coach works
+            instantly without a model. Job-specific Ollama suggestions require
+            your explicit consent every time,
             and sends only the vacancy and approved profile facts. Nothing is
             applied or submitted automatically.
             {dirty ? " Save your document edits before requesting a new private-model suggestion." : ""}
@@ -1386,13 +1449,28 @@ export default function ApplicationStudio(props: {
             <div className="studio-ai-preview-title">
               <strong>Unverified AI proposal · {aiSuggestion.model}</strong>
               <button className="navy-btn compact" type="button"
+                disabled={aiCvPlan?.mode === "blocked"}
                 onClick={() => void insertAISuggestion()}>Insert into editor <ArrowRight size={14}/></button>
             </div>
             <h4>{aiSuggestion.proposal.cv_headline}</h4>
             <p>{aiSuggestion.proposal.cv_summary}</p>
+            {aiCvPlan?.mode === "blocked"
+              ? <p className="studio-ai-cv-boundary" role="status">{aiCvPlan.reason}
+                  You may still use the AI cover letter separately.</p>
+              : aiCvPlan
+                ? <details className="studio-ai-cv-comparison" open>
+                    <summary>{aiCvPlan.mode === "replace"
+                      ? "Review replacement of the existing AI CV summary"
+                      : "Review proposed job-specific CV summary"}</summary>
+                    <DocumentComparison title="Compare current CV with AI-proposed CV"
+                      current={cvText} proposed={aiCvPlan.text} source="private_ai" />
+                    <p className="studio-ai-cv-boundary">{aiCvPlan.reason}</p>
+                  </details>
+                : null}
             <div className="studio-ai-target-actions" role="group"
               aria-label="Use the AI proposal in selected documents">
               <button className="outline-btn compact" type="button"
+                disabled={aiCvPlan?.mode === "blocked"}
                 onClick={() => void insertAISuggestion("cv")}>
                 Use CV summary only
               </button>
