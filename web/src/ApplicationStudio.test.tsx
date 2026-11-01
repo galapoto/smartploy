@@ -1979,6 +1979,29 @@ describe("SP97: document proposals are non-destructive and account-scoped", () =
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 
+  it("cancels pending letter acceptance when the applicant chooses Keep my current letter", async () => {
+    studio();
+    const letter = await screen.findByRole("textbox", {
+      name: "Editable cover letter text",
+    }) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole("button", { name: "Finnish draft" }));
+    await screen.findByRole("region", { name: "Review generated cover letter" });
+    const pendingVerification = deferred<SessionInfo>();
+    let verifying = false;
+    vi.mocked(api.getSession).mockImplementationOnce(() => {
+      verifying = true;
+      return pendingVerification.promise;
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use proposed Finnish letter" }));
+    await waitFor(() => expect(verifying).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Keep my current letter" }));
+    await act(async () => { pendingVerification.resolve(session("usr-a")); });
+    expect(letter.value).toBe("PRIVATE-LETTER-A");
+    expect(screen.queryByRole("button", { name: "Undo last generated edit" })).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
   it("lets the user undo selective AI letter insertion, then clears undo after a manual edit", async () => {
     vi.mocked(api.getLocalAIStatus).mockResolvedValue({
       configured: true, ready: true, provider: "local_obumai_ollama",
