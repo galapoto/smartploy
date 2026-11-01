@@ -1237,6 +1237,16 @@ test("SP105: compare and deliberately use a newer master CV in one saved job wit
   await panel.getByRole("button", {name: /Use current master CV in this job draft/i}).click();
   await expect(cv).toHaveValue(fullMaster);
   await expect(letter).toHaveValue("FICTIONAL letter for Example Oy");
+  await page.getByRole("button", {name: "Undo master CV replacement"}).click();
+  await expect(cv).toHaveValue("FICTIONAL CV draft for Junior Data Analyst");
+  await expect(letter).toHaveValue("FICTIONAL letter for Example Oy");
+  // The first copy and its undo were both editor-only.
+  expect(state.privateWorkspaces[state.userId][0].revision).toBe(1);
+  await panel.getByRole("button", {name: "Compare with current master CV"}).click();
+  await expect(comparison).toContainText(fullMaster);
+  page.once("dialog", async dialog => dialog.accept());
+  await panel.getByRole("button", {name: /Use current master CV in this job draft/i}).click();
+  await expect(cv).toHaveValue(fullMaster);
   expect(state.privateWorkspaces[state.userId][0].revision).toBe(1);
   await page.getByRole("button", {name: /^Save changes$/}).click();
   await expect.poll(() => state.privateWorkspaces[state.userId][0].revision).toBe(2);

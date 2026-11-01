@@ -47,7 +47,7 @@ type EvidenceLetterPreview = {
 };
 type DocumentUndo = {
   key: string;
-  kind: "private AI" | "letter proposal";
+  kind: "private AI" | "letter proposal" | "master CV";
   beforeCV: string;
   beforeLetter: string;
   afterCV: string;
@@ -569,7 +569,14 @@ export default function ApplicationStudio(props: {
     if (!isCurrentDraft(ticket) || editEpochRef.current !== editEpoch ||
         serial !== masterCVSerial.current || activeMasterSHA.current !== preview.sha256) return;
     ++editEpochRef.current;
-    setDocumentUndo(null); setAISuggestion(null); setLetterProposal(null);
+    // Reuse the existing account-checked, editing-epoch-aware undo control.
+    // This preserves even unsaved job-specific CV edits until the next save.
+    setDocumentUndo({
+      key: ticket.key, kind: "master CV",
+      beforeCV: cvText, beforeLetter: letterText,
+      afterCV: preview.text, afterLetter: letterText,
+    });
+    setAISuggestion(null); setLetterProposal(null);
     setCvText(preview.text);
     setMasterCVPreview(null);
     setMessage("Current master CV copied into this job-specific editor. The cover letter is unchanged. " +
@@ -695,7 +702,9 @@ export default function ApplicationStudio(props: {
     setCvText(documentUndo.beforeCV);
     setLetterText(documentUndo.beforeLetter);
     setDocumentUndo(null);
-    setMessage("Last generated edit undone. Your prior unsaved wording is restored. Nothing was sent.");
+    setMessage(documentUndo.kind === "master CV"
+      ? "Master CV replacement undone. Your previous job-specific CV and cover letter are restored. Nothing was saved or sent."
+      : "Last generated edit undone. Your prior unsaved wording is restored. Nothing was sent.");
   }
 
   async function askLocalAI() {
@@ -1631,14 +1640,20 @@ export default function ApplicationStudio(props: {
           !employerAttempt?.previous_attempt_reserved ? <div
             className="studio-document-undo" role="status">
             <div>
-              <strong>Generated change not yet saved</strong>
-              <small>Restore your wording from before the last {documentUndo.kind} insertion.
-                This changes only the private editor, not the employer application.</small>
+              <strong>{documentUndo.kind === "master CV"
+                ? "Master CV replacement not yet saved"
+                : "Generated change not yet saved"}</strong>
+              <small>{documentUndo.kind === "master CV"
+                ? "Restore your earlier job-specific CV edits, keeping the exact cover letter. The employer has not been contacted."
+                : "Restore your wording from before the last " + documentUndo.kind +
+                  " insertion. This changes only the private editor, not the employer application."}</small>
             </div>
             <button type="button" className="outline-btn compact"
               disabled={busy || aiBusy || letterBusy}
               onClick={() => void undoGeneratedEdit()}>
-              Undo last generated edit
+              {documentUndo.kind === "master CV"
+                ? "Undo master CV replacement"
+                : "Undo last generated edit"}
             </button>
           </div> : null}
         <div className="studio-document" id="smartploy-cv-review">

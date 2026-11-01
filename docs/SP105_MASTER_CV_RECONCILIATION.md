@@ -22,3 +22,7 @@ SP105 implements an **explicit, owner-private Compare → Choose → Review → 
 ## Validation / outstanding
 
 Run exact-SHA frontend tests, full Python API/real PostgreSQL contract tests, synthetic Chromium browser tests, Compose smoke and exact-checkout review receipt. Add positive copy-and-save flow, stale SHA, in-flight draft switching, account-switch rejection, no-save/no-employer-call tests. Keep source branch review-only pending predecessor PRs, independent review, ObumDelivery gates where required, real two-account acceptance, approved immutable production release and frontend/backend revision parity. No claim of live employer submission.
+
+## Reversible unsaved action
+
+Copying the current master CV into the job editor now reuses the existing `DocumentUndo` state and account-verified `undoGeneratedEdit` controller. The applicant can immediately choose **Undo master CV replacement**, restoring the exact prior job-specific CV (including any unsaved corrections) and the unchanged letter. No server write occurs until the explicit later Save. Both unit and synthetic Chromium tests exercise this sequence.

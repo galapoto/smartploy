@@ -2332,3 +2332,37 @@ describe("SP105 owner-private current master CV comparison and manual reconcilia
     expect(api.getCVEditor).not.toHaveBeenCalled();
   });
 });
+
+
+describe("SP105 undo current master CV before server save", () => {
+  it("restores the exact prior job CV without overwriting the letter or contacting an employer", async () => {
+    const master = {
+      present: true, sha256: "b".repeat(64), filename: "Latest-CV.docx",
+    };
+    vi.mocked(api.getCVEditor).mockResolvedValue({
+      present:true, text:"Updated full CV with verified personal work, SQL and Python history.",
+      sha256:master.sha256, filename:master.filename,
+      history:[], created_by_editor:false,
+      employer_actions_performed:0, approved_profile_facts_added:0,
+    });
+    const confirm=vi.spyOn(window,"confirm").mockReturnValue(true);
+    try {
+      render(<ApplicationStudio focusId="workspace-A" expectedUserId="usr-a"
+        expectedAuthSource="oidc" onFindJobs={vi.fn()} masterCV={master}/>);
+      await screen.findByRole("heading", {name: "A private role"});
+      const cv=screen.getByRole("textbox",{name:"Editable CV text"}) as HTMLTextAreaElement;
+      const letter=screen.getByRole("textbox",{name:"Editable cover letter text"}) as HTMLTextAreaElement;
+      fireEvent.change(cv,{target:{value:"PRIVATE-CV-A with applicant's unsaved corrections"}});
+      fireEvent.click(screen.getByRole("button",{name:/Compare with current master CV/i}));
+      await screen.findByRole("region",{name:"Job-specific CV versus current master CV"});
+      fireEvent.click(screen.getByRole("button",{name:/Use current master CV in this job draft/i}));
+      await waitFor(()=>expect(cv.value).toContain("Updated full CV with verified"));
+      expect(letter.value).toBe("PRIVATE-LETTER-A");
+      fireEvent.click(screen.getByRole("button",{name:"Undo master CV replacement"}));
+      await waitFor(()=>expect(cv.value).toBe("PRIVATE-CV-A with applicant's unsaved corrections"));
+      expect(letter.value).toBe("PRIVATE-LETTER-A");
+      expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+      expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    } finally {confirm.mockRestore();}
+  });
+});
