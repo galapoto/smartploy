@@ -473,15 +473,13 @@ export default function ApplicationStudio(props: {
         aiBusy || !!browserReceipt || !!partnerReceipt ||
         employerAttempt?.previous_attempt_reserved) return;
     if (dirty && !window.confirm(
-      "Replace your current unsaved cover-letter changes with a new " +
-      (language === "fi" ? "Finnish" : "English") +
-      " draft? Unsaved CV edits will remain in the editor, but neither " +
-      "document will be saved automatically."
+      "Generate a separate " + (language === "fi" ? "Finnish" : "English") +
+      " letter preview from your approved career facts? Your unsaved CV and " +
+      "letter edits will stay unchanged. You decide whether to use the proposal."
     )) return;
     const ticket = captureDraft(selected);
     setLetterBusy(true); setError(""); setMessage("");
     try {
-      // Reuse the same account- and saved-revision checks that guard edits.
       const proposal = await runPrivateAction(
         () => proposeEvidenceLetter(
           selected.workspace_id, selected.revision, language,
@@ -492,23 +490,74 @@ export default function ApplicationStudio(props: {
       if (proposal.workspace_revision !== selected.revision ||
           !proposal.review_required || proposal.saved ||
           proposal.employer_contacts !== 0 ||
-          proposal.external_actions_performed !== 0) {
-        throw new Error("The private cover-letter proposal was not safe to use");
+          proposal.external_actions_performed !== 0 ||
+          typeof proposal.cover_letter !== "string" ||
+          !proposal.cover_letter.trim() ||
+          proposal.cover_letter.length > 10000) {
+        throw new Error("The private cover-letter proposal was not safe to preview");
       }
-      setLetterText(proposal.cover_letter);
-      setMessage(proposal.complete === false
-        ? "Letter prose inserted, but it needs more confirmed information: " +
-          (proposal.missing_information || []).join(" ") +
-          " Review the wording and click Save changes. Nothing was sent to an employer."
-        : (language === "fi" ? "Finnish" : "English") +
-          " cover letter generated as complete, editable prose. Review each claim, " +
-          "personalize if needed, and click Save changes. Nothing was sent to an employer."
-      );
+      setLetterProposal({
+        key: ticket.key,
+        language,
+        text: proposal.cover_letter,
+        complete: proposal.complete !== false,
+        missingInformation: proposal.missing_information || [],
+        reviewNotes: proposal.review_notes || [],
+      });
+      setMessage((language === "fi" ? "Finnish" : "English") +
+        " letter proposal ready for comparison. Your current CV and cover " +
+        "letter were NOT changed. Inspect the preview and explicitly use it " +
+        "only if the facts are correct; no employer was contacted.");
     } catch (exc) {
-      reportActionError(exc, "Unable to create a private evidence-backed draft.");
+      reportActionError(exc, "Unable to create a private evidence-backed proposal.");
     } finally {
-      setLetterBusy(false);
+      if (isCurrentDraft(ticket)) setLetterBusy(false);
     }
+  }
+
+  async function useLetterProposal() {
+    if (!selected || !letterProposal || selected.status !== "draft" ||
+        busy || aiBusy || letterBusy || !!browserReceipt || !!partnerReceipt ||
+        employerAttempt?.previous_attempt_reserved) return;
+    const ticket = captureDraft(selected);
+    if (letterProposal.key !== ticket.key) return;
+    if (letterText !== selected.cover_letter_text && !window.confirm(
+      "Replace your UNSAVED cover-letter edits with this reviewed proposal? " +
+      "You can undo the replacement before saving. Your CV will not change."
+    )) return;
+    if (!letterProposal.complete && !window.confirm(
+      "Some information in this letter still needs confirmation: " +
+      letterProposal.missingInformation.join(" ") +
+      " Continue with the editable letter and review every claim?"
+    )) return;
+    try { await verifyAccount(); } catch { return; }
+    if (!isCurrentDraft(ticket)) return;
+    const proposed = letterProposal.text;
+    setDocumentUndo({
+      key: ticket.key, kind: "letter proposal",
+      beforeCV: cvText, beforeLetter: letterText,
+      afterCV: cvText, afterLetter: proposed,
+    });
+    setLetterText(proposed);
+    setLetterProposal(null);
+    setMessage("Reviewed letter inserted as an UNSAVED edit. Verify each claim " +
+      "and save deliberately. You can undo this insertion before saving.");
+  }
+
+  async function undoGeneratedEdit() {
+    if (!selected || !documentUndo || selected.status !== "draft" ||
+        busy || aiBusy || letterBusy || !!browserReceipt || !!partnerReceipt ||
+        employerAttempt?.previous_attempt_reserved) return;
+    const ticket = captureDraft(selected);
+    if (documentUndo.key !== ticket.key ||
+        documentUndo.afterCV !== cvText ||
+        documentUndo.afterLetter !== letterText) return;
+    try { await verifyAccount(); } catch { return; }
+    if (!isCurrentDraft(ticket)) return;
+    setCvText(documentUndo.beforeCV);
+    setLetterText(documentUndo.beforeLetter);
+    setDocumentUndo(null);
+    setMessage("Last generated edit undone. Your prior unsaved wording is restored. Nothing was sent.");
   }
 
   async function askLocalAI() {
