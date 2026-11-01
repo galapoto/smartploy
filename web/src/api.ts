@@ -541,6 +541,20 @@ export function getLocalAIStatus(): Promise<import("./types").LocalAIStatus> {
   return request<import("./types").LocalAIStatus>("/api/v1/local-ai/status");
 }
 
+/** Perform a deliberately tiny synthetic local inference. No applicant/job data. */
+export function runLocalAIInferenceProof(
+  expectedUserId: string
+): Promise<import("./types").LocalAIInferenceProof> {
+  return request<import("./types").LocalAIInferenceProof>(
+    "/api/v1/local-ai/self-test",
+    {
+      method: "POST",
+      body: JSON.stringify({ acknowledge_synthetic_inference: true })
+    },
+    expectedUserId,
+  );
+}
+
 export function requestLocalAISuggestions(
   workspaceId: string, expectedRevision: number, expectedUserId: string
 ): Promise<{ suggestion: import("./types").LocalAISuggestion; workspace_revision: number }> {
