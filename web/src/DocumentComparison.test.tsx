@@ -36,7 +36,7 @@ describe("SP105 applicant-owned master CV provenance comparison", () => {
       current="Job-specific CV text" proposed="Current full master CV text" source="master_cv"/>);
     const section = screen.getByRole("region", { name: "Job-specific CV versus current master CV" });
     expect(section.textContent).toContain("Current owner-private master CV");
-    expect(section.textContent).toContain("Current master CV text");
+    expect(section.textContent).toContain("Current full master CV text");
     expect(section.textContent).toContain("does not save a document");
     expect(screen.queryByRole("button", { name: /send|submit/i })).toBeNull();
   });
