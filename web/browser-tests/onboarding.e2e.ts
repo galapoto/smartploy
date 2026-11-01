@@ -276,6 +276,31 @@ async function installSyntheticApi(page: Page, options: {
       return;
     }
     if (path.startsWith("/api/v1/application-workspaces/") &&
+        path.endsWith("/download/package.zip") && request.method() === "GET") {
+      const id = decodeURIComponent(path.slice(
+        "/api/v1/application-workspaces/".length, -"/download/package.zip".length,
+      ));
+      const owned = (state.privateWorkspaces[state.userId] || [])
+        .find(item => item.workspace_id === id);
+      if (!owned) {
+        await response(route, {detail: "No owner-scoped synthetic application"}, 404);
+      } else {
+        // Real file contents are tested by backend ZIP/PDF/DOCX tests.
+        // An empty valid ZIP here proves browser download/filename routing.
+        await route.fulfill({
+          status: 200,
+          contentType: "application/zip",
+          headers: {
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": 'attachment; filename="synthetic-application-package.zip"',
+            "X-Content-Type-Options": "nosniff",
+          },
+          body: Buffer.from("UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==", "base64"),
+        });
+      }
+      return;
+    }
+    if (path.startsWith("/api/v1/application-workspaces/") &&
         request.method() === "GET") {
       const relative = path.slice("/api/v1/application-workspaces/".length);
       const [encodedId, action] = relative.split("/");
@@ -1257,4 +1282,32 @@ test("SP105: compare and deliberately use a newer master CV in one saved job wit
   await expect(page.getByRole("button", {name: /Submit reviewed application to authorized/i}))
     .toHaveCount(0);
   await evidence(page,"sp105-current-master-cv-reconciliation.png");
+});
+
+
+test("SP106: one saved job downloads a private CV and letter ZIP without employer submission", async ({page}) => {
+  const state = await installSyntheticApi(page,{cvFilename:"User-owned-CV.docx"});
+  await page.goto("/");
+  await page.locator('.flow-start-card[data-flow-mode="manual"]').click();
+  await page.getByRole("button",{name:"Choose this job"}).first().click();
+  await page.getByRole("button",{name:"Save application draft"}).click();
+  const panel = page.getByRole("region",{name:"Complete application file package"});
+  const link = panel.getByRole("link",{
+    name:"Download complete application ZIP with CV and cover letter PDF and DOCX",
+  });
+  await expect(link).toHaveAttribute("href",/\/download\/package\.zip$/);
+  const letter = page.getByRole("textbox",{name:"Editable cover letter text"});
+  await letter.fill("Saved applicant letter with a genuinely reviewed job-specific correction.");
+  await expect(panel.getByLabel(
+    "Download complete application ZIP with CV and cover letter PDF and DOCX"
+  )).toHaveAttribute("aria-disabled","true");
+  await page.getByRole("button",{name:/^Save changes$/}).click();
+  await expect(link).toHaveAttribute("aria-disabled","false");
+  const downloadPromise = page.waitForEvent("download");
+  await link.click();
+  const file = await downloadPromise;
+  expect(file.suggestedFilename()).toBe("synthetic-application-package.zip");
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  expect(state.privateWorkspaces[state.userId][0].status).toBe("draft");
+  expect(state.privateWorkspaces[state.userId][0].revision).toBe(2);
 });
