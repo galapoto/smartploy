@@ -1359,7 +1359,7 @@ export default function ApplicationStudio(props: {
           <div className="studio-ai-actions" role="group"
               aria-label="Private writing assistant actions">
             <button className="outline-btn studio-ai-trigger" type="button"
-              disabled={!aiStatus?.ready || busy || aiBusy || dirty || selected.status !== "draft" ||
+              disabled={!aiStatus?.ready || busy || aiBusy || aiProofBusy || dirty || selected.status !== "draft" ||
                 !!browserReceipt || employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void askLocalAI()}>
               <WandSparkles size={16}/> {aiBusy ? "Generating with the local model…" : "Suggest tailored wording"}
@@ -1378,16 +1378,37 @@ export default function ApplicationStudio(props: {
               onClick={() => void redraftLetter("fi")}>
               {letterBusy ? "Drafting…" : "Write Finnish letter"}
             </button>
+            <button className="outline-btn compact studio-ai-proof-trigger" type="button"
+              onClick={() => void testLocalAIGeneration()}
+              disabled={!aiStatus?.ready || aiBusy || aiProofBusy || aiRefreshing ||
+                busy || !!aiProof}>
+              <Sparkles size={15} aria-hidden="true" />
+              {aiProofBusy ? "Testing real local generation…" :
+                aiProof ? "Generation verified" : "Run real AI test"}
+            </button>
             <button className="outline-btn compact" type="button"
               onClick={() => void refreshAIReadiness()}
-              disabled={aiRefreshing || aiBusy}>
+              disabled={aiRefreshing || aiBusy || aiProofBusy}>
               <RefreshCw size={15} className={aiRefreshing ? "rotate" : ""}/>
               {aiRefreshing ? "Checking…" : "Check AI connection"}
             </button>
           </div>
+          {aiProof ? <div className="studio-ai-proof" role="status"
+              aria-label="Private local model inference verified">
+            <CheckCircle2 size={18} aria-hidden="true"/>
+            <div><strong>Real private AI generation verified</strong>
+              <p>The model completed a synthetic inference. No CV, profile facts,
+                vacancy, letter or employer data was sent; no document was changed.
+                Job-specific wording still requires separate consent and review.</p>
+            </div>
+          </div> : null}
           <p className="studio-ai-privacy">
-            The live writing coach below checks your text instantly without a model.
-            Private Ollama generation requires your explicit consent every time,
+            Check AI connection inspects only the installed model catalog.
+            Run real AI test performs a short, explicitly approved inference
+            with synthetic data and a per-account cooldown. Neither action
+            sends your CV or a job description. The live writing coach works
+            instantly without a model. Job-specific Ollama suggestions require
+            your explicit consent every time,
             and sends only the vacancy and approved profile facts. Nothing is
             applied or submitted automatically.
             {dirty ? " Save your document edits before requesting a new private-model suggestion." : ""}
@@ -1428,13 +1449,28 @@ export default function ApplicationStudio(props: {
             <div className="studio-ai-preview-title">
               <strong>Unverified AI proposal · {aiSuggestion.model}</strong>
               <button className="navy-btn compact" type="button"
+                disabled={aiCvPlan?.mode === "blocked"}
                 onClick={() => void insertAISuggestion()}>Insert into editor <ArrowRight size={14}/></button>
             </div>
             <h4>{aiSuggestion.proposal.cv_headline}</h4>
             <p>{aiSuggestion.proposal.cv_summary}</p>
+            {aiCvPlan?.mode === "blocked"
+              ? <p className="studio-ai-cv-boundary" role="status">{aiCvPlan.reason}
+                  You may still use the AI cover letter separately.</p>
+              : aiCvPlan
+                ? <details className="studio-ai-cv-comparison" open>
+                    <summary>{aiCvPlan.mode === "replace"
+                      ? "Review replacement of the existing AI CV summary"
+                      : "Review proposed job-specific CV summary"}</summary>
+                    <DocumentComparison title="Compare current CV with AI-proposed CV"
+                      current={cvText} proposed={aiCvPlan.text} source="private_ai" />
+                    <p className="studio-ai-cv-boundary">{aiCvPlan.reason}</p>
+                  </details>
+                : null}
             <div className="studio-ai-target-actions" role="group"
               aria-label="Use the AI proposal in selected documents">
               <button className="outline-btn compact" type="button"
+                disabled={aiCvPlan?.mode === "blocked"}
                 onClick={() => void insertAISuggestion("cv")}>
                 Use CV summary only
               </button>
