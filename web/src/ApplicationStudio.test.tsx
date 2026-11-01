@@ -1066,6 +1066,7 @@ describe("Application Studio private-read account boundary", () => {
   });
 
   it("keeps normal same-account loading, edits and refresh available", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
     expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
@@ -1075,6 +1076,9 @@ describe("Application Studio private-read account boundary", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Refresh drafts" }));
     await waitFor(() => expect(api.getApplicationWorkspaces).toHaveBeenCalledTimes(2));
+    expect(confirm).toHaveBeenCalledWith(
+      "Discard unsaved application CV or cover-letter edits and refresh drafts?"
+    );
     expect(screen.queryByRole("heading", { name: "Account verification required" })).toBeNull();
     expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
       .toBe("PRIVATE-CV-A plus unsaved draft");
@@ -2183,5 +2187,23 @@ describe("SP104 job-specific CV and cover letter unsaved reporting", () => {
       expect(api.getApplicationWorkspaces).toHaveBeenCalledTimes(1);
       expect((letter as HTMLTextAreaElement).value).toContain("real applicant edits");
     } finally { confirm.mockRestore(); }
+  });
+});
+
+
+describe("SP104 private draft refresh identity preflight", () => {
+  it("clears a dirty prior-account editor before offering any discard prompt", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    studio();
+    const cv = await screen.findByRole("textbox", {name: "Editable CV text"});
+    fireEvent.change(cv, {target: {value: "PRIVATE A UNSAVED DATA"}});
+    activeUser = "usr-b"; // same email, different authenticated subject
+    fireEvent.click(screen.getByRole("button", {name: "Refresh drafts"}));
+    expect(await screen.findByRole("heading", {name: "Account verification required"})).toBeTruthy();
+    expect(screen.queryByText("PRIVATE A UNSAVED DATA")).toBeNull();
+    expect(screen.queryByRole("textbox", {name: "Editable CV text"})).toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 });

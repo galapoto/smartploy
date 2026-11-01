@@ -417,6 +417,17 @@ export default function ApplicationStudio(props: {
     [workspaces, reviewFilter],
   );
 
+  async function refreshDraftsFromToolbar() {
+    // Verify the current server owner FIRST. If the session switched,
+    // verifyAccount fails closed and removes the old private documents;
+    // a discard dialog must never block that safety boundary.
+    try { await verifyAccount(); } catch { return; }
+    if (dirty && !window.confirm(
+      "Discard unsaved application CV or cover-letter edits and refresh drafts?"
+    )) return;
+    await reload(); // verifies identity again before publishing private data
+  }
+
   function pick(id: string) {
     if (dirty && !window.confirm("Discard unsaved changes and open another draft?")) return;
     if (id !== selectedId) ++selectedDraftRef.current.epoch;
@@ -1087,12 +1098,9 @@ export default function ApplicationStudio(props: {
         <h2>Application studio</h2>
         <p>Build application documents from your uploaded CV and verified career evidence.</p>
       </div>
-      <button type="button" className="outline-btn compact" onClick={() => {
-        if (dirty && !window.confirm(
-          "Discard unsaved application CV or cover-letter edits and refresh drafts?"
-        )) return;
-        void reload();
-      }} aria-label="Refresh drafts"><RefreshCw size={16} /> Refresh</button>
+      <button type="button" className="outline-btn compact"
+        onClick={() => void refreshDraftsFromToolbar()}
+        aria-label="Refresh drafts"><RefreshCw size={16} /> Refresh</button>
     </div>
     {error ? <div className="studio-alert error" role="alert"><AlertCircle size={16}/>{error}</div> : null}
     {message ? <div className="studio-alert" role="status"><CheckCircle2 size={16}/>{message}</div> : null}

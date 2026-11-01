@@ -29,3 +29,7 @@ Run `web` Vitest and browser acceptance plus full repository CI. New tests check
 ## Account-switch preflight (security-critical)
 
 The global Refresh button checks server-issued identity **before** showing an unsaved-edit discard prompt. If the owner subject changed, is missing or cannot be verified, it clears the previous private editor immediately and re-loads as the new identity (or fails closed). This reuses the original `sessionIdentity`, `getSession`, `clearPrivateWorkspace` and `load` controls, rather than allowing an old user's unsaved document to block identity reconciliation. A synthetic same-email/different-user regression proves an account change always wins over the discard dialog. Normal same-owner refreshes still ask before discarding unsaved document text.
+
+## Job-specific editor preflight
+
+The Application Studio's own Refresh drafts action now also performs the original owner/session verification **before** the unsaved-edit prompt. This prevents stale signed-in account A data from being held on screen after an account switch to B. The server remains authoritative; a same-account refresh asks for approval and re-verifies again before publishing the private GET response. Regression tests cover the same-email subject-switch case and require zero employer writes.
