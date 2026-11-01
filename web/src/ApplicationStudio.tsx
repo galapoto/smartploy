@@ -578,8 +578,16 @@ export default function ApplicationStudio(props: {
         ticket
       );
       if (!isCurrentDraft(ticket)) return;
+      if (response.workspace_revision !== selected.revision ||
+          response.suggestion?.requires_owner_review !== true ||
+          response.suggestion?.external_actions_performed !== false ||
+          response.suggestion?.suggestions_applied !== false ||
+          response.suggestion?.proposal?.schema !== "smartploy.local_draft.v1") {
+        throw new Error("The private AI response did not pass review-only validation");
+      }
       setAISuggestion(response.suggestion);
-      setMessage("Local AI returned draft suggestions. Review them and choose whether to insert them.");
+      setMessage("Local AI returned a private proposal. Compare the current wording " +
+        "before inserting anything. No changes are saved or sent.");
     } catch (exc) {
       reportActionError(exc, "Local AI is currently unavailable.");
     } finally { if (isCurrentDraft(ticket)) setAIBusy(false); }
@@ -603,27 +611,48 @@ export default function ApplicationStudio(props: {
 
   async function insertAISuggestion(target: "both" | "cv" | "letter" = "both") {
     if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt ||
-        employerAttempt?.previous_attempt_reserved) return;
+        partnerReceipt || employerAttempt?.previous_attempt_reserved || busy) return;
     const draft = aiSuggestion.proposal;
     const ticket = captureDraft(selected);
     const prompt = target === "both"
-      ? "Insert these AI suggestions into your editable CV and cover letter? " +
-        "They may contain mistakes. Nothing is saved or sent until you review and click Save changes."
+      ? "Insert this AI-generated CV summary and REPLACE the current cover letter? " +
+        "Review the comparison first. Neither document is saved or submitted. " +
+        "You can undo before saving."
       : "Insert only the AI-proposed " + (target === "cv" ? "CV summary" : "cover letter") +
-        " for this job? Review every claim before saving. No employer is contacted.";
+        " for this job? Review every claim. The change is unsaved and undoable.";
     if (!window.confirm(prompt)) return;
     try { await verifyAccount(); } catch { return; }
     if (!isCurrentDraft(ticket)) return;
-    if (target !== "letter") {
-      setCvText((old) =>
-        "TARGET ROLE: " + selected.role_title + " — " + selected.company +
-        "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
-        "\n\n" + old
-      );
+
+    // Legacy generated CV summaries are not reliably delimited, and may be
+    // manually edited. Never add a duplicate or silently guess its bounds.
+    if (target !== "letter" &&
+        cvText.includes("PROFILE SUMMARY (review AI wording):")) {
+      setMessage("This CV already contains an AI-written summary. Edit that section " +
+        "yourself rather than stacking another summary. The letter-only action remains available.");
+      return;
     }
-    if (target !== "cv") setLetterText(draft.cover_letter);
+    const nextCV = target === "letter" ? cvText :
+      "TARGET ROLE: " + selected.role_title + " — " + selected.company +
+      "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
+      "\n\n" + cvText;
+    const nextLetter = target === "cv" ? letterText : draft.cover_letter;
+    if (nextCV.length > 30000 || nextLetter.length > 10000 ||
+        (target !== "cv" && !nextLetter.trim())) {
+      setMessage("This AI proposal exceeds the safe document editor limits. " +
+        "Use a shorter version or edit the existing documents manually.");
+      return;
+    }
+    setDocumentUndo({
+      key: ticket.key, kind: "private AI",
+      beforeCV: cvText, beforeLetter: letterText,
+      afterCV: nextCV, afterLetter: nextLetter,
+    });
+    if (target !== "letter") setCvText(nextCV);
+    if (target !== "cv") setLetterText(nextLetter);
     setAISuggestion(null);
-    setMessage("Your chosen AI wording is now an unsaved edit. Verify every fact, then Save changes.");
+    setMessage("Your selected AI wording was inserted as an UNSAVED edit. " +
+      "Check every factual claim. You can undo before saving.");
   }
 
   async function copyBrowserPacket() {
