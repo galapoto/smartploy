@@ -1,0 +1,163 @@
+/* SP96: SmartPloy Career Atlas — one next action and private live document review. */
+.flow-primary-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  padding: 17px 19px;
+  margin-top: 16px;
+  border: 1px solid #a7d4d6;
+  border-radius: 15px;
+  background: linear-gradient(115deg, #eaf9f6 0%, #f5fcfd 100%);
+}
+.flow-primary-next-copy {
+  flex: 1 1 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #123e49;
+  line-height: 1.5;
+}
+.flow-primary-next-copy span {
+  color: #14717f;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  font-size: 11px;
+  font-weight: 800;
+}
+.flow-primary-next-copy strong { font-size: 16px; line-height: 1.35; }
+.flow-primary-next-copy small { font-size: 12px; color: #456774; }
+.flow-primary-next .primary-btn,
+.flow-primary-next .navy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 11px 18px;
+  flex: 0 1 270px;
+  text-align: center;
+  white-space: normal;
+  font-weight: 800;
+}
+.flow-cv, .flow-choice, .flow-matches, .flow-next,
+#smartploy-cv-review, #smartploy-letter-review, #smartploy-employer-step {
+  scroll-margin-top: 90px;
+}
+.document-coach {
+  margin: 15px 0 5px;
+  padding: 16px 18px;
+  border: 1px solid #c8dedf;
+  background: linear-gradient(145deg, #f4fcfb 0%, #ffffff 70%);
+  border-radius: 16px;
+  box-shadow: 0 3px 14px rgba(18, 83, 94, .035);
+  color: #183c48;
+}
+.document-coach-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.document-coach-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 37px;
+  height: 37px;
+  border-radius: 11px;
+  background: #ddf6f2;
+  color: #0f7585;
+  flex: none;
+}
+.document-coach-title {
+  display: flex;
+  flex: 1 1 170px;
+  flex-direction: column;
+  gap: 2px;
+}
+.document-coach-title strong { font-size: 14px; font-weight: 800; }
+.document-coach-title span { font-size: 11px; color: #53747e; }
+.document-coach-progress {
+  border: 1px solid #b6dcd6;
+  border-radius: 50px;
+  padding: 7px 10px;
+  background: #e9f9f6;
+  color: #145c66;
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.document-coach-summary {
+  margin: 12px 0;
+  color: #365a68;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.document-coach-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.document-coach-checks li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid #dfe9e7;
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: #fff;
+}
+.document-coach-checks li svg { margin-top: 2px; flex: none; }
+.document-coach-checks li.is-met svg { color: #138366; }
+.document-coach-checks li.needs-review svg { color: #987123; }
+.document-coach-checks li div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.document-coach-checks li strong {
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+  color: #284b55;
+}
+.document-coach-checks li small {
+  color: #58717a;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.document-coach-disclosure {
+  margin: 12px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid #dcece9;
+  color: #617b82;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.studio-ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 12px 0 4px;
+}
+.studio-ai-actions .studio-ai-trigger { flex: 1 1 230px; }
+.studio-ai-actions .outline-btn { min-height: 42px; white-space: normal; }
+.studio-ai-target-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.studio-ai-target-actions .outline-btn { white-space: normal; }
+.studio-ai-target-actions small {
+  color: #527079;
+  flex: 1 1 100%;
+  line-height: 1.55;
+}
+@media (max-width: 750px) {
+  .document-coach-checks { grid-template-columns: 1fr; }
+  .flow-primary-next .primary-btn,
+  .flow-primary-next .navy-btn { flex: 1 1 100%; }
+  .document-coach { padding: 14px; }
+}
