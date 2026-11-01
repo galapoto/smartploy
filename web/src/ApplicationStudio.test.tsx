@@ -10,6 +10,7 @@ import type {
 
 vi.mock("./api", () => ({
   getSession: vi.fn(),
+  getCVEditor: vi.fn(),
   getApplicationWorkspaces: vi.fn(),
   getApplicationWorkspaceById: vi.fn(),
   getApplicationAgents: vi.fn(),

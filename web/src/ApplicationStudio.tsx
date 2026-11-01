@@ -13,7 +13,7 @@ import {
   getLeverPartnerReadiness, getLeverPartnerReceipt, sendLeverPartnerApplication,
   getAshbyPartnerReadiness, getAshbyPartnerReceipt, sendAshbyPartnerApplication,
   recordEmployerReviewIntent, cancelEmployerReviewIntent,
-  getBrowserReceipt, importBrowserReceipt, getSession
+  getBrowserReceipt, importBrowserReceipt, getSession, getCVEditor
 } from "./api";
 import ApplicationAgentCard from "./ApplicationAgentCard";
 import ApplicationAgentInbox from "./ApplicationAgentInbox";
@@ -22,7 +22,7 @@ import AuthorizedAutoApplyBatch from "./AuthorizedAutoApplyBatch";
 import DocumentCoach from "./DocumentCoach";
 import DocumentComparison from "./DocumentComparison";
 import { prepareAISummaryCV } from "./aiSummaryReview";
-import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, LocalAIInferenceProof, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
+import type { ApplicationFlowMode, ApplicationWorkspace, CVDocument, LocalAIStatus, LocalAISuggestion, LocalAIInferenceProof, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import { applicationNextStep } from "./applicationNextStep";
 import { summarizeApplicationReviewQueue, type ApplicationReviewFilter } from "./applicationReviewQueue";
@@ -52,6 +52,13 @@ type DocumentUndo = {
   beforeLetter: string;
   afterCV: string;
   afterLetter: string;
+};
+type MasterCVPreview = {
+  sha256: string;
+  filename: string;
+  text: string;
+  draftKey: string;
+  serial: number;
 };
 
 const safePostingLink = safeExternalJobUrl;
@@ -93,6 +100,9 @@ export default function ApplicationStudio(props: {
   mode?: ApplicationFlowMode | null;
   onModeChange?: (mode: ApplicationFlowMode) => void;
   onUnsavedChange?: (dirty: boolean) => void;
+  // The current owner-private master-CV summary; never used as employer send authority.
+  masterCV?: CVDocument;
+  onReviewMasterCV?: () => void;
 }) {
   const [workspaces, setWorkspaces] = useState<ApplicationWorkspace[]>([]);
   const [selectedId, setSelectedId] = useState(props.focusId);
@@ -112,6 +122,9 @@ export default function ApplicationStudio(props: {
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
   const [letterProposal, setLetterProposal] = useState<EvidenceLetterPreview | null>(null);
   const [documentUndo, setDocumentUndo] = useState<DocumentUndo | null>(null);
+  const [masterCVPreview, setMasterCVPreview] = useState<MasterCVPreview | null>(null);
+  const [masterCVBusy, setMasterCVBusy] = useState(false);
+  const [masterCVError, setMasterCVError] = useState("");
   const [handoff, setHandoff] = useState<BrowserHandoffReadiness | null>(null);
   const [employerAttempt, setEmployerAttempt] = useState<EmployerAttemptState | null>(null);
   const [finalReview, setFinalReview] = useState<EmployerReviewIntentState | null>(null);
@@ -136,6 +149,10 @@ export default function ApplicationStudio(props: {
   const selectedDraftRef = useRef<DraftTicket>({ key: "", epoch: 0 });
   // A private read must never commit stale text over local keystrokes made while awaiting identity.
   const editEpochRef = useRef(0);
+  // Invalidates a late private comparison after draft/owner/CV switching.
+  const masterCVSerial = useRef(0);
+  const activeMasterSHA = useRef("");
+  activeMasterSHA.current = props.masterCV?.sha256 || "";
   const currentSelectedId = useRef(props.focusId);
   useEffect(() => { currentSelectedId.current = selectedId; }, [selectedId]);
 
@@ -158,6 +175,8 @@ export default function ApplicationStudio(props: {
     ++reloadGenerationRef.current;
     ++selectedDraftRef.current.epoch;
     ++editEpochRef.current;
+    ++masterCVSerial.current;
+    setMasterCVPreview(null); setMasterCVBusy(false); setMasterCVError("");
     setWorkspaces([]); setSelectedId("");
     setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
     setAIProof(null); setAIProofBusy(false);
@@ -304,6 +323,8 @@ export default function ApplicationStudio(props: {
     if (selectedDraftRef.current.key !== key) {
       selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
       ++editEpochRef.current;
+      ++masterCVSerial.current;
+      setMasterCVPreview(null); setMasterCVBusy(false); setMasterCVError("");
       setBusy(false); setAIBusy(false); setLetterBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
       setAISuggestion(null);
       setAIProof(null); setAIProofBusy(false);
@@ -317,6 +338,13 @@ export default function ApplicationStudio(props: {
           setPartnerReadiness(null); setPartnerReceipt(null);
     }
   }, [selected?.workspace_id, selected?.revision, selected?.application_url]);
+
+  useEffect(() => {
+    // React can receive an updated master CV while the user stays in the
+    // same saved job. Never leave an older comparison executable.
+    ++masterCVSerial.current;
+    setMasterCVPreview(null); setMasterCVBusy(false); setMasterCVError("");
+  }, [props.masterCV?.sha256, props.masterCV?.present]);
 
   useEffect(() => {
     if (!selected?.workspace_id || accountBlockedRef.current) return;
@@ -369,6 +397,16 @@ export default function ApplicationStudio(props: {
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
   ));
+  const activeMasterKnown = props.masterCV?.present === true &&
+    /^[a-f0-9]{64}$/.test(props.masterCV.sha256 || "");
+  const draftSourceKnown = !!selected && /^[a-f0-9]{64}$/.test(selected.source_cv_sha256);
+  const masterCVChangedSinceDraft = !!selected && activeMasterKnown && draftSourceKnown &&
+    selected.source_cv_sha256 !== props.masterCV?.sha256;
+  const previewForCurrentDraft = masterCVPreview &&
+    selectedDraftRef.current.key === masterCVPreview.draftKey &&
+    masterCVPreview.sha256 === props.masterCV?.sha256 &&
+    masterCVPreview.serial === masterCVSerial.current
+    ? masterCVPreview : null;
   useEffect(() => {
     props.onUnsavedChange?.(dirty);
     return () => props.onUnsavedChange?.(false);
@@ -470,6 +508,72 @@ export default function ApplicationStudio(props: {
   function updateItem(item: ApplicationWorkspace) {
     setWorkspaces((items) => items.map((before) => before.workspace_id === item.workspace_id ? item : before));
     setSelectedId(item.workspace_id);
+  }
+
+  async function compareWithMasterCV() {
+    if (!selected || selected.status !== "draft" || masterCVBusy || busy ||
+        !props.masterCV?.present) return;
+    const expectedSHA = activeMasterSHA.current;
+    if (!/^[a-f0-9]{64}$/.test(expectedSHA)) {
+      setMasterCVError("The current master CV revision is not verified. Refresh your workspace and try again.");
+      return;
+    }
+    const ticket = captureDraft(selected);
+    const serial = ++masterCVSerial.current;
+    setMasterCVPreview(null); setMasterCVBusy(true); setMasterCVError("");
+    try {
+      // Account and selected workspace verification wrap this read, just as
+      // they wrap private application mutations. No employer request occurs.
+      const latest = await runPrivateAction(() => getCVEditor(), ticket);
+      if (!isCurrentDraft(ticket) || serial !== masterCVSerial.current ||
+          activeMasterSHA.current !== expectedSHA) return;
+      if (!latest.present || latest.sha256 !== expectedSHA ||
+          typeof latest.text !== "string" ||
+          latest.text.trim().length < 20 || latest.text.length > 30000 ||
+          latest.employer_actions_performed !== 0 ||
+          latest.approved_profile_facts_added !== 0) {
+        throw new Error("The master CV changed or cannot be safely compared. Refresh your CV before continuing.");
+      }
+      setMasterCVPreview({
+        sha256: expectedSHA, filename: latest.filename,
+        text: latest.text, draftKey: ticket.key, serial,
+      });
+    } catch (exc) {
+      if (isCurrentDraft(ticket) && serial === masterCVSerial.current &&
+          activeMasterSHA.current === expectedSHA) {
+        reportActionError(exc, "Unable to compare with your current master CV.");
+        if (!(exc instanceof StudioAccountChanged || exc instanceof StudioSelectionChanged)) {
+          setMasterCVError(exc instanceof Error ? exc.message : "Unable to load the current master CV.");
+        }
+      }
+    } finally {
+      if (isCurrentDraft(ticket) && serial === masterCVSerial.current) setMasterCVBusy(false);
+    }
+  }
+
+  async function useMasterCVInJobDraft() {
+    if (!selected || selected.status !== "draft" || !previewForCurrentDraft ||
+        busy || masterCVBusy || browserReceipt || partnerReceipt ||
+        employerAttempt?.previous_attempt_reserved) return;
+    if (!window.confirm(
+      "Replace ONLY this job-specific CV text with the current master CV? " +
+      "Any unsaved edits to this job's CV text will be replaced; your cover letter is kept. " +
+      "The change stays private and UNSAVED until you review and press Save changes. " +
+      "No employer application will be sent."
+    )) return;
+    const ticket = captureDraft(selected);
+    const editEpoch = editEpochRef.current;
+    const preview = previewForCurrentDraft;
+    const serial = masterCVSerial.current;
+    try { await verifyAccount(); } catch { return; }
+    if (!isCurrentDraft(ticket) || editEpochRef.current !== editEpoch ||
+        serial !== masterCVSerial.current || activeMasterSHA.current !== preview.sha256) return;
+    ++editEpochRef.current;
+    setDocumentUndo(null); setAISuggestion(null); setLetterProposal(null);
+    setCvText(preview.text);
+    setMasterCVPreview(null);
+    setMessage("Current master CV copied into this job-specific editor. The cover letter is unchanged. " +
+      "Review the full CV, save your changes and record a fresh job-specific review before any employer action.");
   }
 
   async function save() {
@@ -1539,6 +1643,51 @@ export default function ApplicationStudio(props: {
           </div> : null}
         <div className="studio-document" id="smartploy-cv-review">
           <div className="studio-document-head"><strong><FileText size={17}/> CV draft</strong><span>{cvText.length.toLocaleString()} / 30,000 characters</span></div>
+          <section className={"studio-master-cv-source" + (masterCVChangedSinceDraft ? " outdated" : "")}
+            aria-label="CV version and comparison">
+            <div className="studio-master-cv-source-copy">
+              <strong>{masterCVChangedSinceDraft
+                ? "This job draft started from an earlier master CV"
+                : activeMasterKnown && draftSourceKnown
+                  ? "Master CV origin verified"
+                  : props.masterCV?.present
+                    ? "Review the saved job CV against your current master CV"
+                    : "No current master CV connected"}</strong>
+              <p>{masterCVChangedSinceDraft
+                ? "You updated your master CV since this job draft was created. Its job-specific CV and letter were not silently overwritten. Compare the versions before deciding what to send."
+                : activeMasterKnown && draftSourceKnown
+                  ? "The source CV version matches your current master CV. Your saved job-specific text may have been edited independently."
+                  : props.masterCV?.present
+                    ? "The source CV version cannot be compared automatically. You can explicitly compare the full private documents before updating this job draft."
+                    : "The saved job documents remain in your account. Connect a master CV to compare the text; no employer action has been taken."}</p>
+            </div>
+            {selected.status === "draft" ? <div className="row-actions">
+              <button type="button" className="outline-btn compact"
+                disabled={!activeMasterKnown || masterCVBusy || busy}
+                onClick={() => void compareWithMasterCV()}>
+                <FileText size={15} aria-hidden="true"/>
+                {masterCVBusy ? "Checking current CV…" : "Compare with current master CV"}
+              </button>
+              {props.onReviewMasterCV ? <button type="button" className="text-btn"
+                onClick={props.onReviewMasterCV}>Open my master CV <ArrowRight size={14}/></button> : null}
+            </div> : null}
+            {masterCVError ? <p className="studio-master-cv-error" role="alert">
+              {masterCVError}</p> : null}
+            {previewForCurrentDraft && selected.status === "draft" ? <>
+              <p className="studio-master-cv-source-name">
+                Comparing your saved job CV with current master CV: <strong>{previewForCurrentDraft.filename}</strong>.
+                This preview does not update either document.
+              </p>
+              <DocumentComparison title="Job-specific CV versus current master CV"
+                current={cvText} proposed={previewForCurrentDraft.text} source="master_cv"/>
+              <button type="button" className="secondary-btn"
+                disabled={busy || masterCVBusy || partnerBusy || !!browserReceipt ||
+                  !!partnerReceipt || employerAttempt?.previous_attempt_reserved}
+                onClick={() => void useMasterCVInJobDraft()}>
+                Use current master CV in this job draft (unsaved)
+              </button>
+            </> : null}
+          </section>
           <textarea aria-label="Editable CV text" rows={15} maxLength={30000}
             readOnly={selected.status !== "draft" || !!browserReceipt ||
               employerAttempt?.previous_attempt_reserved === true} value={cvText}
