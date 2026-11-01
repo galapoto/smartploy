@@ -21,7 +21,7 @@ vi.mock("./api", () => ({
   grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
 vi.mock("./MasterCVEditor", () => ({
-  default: ({ onSaved, onSave, onWriteStarted, onWriteSettled }: {
+  default: ({ onSaved, onSave, onWriteStarted, onWriteSettled, onUnsavedChange }: {
     onSaved: (saved: { present: boolean; filename: string; sha256: string }) => void;
     onSave: (text: string, digest: string) => Promise<{
       cv: { present: boolean; filename: string; sha256: string };
@@ -2103,6 +2103,32 @@ describe("SP104 account-scoped unsaved document navigation protection", () => {
         "You have unsaved changes to your master CV. Discard them and replace your current CV?"
       );
       expect(screen.getByTestId("master-cv-editor")).toBeTruthy();
+    } finally { confirmation.mockRestore(); }
+  });
+});
+
+
+describe("SP104 secure refresh after account switch", () => {
+  it("clears the prior user's unsaved editor before any discard prompt when OIDC owner changes", async () => {
+    let switched = false;
+    const switchAccount = switchableSession();
+    vi.mocked(api.getCV).mockImplementation(async () => switched ? {present:false} :
+      {present:true,filename:"ACCOUNT-A-PRIVATE-CV.pdf",sha256:"a".repeat(64)});
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<App/>);
+      expect(await screen.findByRole("heading", {
+        name:"CV connected. Choose how to apply.",
+      })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button",{name:"My CV & documents"}));
+      fireEvent.click(await screen.findByRole("button",{name:"Edit synthetic master CV"}));
+      switched=true;
+      switchAccount();
+      fireEvent.click(screen.getByRole("button",{name:"Refresh workspace"}));
+      expect(await screen.findByRole("heading",{name:"Start with your CV."})).toBeTruthy();
+      expect(screen.queryByTestId("master-cv-editor")).toBeNull();
+      expect(screen.queryByText("ACCOUNT-A-PRIVATE-CV.pdf")).toBeNull();
+      expect(confirmation).not.toHaveBeenCalled();
     } finally { confirmation.mockRestore(); }
   });
 });

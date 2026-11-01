@@ -451,6 +451,31 @@ export default function App() {
     return true;
   }
 
+  async function refreshWorkspaceFromToolbar() {
+    const dirty = (page === "profile" && unsavedDocumentRef.current.masterCV) ||
+      (page === "applications" && unsavedDocumentRef.current.application);
+    if (dirty) {
+      // Before asking whether to discard edits, verify that this is STILL
+      // the same account. A stale owner-A editor must never keep displaying
+      // A's private CV after the browser cookie changes to account B.
+      const originatingIdentity = lastSessionIdentity.current;
+      let verifiedIdentity: string | null = null;
+      try { verifiedIdentity = sessionIdentity(await getSession()); } catch {
+        // A missing or unreachable session is a privacy failure, not an
+        // invitation to retain the previous account's editor on screen.
+      }
+      if (lastSessionIdentity.current !== originatingIdentity) return;
+      if (!originatingIdentity || verifiedIdentity !== originatingIdentity) {
+        lastSessionIdentity.current = null;
+        clearPrivateWorkspace();
+        await load(); // fail closed if the new identity cannot be loaded
+        return;
+      }
+      if (!confirmDiscardUnsaved("refresh this workspace")) return;
+    }
+    await load(true);
+  }
+
   function invalidateCVSelection() {
     ++cvActionRevision.current;
     activeCVSelection.current = JSON.stringify([
@@ -1338,7 +1363,7 @@ export default function App() {
           <a className="obumai-brand" href="https://app.obumai.com/" target="_self" title="Open ObumAI"><img src="/obumai-mark.svg" alt="" /> <strong>ObumAI</strong></a>
           <span className={cx("connection-status", obumReady ? "connected" : "disconnected")}><span />{localAI?.ready ? "Local AI ready" : health?.obumai_configured ? "ObumAI configured" : "AI optional"}</span>
           <button className="icon-btn header-refresh" type="button"
-            onClick={() => { if (confirmDiscardUnsaved("refresh this workspace")) void load(true); }}
+            onClick={() => void refreshWorkspaceFromToolbar()}
             disabled={refreshing} aria-label="Refresh workspace"><RefreshCw size={19} className={refreshing ? "rotate" : ""} /></button>
           <span className="avatar header-avatar" title={session?.email || "Your account"}>{avatar}</span>
         </div>
