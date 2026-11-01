@@ -15,7 +15,7 @@ const cv = [
   "",
   "EXPERIENCE AND PROJECTS",
   "Delivered three reviewed reporting projects for a training portfolio.",
-  "Automated 12 quality checks with clear audit notes.",
+  "Automated quality checks across 12 projects with clear audit notes.",
   "",
   "SKILLS",
   "Python, SQL, Power BI",
