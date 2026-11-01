@@ -980,3 +980,30 @@ test("mobile onboarding remains usable when the optional local AI endpoint fails
   await expect(page.getByText(/search match/i)).toHaveCount(0);
   await evidence(page, "synthetic-general-mobile.png");
 });
+
+test("SP97: Career tools provides a truthful private AI entry but never bypasses CV-first review", async ({ page }) => {
+  const state = await installSyntheticApi(page, { unavailableAI: true });
+  const aiGenerations: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/ai-suggestions") && request.method() === "POST") {
+      aiGenerations.push(request.url());
+    }
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  await page.getByRole("button", { name: "CV & AI tools" }).click();
+  const readiness = page.getByLabel("Private AI writing readiness");
+  await expect(readiness).toBeVisible();
+  await expect(readiness).toContainText("Complete English/Finnish letters");
+  await page.getByRole("button", { name: /AI writing assistant/i }).click();
+  await expect(page.getByRole("heading", {
+    name: "From your CV to a complete application.",
+  })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Upload CV & find jobs" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Choose application method" })).toBeVisible();
+  await expect(page.locator(".flow-mode.selected")).toHaveCount(0);
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+  expect(aiGenerations).toEqual([]);
+  await evidence(page, "sp97-ai-writing-cv-first-gate.png");
+});
+
