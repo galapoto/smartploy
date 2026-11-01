@@ -85,7 +85,7 @@ export default function ApplicationJourney(props: {
   // query cannot silently become an application in the new result set.
   queueScope.current = JSON.stringify([
     props.userId, props.cv.sha256 || "", props.cv.present,
-    props.mode, filter.trim(), activeQuery, revision, showOther,
+    props.mode, filter.trim(), activeQuery, revision, showOther, props.uploading,
   ]);
 
   // Debounce only the read-only query. Ranking and filtering happen on the
@@ -114,6 +114,18 @@ export default function ApplicationJourney(props: {
       setSelected([]);
     }
   }, [props.mode]);
+
+  // Changing a CV invalidates the old shortlist immediately, not only after
+  // the replacement API returns a new SHA. In-flight work stops after its
+  // current server request; it cannot publish results into the new CV view.
+  useEffect(() => {
+    if (!props.uploading) return;
+    stopRequestedRef.current = true;
+    setSelected([]);
+    setFocusedKey("");
+    setBatchResult(null);
+    setBatchProgress(null);
+  }, [props.uploading]);
 
   // No CV, session tokens, or profile contents are persisted in browser storage.
   // An account switch unmounts this keyed component in the parent. Epoch and
@@ -186,7 +198,7 @@ export default function ApplicationJourney(props: {
   const shortlistSuggestion = addCVShortlist(selected, results?.recommended || []);
   const quickDraftKeys = addCVShortlist([], results?.recommended || []).selected;
   const queryPending = filter.trim() !== activeQuery;
-  const hasChosenJob = props.cv.present && !!props.mode &&
+  const hasChosenJob = props.cv.present && !props.uploading && !!props.mode &&
     (props.mode === "automatic" ? currentSelection.length > 0 : !!focusedJob);
 
   const hasMore = !!results && (
@@ -245,7 +257,7 @@ export default function ApplicationJourney(props: {
   }
 
   function toggleSelected(key: string) {
-    if (props.queueBusy || queueInFlight.current || batchResult?.accessInterrupted ||
+    if (props.uploading || props.queueBusy || queueInFlight.current || batchResult?.accessInterrupted ||
         loading || paging || queryPending || !!error ||
         !jobs.some((row) => row.canonical_key === key && row.job.source_current &&
           !!safeExternalJobUrl(row.job.application_url))) return;
@@ -256,7 +268,7 @@ export default function ApplicationJourney(props: {
   }
 
   function selectCVShortlist() {
-    if (props.mode !== "automatic" || !results || props.queueBusy ||
+    if (props.uploading || props.mode !== "automatic" || !results || props.queueBusy ||
         !!queueInFlight.current || loading || paging || queryPending || !!error ||
         batchResult?.accessInterrupted || staleSelectionCount > 0) return;
     const proposal = addCVShortlist(selected, results.recommended);
@@ -288,6 +300,7 @@ export default function ApplicationJourney(props: {
   }
 
   async function prepareOne(key: string) {
+    if (props.uploading || !props.cv.present || !!queueInFlight.current) return;
     setError("");
     try { await props.onPrepare(key); }
     catch (exc) { setError(exc instanceof Error ? exc.message : "Unable to open your draft."); }
@@ -309,7 +322,7 @@ export default function ApplicationJourney(props: {
         new Set(exactKeys).size !== exactKeys.length ||
         visibleCurrentKeys(exactKeys, jobs).length !== exactKeys.length ||
         exactKeys.some((key) => blockedKeys.has(key)) || accessInterrupted ||
-        props.mode !== "automatic" || !results || !props.cv.present ||
+        props.mode !== "automatic" || !results || !props.cv.present || props.uploading ||
         loading || paging || queryPending || !!error || staleSelectionCount ||
         props.queueBusy || queueInFlight.current) return;
     const keys = [...exactKeys]; // immutable exact selection for this run
@@ -387,7 +400,7 @@ export default function ApplicationJourney(props: {
     // No background mutation: a real user click and exact-job confirmation
     // are required before preparing even private drafts. Only title-matched,
     // source-current, linked rows from the loaded CV-derived result qualify.
-    if (!props.cv.present || props.mode !== "automatic" || !results ||
+    if (!props.cv.present || props.uploading || props.mode !== "automatic" || !results ||
         loading || paging || queryPending || !!error || accessInterrupted ||
         selected.length || batchResult || props.queueBusy ||
         queueInFlight.current || !quickDraftKeys.length) return;
@@ -446,7 +459,7 @@ export default function ApplicationJourney(props: {
         {props.mode === "automatic" ? <label className="flow-select">
           <input type="checkbox" checked={chosen}
             onChange={() => toggleSelected(row.canonical_key)}
-            disabled={props.queueBusy || !!queueInFlight.current ||
+            disabled={props.uploading || props.queueBusy || !!queueInFlight.current ||
               accessInterrupted || loading || paging || queryPending ||
               !job.source_current || !link ||
               (!chosen && selected.length >= AUTOAPPLY_SELECTION_LIMIT)} />
@@ -454,7 +467,7 @@ export default function ApplicationJourney(props: {
         </label> : null}
         {props.mode && props.mode !== "automatic" ? <button type="button"
           className={focused ? "navy-btn compact" : "secondary-btn compact"}
-          aria-pressed={focused} disabled={!job.source_current}
+          aria-pressed={focused} disabled={props.uploading || !job.source_current}
           onClick={() => setFocusedKey(row.canonical_key)}>
           {focused ? "Selected job" : "Choose this job"}
           {focused ? <CheckCircle2 size={14}/> : <ArrowRight size={14}/>}
@@ -481,14 +494,14 @@ export default function ApplicationJourney(props: {
               <span className="muted">Employer link unavailable. This job cannot be submitted here.</span>
             : null}
           {props.mode === "manual" ? <button className="outline-btn compact" type="button"
-            disabled={!!props.preparing || !job.source_current}
+            disabled={props.uploading || !!props.preparing || !job.source_current}
             onClick={() => void prepareOne(row.canonical_key)}>
             {props.preparing === row.canonical_key ? "Saving…" : "Save application draft"}
             <ArrowRight size={14}/>
           </button> : null}
           {props.mode === "assisted" && assistance !== "filter" ? <button
             className="navy-btn compact" type="button"
-            disabled={!!props.preparing || !job.source_current}
+            disabled={props.uploading || !!props.preparing || !job.source_current}
             onClick={() => void prepareOne(row.canonical_key)}>
             {props.preparing === row.canonical_key ? "Opening…" : "Prepare CV & application"}
             <ArrowRight size={14}/>
@@ -589,7 +602,7 @@ export default function ApplicationJourney(props: {
           {props.uploading ? "Uploading and reading your CV…" :
             props.cv.present ? "Replace CV" : "Upload CV & find jobs"}
         </button>
-        <button className="outline-btn" type="button" onClick={props.onReviewCV}>
+        <button className="outline-btn" type="button" disabled={props.uploading} onClick={props.onReviewCV}>
           {props.cv.present ? "Review CV text & facts" : "Create CV from scratch"} <ArrowRight size={16}/>
         </button>
       </div>
@@ -604,7 +617,12 @@ export default function ApplicationJourney(props: {
         <p>This choice controls the next job actions. You can switch methods anytime;
           selecting a method never authorizes an employer submission.</p>
       </div></div>
-      {!props.cv.present ? <div className="flow-decision flow-cv-required" role="status">
+      {props.uploading ? <div className="flow-decision flow-cv-required" role="status">
+        <CircleHelp size={20} aria-hidden="true"/>
+        <p id="flow-cv-updating"><strong>CV update in progress.</strong>
+          {" "}Job selection and draft preparation are paused until the new CV is ready.
+          Any remaining automatic preparation steps have been stopped.</p>
+      </div> : !props.cv.present ? <div className="flow-decision flow-cv-required" role="status">
         <CircleHelp size={20} aria-hidden="true"/>
         <p id="flow-choose-require-cv"><strong>All three application methods are visible below.</strong>
           {" "}First upload or create your CV in Step 1. The choices become active
@@ -626,8 +644,8 @@ export default function ApplicationJourney(props: {
             data-flow-mode={choice}
             className={"flow-mode" + (props.mode === choice ? " selected" : "")}
             aria-pressed={props.mode === choice}
-            disabled={!props.cv.present || props.queueBusy || !!queueInFlight.current}
-            aria-describedby={!props.cv.present ? "flow-choose-require-cv" : undefined}
+            disabled={!props.cv.present || props.uploading || props.queueBusy || !!queueInFlight.current}
+            aria-describedby={props.uploading ? "flow-cv-updating" : !props.cv.present ? "flow-choose-require-cv" : undefined}
             onClick={() => props.onMode(choice)}>
             <span className="flow-mode-head">
               <Icon size={23} aria-hidden="true"/>
@@ -753,7 +771,7 @@ export default function ApplicationJourney(props: {
             <button type="button" className="navy-btn"
               disabled={!quickDraftKeys.length || selected.length > 0 || !!batchResult ||
                 loading || paging || queryPending || !!error || staleSelectionCount > 0 ||
-                props.queueBusy || !!queueInFlight.current || accessInterrupted}
+                props.uploading || props.queueBusy || !!queueInFlight.current || accessInterrupted}
               onClick={prepareCVMatchedDraftsNow}>
               {props.queueBusy ? "Preparing private drafts…" :
                 selected.length ? "Use your selected jobs below" :
@@ -771,13 +789,13 @@ export default function ApplicationJourney(props: {
             <button className="navy-btn compact" type="button"
               disabled={!shortlistSuggestion.added.length || !results || loading ||
                 paging || queryPending || !!error || staleSelectionCount > 0 ||
-                props.queueBusy || !!queueInFlight.current || accessInterrupted}
+                props.uploading || props.queueBusy || !!queueInFlight.current || accessInterrupted}
               onClick={selectCVShortlist}>
               Select {shortlistSuggestion.added.length} CV-title matched job{shortlistSuggestion.added.length === 1 ? "" : "s"}
               <CheckCircle2 size={15} aria-hidden="true"/>
             </button>
             <button className="outline-btn compact" type="button"
-              disabled={!selected.length || props.queueBusy || !!queueInFlight.current}
+              disabled={!selected.length || props.uploading || props.queueBusy || !!queueInFlight.current}
               onClick={clearSelected}>Clear selected jobs</button>
           </div>
           <p className="flow-shortlist-note">
@@ -870,7 +888,7 @@ export default function ApplicationJourney(props: {
             </> : null}
           </div> : null}
           <button className="primary-btn" type="button"
-            disabled={!runnableSelection.length || props.queueBusy || !!queueInFlight.current ||
+            disabled={!runnableSelection.length || props.uploading || props.queueBusy || !!queueInFlight.current ||
               loading || paging || queryPending || !!error || staleSelectionCount > 0}
             onClick={() => void queue()}>
             {props.queueBusy ? "Preparing selected drafts and agents…" :

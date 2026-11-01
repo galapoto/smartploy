@@ -31,3 +31,35 @@ describe("SP89: saved application entry in the CV-first journey", () => {
     expect(screen.queryByRole("button", { name: /Continue saved drafts & letters/i })).toBeNull();
   });
 });
+
+
+describe("SP101: CV replacement handshake on the first screen", () => {
+  it("pauses mode choices and private drafts until the CV update finishes", () => {
+    const onMode = vi.fn();
+    const onOpenApplications = vi.fn();
+    const view = render(<StartChoices cvPresent cvFilename="Earlier CV.pdf"
+      onMode={onMode} onBrowse={vi.fn()} onOpenApplications={onOpenApplications}
+      onUpload={vi.fn()} onCreateCV={vi.fn()}/>);
+    expect(screen.getByText(/Current CV: Earlier CV.pdf/i)).toBeTruthy();
+    view.rerender(<StartChoices cvPresent busyCV cvFilename="Earlier CV.pdf"
+      onMode={onMode} onBrowse={vi.fn()} onOpenApplications={onOpenApplications}
+      onUpload={vi.fn()} onCreateCV={vi.fn()}/>);
+    expect(screen.getByText(/CV update in progress/i)).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Choose what to do with SmartPloy" })
+      .getAttribute("aria-busy")).toBe("true");
+    for (const choice of document.querySelectorAll("button.flow-start-card[data-flow-mode]")) {
+      expect((choice as HTMLButtonElement).disabled).toBe(true);
+      expect(choice.getAttribute("aria-describedby")).toBe("flow-start-cv-updating");
+    }
+    expect((screen.getByRole("button", { name: /Continue saved drafts/i }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect(onMode).not.toHaveBeenCalled();
+    expect(onOpenApplications).not.toHaveBeenCalled();
+
+    view.rerender(<StartChoices cvPresent cvFilename="New CV.pdf"
+      onMode={onMode} onBrowse={vi.fn()} onOpenApplications={onOpenApplications}/>);
+    expect(screen.getByText(/Current CV: New CV.pdf/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Assisted.*Apply with AI/i }));
+    expect(onMode).toHaveBeenCalledExactlyOnceWith("assisted");
+  });
+});

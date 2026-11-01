@@ -771,3 +771,55 @@ describe("SP96: the applicant has one obvious next action at each gate", () => {
     expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
   });
 });
+
+
+describe("SP101: CV replacement safely pauses application preparation", () => {
+  it("disables old-job drafting and clears focused selection while replacement runs", async () => {
+    const p = { ...props(), mode: "assisted" as const };
+    const view = render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[0]);
+    expect(screen.getByRole("button", { name: /prepare CV & application/i })).toBeTruthy();
+
+    view.rerender(<ApplicationJourney {...p} uploading />);
+    expect(screen.getByText(/CV update in progress/i)).toBeTruthy();
+    expect((screen.getByRole("button", { name: /apply with AI help/i }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
+    expect((screen.getAllByRole("button", { name: /choose this job/i })[0] as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect(p.onPrepare).not.toHaveBeenCalled();
+    view.rerender(<ApplicationJourney {...p} uploading={false}/>);
+    expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
+    expect(p.onPrepare).not.toHaveBeenCalled();
+  });
+
+  it("stops remaining AutoApply jobs as soon as a replacement starts", async () => {
+    let finish!: () => void;
+    const outstanding = new Promise<void>((resolve) => { finish = resolve; });
+    let stop: (() => boolean) | undefined;
+    const onPrepareSelected = vi.fn(async (keys: string[],
+      _onProgress: (completed: number, total: number) => void,
+      shouldStop?: () => boolean): Promise<AutoApplyBatchOutcome> => {
+      stop = shouldStop;
+      await outstanding;
+      return { preparedKeys: keys, failedKeys: [],
+        agentsActive: keys.length, agentsPaused: 0,
+        agentsClosed: 0, agentsUnavailable: 0 };
+    });
+    const p = { ...props(), mode: "automatic" as const, onPrepareSelected };
+    const view = render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getByRole("button", { name: /Select 1 CV-title matched job/i }));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(onPrepareSelected).toHaveBeenCalledOnce());
+    expect(stop?.()).toBe(false);
+
+    view.rerender(<ApplicationJourney {...p} uploading />);
+    expect(stop?.()).toBe(true);
+    expect((screen.getByRole("button", { name: /prepare applications & start agents/i }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    finish();
+    await waitFor(() => expect(onPrepareSelected).toHaveBeenCalledTimes(1));
+  });
+});

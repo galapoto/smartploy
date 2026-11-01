@@ -401,10 +401,12 @@ export default function App() {
   function startApplyFlow(chosen: ApplicationFlowMode, jobKey = "") {
     // A job-card shortcut never skips the CV-first gate. Creating a draft
     // without a CV is impossible and must not visually select a method.
-    if (!cv.present) {
+    if (!cv.present || busyCV) {
       setFlowMode(null); setFlowSelectedJob("");
       navigate("apply");
-      setNotice("Step 1: upload or create your CV. Manual, Assisted and Automatic unlock after your CV is connected.");
+      setNotice(busyCV
+        ? "Your CV is being updated. Choose an application method after it finishes."
+        : "Step 1: upload or create your CV. Manual, Assisted and Automatic unlock after your CV is connected.");
       return;
     }
     setFlowMode(chosen);
@@ -1235,8 +1237,8 @@ export default function App() {
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
             onOpenApplications={() => navigate("applications")}
-            cvPresent={cv.present} onUpload={onUploadClick}
-            onCreateCV={() => navigate("profile")}/>
+            cvPresent={cv.present} cvFilename={cv.filename} busyCV={busyCV}
+            onUpload={onUploadClick} onCreateCV={() => navigate("profile")}/>
           {preferences && !preferences.completed ? <details className="flow-advanced-setup flow-dashboard-setup">
             <summary>Optional: set your job search preferences</summary>
             <SearchSetup key={accountViewKey} initial={preferences}

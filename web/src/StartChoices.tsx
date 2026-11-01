@@ -17,31 +17,45 @@ export default function StartChoices(props: {
   onCreateCV?: () => void;
   busyBrowse?: boolean;
   cvPresent?: boolean;
+  busyCV?: boolean;
+  cvFilename?: string;
 }) {
   const hasCV = props.cvPresent === true;
-  return <section className="flow-start" aria-label="Choose what to do with SmartPloy">
+  const updatingCV = props.busyCV === true;
+  const canChoose = hasCV && !updatingCV;
+  return <section className="flow-start" aria-label="Choose what to do with SmartPloy"
+    aria-busy={updatingCV}>
     <div className="flow-start-masthead" aria-hidden="true">
       <span>SMARTPLOY / APPLICATION WORKSPACE</span><span>FINLAND · PRIVATE WORKSPACE</span>
     </div>
     <div className="flow-start-heading">
       <p className="section-kicker">YOUR APPLICATION JOURNEY</p>
-      <h1>{hasCV ? "CV connected. Choose how to apply." : "Start with your CV."}</h1>
-      <p>{hasCV
-        ? "Your CV is ready. Pick Manual, Assisted or Automatic to see the right job-matching and application steps."
-        : "Upload your existing CV or create a new one. Then choose Manual, Assisted or Automatic. No application will be sent by connecting a CV."}</p>
+      <h1>{updatingCV ? "Updating your CV." :
+        hasCV ? "CV connected. Choose how to apply." : "Start with your CV."}</h1>
+      <p>{updatingCV
+        ? "Your CV is being saved. Application choices are paused until the update finishes."
+        : hasCV
+          ? "Your CV is ready. Pick Manual, Assisted or Automatic to see the right job-matching and application steps."
+          : "Upload your existing CV or create a new one. Then choose Manual, Assisted or Automatic. No application will be sent by connecting a CV."}</p>
     </div>
     <ol className="flow-start-progress" aria-label="Application journey steps">
-      <li className={hasCV ? "done" : "current"}
-        aria-current={!hasCV ? "step" : undefined}>
+      <li className={canChoose ? "done" : "current"}
+        aria-current={!canChoose ? "step" : undefined}>
         1 · CV
       </li>
-      <li className={hasCV ? "current" : ""}
-        aria-current={hasCV ? "step" : undefined}>
+      <li className={canChoose ? "current" : ""}
+        aria-current={canChoose ? "step" : undefined}>
         2 · Application type
       </li>
       <li>3 · Match jobs</li>
       <li>4 · Review &amp; apply</li>
     </ol>
+    {updatingCV ? <div className="flow-start-locked" id="flow-start-cv-updating"
+      role="status">
+      <FileCheck2 size={19} aria-hidden="true"/>
+      <span><strong>CV update in progress.</strong> Wait for the new CV before choosing
+        an application method or preparing jobs. No employer has been contacted.</span>
+    </div> : null}
     {!hasCV ? <>
       <div className="flow-start-how" aria-label="Step 1 — connect your CV">
         <div className="flow-start-cv-copy">
@@ -49,11 +63,11 @@ export default function StartChoices(props: {
           <p>Start with a PDF/DOCX file or build a CV in SmartPloy. Your information stays private until you explicitly approve an employer action.</p>
         </div>
         <div className="row-actions">
-          {props.onUpload ? <button type="button" className="primary-btn" onClick={props.onUpload}>
+          {props.onUpload ? <button type="button" className="primary-btn" disabled={updatingCV} onClick={props.onUpload}>
             <UploadCloud size={16} aria-hidden="true"/> Upload CV first
             <ArrowRight size={16} aria-hidden="true"/>
           </button> : null}
-          {props.onCreateCV ? <button type="button" className="outline-btn" onClick={props.onCreateCV}>
+          {props.onCreateCV ? <button type="button" className="outline-btn" disabled={updatingCV} onClick={props.onCreateCV}>
             <FileText size={16} aria-hidden="true"/> Create CV from scratch
           </button> : null}
         </div>
@@ -63,76 +77,82 @@ export default function StartChoices(props: {
         <span id="flow-start-require-cv"><strong>The three application paths are shown below.</strong> First upload or create your CV to activate a choice. You can still browse jobs without a CV.</span>
       </div>
     </> : <>
-      <div className="flow-start-ready" role="status">
+      {!updatingCV ? <div className="flow-start-ready" role="status">
         <CheckCircle2 size={20} aria-hidden="true"/>
-        <span><strong>CV connected.</strong> Step 1 is complete. Choose Manual, Assisted or Automatic. Review extracted facts before submitting an application.</span>
-      </div>
+        <span><strong>CV connected.</strong> Step 1 is complete. Choose Manual, Assisted or Automatic.
+          {props.cvFilename ? <span className="flow-start-cv-filename">
+            Current CV: {props.cvFilename}.
+          </span> : null}
+          Review extracted facts before submitting an application.</span>
+      </div> : null}
 
     </>}
     <div className="flow-start-method-heading">
       <div>
         <p className="section-kicker">STEP 2 · APPLICATION METHOD</p>
         <h2>Manual, Assisted or Automatic?</h2>
-        <p>{hasCV
-          ? "Your CV is connected. Choose one path to match real jobs and continue."
-          : "See all three paths now. Connect a CV in Step 1 to unlock your choice."}</p>
+        <p>{updatingCV
+          ? "CV update in progress. Your application options will unlock when it finishes."
+          : hasCV
+            ? "Your CV is connected. Choose one path to match real jobs and continue."
+            : "See all three paths now. Connect a CV in Step 1 to unlock your choice."}</p>
       </div>
-      <span className={"flow-start-method-status " + (hasCV ? "ready" : "waiting")}>
-        {hasCV ? "Ready to choose" : "CV required first"}
+      <span className={"flow-start-method-status " + (canChoose ? "ready" : "waiting")}>
+        {updatingCV ? "Updating CV" : hasCV ? "Ready to choose" : "CV required first"}
       </span>
     </div>
       <div className="flow-start-grid flow-start-grid-methods" role="group"
         aria-label="Step 2 — choose application type">
         <button type="button" className="flow-start-card" data-flow-mode="manual"
-          disabled={!hasCV}
-          aria-describedby={!hasCV ? "flow-start-require-cv" : undefined}
+          disabled={!canChoose}
+          aria-describedby={!canChoose ? (updatingCV ? "flow-start-cv-updating" : "flow-start-require-cv") : undefined}
           onClick={() => props.onMode("manual")}>
           <FileCheck2 size={25} aria-hidden="true"/>
           <span className="flow-start-index" aria-hidden="true">01</span>
           <strong>Apply manually</strong>
           <span>Find CV-matched jobs, open the original employer form and submit it yourself.</span>
           <small>MANUAL · You send the application</small>
-          <span className="flow-card-cta">{hasCV ? "Choose manual" : "Connect CV to unlock"}</span>
+          <span className="flow-card-cta">{updatingCV ? "Updating CV" : hasCV ? "Choose manual" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
         <button type="button" className="flow-start-card" data-flow-mode="assisted"
-          disabled={!hasCV}
-          aria-describedby={!hasCV ? "flow-start-require-cv" : undefined}
+          disabled={!canChoose}
+          aria-describedby={!canChoose ? (updatingCV ? "flow-start-cv-updating" : "flow-start-require-cv") : undefined}
           onClick={() => props.onMode("assisted")}>
           <WandSparkles size={25} aria-hidden="true"/>
           <span className="flow-start-index" aria-hidden="true">02</span>
           <strong>Assisted · Apply with AI</strong>
           <span>Prepare a job-specific CV and complete cover letter. Review and fill supported employer forms with the browser companion.</span>
           <small>ASSISTED · You review before sending</small>
-          <span className="flow-card-cta">{hasCV ? "Choose assisted" : "Connect CV to unlock"}</span>
+          <span className="flow-card-cta">{updatingCV ? "Updating CV" : hasCV ? "Choose assisted" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
         <button type="button" className="flow-start-card" data-flow-mode="automatic"
-          disabled={!hasCV}
-          aria-describedby={!hasCV ? "flow-start-require-cv" : undefined}
+          disabled={!canChoose}
+          aria-describedby={!canChoose ? (updatingCV ? "flow-start-cv-updating" : "flow-start-require-cv") : undefined}
           onClick={() => props.onMode("automatic")}>
           <Bot size={25} aria-hidden="true"/>
           <span className="flow-start-index" aria-hidden="true">03</span>
           <strong>Automatic · AutoApply</strong>
           <span>Prepare multiple matched jobs, then approve exact reviewed submissions where the employer has authorized a Lever/Ashby integration.</span>
           <small>AUTOMATIC · Employer-specific authorization required</small>
-          <span className="flow-card-cta">{hasCV ? "Choose automatic" : "Connect CV to unlock"}</span>
+          <span className="flow-card-cta">{updatingCV ? "Updating CV" : hasCV ? "Choose automatic" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
       </div>
 
     {hasCV ? <>
       <div className="flow-start-cv-actions">
-        {props.onUpload ? <button type="button" className="text-link" onClick={props.onUpload}>
+        {props.onUpload ? <button type="button" className="text-link" disabled={updatingCV} onClick={props.onUpload}>
           Replace connected CV
         </button> : null}
-        {props.onCreateCV ? <button type="button" className="text-link" onClick={props.onCreateCV}>
+        {props.onCreateCV ? <button type="button" className="text-link" disabled={updatingCV} onClick={props.onCreateCV}>
           Review / edit master CV
         </button> : null}
       </div>
     </> : null}
     {props.onOpenApplications ? <div className="flow-start-workspaces">
-      <button type="button" className="flow-start-browse-button" onClick={props.onOpenApplications}>
+      <button type="button" className="flow-start-browse-button" disabled={updatingCV} onClick={props.onOpenApplications}>
         <FileText size={19} aria-hidden="true"/>
         <span><strong>Continue saved drafts &amp; letters</strong><small>Open saved applications, review full letters and return to drafts</small></span>
         <ArrowRight size={17} aria-hidden="true"/>
