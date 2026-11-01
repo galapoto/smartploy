@@ -2017,8 +2017,8 @@ describe("SP97: document proposals are non-destructive and account-scoped", () =
       workspace_revision: 1,
       suggestion: {
         provider: "local_obumai_ollama", model: "synthetic-model", approved_evidence_ids: [],
-        external_actions_performed: true as false, suggestions_applied: true as false,
-        requires_owner_review: false as true,
+        external_actions_performed: true, suggestions_applied: true,
+        requires_owner_review: false,
         proposal: {
           schema: "smartploy.local_draft.v1" as const, cv_headline: "Invalid",
           cv_summary: "Invalid proposal", cover_letter: "Invalid draft",
@@ -2026,7 +2026,7 @@ describe("SP97: document proposals are non-destructive and account-scoped", () =
         },
       },
     };
-    vi.mocked(api.requestLocalAISuggestions).mockResolvedValueOnce(invalid);
+    vi.mocked(api.requestLocalAISuggestions).mockResolvedValueOnce(invalid as never);
     vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     await screen.findByRole("heading", { name: "A private role" });
@@ -2034,7 +2034,7 @@ describe("SP97: document proposals are non-destructive and account-scoped", () =
       name: /Suggest tailored wording/,
     }).hasAttribute("disabled")).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: /Suggest tailored wording/ }));
-    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(await screen.findByText(/private AI response did not pass review-only validation/i)).toBeTruthy();
     expect(screen.queryByText("Invalid proposal")).toBeNull();
     expect(screen.queryByRole("button", { name: "Use cover letter only" })).toBeNull();
     expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
