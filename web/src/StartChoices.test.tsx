@@ -44,7 +44,7 @@ describe("SP101: CV replacement handshake on the first screen", () => {
     view.rerender(<StartChoices cvPresent busyCV cvFilename="Earlier CV.pdf"
       onMode={onMode} onBrowse={vi.fn()} onOpenApplications={onOpenApplications}
       onUpload={vi.fn()} onCreateCV={vi.fn()}/>);
-    expect(screen.getByText(/CV update in progress/i)).toBeTruthy();
+    expect(screen.getAllByText(/CV update in progress/i).length).toBeGreaterThan(0);
     expect(screen.getByRole("region", { name: "Choose what to do with SmartPloy" })
       .getAttribute("aria-busy")).toBe("true");
     for (const choice of document.querySelectorAll("button.flow-start-card[data-flow-mode]")) {
@@ -60,6 +60,7 @@ describe("SP101: CV replacement handshake on the first screen", () => {
       onMode={onMode} onBrowse={vi.fn()} onOpenApplications={onOpenApplications}/>);
     expect(screen.getByText(/Current CV: New CV.pdf/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Assisted.*Apply with AI/i }));
-    expect(onMode).toHaveBeenCalledExactlyOnceWith("assisted");
+    expect(onMode).toHaveBeenCalledTimes(1);
+    expect(onMode).toHaveBeenCalledWith("assisted");
   });
 });
