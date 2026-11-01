@@ -404,6 +404,16 @@ export interface LocalAIStatus {
   failure_category?: "disabled" | "endpoint_unreachable" | "invalid_model_catalog" | "model_not_installed" | "ready";
 }
 
+export interface LocalAIInferenceProof {
+  inference_succeeded: true;
+  model: string;
+  provider: "local_obumai_ollama";
+  synthetic_only: true;
+  applicant_data_transferred: false;
+  external_actions_performed: 0;
+  documents_changed: false;
+}
+
 export interface LocalAIProposal {
   schema: "smartploy.local_draft.v1";
   cv_headline: string;
