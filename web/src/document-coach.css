@@ -101,6 +101,7 @@
   margin: 0;
   padding: 0;
 }
+.master-cv-preview .document-coach-checks { grid-template-columns: 1fr; }
 .document-coach-checks li {
   display: flex;
   align-items: flex-start;
