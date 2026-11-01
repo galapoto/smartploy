@@ -91,6 +91,10 @@ function eligibility(
 }
 
 export default function AuthorizedAutoApplyBatch(props: Props) {
+  // Only twelve employer-rights reads are allowed per deliberate check. Let
+  // applicants move through the remaining *loaded* supported drafts instead
+  // of silently hiding every candidate beyond the first twelve.
+  const [candidatePageIndex, setCandidatePageIndex] = useState(0);
   const [rows, setRows] = useState<BatchRow[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
   const [reviewChecked, setReviewChecked] = useState(false);
@@ -113,19 +117,40 @@ export default function AuthorizedAutoApplyBatch(props: Props) {
   ).join("\u0001"), [props.workspaces]);
   useEffect(() => {
     ++serial.current;
+    setCandidatePageIndex(0);
     setRows([]); setPicked([]); setReviewChecked(false);
     setTransferChecked(false); setError(""); setMessage("");
   }, [props.expectedUserId, fingerprint]);
 
-  const candidates = useMemo(() =>
+  const allCandidates = useMemo(() =>
     props.workspaces.filter((w) => w.status === "draft" &&
-      props.providerForUrl(w.application_url) !== null).slice(0, MAX_INSPECT),
+      props.providerForUrl(w.application_url) !== null),
     [props.workspaces, props.providerForUrl]);
+  const candidatePageCount = Math.max(1, Math.ceil(allCandidates.length / MAX_INSPECT));
+  const candidatePage = Math.min(candidatePageIndex, candidatePageCount - 1);
+  const candidates = allCandidates.slice(
+    candidatePage * MAX_INSPECT, (candidatePage + 1) * MAX_INSPECT,
+  );
+  const firstCandidate = allCandidates.length ? candidatePage * MAX_INSPECT + 1 : 0;
+  const lastCandidate = Math.min(allCandidates.length, (candidatePage + 1) * MAX_INSPECT);
   const eligible = rows.filter((row) => row.state === "eligible" && row.item);
   const chosen = eligible.filter((row) => picked.includes(row.workspaceId));
   const readyToSend = chosen.length > 0 && chosen.length <= MAX_BATCH &&
     reviewChecked && transferChecked && !props.hasUnsavedEdits &&
     !inspecting && !sending;
+
+  function changeCandidatePage(nextIndex: number) {
+    // Do not change or silently carry an approved batch during any private
+    // employer-rights read or one-shot transfer. Every page gets a new
+    // explicit eligibility check and its own fresh applicant approvals.
+    if (inFlight.current || inspecting || sending ||
+        nextIndex < 0 || nextIndex >= candidatePageCount ||
+        nextIndex === candidatePage) return;
+    ++serial.current;
+    setCandidatePageIndex(nextIndex);
+    setRows([]); setPicked([]); setReviewChecked(false);
+    setTransferChecked(false); setError(""); setMessage("");
+  }
 
   async function inspect() {
     if (inFlight.current || props.hasUnsavedEdits) return;
@@ -275,8 +300,25 @@ export default function AuthorizedAutoApplyBatch(props: Props) {
         <RefreshCw size={16} aria-hidden="true"/>
         {inspecting ? "Checking exact employer rights…" : "Check eligible reviewed jobs"}
       </button>
-      <span className="muted">{candidates.length} supported ATS draft(s) loaded · maximum {MAX_BATCH} submissions per batch</span>
+      <span className="muted">{allCandidates.length} supported ATS draft(s) loaded · maximum {MAX_BATCH} submissions per batch</span>
     </div>
+    {candidatePageCount > 1 ? <div className="row-actions studio-automation-pages"
+      role="group" aria-label="Navigate supported AutoApply drafts">
+      <span className="muted">Drafts {firstCandidate}–{lastCandidate} of {allCandidates.length} loaded supported ATS drafts. Check each page separately; nothing is sent by paging.</span>
+      <button type="button" className="outline-btn compact"
+        aria-label="Previous AutoApply draft page"
+        disabled={candidatePage === 0 || inspecting || sending}
+        onClick={() => changeCandidatePage(candidatePage - 1)}>
+        Previous {MAX_INSPECT}
+      </button>
+      <span className="muted" aria-live="polite">Page {candidatePage + 1} of {candidatePageCount}</span>
+      <button type="button" className="outline-btn compact"
+        aria-label="Next AutoApply draft page"
+        disabled={candidatePage >= candidatePageCount - 1 || inspecting || sending}
+        onClick={() => changeCandidatePage(candidatePage + 1)}>
+        Next {MAX_INSPECT}
+      </button>
+    </div> : null}
     {error ? <p role="alert" className="studio-alert error"><AlertCircle size={16}/>{error}</p> : null}
     {message ? <p role="status" className="studio-alert"><CheckCircle2 size={16}/>{message}</p> : null}
     {rows.length > 0 ? <div className="studio-automation-cases" aria-label="Exact job eligibility results">
