@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, FileText, History, Plus, RefreshCw, Save, ShieldCheck } from "lucide-react";
 import { getCVEditor, getSession } from "./api";
 import StructuredCVForm from "./StructuredCVForm";
+import DocumentCoach from "./DocumentCoach";
 import {
   cvHasApplicantContent, renderStructuredCV, structuredFromSource,
   type StructuredCV,
@@ -297,6 +298,7 @@ export default function MasterCVEditor(props: {
           <div className="master-cv-paper" aria-label="CV preview">
             <pre>{text || "Your CV will appear here as you write."}</pre>
           </div>
+          <DocumentCoach kind="master_cv" text={text} />
         </div>
       </div>
       <div className="master-cv-actions">
