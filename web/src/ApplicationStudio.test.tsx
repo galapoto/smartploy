@@ -966,36 +966,45 @@ describe("Application Studio private-read account boundary", () => {
   });
 
 
-  it("previews approved-evidence Finnish text without changing uploaded CV or saving automatically", async () => {
+  it("compares approved-evidence Finnish letter before replacing editor text, with undo before save", async () => {
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
     const originalCV = (screen.getByRole("textbox", {
       name: "Editable CV text",
     }) as HTMLTextAreaElement).value;
-    const initialLetter = (screen.getByRole("textbox", {
+    const letter = screen.getByRole("textbox", {
       name: "Editable cover letter text",
-    }) as HTMLTextAreaElement).value;
-    expect(initialLetter).toBe("PRIVATE-LETTER-A");
+    }) as HTMLTextAreaElement;
+    expect(letter.value).toBe("PRIVATE-LETTER-A");
     fireEvent.click(screen.getByRole("button", { name: "Finnish draft" }));
     await waitFor(() => expect(api.proposeEvidenceLetter).toHaveBeenCalledWith(
       "workspace-A", 1, "fi", "usr-a",
     ));
-    const letter = screen.getByRole("textbox", {
-      name: "Editable cover letter text",
-    }) as HTMLTextAreaElement;
+    const proposal = await screen.findByRole("region", { name: "Review generated cover letter" });
+    expect(proposal.textContent).toContain("Hei rekrytointitiimi");
+    expect(proposal.textContent).toContain("PRIVATE-LETTER-A");
+    expect(letter.value).toBe("PRIVATE-LETTER-A");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Use proposed Finnish letter" }));
     await waitFor(() => expect(letter.value).toContain("Hei rekrytointitiimi"));
     expect(letter.value).not.toContain("[Kerro");
-    expect(letter.value).not.toContain("Osaaminen:");
     expect((screen.getByRole("textbox", {
       name: "Editable CV text",
     }) as HTMLTextAreaElement).value).toBe(originalCV);
-    expect(screen.getByText(/Nothing was sent to an employer/)).toBeTruthy();
+    const undo = screen.getByRole("button", { name: "Undo last generated edit" });
+    fireEvent.click(undo);
+    await waitFor(() => expect(letter.value).toBe("PRIVATE-LETTER-A"));
     expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
-    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Finnish draft" }));
+    await screen.findByRole("region", { name: "Review generated cover letter" });
+    fireEvent.click(screen.getByRole("button", { name: "Use proposed Finnish letter" }));
+    await waitFor(() => expect(letter.value).toContain("Hei rekrytointitiimi"));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
       "workspace-A", 1, originalCV, expect.stringContaining("Hei rekrytointitiimi"), "usr-a",
     ));
+    expect(screen.queryByRole("button", { name: "Undo last generated edit" })).toBeNull();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 
   it("never overwrites unsaved applicant wording after declined language confirmation", async () => {
