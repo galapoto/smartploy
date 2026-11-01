@@ -2210,3 +2210,125 @@ describe("SP104 private draft refresh identity preflight", () => {
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 });
+
+
+describe("SP105 owner-private current master CV comparison and manual reconciliation", () => {
+  const previousSHA = "a".repeat(64);
+  const currentSHA = "b".repeat(64);
+  const currentFullText = "Complete current applicant CV with verified Python, SQL and cloud projects. Full job history.";
+  const masterCV = { present: true, sha256: currentSHA, filename: "Current-CV.docx" };
+  const currentMaster = () => ({
+    present: true, text: currentFullText, sha256: currentSHA,
+    filename: "Current-CV.docx", created_by_editor: false, history: [],
+    employer_actions_performed: 0 as const, approved_profile_facts_added: 0 as const,
+  });
+  function mount() {
+    return render(<ApplicationStudio focusId="workspace-A" expectedUserId="usr-a"
+      expectedAuthSource="oidc" onFindJobs={vi.fn()} masterCV={masterCV} />);
+  }
+  it("compares two complete private CVs and updates only a deliberately unsaved job draft", async () => {
+    vi.mocked(api.getCVEditor).mockResolvedValue(currentMaster());
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      mount();
+      await screen.findByRole("heading", {name: "A private role"});
+      const panel = screen.getByRole("region", {name: "CV version and comparison"});
+      expect(within(panel).getByText(/started from an earlier master CV/)).toBeTruthy();
+      const cv = screen.getByRole("textbox", {name: "Editable CV text"}) as HTMLTextAreaElement;
+      const letter = screen.getByRole("textbox", {name: "Editable cover letter text"}) as HTMLTextAreaElement;
+      expect(cv.value).toBe("PRIVATE-CV-A");
+      expect(letter.value).toBe("PRIVATE-LETTER-A");
+      expect(api.getCVEditor).not.toHaveBeenCalled();
+      fireEvent.click(within(panel).getByRole("button", {name: /Compare with current master CV/i}));
+      await waitFor(() => expect(api.getCVEditor).toHaveBeenCalledTimes(1));
+      const comparison = await screen.findByRole("region", {
+        name: "Job-specific CV versus current master CV",
+      });
+      expect(comparison.textContent).toContain("PRIVATE-CV-A");
+      expect(comparison.textContent).toContain(currentFullText);
+      expect(cv.value).toBe("PRIVATE-CV-A");
+      expect(letter.value).toBe("PRIVATE-LETTER-A");
+      expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+      const use = within(panel).getByRole("button", {name: /Use current master CV in this job draft/i});
+      fireEvent.click(use);
+      expect(cv.value).toBe("PRIVATE-CV-A");
+      expect(api.getCVEditor).toHaveBeenCalledTimes(1);
+      confirmation.mockReturnValue(true);
+      fireEvent.click(use);
+      await waitFor(() => expect(cv.value).toBe(currentFullText));
+      expect(letter.value).toBe("PRIVATE-LETTER-A");
+      expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+      expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+      expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+      expect(screen.getByText(/Review the full CV, save your changes/)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", {name: /^Save changes$/}));
+      await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+        "workspace-A", 1, currentFullText, "PRIVATE-LETTER-A", "usr-a",
+      ));
+      expect(within(panel).queryByRole("button", {name: /Use current master CV in this job draft/i})).toBeNull();
+      expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+      expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+    } finally { confirmation.mockRestore(); }
+  });
+
+  it("fails closed when the private editor response no longer matches the active master digest", async () => {
+    vi.mocked(api.getCVEditor).mockResolvedValue({
+      ...currentMaster(), sha256: "c".repeat(64),
+    });
+    mount();
+    await screen.findByRole("heading", {name: "A private role"});
+    const panel = screen.getByRole("region", {name: "CV version and comparison"});
+    fireEvent.click(within(panel).getByRole("button", {name: /Compare with current master CV/i}));
+    expect(await within(panel).findByRole("alert")).toHaveProperty("textContent",
+      expect.stringContaining("cannot be safely compared"));
+    expect(screen.queryByRole("region", {name: "Job-specific CV versus current master CV"})).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("drops an old draft comparison response after the selected application changes", async () => {
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [job("A"), job("B")], count: 2,
+    });
+    const pending = deferred<Awaited<ReturnType<typeof api.getCVEditor>>>();
+    vi.mocked(api.getCVEditor).mockReturnValue(pending.promise);
+    mount();
+    await screen.findByRole("heading", {name: "A private role"});
+    fireEvent.click(screen.getByRole("button", {name: /Compare with current master CV/i}));
+    await waitFor(() => expect(api.getCVEditor).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", {name: "Next application"}));
+    await screen.findByRole("heading", {name: "B private role"});
+    await act(async () => { pending.resolve(currentMaster()); });
+    expect(screen.queryByRole("region", {name: "Job-specific CV versus current master CV"})).toBeNull();
+    expect((screen.getByRole("textbox", {name: "Editable CV text"}) as HTMLTextAreaElement).value)
+      .toBe("PRIVATE-CV-B");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("does not expose an old account's master CV after the same-email OIDC account switches", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.getCVEditor>>>();
+    vi.mocked(api.getCVEditor).mockReturnValue(pending.promise);
+    mount();
+    await screen.findByRole("heading", {name: "A private role"});
+    fireEvent.click(screen.getByRole("button", {name: /Compare with current master CV/i}));
+    await waitFor(() => expect(api.getCVEditor).toHaveBeenCalledTimes(1));
+    activeUser = "usr-b";
+    await act(async () => { pending.resolve(currentMaster()); });
+    expect(await screen.findByRole("heading", {name: "Account verification required"})).toBeTruthy();
+    expect(screen.queryByText(currentFullText)).toBeNull();
+    expect(screen.queryByRole("textbox", {name: "Editable CV text"})).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("never claims a master CV is current when the origin SHA is unavailable", async () => {
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [{...job("A"),source_cv_sha256:""}],count:1,
+    });
+    mount();
+    await screen.findByRole("heading", {name: "A private role"});
+    const panel = screen.getByRole("region", {name: "CV version and comparison"});
+    expect(within(panel).getByText(/source CV version cannot be compared automatically/)).toBeTruthy();
+    expect(within(panel).queryByText("Master CV origin verified")).toBeNull();
+    expect(api.getCVEditor).not.toHaveBeenCalled();
+  });
+});

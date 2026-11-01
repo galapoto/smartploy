@@ -90,6 +90,8 @@ async function installSyntheticApi(page: Page, options: {
   cvFilename?: string;
   unavailableAI?: boolean;
   readyAI?: boolean;
+  masterCVSha256?: string;
+  masterCVText?: string;
 } = {}): Promise<MockState> {
   const state: MockState = {
     userId: "synthetic-user-a",
@@ -174,6 +176,18 @@ async function installSyntheticApi(page: Page, options: {
       });
       return;
     }
+    if (path === "/api/v1/profile/cv/editor" && request.method() === "GET") {
+      if (!state.cvFilename || !options.masterCVSha256) {
+        await response(route, {detail: "No version-verifiable synthetic master CV"}, 404);
+      } else {
+        await response(route, {
+          present: true, text: options.masterCVText || "", sha256: options.masterCVSha256,
+          filename: state.cvFilename, created_by_editor: false, history: [],
+          employer_actions_performed: 0, approved_profile_facts_added: 0,
+        });
+      }
+      return;
+    }
     if (path === "/api/v1/profile/cv/matches" && request.method() === "GET") {
       await response(route, {
         cv_present: Boolean(state.cvFilename), cv_filename: state.cvFilename,
@@ -236,6 +250,29 @@ async function installSyntheticApi(page: Page, options: {
     }
     if (path === "/api/v1/application-agents" && request.method() === "GET") {
       await response(route, { agents: [], count: 0, external_actions_authorized: false });
+      return;
+    }
+    if (path.startsWith("/api/v1/application-workspaces/") &&
+        request.method() === "PUT") {
+      const id = decodeURIComponent(path.slice("/api/v1/application-workspaces/".length));
+      const body = JSON.parse(request.postData() || "{}") as Record<string, unknown>;
+      const owned = state.privateWorkspaces[state.userId] || [];
+      const existing = owned.find(item => item.workspace_id === id);
+      if (!existing || body.expected_revision !== existing.revision ||
+          request.headers()["x-smartploy-expected-user-id"] !== state.userId ||
+          typeof body.cv_text !== "string" || typeof body.cover_letter_text !== "string") {
+        await response(route, {detail: "Owner and exact revision are mandatory"}, 409);
+      } else {
+        const edited = {
+          ...existing, cv_text: body.cv_text,
+          cover_letter_text: body.cover_letter_text,
+          revision: existing.revision + 1,
+        };
+        state.privateWorkspaces[state.userId] = owned.map(item =>
+          item.workspace_id === id ? edited : item
+        );
+        await response(route, {workspace: edited});
+      }
       return;
     }
     if (path.startsWith("/api/v1/application-workspaces/") &&
@@ -335,7 +372,8 @@ async function installSyntheticApi(page: Page, options: {
         external_actions_authorized: false,
       },
       "/api/v1/profile/cv": state.cvFilename
-        ? { present: true, filename: state.cvFilename, size_bytes: 1200 }
+        ? { present: true, filename: state.cvFilename, size_bytes: 1200,
+            ...(options.masterCVSha256 ? {sha256: options.masterCVSha256} : {}) }
         : { present: false },
       "/api/v1/profile/facts": { facts: [], count: 0 },
       "/api/v1/applications": { applications: [], count: 0 },
@@ -1170,4 +1208,43 @@ test("SP104: actual browser preserves unsaved cover letter after cancelled navig
   await expect(page.getByRole("textbox", { name: "Editable cover letter text" })).toHaveCount(0);
   // Leaving a draft is a local navigation only, never an employer request.
   expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+});
+
+
+test("SP105: compare and deliberately use a newer master CV in one saved job without employer submission", async ({page}) => {
+  const fullMaster = "Full verified applicant CV in private synthetic fixture. Python, SQL, Power BI, Azure and project evidence.";
+  const state = await installSyntheticApi(page, {
+    cvFilename: "Current-master-CV.docx",
+    masterCVSha256: "b".repeat(64),
+    masterCVText: fullMaster,
+  });
+  await page.goto("/");
+  await page.locator('.flow-start-card[data-flow-mode="manual"]').click();
+  await expect(page.getByRole("heading", {name: "Jobs from your CV"})).toBeVisible();
+  await page.getByRole("button", {name: "Choose this job"}).first().click();
+  await page.getByRole("button", {name: "Save application draft"}).click();
+  const cv = page.getByRole("textbox", {name: "Editable CV text"});
+  const letter = page.getByRole("textbox", {name: "Editable cover letter text"});
+  await expect(cv).toHaveValue("FICTIONAL CV draft for Junior Data Analyst");
+  await expect(letter).toHaveValue("FICTIONAL letter for Example Oy");
+  const panel = page.getByRole("region", {name: "CV version and comparison"});
+  await expect(panel).toContainText("started from an earlier master CV");
+  await panel.getByRole("button", {name: "Compare with current master CV"}).click();
+  const comparison = page.getByRole("region", {name: "Job-specific CV versus current master CV"});
+  await expect(comparison).toContainText(fullMaster);
+  await expect(cv).toHaveValue("FICTIONAL CV draft for Junior Data Analyst");
+  page.once("dialog", async dialog => dialog.accept());
+  await panel.getByRole("button", {name: /Use current master CV in this job draft/i}).click();
+  await expect(cv).toHaveValue(fullMaster);
+  await expect(letter).toHaveValue("FICTIONAL letter for Example Oy");
+  expect(state.privateWorkspaces[state.userId][0].revision).toBe(1);
+  await page.getByRole("button", {name: /^Save changes$/}).click();
+  await expect.poll(() => state.privateWorkspaces[state.userId][0].revision).toBe(2);
+  expect(state.privateWorkspaces[state.userId][0].cv_text).toBe(fullMaster);
+  expect(state.privateWorkspaces[state.userId][0].cover_letter_text)
+    .toBe("FICTIONAL letter for Example Oy");
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  await expect(page.getByRole("button", {name: /Submit reviewed application to authorized/i}))
+    .toHaveCount(0);
+  await evidence(page,"sp105-current-master-cv-reconciliation.png");
 });
