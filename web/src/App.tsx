@@ -1466,6 +1466,7 @@ export default function App() {
           {page === "applications" ? <div className="stacked">
             <ApplicationStudio key={accountViewKey} mode={flowMode} focusId={selectedWorkspaceId}
               expectedUserId={session?.user_id || ""} expectedAuthSource={session?.auth_source || ""}
+              masterCV={cv} onReviewMasterCV={() => navigate("profile")}
               onUnsavedChange={reportApplicationUnsaved}
               onModeChange={setFlowMode}
               onFindJobs={() => navigate("apply")} />
