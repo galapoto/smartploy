@@ -564,7 +564,8 @@ export default function ApplicationJourney(props: {
           Upload CV <ArrowRight size={16} aria-hidden="true"/>
         </button> : !props.mode ? <a className="navy-btn" href="#smartploy-flow-choice">
           Choose application type <ArrowRight size={16} aria-hidden="true"/>
-        </a> : <a className="navy-btn" href="#smartploy-flow-matches">
+        </a> : <a className="navy-btn" href={hasChosenJob && props.mode === "automatic"
+            ? "#smartploy-flow-queue" : "#smartploy-flow-matches"}>
           {hasChosenJob
             ? props.mode === "automatic" ? "Prepare selected applications" : "Continue selected job"
             : "Choose matching jobs"} <ArrowRight size={16} aria-hidden="true"/>
@@ -762,7 +763,7 @@ export default function ApplicationJourney(props: {
             </button>
           </div>
         ) : null}
-        {props.mode === "automatic" ? <div className="flow-queue">
+        {props.mode === "automatic" ? <div className="flow-queue" id="smartploy-flow-queue">
           <strong>{selected.length} of {AUTOAPPLY_SELECTION_LIMIT} vacancies selected</strong>
           <p>Each selected job gets its own private application draft and in-app agent.
             No email, call or employer application is sent. You can pause or close an agent later.</p>
