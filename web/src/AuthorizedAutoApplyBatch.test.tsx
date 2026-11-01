@@ -105,6 +105,41 @@ describe("SP86 approved AutoApply batch", () => {
     expect(await screen.findByText(/A selected employer job or review changed/)).toBeTruthy();
     expect(api.submitAuthorizedAutoApplyBatch).not.toHaveBeenCalled();
   });
+  it("paginates every loaded supported ATS draft without reusing prior approvals", async () => {
+    const drafts: ApplicationWorkspace[] = Array.from({length:14}, (_, index) => ({
+      ...workspace, workspace_id:"test-workspace-"+(index+1),
+      canonical_key:"test-key-"+(index+1),
+      role_title:"Review role "+(index+1),
+      application_url:"https://jobs.lever.co/testorg/job-"+(index+1),
+    }));
+    vi.mocked(api.getLeverPartnerReadiness).mockImplementation(async (id) => ({
+      ...eligible, review_evidence:{...evidence, workspace_id:id},
+    }));
+    render(<AuthorizedAutoApplyBatch workspaces={drafts}
+      expectedUserId="test-user" verifyAccount={verify}
+      providerForUrl={(url) => url.includes("lever.co") ? "lever" : null}
+      hasUnsavedEdits={false} onOpen={vi.fn()} onCompleted={finished}/>);
+    expect(screen.getByText(/Drafts 1–12 of 14 loaded supported ATS drafts/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button",{name:/Check eligible reviewed jobs/}));
+    await waitFor(() => expect(api.getLeverPartnerReadiness).toHaveBeenCalledTimes(12));
+    expect(api.getLeverPartnerReadiness).not.toHaveBeenCalledWith("test-workspace-13");
+    // One page can be fully approved, but its approval must disappear when
+    // the applicant deliberately inspects a different set of exact jobs.
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    fireEvent.click(screen.getByLabelText(/I personally reviewed each selected job/));
+    fireEvent.click(screen.getByLabelText(/I authorize one real application submission/));
+    expect((screen.getByRole("button", {name:/Approve and AutoApply to 1 employer/}) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button",{name:"Next AutoApply draft page"}));
+    expect(screen.queryByRole("button",{name:/Approve and AutoApply to 1 employer/})).toBeNull();
+    expect(screen.getByText(/Drafts 13–14 of 14 loaded supported ATS drafts/)).toBeTruthy();
+    expect(screen.getByRole("button",{name:"Next AutoApply draft page"}).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button",{name:/Check eligible reviewed jobs/}));
+    await waitFor(() => expect(api.getLeverPartnerReadiness).toHaveBeenCalledTimes(14));
+    expect(api.getLeverPartnerReadiness).toHaveBeenCalledWith("test-workspace-13");
+    expect(api.getLeverPartnerReadiness).toHaveBeenCalledWith("test-workspace-14");
+    expect(screen.getByText("Review role 14")).toBeTruthy();
+    expect(api.submitAuthorizedAutoApplyBatch).not.toHaveBeenCalled();
+  });
   it("requires verified account before any partner read",async () => {
     verify.mockRejectedValue(new Error("different subject"));
     start();
