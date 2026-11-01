@@ -130,6 +130,8 @@ export default function ApplicationStudio(props: {
   const accountBlockedRef = useRef(false);
   const reloadGenerationRef = useRef(0);
   const selectedDraftRef = useRef<DraftTicket>({ key: "", epoch: 0 });
+  // A private read must never commit stale text over local keystrokes made while awaiting identity.
+  const editEpochRef = useRef(0);
   const currentSelectedId = useRef(props.focusId);
   useEffect(() => { currentSelectedId.current = selectedId; }, [selectedId]);
 
@@ -151,6 +153,7 @@ export default function ApplicationStudio(props: {
     accountBlockedRef.current = true;
     ++reloadGenerationRef.current;
     ++selectedDraftRef.current.epoch;
+    ++editEpochRef.current;
     setWorkspaces([]); setSelectedId("");
     setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
     setLetterProposal(null); setDocumentUndo(null);
@@ -292,6 +295,7 @@ export default function ApplicationStudio(props: {
     ]) : "";
     if (selectedDraftRef.current.key !== key) {
       selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
+      ++editEpochRef.current;
       setBusy(false); setAIBusy(false); setLetterBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
       setAISuggestion(null);
       setLetterProposal(null); setDocumentUndo(null);
@@ -520,6 +524,7 @@ export default function ApplicationStudio(props: {
         busy || aiBusy || letterBusy || !!browserReceipt || !!partnerReceipt ||
         employerAttempt?.previous_attempt_reserved) return;
     const ticket = captureDraft(selected);
+    const editEpoch = editEpochRef.current;
     if (letterProposal.key !== ticket.key) return;
     if (letterText !== selected.cover_letter_text && !window.confirm(
       "Replace your UNSAVED cover-letter edits with this reviewed proposal? " +
@@ -531,8 +536,9 @@ export default function ApplicationStudio(props: {
       " Continue with the editable letter and review every claim?"
     )) return;
     try { await verifyAccount(); } catch { return; }
-    if (!isCurrentDraft(ticket)) return;
+    if (!isCurrentDraft(ticket) || editEpochRef.current !== editEpoch) return;
     const proposed = letterProposal.text;
+    ++editEpochRef.current;
     setDocumentUndo({
       key: ticket.key, kind: "letter proposal",
       beforeCV: cvText, beforeLetter: letterText,
@@ -549,11 +555,13 @@ export default function ApplicationStudio(props: {
         busy || aiBusy || letterBusy || !!browserReceipt || !!partnerReceipt ||
         employerAttempt?.previous_attempt_reserved) return;
     const ticket = captureDraft(selected);
+    const editEpoch = editEpochRef.current;
     if (documentUndo.key !== ticket.key ||
         documentUndo.afterCV !== cvText ||
         documentUndo.afterLetter !== letterText) return;
     try { await verifyAccount(); } catch { return; }
-    if (!isCurrentDraft(ticket)) return;
+    if (!isCurrentDraft(ticket) || editEpochRef.current !== editEpoch) return;
+    ++editEpochRef.current;
     setCvText(documentUndo.beforeCV);
     setLetterText(documentUndo.beforeLetter);
     setDocumentUndo(null);
@@ -614,6 +622,7 @@ export default function ApplicationStudio(props: {
         partnerReceipt || employerAttempt?.previous_attempt_reserved || busy) return;
     const draft = aiSuggestion.proposal;
     const ticket = captureDraft(selected);
+    const editEpoch = editEpochRef.current;
     const prompt = target === "both"
       ? "Insert this AI-generated CV summary and REPLACE the current cover letter? " +
         "Review the comparison first. Neither document is saved or submitted. " +
@@ -622,7 +631,7 @@ export default function ApplicationStudio(props: {
         " for this job? Review every claim. The change is unsaved and undoable.";
     if (!window.confirm(prompt)) return;
     try { await verifyAccount(); } catch { return; }
-    if (!isCurrentDraft(ticket)) return;
+    if (!isCurrentDraft(ticket) || editEpochRef.current !== editEpoch) return;
 
     // Legacy generated CV summaries are not reliably delimited, and may be
     // manually edited. Never add a duplicate or silently guess its bounds.
@@ -643,6 +652,7 @@ export default function ApplicationStudio(props: {
         "Use a shorter version or edit the existing documents manually.");
       return;
     }
+    ++editEpochRef.current;
     setDocumentUndo({
       key: ticket.key, kind: "private AI",
       beforeCV: cvText, beforeLetter: letterText,
@@ -1433,7 +1443,7 @@ export default function ApplicationStudio(props: {
           <textarea aria-label="Editable CV text" rows={15} maxLength={30000}
             readOnly={selected.status !== "draft" || !!browserReceipt ||
               employerAttempt?.previous_attempt_reserved === true} value={cvText}
-            onChange={(event) => { setDocumentUndo(null); setCvText(event.target.value); }}
+            onChange={(event) => { ++editEpochRef.current; setDocumentUndo(null); setCvText(event.target.value); }}
             placeholder="Your reviewed CV content" />
           <small>Started from your uploaded CV, when available; otherwise only approved profile facts.</small>
           <DocumentCoach kind="job_cv" text={cvText} roleTitle={selected.role_title}
@@ -1463,11 +1473,15 @@ export default function ApplicationStudio(props: {
                 !!partnerReceipt || !!employerAttempt?.previous_attempt_reserved}>
               {letterBusy ? "Preparing…" : "English draft"}
             </button>
+            {letterProposal && letterProposal.key === selectedDraftRef.current.key ?
+              <a className="outline-btn compact" href="#smartploy-letter-proposal">
+                Review proposed {letterProposal.language === "fi" ? "Finnish" : "English"} letter above
+              </a> : null}
           </div> : null}
           <textarea aria-label="Editable cover letter text" rows={13} maxLength={10000}
             readOnly={selected.status !== "draft" || !!browserReceipt ||
               employerAttempt?.previous_attempt_reserved === true} value={letterText}
-            onChange={(event) => { setDocumentUndo(null); setLetterText(event.target.value); }}
+            onChange={(event) => { ++editEpochRef.current; setDocumentUndo(null); setLetterText(event.target.value); }}
             placeholder="Your reviewed cover letter" />
           <DocumentCoach kind="cover_letter" text={letterText} roleTitle={selected.role_title}
             company={selected.company} />
