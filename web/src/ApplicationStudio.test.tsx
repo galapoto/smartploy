@@ -1769,7 +1769,8 @@ describe("Application Studio per-draft result isolation", () => {
     const suggest = screen.getByRole("button", { name: /Suggest tailored wording/ });
     await waitFor(() => expect(suggest.hasAttribute("disabled")).toBe(false));
     fireEvent.click(suggest);
-    expect(await screen.findByText(/Synthetic approved evidence/)).toBeTruthy();
+    expect((await screen.findByRole("region", { name: "Compare current CV with AI-proposed CV" })).textContent)
+      .toContain("Synthetic approved evidence");
     const verification = deferred<SessionInfo>();
     vi.mocked(api.getSession).mockImplementationOnce(() => verification.promise);
     fireEvent.click(screen.getByRole("button", { name: /Insert into editor/ }));
