@@ -103,3 +103,39 @@
   .document-comparison { padding: 12px; }
   .studio-letter-proposal { padding: 12px; }
 }
+
+/* SP98: grounded inference evidence and deliberately non-destructive CV tailoring. */
+.studio-ai-proof {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  border: 1px solid #b8dfd6;
+  border-radius: 13px;
+  background: #effaf6;
+  padding: 12px 14px;
+  margin: 12px 0;
+  color: #185c54;
+}
+.studio-ai-proof > svg { flex: none; margin-top: 2px; }
+.studio-ai-proof strong { font-size: 13px; font-weight: 750; }
+.studio-ai-proof p { margin: 4px 0 0; color: #416e68; font-size: 12px; line-height: 1.6; }
+.studio-ai-proof-trigger { min-height: 40px; }
+.studio-ai-cv-comparison {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #c9e0e4;
+  border-radius: 12px;
+  background: #f7fbfc;
+}
+.studio-ai-cv-comparison > summary {
+  color: #185a67;
+  cursor: pointer;
+  font-weight: 720;
+  font-size: 13px;
+}
+.studio-ai-cv-boundary {
+  margin: 10px 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: #74602b;
+}
