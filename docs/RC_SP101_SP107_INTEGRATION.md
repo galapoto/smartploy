@@ -1,0 +1,59 @@
+# SmartPloy RC — SP101 to SP107 consolidated review and release checklist
+
+**Prepared:** 2026-11-02. **Existing main baseline (verified before this PR):** `804747bd9f01f999f9e806dcf96459bb215bb8f1`.  
+**Pre-integration source head:** `b2f94ed1489d0d5dab8eefb9d71b1c393fd9f72a` (source-green SP107).  
+**Integrated PR head and resulting main SHA:** **read from GitHub at decision time**, never copy an obsolete hash.  
+**Review status at creation:** independent approvals outstanding, no production deploy. This plan is **not** approval.
+
+## Scope — one deliberately combined changeset
+
+The five source-tested changes are linearly stacked on `main` (verified compare: **ahead 28 commits, behind 0** before the additional integration test and this document). They are not five unrelated cherry-picks and have no known divergent base. Integrating the exact tested linear ancestry in one separately reviewed PR avoids applying the same code five times or losing a follow-up in an intermediate deployment.
+
+| Component | Prior review PR | Source-green head | User-visible or privacy behavior |
+| --- | --- | --- | --- |
+| SP101–SP103 | [#270](https://github.com/galapoto/smartploy/pull/270) | `f7a3f4098c40593d405681f71134dafdc683b303` | CV writes fence off stale matching and preparation; previous selected jobs cannot survive a CV replacement |
+| SP104 | [#271](https://github.com/galapoto/smartploy/pull/271) | `fcc048c7f4b5c498863143567c7306df1d782ada` | Unsaved CV and cover-letter text protected before sidebar, refresh and browser navigation |
+| SP105 | [#272](https://github.com/galapoto/smartploy/pull/272) | `431de3cccdf539ce5470518c513ecaddb0295732` | Compare updated owner master CV and job draft; explicit copy, undo and revisioned private save; historical provenance retained |
+| SP106 | [#273](https://github.com/galapoto/smartploy/pull/273) | `575b827e1511161c8c9f4857baca759e775895c1` | Save one complete CV + letter ZIP with true PDF and DOCX files; no employer action |
+| SP107 | [#274](https://github.com/galapoto/smartploy/pull/274) | `b2f94ed1489d0d5dab8eefb9d71b1c393fd9f72a` | Owner-scoped, exactly revisioned inline PDF previews of saved CV/letter; stale and cross-account requests refuse |
+
+All five features are available in **this integrated PR's source**, not automatically in production. Preserve existing sidebar, panorama, dark/light mode, and CV-first Manual / Assisted / Automatic chooser. Design-only draft PR #269 is explicitly **out of scope**.
+
+## New RC cross-account acceptance evidence
+
+A single additional FastAPI integration test in `tests/test_authenticated_account_switch.py` exercises the real **OIDC production-mode tenant routing** with two synthetic, individually authenticated users who share the same email but have different issuer subjects. Each has a different private CV/letter, including an intentionally identical opaque workspace ID, using the actual first-party repository and document rendering endpoints.
+
+- Both users receive their own actual **PDF text** and complete **ZIP/DOCX text**, never the other's text, even for an identical workspace ID.
+- Owner-only cases return **404** to the other account for both endpoints.
+- Stale PDF revision returns **409**; an unauthenticated request returns **401**; data remains private/no-store and **actually_submitted** remains zero.
+- No live user accounts, real CVs, external provider or employer submission appear in this test.
+
+The RC must pass the original complete Python + PostgreSQL synthetic AutoApply contract, React tests/build, Chromium/Playwright tests, Compose smoke and exact-checkout review receipt at **its own final exact SHA**. PR-only green checks are review evidence, **not** post-merge main evidence.
+
+## Release gates — do not skip
+
+- [ ] Independent code/privacy reviewer examines **cumulative diff against `main`**, including server response headers, account scopes, owner/DOCX/PDF/ZIP identity checks, unsaved editor protection, and employer rights controls.
+- [ ] Explicit owner/Director GO for merge/release is recorded in the canonical approval channel. The author/agent does not self-approve, infer approval from green CI or silently advance any protected branch.
+- [ ] Confirm `main` baseline did not move; if it moved, reconcile diffs and rerun exact integration tests. No force push or blind merge.
+- [ ] **After merge**, confirm push-to-`main` CI is green at the exact resulting 40-character immutable SHA. Require `test`, `web`, `browser` and `deploy-stack`; the review-only receipt does not qualify as a release approval.
+- [ ] Collect native ObumDelivery/Woodpecker exact-SHA and negative/permission evidence where the deployment process requires it. No synthetic pass is substituted for its independent approval.
+- [ ] Authorized operator performs backup, image identity/health/OIDC checks and pinned-SHA release with `deploy/personal/scripts/deploy.sh`; no unreviewed moving-ref checkout. Validate web/backend/worker revision parity and rollback safety.
+- [ ] Run actual signed-in user acceptance in **two independent user sessions**: CV upload/edit → choose Manual, Assisted, Automatic → current matched jobs → full job-specific CV and complete cover letter editor → save/reopen → ZIP/DOCX/PDF preview → account isolation.
+- [ ] Check disabled previews/ZIP while unsaved, stale version 409, missing owner 404, and preserved review intent on navigation. Do not upload or publish test CVs or private response bodies as release evidence.
+- [ ] Verify source freshness and KEHA job count separately from UI readiness; verify explicit applicant final action and employer-specific rights for every real transfer. A prepared draft, ZIP, browser observation, synthetic AutoApply test or UI "Applied" marker **does not prove an employer received an application**.
+- [ ] Record a nonsecret release receipt in [tracker #88](https://github.com/galapoto/smartploy/issues/88) and [go-live issue #57](https://github.com/galapoto/smartploy/issues/57): SHA, deployment time, backup evidence/checksum, verification gates, source count, UI acceptance, precise remaining limitations. Never include OIDC cookies, CV text, partner tokens or production keys.
+
+## Release/go-no-go summary
+
+**DONE at creation:** feature source for SP101–SP107 exists and their prior component-PR exact-SHA CI passed; the cumulative branch is linear from the stated baseline.  
+**IN PROGRESS:** the extra OIDC two-account full document test and the consolidated **PR-to-main** exact-head CI.  
+**BLOCKED:** independent approval, native release CI evidence where designated, post-merge main CI, operator production deployment and signed-in two-account acceptance.  
+**NOT STARTED:** any actual employer submission under this RC. No automatic ATS rights granted.
+
+## REA-FIRST-001 reuse decision
+
+`REA_NOT_APPLICABLE` for this *integration-only* slice: no opaque upstream binary, competitor application, API recording or licensed external asset is a candidate for reconstructing the already-owned tested SmartPloy history. The work reuses **100% of the existing first-party SP101–SP107 implementation**, FastAPI tenant/context and owner-scoped workspace repository, standard PDF/ZIP/DOCX renderers, `MemoryIdentityRepository`, `MemorySessionRepository`, and synthetic authentication test setup from `tests/test_authenticated_account_switch.py`. New code is only the combined real-identity cross-account regression and this review/release manifest; no runtime package added. Source/permission: owned repository baseline above; REA executable target/tool version: N/A. Engineering time versus comparable measured baseline unknown; **savings=unknown**.
+
+## Integration alternatives
+
+This RC offers **one cumulative review and merge path**. The five component PRs remain individually reviewable as detailed evidence; do **not** merge this RC **and** subsequently re-apply all five feature PRs to `main` without comparing histories. After an independently approved RC merge, close redundant component PRs as superseded with an explicit link, preserving their review discussions and CI history. If independent reviewers instead choose staged merges, keep this RC unmerged and rerun post-merge CI at every resultant main SHA.
