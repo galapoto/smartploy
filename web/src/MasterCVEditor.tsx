@@ -20,6 +20,7 @@ export default function MasterCVEditor(props: {
   onSave: (text: string, currentSha256: string) => Promise<CVEditorSaved>;
   onRestore: (digest: string, currentSha256: string) => Promise<CVEditorRestored>;
   onSaved: (cv: CVDocument) => void;
+  onUnsavedChange?: (dirty: boolean) => void;
   // Parent-level live mutation barrier; optional for standalone editor QA.
   onWriteStarted?: () => symbol | null;
   onWriteSettled?: (token: symbol) => void;
@@ -89,6 +90,10 @@ export default function MasterCVEditor(props: {
   }, [refresh, cv.sha256, cv.present]);
 
   const dirty = text !== originalText;
+  useEffect(() => {
+    props.onUnsavedChange?.(dirty);
+    return () => props.onUnsavedChange?.(false);
+  }, [dirty, props.onUnsavedChange]);
   const validStructured = mode !== "structured" ||
     (!!structured && cvHasApplicantContent(structured));
   const canSave = !!snapshot && !loading && !saving &&

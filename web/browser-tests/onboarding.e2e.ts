@@ -1139,3 +1139,35 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   expect(horizontalOverflow).toBe(false);
   await evidence(page, "sp99-finland-mobile-dark-logo.png");
 });
+
+
+test("SP104: actual browser preserves unsaved cover letter after cancelled navigation", async ({ page }) => {
+  const state = await installSyntheticApi(page, { cvFilename: "Synthetic-Approved-CV.docx" });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "CV connected. Choose how to apply." })).toBeVisible();
+  await page.locator('.flow-start-card[data-flow-mode="manual"]').click();
+  await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
+  await page.getByRole("button", { name: "Choose this job" }).first().click();
+  await page.getByRole("button", { name: "Save application draft" }).click();
+  const letter = page.getByRole("textbox", { name: "Editable cover letter text" });
+  await expect(letter).toBeVisible();
+  const unsaved = "SYNTHETIC ONLY: complete applicant letter with unsaved additional evidence.";
+  await letter.fill(unsaved);
+
+  let warning = "";
+  page.once("dialog", async dialog => {
+    warning = dialog.message();
+    await dialog.dismiss();
+  });
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  expect(warning).toContain("unsaved changes to your application CV or cover letter");
+  await expect(letter).toHaveValue(unsaved);
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+
+  page.once("dialog", async dialog => { await dialog.accept(); });
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  await expect(page.getByRole("heading", { name: "How do you want to apply?" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Editable cover letter text" })).toHaveCount(0);
+  // Leaving a draft is a local navigation only, never an employer request.
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+});

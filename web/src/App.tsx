@@ -211,6 +211,15 @@ export default function App() {
   // Ref-level barrier: invalidate the old CV *synchronously* when a write
   // starts, before React can render a changed busy/sha state.
   const cvWriteInFlight = useRef<symbol | null>(null);
+  // Never put CV/letter text in localStorage. Only ephemeral, account-scoped
+  // dirty flags are shared with the shell to guard navigation and reload.
+  const unsavedDocumentRef = useRef({ masterCV: false, application: false });
+  const reportMasterCVUnsaved = useCallback((dirty: boolean) => {
+    unsavedDocumentRef.current.masterCV = dirty;
+  }, []);
+  const reportApplicationUnsaved = useCallback((dirty: boolean) => {
+    unsavedDocumentRef.current.application = dirty;
+  }, []);
   activeCVSelection.current = JSON.stringify([
     cv.present, cv.sha256 || "", cvActionRevision.current,
   ]);
@@ -235,6 +244,8 @@ export default function App() {
     setPage("dashboard"); setSearch(""); setExpandedJob("");
     setFlowMode(null); setFlowSelectedJob(""); setFlowQueueBusy(false);
     setStartSearchBusy(false); flowQueueInFlight.current = null;
+    // Account isolation overrides any old editor's unsaved navigation state.
+    unsavedDocumentRef.current = { masterCV: false, application: false };
     cvWriteInFlight.current = null;
     ++cvActionRevision.current;
     activeCVSelection.current = "account-workspace-cleared:" + cvActionRevision.current;
@@ -405,7 +416,65 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [load]);
 
-  const navigate = (target: Page) => { setPage(target); setMobileNav(false); setNotice(""); };
+  // Native browser refresh/tab close/external same-tab navigation.
+  // Browser wording is controlled by the browser; no CV/letter data is saved.
+  useEffect(() => {
+    const warnUnsaved = (event: BeforeUnloadEvent) => {
+      if (!unsavedDocumentRef.current.masterCV &&
+          !unsavedDocumentRef.current.application) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnUnsaved);
+    return () => window.removeEventListener("beforeunload", warnUnsaved);
+  }, []);
+
+  function confirmDiscardUnsaved(action: string): boolean {
+    const document = page === "profile" && unsavedDocumentRef.current.masterCV
+      ? "master CV" : page === "applications" && unsavedDocumentRef.current.application
+        ? "application CV or cover letter" : "";
+    return !document || window.confirm(
+      "You have unsaved changes to your " + document +
+      ". Discard them and " + action + "?"
+    );
+  }
+
+  function navigate(target: Page): boolean {
+    if (target !== page && !confirmDiscardUnsaved("leave this page")) return false;
+    if (target !== page) {
+      // Child unmount also reports false, but clear synchronously so another
+      // quick navigation cannot see the previous page's private draft state.
+      if (page === "profile") unsavedDocumentRef.current.masterCV = false;
+      if (page === "applications") unsavedDocumentRef.current.application = false;
+    }
+    setPage(target); setMobileNav(false); setNotice("");
+    return true;
+  }
+
+  async function refreshWorkspaceFromToolbar() {
+    const dirty = (page === "profile" && unsavedDocumentRef.current.masterCV) ||
+      (page === "applications" && unsavedDocumentRef.current.application);
+    if (dirty) {
+      // Before asking whether to discard edits, verify that this is STILL
+      // the same account. A stale owner-A editor must never keep displaying
+      // A's private CV after the browser cookie changes to account B.
+      const originatingIdentity = lastSessionIdentity.current;
+      let verifiedIdentity: string | null = null;
+      try { verifiedIdentity = sessionIdentity(await getSession()); } catch {
+        // A missing or unreachable session is a privacy failure, not an
+        // invitation to retain the previous account's editor on screen.
+      }
+      if (lastSessionIdentity.current !== originatingIdentity) return;
+      if (!originatingIdentity || verifiedIdentity !== originatingIdentity) {
+        lastSessionIdentity.current = null;
+        clearPrivateWorkspace();
+        await load(); // fail closed if the new identity cannot be loaded
+        return;
+      }
+      if (!confirmDiscardUnsaved("refresh this workspace")) return;
+    }
+    await load(true);
+  }
 
   function invalidateCVSelection() {
     ++cvActionRevision.current;
@@ -654,7 +723,8 @@ export default function App() {
   async function onCVUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || cvWriteInFlight.current) return;
+    if (!file || cvWriteInFlight.current ||
+        !confirmDiscardUnsaved("replace your current CV")) return;
     const writeToken = Symbol("signed-in-cv-replacement");
     cvWriteInFlight.current = writeToken;
     const actionIdentity = lastSessionIdentity.current;
@@ -687,7 +757,11 @@ export default function App() {
 
   async function onDeleteCV() {
     if (cvWriteInFlight.current ||
-        !window.confirm("Remove your uploaded CV? Approved profile facts will remain until you remove them separately.")) return;
+        !window.confirm(
+          (page === "profile" && unsavedDocumentRef.current.masterCV
+            ? "Unsaved master CV edits will be discarded. " : "") +
+          "Remove your uploaded CV? Approved profile facts will remain until you remove them separately."
+        )) return;
     const writeToken = Symbol("signed-in-cv-deletion");
     cvWriteInFlight.current = writeToken;
     const actionIdentity = lastSessionIdentity.current;
@@ -1270,7 +1344,11 @@ export default function App() {
     <div className="main-column">
       <header className="site-header">
         <button className="icon-btn menu-toggle" aria-label="Open menu" type="button" onClick={() => setMobileNav(!mobileNav)}><Menu size={21} /></button>
-        <div className="header-search"><Search size={19} /><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); if (event.target.value) setPage("jobs"); }} placeholder="Search jobs, companies or locations…" aria-label="Search jobs" /></div>
+        <div className="header-search"><Search size={19} /><input type="search" value={search} onChange={(event) => {
+          const next = event.target.value;
+          if (next && page !== "jobs" && !navigate("jobs")) return;
+          setSearch(next);
+        }} placeholder="Search jobs, companies or locations…" aria-label="Search jobs" /></div>
         <span className="header-country"><MapPin size={16} /> Finland</span>
         <div className="header-tools">
           <button className="sp99-theme-toggle" type="button"
@@ -1284,7 +1362,9 @@ export default function App() {
           </button>
           <a className="obumai-brand" href="https://app.obumai.com/" target="_self" title="Open ObumAI"><img src="/obumai-mark.svg" alt="" /> <strong>ObumAI</strong></a>
           <span className={cx("connection-status", obumReady ? "connected" : "disconnected")}><span />{localAI?.ready ? "Local AI ready" : health?.obumai_configured ? "ObumAI configured" : "AI optional"}</span>
-          <button className="icon-btn header-refresh" type="button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh workspace"><RefreshCw size={19} className={refreshing ? "rotate" : ""} /></button>
+          <button className="icon-btn header-refresh" type="button"
+            onClick={() => void refreshWorkspaceFromToolbar()}
+            disabled={refreshing} aria-label="Refresh workspace"><RefreshCw size={19} className={refreshing ? "rotate" : ""} /></button>
           <span className="avatar header-avatar" title={session?.email || "Your account"}>{avatar}</span>
         </div>
       </header>
@@ -1354,7 +1434,7 @@ export default function App() {
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">
             {cvBlock}
             <MasterCVEditor key={accountViewKey} expectedUserId={session?.user_id || ""}
-              cv={cv}
+              cv={cv} onUnsavedChange={reportMasterCVUnsaved}
               onSave={(text, expectedSha256) => runPrivateMutation(
                 (userId) => saveCVEditor(text, expectedSha256, userId)
               )}
@@ -1364,6 +1444,9 @@ export default function App() {
               onWriteStarted={beginCVEditorWrite}
               onWriteSettled={finishCVEditorWrite}
               onSaved={(saved) => {
+                // onSaved is called before React's dirty-state effect can run;
+                // treat a verified save as clean before CV-first navigation.
+                unsavedDocumentRef.current.masterCV = false;
                 invalidateCVSelection();
                 const firstCV = !cv.present && saved.present;
                 setCV(saved); setCVPreview(false);
@@ -1383,6 +1466,7 @@ export default function App() {
           {page === "applications" ? <div className="stacked">
             <ApplicationStudio key={accountViewKey} mode={flowMode} focusId={selectedWorkspaceId}
               expectedUserId={session?.user_id || ""} expectedAuthSource={session?.auth_source || ""}
+              onUnsavedChange={reportApplicationUnsaved}
               onModeChange={setFlowMode}
               onFindJobs={() => navigate("apply")} />
             <section className="panel"><div className="panel-heading"><div><p className="section-kicker">APPLICATION TRACKER</p><h2>Your application pipeline</h2><p>A preparation draft is never counted as submitted.</p></div><span className="subtle-count">{applications.length} records</span></div>

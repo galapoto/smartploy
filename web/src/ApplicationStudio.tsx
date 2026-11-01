@@ -92,6 +92,7 @@ export default function ApplicationStudio(props: {
   focusId: string; expectedUserId: string; expectedAuthSource: string; onFindJobs: () => void;
   mode?: ApplicationFlowMode | null;
   onModeChange?: (mode: ApplicationFlowMode) => void;
+  onUnsavedChange?: (dirty: boolean) => void;
 }) {
   const [workspaces, setWorkspaces] = useState<ApplicationWorkspace[]>([]);
   const [selectedId, setSelectedId] = useState(props.focusId);
@@ -368,6 +369,10 @@ export default function ApplicationStudio(props: {
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
   ));
+  useEffect(() => {
+    props.onUnsavedChange?.(dirty);
+    return () => props.onUnsavedChange?.(false);
+  }, [dirty, props.onUnsavedChange]);
 
   // Presentation-only: server-owned job rights, reviewed-document hashes,
   // previous attempts, workspace outcome and saved revision remain authoritative.
@@ -411,6 +416,17 @@ export default function ApplicationStudio(props: {
     () => summarizeApplicationReviewQueue(workspaces, reviewFilter),
     [workspaces, reviewFilter],
   );
+
+  async function refreshDraftsFromToolbar() {
+    // Verify the current server owner FIRST. If the session switched,
+    // verifyAccount fails closed and removes the old private documents;
+    // a discard dialog must never block that safety boundary.
+    try { await verifyAccount(); } catch { return; }
+    if (dirty && !window.confirm(
+      "Discard unsaved application CV or cover-letter edits and refresh drafts?"
+    )) return;
+    await reload(); // verifies identity again before publishing private data
+  }
 
   function pick(id: string) {
     if (dirty && !window.confirm("Discard unsaved changes and open another draft?")) return;
@@ -1082,7 +1098,9 @@ export default function ApplicationStudio(props: {
         <h2>Application studio</h2>
         <p>Build application documents from your uploaded CV and verified career evidence.</p>
       </div>
-      <button type="button" className="outline-btn compact" onClick={() => void reload()} aria-label="Refresh drafts"><RefreshCw size={16} /> Refresh</button>
+      <button type="button" className="outline-btn compact"
+        onClick={() => void refreshDraftsFromToolbar()}
+        aria-label="Refresh drafts"><RefreshCw size={16} /> Refresh</button>
     </div>
     {error ? <div className="studio-alert error" role="alert"><AlertCircle size={16}/>{error}</div> : null}
     {message ? <div className="studio-alert" role="status"><CheckCircle2 size={16}/>{message}</div> : null}

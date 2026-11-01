@@ -21,13 +21,14 @@ vi.mock("./api", () => ({
   grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
 vi.mock("./MasterCVEditor", () => ({
-  default: ({ onSaved, onSave, onWriteStarted, onWriteSettled }: {
+  default: ({ onSaved, onSave, onWriteStarted, onWriteSettled, onUnsavedChange }: {
     onSaved: (saved: { present: boolean; filename: string; sha256: string }) => void;
     onSave: (text: string, digest: string) => Promise<{
       cv: { present: boolean; filename: string; sha256: string };
     }>;
     onWriteStarted?: () => symbol | null;
     onWriteSettled?: (token: symbol) => void;
+    onUnsavedChange?: (dirty: boolean) => void;
   }) =>
     <div data-testid="master-cv-editor">Private CV editor
       <button type="button" onClick={() =>
@@ -40,11 +41,26 @@ vi.mock("./MasterCVEditor", () => ({
           response => onSaved(response.cv), () => {},
         ).finally(() => onWriteSettled?.(token));
       }}>Save synthetic pending CV</button>
+      <button type="button" onClick={() => onUnsavedChange?.(true)}>
+        Edit synthetic master CV
+      </button>
+      <button type="button" onClick={() => onUnsavedChange?.(false)}>
+        Mark synthetic master CV saved
+      </button>
     </div>,
 }));
 vi.mock("./ApplicationStudio", () => ({
-  default: ({ focusId }: { focusId: string }) =>
-    <div data-testid="application-editor" data-workspace={focusId}>Application editor</div>,
+  default: ({ focusId, onUnsavedChange }: {
+    focusId: string; onUnsavedChange?: (dirty: boolean) => void;
+  }) =>
+    <div data-testid="application-editor" data-workspace={focusId}>Application editor
+      <button type="button" onClick={() => onUnsavedChange?.(true)}>
+        Edit synthetic application documents
+      </button>
+      <button type="button" onClick={() => onUnsavedChange?.(false)}>
+        Mark synthetic application documents saved
+      </button>
+    </div>,
 }));
 
 const initial: SearchPreferences = {
@@ -2000,5 +2016,119 @@ describe("SP103 editor handoff cannot prepare against the previous CV", () => {
       expect((button as HTMLButtonElement).disabled).toBe(false);
     }
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP104 account-scoped unsaved document navigation protection", () => {
+  it("keeps unsaved master CV edits when a sidebar navigation is cancelled", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<App/>);
+      fireEvent.click(await screen.findByRole("button", { name: "My CV & documents" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Edit synthetic master CV" }));
+      fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
+      expect(screen.getByTestId("master-cv-editor")).toBeTruthy();
+      expect(screen.queryByRole("heading", { name: "How do you want to apply?" })).toBeNull();
+      expect(confirmation).toHaveBeenCalledWith(
+        "You have unsaved changes to your master CV. Discard them and leave this page?"
+      );
+
+      const beforeUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(beforeUnload);
+      expect(beforeUnload.defaultPrevented).toBe(true);
+
+      confirmation.mockReturnValue(true);
+      fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
+      expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+      expect(screen.queryByTestId("master-cv-editor")).toBeNull();
+      const cleanUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(cleanUnload);
+      expect(cleanUnload.defaultPrevented).toBe(false);
+    } finally { confirmation.mockRestore(); }
+  });
+
+  it("protects unsaved application CV and letter from the header search", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<App/>);
+      fireEvent.click(await screen.findByRole("button", { name: "My applications" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Edit synthetic application documents" }));
+      const search = screen.getByRole("searchbox", { name: "Search jobs" }) as HTMLInputElement;
+      fireEvent.change(search, { target: { value: "data analyst" } });
+      expect(screen.getByTestId("application-editor")).toBeTruthy();
+      expect(search.value).toBe("");
+      expect(confirmation).toHaveBeenCalledWith(
+        "You have unsaved changes to your application CV or cover letter. Discard them and leave this page?"
+      );
+      const beforeUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(beforeUnload);
+      expect(beforeUnload.defaultPrevented).toBe(true);
+
+      confirmation.mockReturnValue(true);
+      fireEvent.change(search, { target: { value: "data analyst" } });
+      expect(search.value).toBe("data analyst");
+      expect(screen.queryByTestId("application-editor")).toBeNull();
+      expect(screen.getByRole("heading", { name: "Find jobs" })).toBeTruthy();
+    } finally { confirmation.mockRestore(); }
+  });
+
+  it("does not warn after an editor reports that its changes were saved", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<App/>);
+      fireEvent.click(await screen.findByRole("button", { name: "My CV & documents" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Edit synthetic master CV" }));
+      fireEvent.click(screen.getByRole("button", { name: "Mark synthetic master CV saved" }));
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
+      expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+      expect(confirmation).not.toHaveBeenCalled();
+    } finally { confirmation.mockRestore(); }
+  });
+
+  it("requires an explicit decision before replacing a CV with unsaved master edits", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<App/>);
+      fireEvent.click(await screen.findByRole("button", { name: "My CV & documents" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Edit synthetic master CV" }));
+      fireEvent.change(screen.getByLabelText("Select CV to upload"), { target: {
+        files: [new File(["private synthetic"], "Replacement.pdf", { type: "application/pdf" })],
+      } });
+      expect(api.uploadCV).not.toHaveBeenCalled();
+      expect(confirmation).toHaveBeenCalledWith(
+        "You have unsaved changes to your master CV. Discard them and replace your current CV?"
+      );
+      expect(screen.getByTestId("master-cv-editor")).toBeTruthy();
+    } finally { confirmation.mockRestore(); }
+  });
+});
+
+
+describe("SP104 secure refresh after account switch", () => {
+  it("clears the prior user's unsaved editor before any discard prompt when OIDC owner changes", async () => {
+    let switched = false;
+    const switchAccount = switchableSession();
+    vi.mocked(api.getCV).mockImplementation(async () => switched ? {present:false} :
+      {present:true,filename:"ACCOUNT-A-PRIVATE-CV.pdf",sha256:"a".repeat(64)});
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<App/>);
+      expect(await screen.findByRole("heading", {
+        name:"CV connected. Choose how to apply.",
+      })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button",{name:"My CV & documents"}));
+      fireEvent.click(await screen.findByRole("button",{name:"Edit synthetic master CV"}));
+      switched=true;
+      switchAccount();
+      fireEvent.click(screen.getByRole("button",{name:"Refresh workspace"}));
+      expect(await screen.findByRole("heading",{name:"Start with your CV."})).toBeTruthy();
+      expect(screen.queryByTestId("master-cv-editor")).toBeNull();
+      expect(screen.queryByText("ACCOUNT-A-PRIVATE-CV.pdf")).toBeNull();
+      expect(confirmation).not.toHaveBeenCalled();
+    } finally { confirmation.mockRestore(); }
   });
 });
