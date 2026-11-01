@@ -747,6 +747,17 @@ describe("SP96: the applicant has one obvious next action at each gate", () => {
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
   });
 
+  it("links an Automatic selection directly to the private draft preparation controls", async () => {
+    const p = { ...props(), mode: "automatic" as const };
+    render(<ApplicationJourney {...p} />);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getAllByRole("checkbox", { name: /select for preparation/i })[0]);
+    expect(screen.getByRole("link", { name: /^Prepare selected applications$/ })
+      .getAttribute("href")).toBe("#smartploy-flow-queue");
+    expect(document.getElementById("smartploy-flow-queue")).toBeTruthy();
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
   it("moves the visible next step to matching jobs for a chosen mode", async () => {
     const p = { ...props(), mode: "assisted" as const };
     render(<ApplicationJourney {...p} />);
