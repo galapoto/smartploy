@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as api from "./api";
 import MasterCVEditor from "./MasterCVEditor";
 import { parseStructuredCV } from "./structured_cv";
@@ -55,6 +55,8 @@ function start(options?: {
   onSave?: (text: string, sha: string) => Promise<CVEditorSaved>;
   onRestore?: (digest: string, sha: string) => Promise<CVEditorRestored>;
   onSaved?: (cv: CVDocument) => void;
+  onWriteStarted?: () => symbol | null;
+  onWriteSettled?: (token: symbol) => void;
 }) {
   const onSave = vi.fn(options?.onSave ?? (async (text: string) => savedResponse(text)));
   const onRestore = vi.fn(options?.onRestore ?? (async (digest: string) => ({
@@ -71,7 +73,9 @@ function start(options?: {
   const onSaved = vi.fn(options?.onSaved ?? (() => {}));
   render(<MasterCVEditor cv={options?.cv || active}
     expectedUserId={options?.userId || USER}
-    onSave={onSave} onRestore={onRestore} onSaved={onSaved}/>);
+    onSave={onSave} onRestore={onRestore} onSaved={onSaved}
+    onWriteStarted={options?.onWriteStarted}
+    onWriteSettled={options?.onWriteSettled}/>);
   return {onSave, onRestore, onSaved};
 }
 
@@ -279,5 +283,55 @@ describe("SP82 applicant-controlled exact CV version restore", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect((editor as HTMLTextAreaElement).value).toBe(original);
     expect(onSaved).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP103 master CV editor write lifecycle", () => {
+  it("keeps the parent CV write barrier until owner verification and handoff finish", async () => {
+    const token = Symbol("cv-save");
+    const order: string[] = [];
+    let finish!: (value: CVEditorSaved) => void;
+    const onSaved = vi.fn(() => order.push("saved"));
+    const onWriteSettled = vi.fn((_token: symbol) => { order.push("settled"); });
+    const {onSave} = start({
+      onWriteStarted: () => { order.push("started"); return token; },
+      onWriteSettled,
+      onSaved,
+      onSave: () => new Promise(resolve => { finish = resolve; }),
+    });
+    const editor = await screen.findByRole("textbox", {name: "Editable master CV text"});
+    fireEvent.change(editor, {target: {value: original + "\nNew applicant project."}});
+    fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(order).toEqual(["started"]);
+    await act(async () => { finish(savedResponse(original)); });
+    await waitFor(() => expect(onWriteSettled).toHaveBeenCalledWith(token));
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["started", "saved", "settled"]);
+  });
+
+  it("releases parent write lock after a rejected save without publishing a CV", async () => {
+    const token = Symbol("rejected-cv");
+    const onWriteSettled = vi.fn();
+    const {onSaved} = start({
+      onWriteStarted: () => token, onWriteSettled,
+      onSave: async () => { throw new Error("CV revision conflict"); },
+    });
+    const editor = await screen.findByRole("textbox", {name: "Editable master CV text"});
+    fireEvent.change(editor, {target: {value: original + "\nAn applicant edit."}});
+    fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(onWriteSettled).toHaveBeenCalledWith(token);
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("does not mutate a CV if the owner-level write barrier is occupied", async () => {
+    const {onSave} = start({ onWriteStarted: () => null });
+    const editor = await screen.findByRole("textbox", {name: "Editable master CV text"});
+    fireEvent.change(editor, {target: {value: original + "\nOne more true fact."}});
+    fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
+    expect(await screen.findByText(/Another CV update is already in progress/)).toBeTruthy();
+    expect(onSave).not.toHaveBeenCalled();
   });
 });

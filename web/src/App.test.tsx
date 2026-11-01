@@ -13,6 +13,7 @@ vi.mock("./api", () => ({
   getCV: vi.fn(), getCVJobMatches: vi.fn(), getDashboard: vi.fn(), getHealth: vi.fn(),
   getJobs: vi.fn(), getProfileFacts: vi.fn(), getSession: vi.fn(),
   startApplicationWorkspace: vi.fn(), uploadCV: vi.fn(),
+  saveCVEditor: vi.fn(), restoreCVEditor: vi.fn(),
   getSearchPreferences: vi.fn(), updateSearchPreferences: vi.fn(),
   getSearchResults: vi.fn(), getLocalAIStatus: vi.fn(),
   prepareMyMatchingDrafts: vi.fn(),
@@ -20,11 +21,25 @@ vi.mock("./api", () => ({
   grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
 vi.mock("./MasterCVEditor", () => ({
-  default: ({ onSaved }: { onSaved: (saved: { present: boolean; filename: string; sha256: string }) => void }) =>
+  default: ({ onSaved, onSave, onWriteStarted, onWriteSettled }: {
+    onSaved: (saved: { present: boolean; filename: string; sha256: string }) => void;
+    onSave: (text: string, digest: string) => Promise<{
+      cv: { present: boolean; filename: string; sha256: string };
+    }>;
+    onWriteStarted?: () => symbol | null;
+    onWriteSettled?: (token: symbol) => void;
+  }) =>
     <div data-testid="master-cv-editor">Private CV editor
       <button type="button" onClick={() =>
         onSaved({ present: true, filename: "CreatedCV.pdf", sha256: "saved-created-cv" })
       }>Save synthetic created CV</button>
+      <button type="button" onClick={() => {
+        const token = onWriteStarted?.();
+        if (!token) return;
+        void onSave("Synthetic applicant with Python and SQL", "previous-cv").then(
+          response => onSaved(response.cv), () => {},
+        ).finally(() => onWriteSettled?.(token));
+      }}>Save synthetic pending CV</button>
     </div>,
 }));
 vi.mock("./ApplicationStudio", () => ({
@@ -1844,6 +1859,146 @@ describe("SP99: original Finland cover, complete in-page identity and persistent
     fireEvent.click(lightSwitch);
     expect(document.documentElement.getAttribute("data-smartploy-theme")).toBe("light");
     expect(window.localStorage.getItem("smartploy-ui-theme-v1")).toBe("light");
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP102: parent CV-write barrier against late private results", () => {
+  it("never navigates to an old Assisted draft after a replacement begins", async () => {
+    const initialCV = { present: true, filename: "Earlier.pdf", sha256: "earlier-cv" };
+    const nextCV = { present: true, filename: "Replacement.pdf", sha256: "replacement-cv" };
+    let serverCV = initialCV;
+    vi.mocked(api.getCV).mockImplementation(async () => serverCV);
+    let finishDraft!: (response: Awaited<ReturnType<typeof api.startApplicationWorkspace>>) => void;
+    let finishUpload!: (response: Awaited<ReturnType<typeof api.uploadCV>>) => void;
+    vi.mocked(api.startApplicationWorkspace).mockImplementationOnce(
+      () => new Promise(resolve => { finishDraft = resolve; })
+    );
+    vi.mocked(api.uploadCV).mockImplementationOnce(
+      () => new Promise(resolve => { finishUpload = resolve; })
+    );
+    render(<App/>);
+    expect(await screen.findByRole("heading", {
+      name: "CV connected. Choose how to apply.",
+    })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Assisted · Apply with AI/i }));
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    fireEvent.click((await screen.findAllByRole("button", { name: /Choose this job/i }))[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Prepare CV & application/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), {
+      target: { files: [new File(["new CV"], "Replacement.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      finishDraft({ workspace: { workspace_id: "stale-earlier-cv-kit" }, created: true } as never);
+    });
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(screen.getByText(/CV update in progress/i)).toBeTruthy();
+    expect(screen.queryByText(/Draft ready. Step 1/i)).toBeNull();
+
+    serverCV = nextCV;
+    await act(async () => { finishUpload(nextCV); });
+    expect(await screen.findByText(/CV connected. Step 2: choose Manual, Assisted or Automatic/i)).toBeTruthy();
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start the next AutoApply job if the CV write starts during the first", async () => {
+    const initialCV = { present: true, filename: "Earlier.pdf", sha256: "batch-cv" };
+    const nextCV = { present: true, filename: "New.pdf", sha256: "batch-next" };
+    let serverCV = initialCV;
+    vi.mocked(api.getCV).mockImplementation(async () => serverCV);
+    const candidates = ["first", "second"].map(key => ({
+      ...tailored.recommendations[0], canonical_key: "job-" + key,
+      job: { ...listing.job, role_title: "Junior Data Analyst " + key },
+    }));
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      cv_present: true, cv_filename: "Earlier.pdf", match_mode: "cv_text_signals",
+      detected_roles: ["Data Analyst"], detected_topics: [],
+      recommended: candidates, other_jobs: [], current_jobs_count: 2,
+      recommended_count: 2, other_jobs_count: 0,
+      matched_from: "local_cv_text_not_approved_evidence",
+      qualifications_verified: false, employer_actions_performed: false,
+    });
+    let finishDraft!: (response: Awaited<ReturnType<typeof api.startApplicationWorkspace>>) => void;
+    let finishUpload!: (response: Awaited<ReturnType<typeof api.uploadCV>>) => void;
+    vi.mocked(api.startApplicationWorkspace).mockImplementationOnce(
+      () => new Promise(resolve => { finishDraft = resolve; })
+    );
+    vi.mocked(api.uploadCV).mockImplementationOnce(
+      () => new Promise(resolve => { finishUpload = resolve; })
+    );
+    render(<App/>);
+    fireEvent.click(await screen.findByRole("button", { name: /Automatic.*AutoApply/i }));
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    const choices = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    choices.forEach(choice => fireEvent.click(choice));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), {
+      target: { files: [new File(["replacement"], "New.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      finishDraft({ workspace: { workspace_id: "old-batch-draft" }, created: true,
+        agent_tracking: { requested: true, state: "active", created: true,
+          external_actions_performed: 0, worker_wake_verified: false } } as never);
+    });
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+
+    serverCV = nextCV;
+    await act(async () => { finishUpload(nextCV); });
+    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+});
+
+// SP103: The master editor and upload share the same CV-update barrier.
+describe("SP103 editor handoff cannot prepare against the previous CV", () => {
+  it("locks method choices and holds matching requests until the editor save finishes", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "Earlier.pdf", sha256: "previous-cv",
+    });
+    let finishSave!: (value: unknown) => void;
+    vi.mocked(api.saveCVEditor).mockImplementationOnce(
+      () => new Promise(resolve => { finishSave = resolve; }) as never,
+    );
+    render(<App/>);
+    expect(await screen.findByRole("heading", {
+      name: "CV connected. Choose how to apply.",
+    })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save synthetic pending CV" }));
+    await waitFor(() => expect(api.saveCVEditor).toHaveBeenCalledWith(
+      "Synthetic applicant with Python and SQL", "previous-cv", "usr-synthetic-1",
+    ));
+    fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
+    expect(await screen.findByText(/Updating your CV. Current job matches will refresh/)).toBeTruthy();
+    for (const button of document.querySelectorAll("button.flow-mode[data-flow-mode]")) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(api.getCVJobMatches).not.toHaveBeenCalled();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishSave({
+        cv: { present: true, filename: "Edited.pdf", sha256: "new-cv" },
+        history: [], employer_actions_performed: 0, approved_profile_facts_added: 0,
+      });
+    });
+    await waitFor(() => expect(screen.getByText(/Your CV is connected. Choose a method to continue/)).toBeTruthy());
+    await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(1));
+    for (const button of document.querySelectorAll("button.flow-mode[data-flow-mode]")) {
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+    }
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 });
