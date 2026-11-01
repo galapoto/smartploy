@@ -109,6 +109,8 @@ const studio = (mode: ApplicationFlowMode | null = null) => render(<ApplicationS
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.applicationPackageDownloadUrl).mockImplementation((id) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id) + "/download/package.zip");
   activeUser = "usr-a";
   vi.mocked(api.getSession).mockImplementation(async () => session(activeUser));
   vi.mocked(api.getApplicationWorkspaces).mockResolvedValue(draft("A"));
