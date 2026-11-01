@@ -5,6 +5,7 @@ import "./styles.css";
 import "./career-atlas.css";
 import "./document-coach.css";
 import "./document-comparison.css";
+import "./finland-shell.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
