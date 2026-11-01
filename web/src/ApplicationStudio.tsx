@@ -19,6 +19,7 @@ import ApplicationAgentCard from "./ApplicationAgentCard";
 import ApplicationAgentInbox from "./ApplicationAgentInbox";
 import ApplicationAttemptAudit from "./ApplicationAttemptAudit";
 import AuthorizedAutoApplyBatch from "./AuthorizedAutoApplyBatch";
+import DocumentCoach from "./DocumentCoach";
 import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import { applicationNextStep } from "./applicationNextStep";
@@ -1216,6 +1217,8 @@ export default function ApplicationStudio(props: {
             onChange={(event) => setCvText(event.target.value)}
             placeholder="Your reviewed CV content" />
           <small>Started from your uploaded CV, when available; otherwise only approved profile facts.</small>
+          <DocumentCoach kind="job_cv" text={cvText} roleTitle={selected.role_title}
+            company={selected.company} />
           <div className="studio-export">
             <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "cv", "docx")}
               className={"outline-btn compact" + (dirty ? " disabled" : "")}
@@ -1247,6 +1250,8 @@ export default function ApplicationStudio(props: {
               employerAttempt?.previous_attempt_reserved === true} value={letterText}
             onChange={(event) => setLetterText(event.target.value)}
             placeholder="Your reviewed cover letter" />
+          <DocumentCoach kind="cover_letter" text={letterText} roleTitle={selected.role_title}
+            company={selected.company} />
           <small>New application drafts begin with real Finnish or English letter prose, not coaching placeholders. Only approved, job-matched facts are used. If your profile lacks a confirmed name or relevant experience, edit the letter or use a language button to see the missing-information report. Older saved drafts stay unchanged until you edit them. Review and save explicitly; no employer is contacted.</small>
           <div className="studio-export">
             <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "letter", "docx")}
