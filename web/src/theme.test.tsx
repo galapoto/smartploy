@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { applySmartployTheme, initialSmartployTheme, savedSmartployTheme,
   SMARTPLOY_THEME_KEY, useSmartployTheme } from "./theme";
 
@@ -66,9 +66,11 @@ describe("SP99 persistent light/dark preference", () => {
     applySmartployTheme("light");
     expect(meta.content).toBe("#f4f7fb");
     render(<ThemeProbe />);
-    window.dispatchEvent(new StorageEvent("storage", {
-      key: SMARTPLOY_THEME_KEY, newValue: "dark",
-    }));
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", {
+        key: SMARTPLOY_THEME_KEY, newValue: "dark",
+      }));
+    });
     expect(screen.getByRole("button", { name: "Current dark; switch mode" })).toBeTruthy();
     meta.remove();
   });
