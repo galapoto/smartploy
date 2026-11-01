@@ -5,7 +5,7 @@ import {
   Trash2, AlertCircle, Sparkles, WandSparkles, ClipboardCopy, ExternalLink
 } from "lucide-react";
 import {
-  applicationDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
+  applicationDownloadUrl, applicationPackageDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
   getApplicationWorkspaces, getApplicationWorkspaceById, markApplicationManuallySent,
   getLocalAIStatus, runLocalAIInferenceProof, requestLocalAISuggestions, proposeEvidenceLetter,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
@@ -1758,6 +1758,30 @@ export default function ApplicationStudio(props: {
               aria-disabled={dirty}><Download size={15}/> PDF</a>
           </div>
         </div>
+        <section className="studio-application-package" aria-label="Complete application file package">
+          <div>
+            <span className="section-kicker">READY-TO-USE DOCUMENTS</span>
+            <h4>CV + cover letter, one download</h4>
+            <p>Download the saved job-specific CV and cover letter in both
+              editable DOCX and printable PDF formats. The ZIP includes a reminder
+              that no application has been submitted. Review every file before sending it to the employer.</p>
+          </div>
+          <a className={"secondary-btn" + (dirty || busy ||
+              !selected.authority.may_download ? " disabled" : "")}
+            href={dirty || busy || !selected.authority.may_download
+              ? undefined : applicationPackageDownloadUrl(selected.workspace_id)}
+            aria-disabled={dirty || busy || !selected.authority.may_download}
+            tabIndex={dirty || busy || !selected.authority.may_download ? -1 : undefined}
+            aria-label="Download complete application ZIP with CV and cover letter PDF and DOCX">
+            <Download size={17} aria-hidden="true"/>
+            Download complete application package · ZIP
+          </a>
+          {dirty ? <p className="studio-application-package-note" role="status">
+            Save your CV and cover-letter edits before downloading; the package contains only the saved version.
+          </p> : <p className="studio-application-package-note">
+            Private download only. An unreviewed draft is not a submitted application.
+          </p>}
+        </section>
         {selected.status === "draft" ? <section className="studio-handoff" id="smartploy-employer-step"
           aria-label="Browser application assistant">
           <div className="studio-handoff-header">

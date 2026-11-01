@@ -44,6 +44,8 @@ vi.mock("./api", () => ({
   createBrowserHandoffPacket: vi.fn(),
   importBrowserReceipt: vi.fn(),
   applicationDownloadUrl: vi.fn(() => "/synthetic-download"),
+  applicationPackageDownloadUrl: vi.fn((id: string) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id) + "/download/package.zip"),
 }));
 
 function job(tag: string): ApplicationWorkspace {
@@ -107,6 +109,8 @@ const studio = (mode: ApplicationFlowMode | null = null) => render(<ApplicationS
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.applicationPackageDownloadUrl).mockImplementation((id) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id) + "/download/package.zip");
   activeUser = "usr-a";
   vi.mocked(api.getSession).mockImplementation(async () => session(activeUser));
   vi.mocked(api.getApplicationWorkspaces).mockResolvedValue(draft("A"));
@@ -2364,5 +2368,54 @@ describe("SP105 undo current master CV before server save", () => {
       expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
       expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
     } finally {confirm.mockRestore();}
+  });
+});
+
+
+describe("SP106 complete application package controls", () => {
+  const name = "Download complete application ZIP with CV and cover letter PDF and DOCX";
+  it("uses the exact saved job's package and performs no employer action", async () => {
+    studio("assisted");
+    await screen.findByRole("heading", {name: "A private role"});
+    const section = screen.getByRole("region", {name: "Complete application file package"});
+    const link = within(section).getByRole("link", {name});
+    expect(link.getAttribute("href")).toBe(
+      "/api/v1/application-workspaces/workspace-A/download/package.zip"
+    );
+    expect(section.textContent).toContain("editable DOCX and printable PDF");
+    expect(section.textContent).toContain("no application has been submitted");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("does not offer an outdated saved file while CV or letter edits remain unsaved", async () => {
+    studio("manual");
+    await screen.findByRole("heading", {name: "A private role"});
+    const section = screen.getByRole("region", {name: "Complete application file package"});
+    expect(within(section).getByRole("link", {name}).getAttribute("href")).toContain("workspace-A");
+    fireEvent.change(screen.getByRole("textbox", {name: "Editable cover letter text"}), {
+      target: {value: "PRIVATE-LETTER-A with an applicant correction"},
+    });
+    const disabledLink = within(section).getByLabelText(name);
+    expect(disabledLink.getAttribute("href")).toBeNull();
+    expect(disabledLink.getAttribute("aria-disabled")).toBe("true");
+    expect(within(section).getByText(/Save your CV and cover-letter edits/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: /^Save changes$/}));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", 1, "PRIVATE-CV-A",
+      "PRIVATE-LETTER-A with an applicant correction", "usr-a",
+    ));
+    await waitFor(() => expect(within(section).getByRole("link", {name})).toBeTruthy());
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("removes a former owner's package link after a same-email account switch", async () => {
+    studio();
+    await screen.findByRole("heading", {name: "A private role"});
+    activeUser = "usr-b";
+    fireEvent.click(screen.getByRole("button", {name: "Refresh drafts"}));
+    expect(await screen.findByRole("heading", {name: "Account verification required"})).toBeTruthy();
+    expect(screen.queryByRole("region", {name: "Complete application file package"})).toBeNull();
   });
 });

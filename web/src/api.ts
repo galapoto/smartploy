@@ -537,6 +537,12 @@ export function applicationDownloadUrl(
 }
 
 
+/** Private GET, rendered from the exact saved revision, never unsaved editor text. */
+export function applicationPackageDownloadUrl(workspaceId: string): string {
+  return API_BASE + "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
+    + "/download/package.zip";
+}
+
 export function getLocalAIStatus(): Promise<import("./types").LocalAIStatus> {
   return request<import("./types").LocalAIStatus>("/api/v1/local-ai/status");
 }
