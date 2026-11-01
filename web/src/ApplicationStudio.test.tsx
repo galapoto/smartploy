@@ -2181,9 +2181,11 @@ describe("SP104 job-specific CV and cover letter unsaved reporting", () => {
       fireEvent.change(letter, {target: {value: "PRIVATE-LETTER-A with real applicant edits"}});
       expect(onUnsavedChange).toHaveBeenLastCalledWith(true);
       fireEvent.click(screen.getByRole("button", {name: "Refresh drafts"}));
-      expect(confirm).toHaveBeenCalledWith(
+      // The owner check is asynchronous by design: assert after the
+      // preflight completes, before any private workspace GET is issued.
+      await waitFor(() => expect(confirm).toHaveBeenCalledWith(
         "Discard unsaved application CV or cover-letter edits and refresh drafts?"
-      );
+      ));
       expect(api.getApplicationWorkspaces).toHaveBeenCalledTimes(1);
       expect((letter as HTMLTextAreaElement).value).toContain("real applicant edits");
     } finally { confirm.mockRestore(); }
