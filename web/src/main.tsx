@@ -4,6 +4,7 @@ import App from "./App";
 import "./styles.css";
 import "./career-atlas.css";
 import "./document-coach.css";
+import "./document-comparison.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
