@@ -39,7 +39,7 @@
   white-space: normal;
   font-weight: 800;
 }
-.flow-cv, .flow-choice, .flow-matches, .flow-next,
+.flow-cv, .flow-choice, .flow-matches, .flow-next, #smartploy-flow-queue,
 #smartploy-cv-review, #smartploy-letter-review, #smartploy-employer-step {
   scroll-margin-top: 90px;
 }
