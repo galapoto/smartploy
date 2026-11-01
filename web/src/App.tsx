@@ -1221,9 +1221,12 @@ export default function App() {
         {error ? <div className="toast-notice error" role="alert"><AlertCircle size={16} /><span>{error}</span><button type="button" onClick={() => void load()} aria-label="Retry"><RefreshCw size={17} /></button></div> : null}
         {page === "dashboard" ? <>
           <section className="sp99-finland-cover" aria-label="Finland winter archipelago cover">
-            <img src="/finland-archipelago-winter.webp"
-              width={1200} height={164} loading="eager" decoding="async"
-              alt="Original artwork: rose-gold winter light over Finland's rocky, ice-edged archipelago" />
+            <picture>
+              <source srcSet="/finland-archipelago-winter.avif" type="image/avif" />
+              <img src="/finland-archipelago-winter.svg" width={1200} height={164}
+                loading="eager" decoding="async"
+                alt="Original artwork: rose-gold winter light over Finland's rocky, ice-edged archipelago" />
+            </picture>
             <span className="sp99-cover-credit">Original artwork · Finland's winter archipelago</span>
           </section>
           <FinlandPageIdentity />
