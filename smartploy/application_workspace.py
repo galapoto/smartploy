@@ -7,6 +7,7 @@ from io import BytesIO
 from html import escape
 import re
 from typing import Literal
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -25,6 +26,7 @@ from .complete_letter import compose_completed_letter
 MAX_CV_CHARACTERS = 30000
 MAX_LETTER_CHARACTERS = 10000
 MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
+MAX_PACKAGE_BYTES = 8 * 1024 * 1024
 
 
 class WorkspaceError(ValueError):
@@ -380,3 +382,46 @@ def render_document(
     if not content or len(content) > MAX_DOCUMENT_BYTES:
         raise WorkspaceError("Generated document exceeds safe download limits")
     return content, mime, filename
+
+
+def render_application_package(workspace: ApplicationWorkspace) -> tuple[bytes, str]:
+    """Four complete document formats in one owner-private ZIP; never a send.
+
+    Reuses render_document, the existing authoritative renderer, without
+    exposing user text in ZIP entry paths or writing files to the server.
+    """
+    output = BytesIO()
+    total_bytes = 0
+    with ZipFile(output, mode="w", compression=ZIP_DEFLATED,
+                 compresslevel=6, allowZip64=False) as bundle:
+        for kind in ("cv", "letter"):
+            for file_format in ("docx", "pdf"):
+                content, _, filename = render_document(
+                    workspace, kind=kind, file_format=file_format,
+                )
+                total_bytes += len(content)
+                if total_bytes > MAX_PACKAGE_BYTES:
+                    raise WorkspaceError("Application package exceeds safe document limits")
+                member = ZipInfo(filename, date_time=(1980, 1, 1, 0, 0, 0))
+                member.external_attr = 0o600 << 16
+                bundle.writestr(member, content, compress_type=ZIP_DEFLATED,
+                                compresslevel=6)
+        note = (
+            "SMARTPLOY APPLICATION DOCUMENTS - NOT SUBMITTED\n\n"
+            "This ZIP contains the saved job-specific CV and cover letter as "
+            "editable DOCX and printable PDF files.\n"
+            "Inspect all documents and use the exact employer application form. "
+            "Downloading does not contact the employer, submit an application "
+            "or verify that an employer received it.\n"
+            "Keep private application documents secure.\n"
+        ).encode("utf-8")
+        note_member = ZipInfo("README-NOT-SUBMITTED.txt",
+                              date_time=(1980, 1, 1, 0, 0, 0))
+        note_member.external_attr = 0o600 << 16
+        bundle.writestr(note_member, note, compress_type=ZIP_DEFLATED,
+                        compresslevel=6)
+    data = output.getvalue()
+    if not data or len(data) > MAX_PACKAGE_BYTES:
+        raise WorkspaceError("Application package exceeds safe download limits")
+    filename = f"{_slug(workspace.company)}-{_slug(workspace.role_title)}-application-package.zip"
+    return data, filename
