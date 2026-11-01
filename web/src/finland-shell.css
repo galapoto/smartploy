@@ -1,0 +1,428 @@
+/* SP99: Earlier DM Sans styling, uncut SmartPloy identity, original Finland art,
+   and an actual persisted, accessible light/dark application theme.
+   Keep Career Atlas workflow + all real applicant actions intact. */
+
+/* Restore the original pre-Atlas sans-serif visual language. */
+:root {
+  --sp-font: "DM Sans", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sp-display: "DM Sans", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sp-paper: #f4f7fb;
+  --sp-ink: #10264a;
+  --sp-ink-deep: #071a37;
+  --sp-ink-muted: #536c87;
+  --sp-sea: #145dce;
+  --sp-cyan: #10b9d0;
+  --sp-cyan-soft: #e4f5fb;
+  --sp-line: #e1e9f3;
+  --navy: #10264a;
+  --deep: #071a37;
+  --blue: #145dce;
+  --line: #e1e9f3;
+  --muted: #647c96;
+  --canvas: #f4f7fb;
+}
+html, body { background: var(--sp-paper); }
+.smartploy-app { font-family: var(--sp-font); color: #183450;
+  background: var(--sp-paper);
+  grid-template-columns: 248px minmax(0,1fr); }
+.smartploy-app .sidebar {
+  background: #fff; color: #233957; border-color: #e1e9f3;
+}
+.smartploy-app .site-brand, .smartploy-app .site-brand strong { color: #0b2449; }
+.smartploy-app .site-brand small { color: #607995; }
+.smartploy-app .nav-label { color: #8295ae; }
+.smartploy-app .nav-item { color: #425c7a; font-weight: 700; }
+.smartploy-app .nav-item:hover { color: #145dce; background: #edf4fe; }
+.smartploy-app .nav-item.active {
+  background: #e6f1ff; color: #0b55bc;
+  border-color: #d1e3fa; box-shadow: none;
+}
+.smartploy-app .nav-item.active::before { background: #1767d1; }
+.smartploy-app .nav-item.nav-apply-entry:not(.active) {
+  background: #f3f7ff; border-color: #dfe8f5;
+}
+.smartploy-app .nav-item.nav-apply-entry:hover { background: #e5f0ff; }
+.smartploy-app .nav-item.nav-apply-entry.active { background: #dfefff; }
+.smartploy-app .nav-item-hint, .smartploy-app .session-profile small {
+  color: #7b8ea8;
+}
+.smartploy-app .nav-item.active .nav-item-hint { color: #3169aa; }
+.smartploy-app .nav-divider,
+.smartploy-app .sidebar-bottom { border-color: #e3eaf3; }
+.smartploy-app .nav-divider { background: #e3eaf3; }
+.smartploy-app .country-chip,
+.smartploy-app .session-profile strong { color: #304867; }
+.smartploy-app .site-header { background: rgba(255,255,255,.97); border-color: #e1e9f3; }
+.smartploy-app .header-search { background: #f8fbff; border-color: #dfe8f4; }
+.smartploy-app .header-search input { color: #152e4c; }
+.smartploy-app .content { padding-top: 19px; }
+.smartploy-app .flow-start { background: #fff; border-color: #dbe6f2; }
+.flow-start-heading h1,.page-intro h1,.studio-resume-intro h3,
+.welcome-banner h1, .application-flow .flow-intro h2 {
+  font-family: var(--sp-display);
+  font-weight: 800;
+  letter-spacing: -.037em;
+}
+.flow-start-heading h1 { font-size: clamp(30px, 3.35vw, 45px); line-height: 1.13; }
+.flow-start-heading p { line-height: 1.58; }
+
+/* The panorama is a genuine image element: zoom/crop only within the banner.
+   NO overlay covers the principal scenery or the logo. */
+.sp99-finland-cover {
+  position: relative;
+  width: 100%;
+  height: clamp(116px, 12.8vw, 168px);
+  overflow: hidden;
+  border-radius: 15px;
+  background: #aabbd3;
+  border: 1px solid #cbd9e9;
+  isolation: isolate;
+  box-shadow: 0 7px 23px rgba(22,42,82,.11);
+}
+.sp99-finland-cover picture, .sp99-finland-cover img {
+  display: block; height: 100%; width: 100%;
+}
+.sp99-finland-cover img { object-fit: cover; object-position: 50% 53%; }
+.sp99-cover-credit {
+  position: absolute;
+  right: 13px;
+  bottom: 10px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(12,30,49,.66);
+  color: #f9fdff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .025em;
+  line-height: 1.4;
+  backdrop-filter: blur(8px);
+  max-width: calc(100% - 26px);
+}
+.sp99-identity {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 13px 25px;
+  min-width: 0;
+  padding: 8px 4px 13px;
+  margin-bottom: 7px;
+}
+.sp99-identity-lockup { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
+.sp99-identity-mark {
+  display: block;
+  width: 62px; height: 62px;
+  flex: 0 0 62px;
+  object-fit: contain;
+  overflow: visible;
+  max-width: none;
+  min-width: 0;
+}
+.sp99-identity-text { display: grid; gap: 2px; min-width: 0; }
+.sp99-identity-text strong {
+  color: #0a274c;
+  font-family: "DM Sans", sans-serif;
+  font-size: clamp(26px, 2.7vw, 36px);
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -.055em;
+  white-space: nowrap;
+}
+.sp99-identity-text small {
+  color: #5e7895;
+  font-size: 9.5px;
+  line-height: 1.3;
+  font-weight: 800;
+  letter-spacing: .15em;
+}
+.sp99-identity > p {
+  color: #567089;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 310px;
+  text-align: right;
+  margin: 0;
+}
+.sp99-identity.compact {
+  background: #fff;
+  border: 1px solid #e1e9f3;
+  border-radius: 13px;
+  padding: 5px 16px 5px 9px;
+  margin-bottom: 13px;
+}
+.sp99-identity.compact .sp99-identity-mark { height: 49px; width: 49px; flex-basis: 49px; }
+.sp99-identity.compact .sp99-identity-text strong { font-size: 23px; }
+.sp99-identity.compact .sp99-identity-text small { font-size: 9px; }
+.smartploy-app .site-brand-mark {
+  width: 48px; height: 48px; flex: 0 0 48px;
+  display: block; overflow: visible;
+}
+.smartploy-app .site-brand { padding: 3px 5px 24px; gap: 8px; min-width: 0; }
+.smartploy-app .site-brand strong { font-size: 21px; letter-spacing: -.045em; }
+.smartploy-app .site-brand small { font-size: 9.6px; letter-spacing: -.02em; white-space: normal; }
+
+/* The explicit switch is an actual button, not a visual placeholder. */
+.sp99-theme-toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  border: 1px solid #d8e5f4;
+  background: #f6f9fd;
+  color: #183e66;
+  border-radius: 12px;
+  padding: 8px 10px;
+  font: 750 12px/1 var(--sp-font);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sp99-theme-toggle:hover { background: #e5f0ff; border-color: #b8d4f8; }
+.sp99-theme-toggle:focus-visible { outline: 3px solid #408ce0; outline-offset: 3px; }
+.smartploy-app .header-tools { gap: 9px; }
+
+/* DARK MODE — not an inverted screenshot. True legible surfaces, focus,
+   editable controls, forms, applicant tools, review cards and navigation. */
+html[data-smartploy-theme="dark"] {
+  color-scheme: dark;
+  --sp-paper: #101b2b;
+  --sp-ink: #eaf2ff;
+  --sp-ink-deep: #0b1423;
+  --sp-ink-muted: #bacbdd;
+  --sp-line: #2b425b;
+  --sp-cyan-soft: #183c48;
+  --sp-sea: #7cc4f8;
+  --line: #2b425b;
+  --navy: #dcecff;
+  --deep: #f2f8ff;
+  --blue: #95d4f8;
+  --muted: #b1c8de;
+  --canvas: #101b2b;
+  background: #101b2b;
+}
+html[data-smartploy-theme="dark"] body,
+html[data-smartploy-theme="dark"] .smartploy-app {
+  background: #101b2b;
+  color: #e5f0ff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sidebar {
+  color: #deeaff; background: #0c1626; border-color: #26374d;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .site-brand,
+html[data-smartploy-theme="dark"] .smartploy-app .site-brand strong,
+html[data-smartploy-theme="dark"] .smartploy-app .session-profile strong,
+html[data-smartploy-theme="dark"] .smartploy-app .country-chip {
+  color: #f0f6ff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .site-brand small,
+html[data-smartploy-theme="dark"] .smartploy-app .session-profile small,
+html[data-smartploy-theme="dark"] .smartploy-app .nav-label { color: #9fb3cf; }
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item { color: #c0d4ec; }
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item:hover {
+  color: #fff; background: #233955;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.active,
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.nav-apply-entry.active {
+  background: #214569; border-color: #36658e; color: #f1f9ff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.active::before { background: #73cdf0; }
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.nav-apply-entry:not(.active) {
+  color: #cde8ff; background: #1a314d; border-color: #385373;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item-hint,
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.active .nav-item-hint { color: #afd0e9; }
+html[data-smartploy-theme="dark"] .smartploy-app .nav-divider,
+html[data-smartploy-theme="dark"] .smartploy-app .sidebar-bottom { border-color: #243a51; }
+html[data-smartploy-theme="dark"] .smartploy-app .nav-divider { background: #243a51; }
+html[data-smartploy-theme="dark"] .smartploy-app .site-header {
+  background: rgba(14,26,42,.98); border-color: #2c4057;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .header-search,
+html[data-smartploy-theme="dark"] .smartploy-app .icon-btn,
+html[data-smartploy-theme="dark"] .sp99-theme-toggle {
+  background: #19293e; border-color: #344a66; color: #dfedff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .header-search input,
+html[data-smartploy-theme="dark"] .smartploy-app .obumai-brand strong,
+html[data-smartploy-theme="dark"] .smartploy-app .header-country,
+html[data-smartploy-theme="dark"] .smartploy-app .header-country svg {
+  color: #e2efff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .header-search input::placeholder {
+  color: #9cafc7;
+}
+html[data-smartploy-theme="dark"] .sp99-theme-toggle:hover,
+html[data-smartploy-theme="dark"] .smartploy-app .icon-btn:hover { background: #284561; }
+html[data-smartploy-theme="dark"] .sp99-finland-cover {
+  background: #203348; border-color: #36526a;
+}
+html[data-smartploy-theme="dark"] .sp99-finland-cover img { filter: brightness(.82) saturate(.87); }
+html[data-smartploy-theme="dark"] .sp99-identity-text strong { color: #f2f7ff; }
+html[data-smartploy-theme="dark"] .sp99-identity-text small,
+html[data-smartploy-theme="dark"] .sp99-identity > p { color: #c0d2e5; }
+html[data-smartploy-theme="dark"] .sp99-identity.compact {
+  background: #17273b; border-color: #34475f;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .panel, .stat-card, .action-card:not(.featured), .tool-tile, .job-item,
+  .flow-start, .search-setup, .application-flow, .flow-job,
+  .flow-mode, .flow-start-card, .studio-layout, .studio-ai-preview,
+  .studio-document, .studio-list, .studio-list-item, .studio-ai-card,
+  .studio-resume-methods, .studio-resume-card, .studio-handoff,
+  .master-cv-editor, .master-cv-toolbar, .master-cv-paper,
+  .master-cv-edit, .master-cv-preview, .dialog,
+  .empty-state, .studio-letter-proposal, .document-comparison,
+  .document-comparison-columns > div, .document-coach,
+  .agent-inbox-row, .flow-job-next, .flow-queue,
+  .profile-document, .studio-journey, .settings-panel
+) {
+  background: #192a40;
+  border-color: #38516e;
+  color: #e2ecf9;
+  box-shadow: none;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .studio-resume-card.selected, .flow-start-card.selected,
+  .flow-mode.selected, .flow-start-ready, .flow-start-progress li.current,
+  .flow-mode-choice, .job-expanded, .tabs, .search-mode-choices
+) {
+  background: #244565;
+  border-color: #417ba3;
+  color: #eef8ff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .flow-start-masthead, .flow-start-progress li, .flow-start-locked,
+  .flow-start-how, .flow-start-method-status, .flow-start-ready,
+  .flow-start-grid-methods .flow-start-card:disabled,
+  .studio-assisted-guide, .studio-automation-panel, .studio-automation-header,
+  .studio-journey-header, .studio-document-undo, .document-comparison,
+  .studio-ai-proof, .studio-ai-cv-comparison, .studio-handoff,
+  .studio-ai-risks, .tools-ai-readiness, .profile-upload-placeholder,
+  .search-setup .search-setup-card
+) {
+  background: #21354c;
+  border-color: #405b78;
+  color: #e4f1ff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  h1, h2, h3, h4, strong,
+  .page-intro h1, .flow-start-heading h1, .flow-start-method-heading h2,
+  .panel-heading h2, .studio-resume-intro h3, .studio-automation-header h3,
+  .job-details h3, .flow-start-card strong, .flow-start-how .flow-start-cv-copy strong,
+  .flow-start-method-status, .studio-document-head strong,
+  .stat-copy strong, .small-heading h3, .studio-ai-proof strong
+) { color: #f2f7ff; }
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  p, small, label, summary, .muted, .section-kicker, .job-byline,
+  .panel-heading p:last-child, .flow-start-heading p,
+  .flow-start-method-heading p:last-child, .flow-start-cv-copy p,
+  .studio-resume-intro p, .studio-resume-card span,
+  .studio-resume-boundary, .flow-start-progress li,
+  .flow-start-grid-methods .flow-start-card span,
+  .studio-letter-proposal p, .document-comparison-boundary,
+  .document-comparison-heading small, .studio-ai-privacy,
+  .studio-ai-review-notes, .studio-ai-cv-boundary,
+  .studio-ai-proof p, .job-byline strong, .job-meta
+) { color: #b9ccdf; }
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  input, select, textarea, .master-cv-edit textarea,
+  .studio-document textarea, .search-setup input,
+  .search-setup textarea, .fact-form input,
+  .fact-form select, .dialog-form input, .dialog-form textarea,
+  .header-search input, .master-cv-toolbar select
+) {
+  background: #132338; border-color: #405b77; color: #eff7ff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  input, textarea
+)::placeholder { color: #99afc9; }
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .outline-btn, .secondary-btn, .tabs button,
+  .search-mode-choices button, .studio-resume-card,
+  .flow-mode-choice, .flow-start-how .outline-btn
+) {
+  background: #233b56; border-color: #46627c; color: #f0f8ff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .outline-btn:hover, .secondary-btn:hover, .tabs button:hover,
+  .studio-resume-card:hover
+) { background: #315070; }
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .primary-btn, .navy-btn
+) {
+  background: #14678b; border-color: #2897b9;
+  color: #fff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .primary-btn:hover, .navy-btn:hover
+) { background: #1e789b; }
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .state-pill.good, .connection-status.connected, .score-chip.strong,
+  .score-chip.exceptional, .studio-resume-card.selected small
+) { background: #173f38; color: #a1f2da; }
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .state-pill.waiting, .connection-status.disconnected,
+  .source-observation-caution
+) { background: #4a391e; color: #fbe0a9; }
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .tabs button.active, .search-mode-choices button.active
+) { background: #335776; color: #f0f8ff; }
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .document-comparison-columns pre, .master-cv-paper,
+  .master-cv-paper pre, .studio-ai-preview pre
+) { background: #13243a; color: #dceeff; }
+html[data-smartploy-theme="dark"] .smartploy-app .document-comparison-columns span {
+  background: #243d55; color: #d8f0ff; border-color: #405b77;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .document-coach :is(li, p, small) {
+  color: #c7d7e8;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .toast-notice, .studio-resume-boundary, .flow-first-use-note,
+  .flow-job-next, .studio-ai-preview-title, .source-row
+) { border-color: #395570; }
+html[data-smartploy-theme="dark"] .smartploy-app .toast-notice {
+  background: #193c48; color: #e8fbff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .toast-notice.error {
+  background: #4a2830; color: #ffe3e6;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .site-footer {
+  color: #9ab0cc; border-color: #2b425c;
+}
+html[data-smartploy-theme="dark"] :is(.loading-screen, .dialog) {
+  background: #15263a; color: #eef7ff;
+}
+html[data-smartploy-theme="dark"] :is(.loading-screen h1, .dialog h2) { color: #f2f8ff; }
+html[data-smartploy-theme="dark"] .modal-backdrop { background: rgba(4,11,20,.82); }
+
+@media (max-width: 1160px) {
+  .smartploy-app .header-tools { gap: 6px; }
+  .sp99-theme-toggle span { display: none; }
+  .sp99-theme-toggle { padding: 8px; width: 40px; }
+  .sp99-identity > p { font-size: 12px; }
+}
+@media (max-width: 850px) {
+  .smartploy-app { display: block; }
+  .sp99-identity.compact > p { display: none; }
+}
+@media (max-width: 630px) {
+  .smartploy-app .content { padding: 12px 12px 25px; }
+  .sp99-finland-cover { height: 125px; border-radius: 12px; }
+  .sp99-cover-credit { bottom: 7px; right: 7px; font-size: 9px; }
+  .sp99-identity { padding: 7px 2px 11px; margin-bottom: 5px; }
+  .sp99-identity-mark { width: 49px; height: 49px; flex-basis: 49px; }
+  .sp99-identity-text strong { font-size: 25px; }
+  .sp99-identity-text small { font-size: 8px; letter-spacing: .08em; }
+  .sp99-identity > p { display: none; }
+  .sp99-identity.compact { padding: 5px 10px; }
+  .smartploy-app .header-search { flex: 1; width: auto; min-width: 0; }
+  .smartploy-app .header-tools .obumai-brand { display: none; }
+  .smartploy-app .site-header { gap: 7px; }
+  .sp99-theme-toggle { min-width: 38px; width: 38px; height: 38px; padding: 6px; }
+  .smartploy-app .header-tools { margin-left: 0; gap: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp99-theme-toggle, .sp99-finland-cover img { transition: none !important; }
+}

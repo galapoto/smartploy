@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import {
   Activity, ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, CheckCircle2,
   ChevronRight, Clock3, Database, Download, FileCheck2, FileText, Globe2,
-  LayoutDashboard, ListFilter, LockKeyhole, MapPin, Menu, Plus, RefreshCw,
+  LayoutDashboard, ListFilter, LockKeyhole, MapPin, Menu, Moon, Plus, RefreshCw, Sun,
   Search, Settings2, ShieldCheck, Sparkles, Target, Trash2, UploadCloud,
   WandSparkles, X, ChartNoAxesColumn, AlertCircle, type LucideIcon
 } from "lucide-react";
@@ -28,6 +28,7 @@ import SearchSetup from "./SearchSetup";
 import SearchResultsPanel from "./SearchResultsPanel";
 import TrainingProgramsPanel from "./TrainingProgramsPanel";
 import BrandMark from "./BrandMark";
+import { useSmartployTheme } from "./theme";
 import AIConsentSettings from "./AIConsentSettings";
 import type {
   ApplicationRecord, CandidateFact, CVDocument, Dashboard, HealthResponse,
@@ -141,7 +142,22 @@ function sessionIdentity(who: SessionInfo): string {
 /** User-facing API mutations must never publish another account's response. */
 class PrivateActionIdentityChanged extends Error {}
 
+function FinlandPageIdentity({ compact = false }: { compact?: boolean }) {
+  return <div className={cx("sp99-identity", compact && "compact")} role="group"
+      aria-label="SmartPloy complete page logo">
+    <div className="sp99-identity-lockup">
+      <BrandMark className="sp99-identity-mark" />
+      <div className="sp99-identity-text">
+        <strong>SmartPloy</strong>
+        <small>JOB INTELLIGENCE FOR FINLAND</small>
+      </div>
+    </div>
+    <p>Build a stronger application, one clear step at a time.</p>
+  </div>;
+}
+
 export default function App() {
+  const [theme, toggleTheme] = useSmartployTheme();
   const [page, setPage] = useState<Page>("dashboard");
   const [flowMode, setFlowMode] = useState<ApplicationFlowMode | null>(null);
   const [flowSelectedJob, setFlowSelectedJob] = useState("");
@@ -1185,6 +1201,15 @@ export default function App() {
         <div className="header-search"><Search size={19} /><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); if (event.target.value) setPage("jobs"); }} placeholder="Search jobs, companies or locations…" aria-label="Search jobs" /></div>
         <span className="header-country"><MapPin size={16} /> Finland</span>
         <div className="header-tools">
+          <button className="sp99-theme-toggle" type="button"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            aria-pressed={theme === "dark"}
+            title={theme === "dark" ? "Use light mode" : "Use dark mode"}>
+            {theme === "dark" ? <Sun size={18} aria-hidden="true" /> :
+              <Moon size={18} aria-hidden="true" />}
+            <span>{theme === "dark" ? "Light" : "Dark"}</span>
+          </button>
           <a className="obumai-brand" href="https://app.obumai.com/" target="_self" title="Open ObumAI"><img src="/obumai-mark.svg" alt="" /> <strong>ObumAI</strong></a>
           <span className={cx("connection-status", obumReady ? "connected" : "disconnected")}><span />{localAI?.ready ? "Local AI ready" : health?.obumai_configured ? "ObumAI configured" : "AI optional"}</span>
           <button className="icon-btn header-refresh" type="button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh workspace"><RefreshCw size={19} className={refreshing ? "rotate" : ""} /></button>
@@ -1195,8 +1220,18 @@ export default function App() {
         {notice ? <div className="toast-notice" role="status"><Activity size={16} /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X size={17} /></button></div> : null}
         {error ? <div className="toast-notice error" role="alert"><AlertCircle size={16} /><span>{error}</span><button type="button" onClick={() => void load()} aria-label="Retry"><RefreshCw size={17} /></button></div> : null}
         {page === "dashboard" ? <>
-          {/* Make the actual CV-first application journey the first thing
-              a signed-in applicant sees, not a hero followed by mode cards. */}
+          <section className="sp99-finland-cover" aria-label="Finland winter archipelago cover">
+            <picture>
+              <source srcSet="/finland-archipelago-winter.avif" type="image/avif" />
+              <img src="/finland-archipelago-winter.svg" width={1200} height={164}
+                loading="eager" decoding="async"
+                alt="Original artwork: rose-gold winter light over Finland's rocky, ice-edged archipelago" />
+            </picture>
+            <span className="sp99-cover-credit">Original artwork · Finland's winter archipelago</span>
+          </section>
+          <FinlandPageIdentity />
+          {/* Keep CV -> Manual/Assisted/Auto directly after the compact cover.
+              No lost actions, secondary landing page, or duplicate mode selector. */}
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
             onOpenApplications={() => navigate("applications")}
@@ -1208,11 +1243,6 @@ export default function App() {
               onSave={saveSearchPreferences}/>
           </details> : null}
           <ReleaseStatus apiRevision={health?.release_revision} />
-          {cv.present ? <section className="welcome-banner" aria-label="Finnish job discovery">
-            <div className="welcome-copy"><p className="section-kicker">YOUR NORDIC CAREER WORKSPACE</p><h1>Make your next move.<br /><em>With clarity.</em></h1><p>Discover Finnish opportunities, build a trusted career profile and prepare the next step with SmartPloy.</p></div>
-            <img className="helsinki-art" src="/helsinki-skyline.svg" alt="" />
-            <div className="hero-tag"><span className="flag-finland" aria-hidden="true" /> Built for the Finnish job market</div>
-          </section> : null}
           <div className="stats-grid">
             <Stat label={preferences?.mode === "general" ? "Available jobs" : "Preference matches"}
               value={preferences?.mode === "general" ? discovery?.available_count || 0 : discovery?.recommendations.length || 0}
@@ -1228,6 +1258,7 @@ export default function App() {
           <div className="dashboard-grid"><div>{jobsSection}</div>{sidePanel}</div>
         </> : null}
         {page !== "dashboard" ? <>
+          <FinlandPageIdentity compact />
           <ReleaseStatus apiRevision={health?.release_revision} />
           <div className="page-intro"><div><p className="section-kicker">SMARTPLOY / {selectedNav?.label.toUpperCase()}</p><h1>{selectedNav?.label}</h1><p>{preferences?.mode === "general" ? "General search across current Finnish vacancies." : "Your private workspace, ranked by the search criteria you chose."}</p></div>
             {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Save job</button> : null}
