@@ -539,8 +539,40 @@ export default function ApplicationJourney(props: {
                 ". Pick an exact current vacancy in Step 3 to continue."}</p>
         </div>
       </div>
+      <div className="flow-primary-next" aria-label="Your next action">
+        <div className="flow-primary-next-copy">
+          <span>Do this next</span>
+          <strong>{!props.cv.present
+            ? "Connect your CV to unlock the three application methods"
+            : !props.mode
+              ? "Choose Manual, Assisted or Automatic"
+              : !hasChosenJob
+                ? "Choose a real vacancy that fits your CV"
+                : props.mode === "automatic"
+                  ? "Prepare the jobs you selected, then review their drafts"
+                  : "Continue with your selected employer vacancy"}</strong>
+          <small>{!props.cv.present
+            ? "No employer receives your CV when you upload it."
+            : !props.mode
+              ? "Nothing is selected or sent until you decide."
+              : !hasChosenJob
+                ? "Matches come from stored job listings; no application is sent."
+                : "Your CV and cover letter remain private until a separately reviewed employer action."}</small>
+        </div>
+        {!props.cv.present ? <button className="primary-btn" type="button"
+          onClick={props.onUpload} disabled={props.uploading}>
+          Upload CV <ArrowRight size={16} aria-hidden="true"/>
+        </button> : !props.mode ? <a className="navy-btn" href="#smartploy-flow-choice">
+          Choose application type <ArrowRight size={16} aria-hidden="true"/>
+        </a> : <a className="navy-btn" href={hasChosenJob && props.mode === "automatic"
+            ? "#smartploy-flow-queue" : "#smartploy-flow-matches"}>
+          {hasChosenJob
+            ? props.mode === "automatic" ? "Prepare selected applications" : "Continue selected job"
+            : "Choose matching jobs"} <ArrowRight size={16} aria-hidden="true"/>
+        </a>}
+      </div>
     </section>
-    <section className="panel flow-cv">
+    <section className="panel flow-cv" id="smartploy-flow-cv">
       <div className="panel-heading"><div>
         <p className="section-kicker">STEP 1 OF 4</p>
         <h2>Your CV</h2>
@@ -563,7 +595,7 @@ export default function ApplicationJourney(props: {
       </div>
     </section>
 
-    <section className={"panel flow-choice" +
+    <section id="smartploy-flow-choice" className={"panel flow-choice" +
       (!props.cv.present ? " flow-choice-locked" : !props.mode ? " flow-choice-needed" : "")}
       aria-labelledby="flow-choice-title">
       <div className="panel-heading"><div>
@@ -631,7 +663,7 @@ export default function ApplicationJourney(props: {
           employer send, unknown-form answers or retries occur here.</p>
       </div> : null}
     </section>
-    <section className="panel flow-matches">
+    <section className="panel flow-matches" id="smartploy-flow-matches">
       <div className="panel-heading"><div>
         <p className="section-kicker">STEP 3 OF 4</p><h2>Jobs from your CV</h2>
         <p>These are current jobs in SmartPloy's own database, not web results invented for your CV.</p>
@@ -731,7 +763,7 @@ export default function ApplicationJourney(props: {
             </button>
           </div>
         ) : null}
-        {props.mode === "automatic" ? <div className="flow-queue">
+        {props.mode === "automatic" ? <div className="flow-queue" id="smartploy-flow-queue">
           <strong>{selected.length} of {AUTOAPPLY_SELECTION_LIMIT} vacancies selected</strong>
           <p>Each selected job gets its own private application draft and in-app agent.
             No email, call or employer application is sent. You can pause or close an agent later.</p>
@@ -858,7 +890,7 @@ export default function ApplicationJourney(props: {
         </div> : null}
       </> : null}
     </section>
-    <section className="panel flow-next">
+    <section className="panel flow-next" id="smartploy-flow-next">
       <div className="panel-heading"><div>
         <p className="section-kicker">STEP 4 OF 4</p><h2>Continue your applications</h2>
         <p>Only an independently confirmed employer submission counts as submitted.

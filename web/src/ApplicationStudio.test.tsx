@@ -1894,3 +1894,48 @@ describe("Application Studio draft-scoped pending indicators", () => {
   });
 
 });
+
+
+describe("SP96: prominent private writing tools and selective AI review", () => {
+  it("offers real-time CV and letter checks in the saved application studio", async () => {
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    expect(screen.getByRole("complementary", {
+      name: "Job-specific CV live writing review",
+    })).toBeTruthy();
+    expect(screen.getByRole("complementary", {
+      name: "Cover letter live writing review",
+    })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Write English letter" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Write Finnish letter" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Check AI connection" })).toBeTruthy();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.requestLocalAISuggestions).not.toHaveBeenCalled();
+  });
+
+  it("inserts only the explicitly chosen AI cover letter and never changes CV or employer state", async () => {
+    vi.mocked(api.getLocalAIStatus).mockResolvedValue({
+      configured: true, ready: true, provider: "local_obumai_ollama",
+      model: "synthetic-only", external_ai_forwarding: false,
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio();
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const cv = screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement;
+    const letter = screen.getByRole("textbox", {
+      name: "Editable cover letter text",
+    }) as HTMLTextAreaElement;
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: /Suggest tailored wording/,
+    }).hasAttribute("disabled")).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: /Suggest tailored wording/ }));
+    expect(await screen.findByText("Synthetic approved evidence")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Use cover letter only" }));
+    await waitFor(() => expect(letter.value).toBe("Synthetic cover letter"));
+    expect(cv.value).toBe("PRIVATE-CV-A");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+    expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+  });
+});

@@ -19,6 +19,7 @@ import ApplicationAgentCard from "./ApplicationAgentCard";
 import ApplicationAgentInbox from "./ApplicationAgentInbox";
 import ApplicationAttemptAudit from "./ApplicationAttemptAudit";
 import AuthorizedAutoApplyBatch from "./AuthorizedAutoApplyBatch";
+import DocumentCoach from "./DocumentCoach";
 import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import { applicationNextStep } from "./applicationNextStep";
@@ -84,6 +85,7 @@ export default function ApplicationStudio(props: {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAIBusy] = useState(false);
+  const [aiRefreshing, setAIRefreshing] = useState(false);
   const [letterBusy, setLetterBusy] = useState(false);
   const [aiStatus, setAIStatus] = useState<LocalAIStatus | null>(null);
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
@@ -512,25 +514,45 @@ export default function ApplicationStudio(props: {
     } finally { if (isCurrentDraft(ticket)) setAIBusy(false); }
   }
 
-  async function insertAISuggestion() {
+  async function refreshAIReadiness() {
+    if (aiRefreshing || accountBlockedRef.current) return;
+    setAIRefreshing(true);
+    try {
+      // Read model readiness only; do not send any CV, letter or job data.
+      await verifyAccount();
+      const latest = await getLocalAIStatus();
+      await verifyAccount();
+      if (mountedRef.current && !accountBlockedRef.current) setAIStatus(latest);
+    } catch {
+      if (mountedRef.current && !accountBlockedRef.current) setAIStatus(null);
+    } finally {
+      if (mountedRef.current) setAIRefreshing(false);
+    }
+  }
+
+  async function insertAISuggestion(target: "both" | "cv" | "letter" = "both") {
     if (!selected || !aiSuggestion || selected.status !== "draft" || browserReceipt ||
         employerAttempt?.previous_attempt_reserved) return;
     const draft = aiSuggestion.proposal;
     const ticket = captureDraft(selected);
-    if (!window.confirm(
-      "Insert these AI suggestions into your editable CV and cover letter? " +
-      "They may contain mistakes. Nothing is saved or sent until you review and click Save changes."
-    )) return;
+    const prompt = target === "both"
+      ? "Insert these AI suggestions into your editable CV and cover letter? " +
+        "They may contain mistakes. Nothing is saved or sent until you review and click Save changes."
+      : "Insert only the AI-proposed " + (target === "cv" ? "CV summary" : "cover letter") +
+        " for this job? Review every claim before saving. No employer is contacted.";
+    if (!window.confirm(prompt)) return;
     try { await verifyAccount(); } catch { return; }
     if (!isCurrentDraft(ticket)) return;
-    setCvText((old) =>
-      "TARGET ROLE: " + selected.role_title + " — " + selected.company +
-      "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
-      "\n\n" + old
-    );
-    setLetterText(draft.cover_letter);
+    if (target !== "letter") {
+      setCvText((old) =>
+        "TARGET ROLE: " + selected.role_title + " — " + selected.company +
+        "\n\nPROFILE SUMMARY (review AI wording):\n" + draft.cv_summary +
+        "\n\n" + old
+      );
+    }
+    if (target !== "cv") setLetterText(draft.cover_letter);
     setAISuggestion(null);
-    setMessage("AI wording inserted as unsaved edits. Review every claim and save to keep them.");
+    setMessage("Your chosen AI wording is now an unsaved edit. Verify every fact, then Save changes.");
   }
 
   async function copyBrowserPacket() {
@@ -1178,15 +1200,41 @@ export default function ApplicationStudio(props: {
                   : "Local AI is not yet enabled on this server. The manual editor remains available."}</p>
             </div>
           </div>
-          <button className="outline-btn studio-ai-trigger" type="button"
-            disabled={!aiStatus?.ready || busy || aiBusy || dirty || selected.status !== "draft" ||
-              !!browserReceipt || employerAttempt?.previous_attempt_reserved === true}
-            onClick={() => void askLocalAI()}>
-            <WandSparkles size={16}/> {aiBusy ? "Generating with the local model…" : "Suggest tailored wording"}
-          </button>
+          <div className="studio-ai-actions" role="group"
+              aria-label="Private writing assistant actions">
+            <button className="outline-btn studio-ai-trigger" type="button"
+              disabled={!aiStatus?.ready || busy || aiBusy || dirty || selected.status !== "draft" ||
+                !!browserReceipt || employerAttempt?.previous_attempt_reserved === true}
+              onClick={() => void askLocalAI()}>
+              <WandSparkles size={16}/> {aiBusy ? "Generating with the local model…" : "Suggest tailored wording"}
+            </button>
+            <button className="outline-btn compact" type="button"
+              disabled={busy || aiBusy || letterBusy || selected.status !== "draft" ||
+                !!browserReceipt || !!partnerReceipt ||
+                employerAttempt?.previous_attempt_reserved === true}
+              onClick={() => void redraftLetter("en")}>
+              {letterBusy ? "Drafting…" : "Write English letter"}
+            </button>
+            <button className="outline-btn compact" type="button"
+              disabled={busy || aiBusy || letterBusy || selected.status !== "draft" ||
+                !!browserReceipt || !!partnerReceipt ||
+                employerAttempt?.previous_attempt_reserved === true}
+              onClick={() => void redraftLetter("fi")}>
+              {letterBusy ? "Drafting…" : "Write Finnish letter"}
+            </button>
+            <button className="outline-btn compact" type="button"
+              onClick={() => void refreshAIReadiness()}
+              disabled={aiRefreshing || aiBusy}>
+              <RefreshCw size={15} className={aiRefreshing ? "rotate" : ""}/>
+              {aiRefreshing ? "Checking…" : "Check AI connection"}
+            </button>
+          </div>
           <p className="studio-ai-privacy">
-            Explicit consent for each generation. Only the vacancy and approved profile facts
-            reach the private model; no employer submission or external AI forwarding.
+            The live writing coach below checks your text instantly without a model.
+            Private Ollama generation requires your explicit consent every time,
+            and sends only the vacancy and approved profile facts. Nothing is
+            applied or submitted automatically.
+            {dirty ? " Save your document edits before requesting a new private-model suggestion." : ""}
           </p>
           {aiSuggestion ? <div className="studio-ai-preview">
             <div className="studio-ai-preview-title">
@@ -1196,6 +1244,19 @@ export default function ApplicationStudio(props: {
             </div>
             <h4>{aiSuggestion.proposal.cv_headline}</h4>
             <p>{aiSuggestion.proposal.cv_summary}</p>
+            <div className="studio-ai-target-actions" role="group"
+              aria-label="Use the AI proposal in selected documents">
+              <button className="outline-btn compact" type="button"
+                onClick={() => void insertAISuggestion("cv")}>
+                Use CV summary only
+              </button>
+              <button className="outline-btn compact" type="button"
+                onClick={() => void insertAISuggestion("letter")}>
+                Use cover letter only
+              </button>
+              <small>Choose exactly what to insert. All AI output remains editable
+                and unsaved until you review and save it.</small>
+            </div>
             <details><summary>Read generated cover letter</summary>
               <pre>{aiSuggestion.proposal.cover_letter}</pre></details>
             {aiSuggestion.proposal.highlights.length ? <details><summary>Evidence citations</summary>
@@ -1216,6 +1277,8 @@ export default function ApplicationStudio(props: {
             onChange={(event) => setCvText(event.target.value)}
             placeholder="Your reviewed CV content" />
           <small>Started from your uploaded CV, when available; otherwise only approved profile facts.</small>
+          <DocumentCoach kind="job_cv" text={cvText} roleTitle={selected.role_title}
+            company={selected.company} />
           <div className="studio-export">
             <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "cv", "docx")}
               className={"outline-btn compact" + (dirty ? " disabled" : "")}
@@ -1247,6 +1310,8 @@ export default function ApplicationStudio(props: {
               employerAttempt?.previous_attempt_reserved === true} value={letterText}
             onChange={(event) => setLetterText(event.target.value)}
             placeholder="Your reviewed cover letter" />
+          <DocumentCoach kind="cover_letter" text={letterText} roleTitle={selected.role_title}
+            company={selected.company} />
           <small>New application drafts begin with real Finnish or English letter prose, not coaching placeholders. Only approved, job-matched facts are used. If your profile lacks a confirmed name or relevant experience, edit the letter or use a language button to see the missing-information report. Older saved drafts stay unchanged until you edit them. Review and save explicitly; no employer is contacted.</small>
           <div className="studio-export">
             <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "letter", "docx")}
