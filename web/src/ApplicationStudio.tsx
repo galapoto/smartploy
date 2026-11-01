@@ -1225,6 +1225,7 @@ export default function ApplicationStudio(props: {
               <small>Record the outcome. Only a verified employer acknowledgment counts as independently submitted.</small></div></li>
           </ol>
           <nav className="studio-journey-links" aria-label="Jump to application step">
+            {selected.status === "draft" ? <a href="#smartploy-ai-writer">AI writing support</a> : null}
             <a href="#smartploy-cv-review">Review CV</a>
             <a href="#smartploy-letter-review">Review letter</a>
             {selected.status === "draft" ?
@@ -1287,10 +1288,10 @@ export default function ApplicationStudio(props: {
           expectedUserId={props.expectedUserId}
           verifyAccount={verifyAccount}
         />
-        <section className="studio-ai-card" aria-label="Optional local AI writing support">
+        <section className="studio-ai-card" id="smartploy-ai-writer" aria-label="Optional local AI writing support">
           <div className="studio-ai-heading">
             <span className="studio-ai-icon"><Sparkles size={19}/></span>
-            <div><strong>ObumAI local writing assistant</strong>
+            <div><strong>SmartPloy private writing assistant</strong>
               <p>{aiStatus?.ready
                 ? "Local model available · review-only suggestions from approved facts"
                 : aiStatus?.configured
@@ -1336,6 +1337,38 @@ export default function ApplicationStudio(props: {
             applied or submitted automatically.
             {dirty ? " Save your document edits before requesting a new private-model suggestion." : ""}
           </p>
+          {letterProposal && letterProposal.key === selectedDraftRef.current.key &&
+            selected.status === "draft" ? <section className="studio-letter-proposal"
+              id="smartploy-letter-proposal" aria-label="Review generated cover letter">
+            <strong>{letterProposal.language === "fi" ? "Finnish" : "English"} cover letter ready · review before use</strong>
+            <p>This is complete, editable letter prose generated from approved profile evidence,
+              not a private-model response. The existing letter is still unchanged.</p>
+            <DocumentComparison title="Compare original and proposed cover letters"
+              current={letterText} proposed={letterProposal.text}
+              source="approved_evidence" />
+            {!letterProposal.complete ? <div role="status">
+              <strong>Information to confirm before using:</strong>
+              <ul>{letterProposal.missingInformation.map((item, index) =>
+                <li key={index}>{item}</li>)}</ul>
+            </div> : null}
+            {letterProposal.reviewNotes.length ? <details>
+              <summary>Review notes</summary>
+              <ul>{letterProposal.reviewNotes.map((item, index) =>
+                <li key={index}>{item}</li>)}</ul>
+            </details> : null}
+            <div className="row-actions" role="group" aria-label="Review cover letter proposal actions">
+              <button type="button" className="navy-btn compact"
+                disabled={busy || aiBusy || letterBusy || !!browserReceipt ||
+                  employerAttempt?.previous_attempt_reserved === true}
+                onClick={() => void useLetterProposal()}>
+                Use proposed {letterProposal.language === "fi" ? "Finnish" : "English"} letter
+              </button>
+              <button type="button" className="outline-btn compact"
+                onClick={() => setLetterProposal(null)}>
+                Keep my current letter
+              </button>
+            </div>
+          </section> : null}
           {aiSuggestion ? <div className="studio-ai-preview">
             <div className="studio-ai-preview-title">
               <strong>Unverified AI proposal · {aiSuggestion.model}</strong>
@@ -1357,8 +1390,17 @@ export default function ApplicationStudio(props: {
               <small>Choose exactly what to insert. All AI output remains editable
                 and unsaved until you review and save it.</small>
             </div>
-            <details><summary>Read generated cover letter</summary>
-              <pre>{aiSuggestion.proposal.cover_letter}</pre></details>
+            <details><summary>Read generated cover letter and compare</summary>
+              <DocumentComparison title="Compare current letter with private AI proposal"
+                current={letterText} proposed={aiSuggestion.proposal.cover_letter}
+                source="private_ai" />
+            </details>
+            {aiSuggestion.proposal.review_notes.length ? <details
+              className="studio-ai-review-notes">
+              <summary>AI review notes ({aiSuggestion.proposal.review_notes.length})</summary>
+              <ul>{aiSuggestion.proposal.review_notes.map((item, index) =>
+                <li key={index}>{item}</li>)}</ul>
+            </details> : null}
             {aiSuggestion.proposal.highlights.length ? <details><summary>Evidence citations</summary>
               <ul>{aiSuggestion.proposal.highlights.map((row, index) =>
                 <li key={index}>{row.text} <small>Evidence IDs: {row.evidence_fact_ids.join(", ")}</small></li>)}
@@ -1369,12 +1411,29 @@ export default function ApplicationStudio(props: {
             </div> : null}
           </div> : null}
         </section>
+        {documentUndo && documentUndo.key === selectedDraftRef.current.key &&
+          selected.status === "draft" &&
+          documentUndo.afterCV === cvText && documentUndo.afterLetter === letterText &&
+          !browserReceipt && !partnerReceipt &&
+          !employerAttempt?.previous_attempt_reserved ? <div
+            className="studio-document-undo" role="status">
+            <div>
+              <strong>Generated change not yet saved</strong>
+              <small>Restore your wording from before the last {documentUndo.kind} insertion.
+                This changes only the private editor, not the employer application.</small>
+            </div>
+            <button type="button" className="outline-btn compact"
+              disabled={busy || aiBusy || letterBusy}
+              onClick={() => void undoGeneratedEdit()}>
+              Undo last generated edit
+            </button>
+          </div> : null}
         <div className="studio-document" id="smartploy-cv-review">
           <div className="studio-document-head"><strong><FileText size={17}/> CV draft</strong><span>{cvText.length.toLocaleString()} / 30,000 characters</span></div>
           <textarea aria-label="Editable CV text" rows={15} maxLength={30000}
             readOnly={selected.status !== "draft" || !!browserReceipt ||
               employerAttempt?.previous_attempt_reserved === true} value={cvText}
-            onChange={(event) => setCvText(event.target.value)}
+            onChange={(event) => { setDocumentUndo(null); setCvText(event.target.value); }}
             placeholder="Your reviewed CV content" />
           <small>Started from your uploaded CV, when available; otherwise only approved profile facts.</small>
           <DocumentCoach kind="job_cv" text={cvText} roleTitle={selected.role_title}
@@ -1408,7 +1467,7 @@ export default function ApplicationStudio(props: {
           <textarea aria-label="Editable cover letter text" rows={13} maxLength={10000}
             readOnly={selected.status !== "draft" || !!browserReceipt ||
               employerAttempt?.previous_attempt_reserved === true} value={letterText}
-            onChange={(event) => setLetterText(event.target.value)}
+            onChange={(event) => { setDocumentUndo(null); setLetterText(event.target.value); }}
             placeholder="Your reviewed cover letter" />
           <DocumentCoach kind="cover_letter" text={letterText} roleTitle={selected.role_title}
             company={selected.company} />
