@@ -20,6 +20,7 @@ import ApplicationAgentInbox from "./ApplicationAgentInbox";
 import ApplicationAttemptAudit from "./ApplicationAttemptAudit";
 import AuthorizedAutoApplyBatch from "./AuthorizedAutoApplyBatch";
 import DocumentCoach from "./DocumentCoach";
+import DocumentComparison from "./DocumentComparison";
 import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import { applicationNextStep } from "./applicationNextStep";
@@ -35,6 +36,22 @@ class StudioSelectionChanged extends Error {}
 // A draft's identity is its workspace ID, revision, AND the viewer's
 // selection epoch. Switching away and back must not resurrect late results.
 type DraftTicket = { key: string; epoch: number };
+type EvidenceLetterPreview = {
+  key: string;
+  language: "fi" | "en";
+  text: string;
+  complete: boolean;
+  missingInformation: string[];
+  reviewNotes: string[];
+};
+type DocumentUndo = {
+  key: string;
+  kind: "private AI" | "letter proposal";
+  beforeCV: string;
+  beforeLetter: string;
+  afterCV: string;
+  afterLetter: string;
+};
 
 const safePostingLink = safeExternalJobUrl;
 
@@ -89,6 +106,8 @@ export default function ApplicationStudio(props: {
   const [letterBusy, setLetterBusy] = useState(false);
   const [aiStatus, setAIStatus] = useState<LocalAIStatus | null>(null);
   const [aiSuggestion, setAISuggestion] = useState<LocalAISuggestion | null>(null);
+  const [letterProposal, setLetterProposal] = useState<EvidenceLetterPreview | null>(null);
+  const [documentUndo, setDocumentUndo] = useState<DocumentUndo | null>(null);
   const [handoff, setHandoff] = useState<BrowserHandoffReadiness | null>(null);
   const [employerAttempt, setEmployerAttempt] = useState<EmployerAttemptState | null>(null);
   const [finalReview, setFinalReview] = useState<EmployerReviewIntentState | null>(null);
@@ -134,6 +153,7 @@ export default function ApplicationStudio(props: {
     ++selectedDraftRef.current.epoch;
     setWorkspaces([]); setSelectedId("");
     setCvText(""); setLetterText(""); setAISuggestion(null); setAIStatus(null);
+    setLetterProposal(null); setDocumentUndo(null);
     setHandoff(null); setEmployerAttempt(null); setFinalReview(null); setFinalAction(null);
     setPartnerReadiness(null); setPartnerReceipt(null); setPartnerBusy(false); setHandoffPacketText("");
     setBrowserReceipt(null); setReceiptOpen(false); setReceiptInput("");
@@ -274,6 +294,7 @@ export default function ApplicationStudio(props: {
       selectedDraftRef.current = { key, epoch: selectedDraftRef.current.epoch + 1 };
       setBusy(false); setAIBusy(false); setLetterBusy(false); setHandoffBusy(false); setReceiptBusy(false); setReviewBusy(false); setPartnerBusy(false);
       setAISuggestion(null);
+      setLetterProposal(null); setDocumentUndo(null);
       setCvText(selected?.cv_text || "");
       setLetterText(selected?.cover_letter_text || "");
       setHandoffPacketText(""); setFinalReview(null); setFinalAction(null);
@@ -440,6 +461,7 @@ export default function ApplicationStudio(props: {
       ), ticket);
       if (!isCurrentDraft(ticket)) return;
       updateItem(result.workspace);
+      setDocumentUndo(null); setLetterProposal(null);
       setMessage("Your edits were saved. Downloaded documents will contain this version.");
     } catch (exc) {
       reportActionError(exc, "Draft could not be saved.");
