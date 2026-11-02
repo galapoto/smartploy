@@ -1,6 +1,6 @@
 import {
   ArrowRight, Bot, CheckCircle2, FileCheck2, FileText, Search,
-  UploadCloud, WandSparkles,
+  UploadCloud, WandSparkles, AlertCircle, RefreshCw,
 } from "lucide-react";
 import type { ApplicationFlowMode } from "./types";
 
@@ -19,20 +19,31 @@ export default function StartChoices(props: {
   cvPresent?: boolean;
   busyCV?: boolean;
   cvFilename?: string;
+  cvUnavailable?: boolean;
+  cvChecking?: boolean;
+  cvRetrying?: boolean;
+  onRetryCV?: () => void;
 }) {
-  const hasCV = props.cvPresent === true;
+  const cvUnavailable = props.cvUnavailable === true;
+  const cvChecking = props.cvChecking === true;
+  const hasCV = props.cvPresent === true && !cvUnavailable && !cvChecking;
   const updatingCV = props.busyCV === true;
   const canChoose = hasCV && !updatingCV;
   return <section className="flow-start" aria-label="Choose what to do with SmartPloy"
-    aria-busy={updatingCV}>
+    aria-busy={updatingCV || cvChecking || props.cvRetrying === true}>
     <div className="flow-start-masthead" aria-hidden="true">
       <span>SMARTPLOY / APPLICATION WORKSPACE</span><span>FINLAND · PRIVATE WORKSPACE</span>
     </div>
     <div className="flow-start-heading">
       <p className="section-kicker">YOUR APPLICATION JOURNEY</p>
-      <h1>{updatingCV ? "Updating your CV." :
+      <h1>{cvChecking ? "Checking your saved CV." :
+        cvUnavailable ? "We couldn\'t verify your CV." :
+        updatingCV ? "Updating your CV." :
         hasCV ? "CV connected. Choose how to apply." : "Start with your CV."}</h1>
-      <p>{updatingCV
+      <p>{cvChecking ? "Checking your saved CV and account before showing application choices. You do not need to upload another CV."
+        : cvUnavailable
+        ? "The CV check failed. Your existing document may still be saved. Retry without uploading a replacement; application choices remain locked until the status is confirmed."
+        : updatingCV
         ? "Your CV is being saved. Application choices are paused until the update finishes."
         : hasCV
           ? "Your CV is ready. Pick Manual, Assisted or Automatic to see the right job-matching and application steps."
@@ -41,7 +52,7 @@ export default function StartChoices(props: {
     <ol className="flow-start-progress" aria-label="Application journey steps">
       <li className={canChoose ? "done" : "current"}
         aria-current={!canChoose ? "step" : undefined}>
-        1 · CV
+        {cvUnavailable || cvChecking ? "1 · Check CV" : "1 · CV"}
       </li>
       <li className={canChoose ? "current" : ""}
         aria-current={canChoose ? "step" : undefined}>
@@ -56,7 +67,23 @@ export default function StartChoices(props: {
       <span><strong>CV update in progress.</strong> Wait for the new CV before choosing
         an application method or preparing jobs. No employer has been contacted.</span>
     </div> : null}
-    {!hasCV ? <>
+    {cvChecking ? <div className="flow-start-locked" id="flow-start-cv-checking"
+      role="status">
+      <RefreshCw size={19} aria-hidden="true"/>
+      <span><strong>Checking your saved CV.</strong> Manual, Assisted and Automatic
+        will unlock once the private CV check completes. No replacement is needed.</span>
+    </div> : cvUnavailable ? <div className="flow-start-locked" id="flow-start-cv-unavailable"
+      role="alert">
+      <AlertCircle size={19} aria-hidden="true"/>
+      <span><strong>Saved CV status is temporarily unavailable.</strong> This is not proof
+        that your CV was removed. Retry to restore your original document and
+        choose an application method without replacing anything.</span>
+      {props.onRetryCV ? <button className="outline-btn compact" type="button"
+        disabled={props.cvRetrying === true || updatingCV}
+        onClick={props.onRetryCV}>
+        {props.cvRetrying ? "Checking CV…" : "Retry CV check"}
+      </button> : null}
+    </div> : !hasCV ? <>
       <div className="flow-start-how" aria-label="Step 1 — connect your CV">
         <div className="flow-start-cv-copy">
           <strong>Step 1 · Connect your CV</strong>
@@ -91,52 +118,64 @@ export default function StartChoices(props: {
       <div>
         <p className="section-kicker">STEP 2 · APPLICATION METHOD</p>
         <h2>Manual, Assisted or Automatic?</h2>
-        <p>{updatingCV
+        <p>{cvChecking ? "The saved CV check is in progress. Application choices will unlock when verification completes."
+          : cvUnavailable
+          ? "CV verification is unavailable. Retry the check to unlock your saved application choices."
+          : updatingCV
           ? "CV update in progress. Your application options will unlock when it finishes."
           : hasCV
             ? "Your CV is connected. Choose one path to match real jobs and continue."
             : "See all three paths now. Connect a CV in Step 1 to unlock your choice."}</p>
       </div>
       <span className={"flow-start-method-status " + (canChoose ? "ready" : "waiting")}>
-        {updatingCV ? "Updating CV" : hasCV ? "Ready to choose" : "CV required first"}
+        {cvChecking ? "Checking CV" : cvUnavailable ? "CV check unavailable" : updatingCV ? "Updating CV" : hasCV ? "Ready to choose" : "CV required first"}
       </span>
     </div>
       <div className="flow-start-grid flow-start-grid-methods" role="group"
         aria-label="Step 2 — choose application type">
         <button type="button" className="flow-start-card" data-flow-mode="manual"
           disabled={!canChoose}
-          aria-describedby={!canChoose ? (updatingCV ? "flow-start-cv-updating" : "flow-start-require-cv") : undefined}
+          aria-describedby={!canChoose ? (cvChecking ? "flow-start-cv-checking" :
+            cvUnavailable ? "flow-start-cv-unavailable" :
+            updatingCV ? "flow-start-cv-updating" : "flow-start-require-cv") : undefined}
           onClick={() => props.onMode("manual")}>
           <FileCheck2 size={25} aria-hidden="true"/>
           <span className="flow-start-index" aria-hidden="true">01</span>
           <strong>Apply manually</strong>
           <span>Find CV-matched jobs, open the original employer form and submit it yourself.</span>
           <small>MANUAL · You send the application</small>
-          <span className="flow-card-cta">{updatingCV ? "Updating CV" : hasCV ? "Choose manual" : "Connect CV to unlock"}</span>
+          <span className="flow-card-cta">{cvChecking ? "Checking CV" : cvUnavailable ? "CV check unavailable" : updatingCV ? "Updating CV" :
+            hasCV ? "Choose manual" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
         <button type="button" className="flow-start-card" data-flow-mode="assisted"
           disabled={!canChoose}
-          aria-describedby={!canChoose ? (updatingCV ? "flow-start-cv-updating" : "flow-start-require-cv") : undefined}
+          aria-describedby={!canChoose ? (cvChecking ? "flow-start-cv-checking" :
+            cvUnavailable ? "flow-start-cv-unavailable" :
+            updatingCV ? "flow-start-cv-updating" : "flow-start-require-cv") : undefined}
           onClick={() => props.onMode("assisted")}>
           <WandSparkles size={25} aria-hidden="true"/>
           <span className="flow-start-index" aria-hidden="true">02</span>
           <strong>Assisted · Apply with AI</strong>
           <span>Prepare a job-specific CV and complete cover letter. Review and fill supported employer forms with the browser companion.</span>
           <small>ASSISTED · You review before sending</small>
-          <span className="flow-card-cta">{updatingCV ? "Updating CV" : hasCV ? "Choose assisted" : "Connect CV to unlock"}</span>
+          <span className="flow-card-cta">{cvChecking ? "Checking CV" : cvUnavailable ? "CV check unavailable" : updatingCV ? "Updating CV" :
+            hasCV ? "Choose assisted" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
         <button type="button" className="flow-start-card" data-flow-mode="automatic"
           disabled={!canChoose}
-          aria-describedby={!canChoose ? (updatingCV ? "flow-start-cv-updating" : "flow-start-require-cv") : undefined}
+          aria-describedby={!canChoose ? (cvChecking ? "flow-start-cv-checking" :
+            cvUnavailable ? "flow-start-cv-unavailable" :
+            updatingCV ? "flow-start-cv-updating" : "flow-start-require-cv") : undefined}
           onClick={() => props.onMode("automatic")}>
           <Bot size={25} aria-hidden="true"/>
           <span className="flow-start-index" aria-hidden="true">03</span>
           <strong>Automatic · AutoApply</strong>
           <span>Prepare multiple matched jobs, then approve exact reviewed submissions where the employer has authorized a Lever/Ashby integration.</span>
           <small>AUTOMATIC · Employer-specific authorization required</small>
-          <span className="flow-card-cta">{updatingCV ? "Updating CV" : hasCV ? "Choose automatic" : "Connect CV to unlock"}</span>
+          <span className="flow-card-cta">{cvChecking ? "Checking CV" : cvUnavailable ? "CV check unavailable" : updatingCV ? "Updating CV" :
+            hasCV ? "Choose automatic" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
       </div>

@@ -167,6 +167,8 @@ export default function App() {
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [cv, setCV] = useState<CVDocument>({ present: false });
+  // A failed private CV read is not proof that an existing CV is missing.
+  const [cvReadState, setCVReadState] = useState<"checking" | "available" | "unavailable">("checking");
   const [facts, setFacts] = useState<CandidateFact[]>([]);
   const [jobs, setJobs] = useState<SavedJob[]>([]);
   const [privateSavedJobs, setPrivateSavedJobs] = useState<PrivateSavedJob[]>([]);
@@ -234,7 +236,8 @@ export default function App() {
   const autoDraftInFlight = useRef<string | null>(null);
   const clearPrivateWorkspace = useCallback(() => {
     setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
-    setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
+    setApplications([]); setCV({ present: false }); setCVReadState("checking");
+    setFacts([]); setJobs([]);
     setPrivateSavedJobs([]);
     setAIConsents([]); setAIConsentEvents([]);
     setAIConsentStatus("unavailable"); setAIConsentBusy(false);
@@ -386,7 +389,19 @@ export default function App() {
       const [apps, ready, savedCV, profile, savedJobs, bookmarks, grants, grantEvents] = secondary;
       setApplications(apps.status === "fulfilled" ? apps.value.applications : []);
       setHealth(ready.status === "fulfilled" ? ready.value : null);
-      setCV(savedCV.status === "fulfilled" ? savedCV.value : { present: false });
+      if (savedCV.status === "fulfilled") {
+        setCV(savedCV.value);
+        setCVReadState("available");
+      } else {
+        // Preserve any already verified CV state and unsaved master editor
+        // during a transient network failure. Never turn it into "missing".
+        setCVReadState("unavailable");
+        setFlowMode(null); setFlowSelectedJob("");
+        // Stop a previously selected AutoApply batch after its in-flight job.
+        // A status failure is not authorization to continue against stale CV.
+        ++cvActionRevision.current;
+        activeCVSelection.current = "cv-read-unavailable:" + cvActionRevision.current;
+      }
       setFacts(profile.status === "fulfilled" ? profile.value.facts : []);
       setJobs(savedJobs.status === "fulfilled" ? savedJobs.value.jobs : []);
       setPrivateSavedJobs(bookmarks.status === "fulfilled" ? bookmarks.value.jobs : []);
@@ -487,7 +502,7 @@ export default function App() {
   // route. Hold the SAME immediate write barrier as upload and deletion,
   // including its post-save identity check and local document handoff.
   function beginCVEditorWrite(): symbol | null {
-    if (cvWriteInFlight.current) return null;
+    if (cvReadState !== "available" || cvWriteInFlight.current) return null;
     const token = Symbol("account-scoped-cv-editor-write");
     cvWriteInFlight.current = token;
     invalidateCVSelection();
@@ -505,6 +520,12 @@ export default function App() {
   }
 
   function startApplyFlow(chosen: ApplicationFlowMode, jobKey = "") {
+    if (cvReadState !== "available") {
+      setFlowMode(null); setFlowSelectedJob("");
+      navigate("dashboard");
+      setNotice("Your saved CV could not be verified. Retry the CV check before choosing an application method.");
+      return;
+    }
     // A job-card shortcut never skips the CV-first gate. Creating a draft
     // without a CV is impossible and must not visually select a method.
     if (!cv.present || busyCV || !!cvWriteInFlight.current) {
@@ -718,12 +739,18 @@ export default function App() {
     }
   }
 
-  const onUploadClick = () => uploadRef.current?.click();
+  const onUploadClick = () => {
+    if (cvReadState !== "available") {
+      setNotice("Your saved CV could not be verified. Retry the CV check before uploading or replacing it.");
+      return;
+    }
+    uploadRef.current?.click();
+  };
 
   async function onCVUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || cvWriteInFlight.current ||
+    if (!file || cvReadState !== "available" || cvWriteInFlight.current ||
         !confirmDiscardUnsaved("replace your current CV")) return;
     const writeToken = Symbol("signed-in-cv-replacement");
     cvWriteInFlight.current = writeToken;
@@ -733,7 +760,7 @@ export default function App() {
     setBusyCV(true); setNotice("");
     try {
       const uploaded = await runPrivateMutation((userId) => uploadCV(file, userId));
-      setCV(uploaded); setCVPreview(false);
+      setCV(uploaded); setCVReadState("available"); setCVPreview(false);
       // A replacement CV invalidates any old method/job selection, even when
       // uploaded from Apply. Step 2 must be a fresh applicant choice.
       setFlowMode(null); setFlowSelectedJob("");
@@ -756,7 +783,7 @@ export default function App() {
   }
 
   async function onDeleteCV() {
-    if (cvWriteInFlight.current ||
+    if (cvReadState !== "available" || cvWriteInFlight.current ||
         !window.confirm(
           (page === "profile" && unsavedDocumentRef.current.masterCV
             ? "Unsaved master CV edits will be discarded. " : "") +
@@ -770,7 +797,7 @@ export default function App() {
     setBusyCV(true);
     try {
       await runPrivateMutation((userId) => deleteCV(userId));
-      setCV({ present: false }); setCVPreview(false);
+      setCV({ present: false }); setCVReadState("available"); setCVPreview(false);
       setFlowMode(null); setFlowSelectedJob("");
       setNotice("Your CV was removed. Connect a new CV before selecting an application method.");
     } catch (exc) {
@@ -892,7 +919,7 @@ export default function App() {
   }
 
   async function onPrepareMyAutoDrafts() {
-    if (!preferences?.auto_draft_enabled || preferences.mode !== "personalized" ||
+    if (cvReadState !== "available" || !preferences?.auto_draft_enabled || preferences.mode !== "personalized" ||
         !preferences.roles.length || autoDraftBusy || busyCV ||
         !!cvWriteInFlight.current) return;
     const cvAtStart = activeCVSelection.current;
@@ -952,8 +979,8 @@ export default function App() {
     keys: string[], onProgress: (completed: number, total: number) => void,
     shouldStop: () => boolean = () => false, keepOnApply = false,
   ): Promise<AutoApplyBatchOutcome> {
-    if (cvWriteInFlight.current || busyCV) {
-      throw new Error("Your CV is being updated. Review the new CV before preparing jobs.");
+    if (cvReadState !== "available" || cvWriteInFlight.current || busyCV) {
+      throw new Error("Your CV status must be verified before preparing jobs.");
     }
     if (flowQueueInFlight.current) {
       throw new Error("An AutoApply preparation batch is already running.");
@@ -1106,8 +1133,8 @@ export default function App() {
   }
 
   async function onPrepare(canonicalKey: string) {
-    if (busyCV || cvWriteInFlight.current) {
-      setNotice("Your CV is being updated. Review it before preparing another application.");
+    if (cvReadState !== "available" || busyCV || cvWriteInFlight.current) {
+      setNotice("Your CV status must be verified before preparing another application.");
       return;
     }
     const actionIdentity = lastSessionIdentity.current;
@@ -1197,17 +1224,23 @@ export default function App() {
 
   const cvBlock = <section className="panel cv-panel">
     <div className="panel-heading"><div><p className="section-kicker">YOUR CAREER EVIDENCE</p><h2>Your CV</h2><p>Private, on this SmartPloy account.</p></div></div>
-    {cv.present ? <div className="uploaded-file">
+    {cvReadState === "checking" ? <div className="cv-no-file" role="status">
+      <RefreshCw size={23} aria-hidden="true"/><strong>Checking saved CV…</strong>
+      <span>CV actions unlock after SmartPloy verifies your private document.</span>
+    </div> : cvReadState === "unavailable" ? <div className="cv-no-file" role="alert">
+      <AlertCircle size={23} aria-hidden="true"/><strong>Saved CV status unavailable</strong>
+      <span>SmartPloy could not confirm whether a CV is saved. Retry before editing or replacing it.</span>
+    </div> : cv.present ? <div className="uploaded-file">
       <span className="file-icon"><FileText size={24} /></span>
       <div className="uploaded-file-name"><strong>{cv.filename}</strong><small><CheckCircle2 size={13} /> Uploaded · {Math.round((cv.size_bytes ?? 0) / 1024)} KB</small></div>
       <a className="icon-btn" title="Download CV" aria-label="Download your CV" href="/api/v1/profile/cv/download"><Download size={19} /></a>
     </div> : <div className="cv-no-file"><UploadCloud size={23} /><strong>No CV uploaded yet</strong><span>Upload a PDF or DOCX to create your private profile workspace.</span></div>}
     <div className="row-actions">
-      <button className="primary-btn" type="button" onClick={onUploadClick} disabled={busyCV}><UploadCloud size={17} /> {busyCV ? "Uploading…" : cv.present ? "Replace CV" : "Upload CV"}</button>
-      {cv.present ? <button className="outline-btn" type="button" onClick={() => setCVPreview(!cvPreview)}>{cvPreview ? "Hide preview" : "Review text"}</button> : null}
-      {cv.present ? <button className="icon-btn danger" type="button" aria-label="Delete CV" title="Delete uploaded CV" onClick={() => void onDeleteCV()} disabled={busyCV}><Trash2 size={18} /></button> : null}
+      <button className="primary-btn" type="button" onClick={onUploadClick} disabled={busyCV || cvReadState !== "available"}><UploadCloud size={17} /> {busyCV ? "Uploading…" : cvReadState !== "available" ? "CV check required" : cv.present ? "Replace CV" : "Upload CV"}</button>
+      {cvReadState === "available" && cv.present ? <button className="outline-btn" type="button" onClick={() => setCVPreview(!cvPreview)}>{cvPreview ? "Hide preview" : "Review text"}</button> : null}
+      {cvReadState === "available" && cv.present ? <button className="icon-btn danger" type="button" aria-label="Delete CV" title="Delete uploaded CV" onClick={() => void onDeleteCV()} disabled={busyCV}><Trash2 size={18} /></button> : null}
     </div>
-    {cv.present && cvPreview ? <div className="cv-text-preview"><strong>Extracted text for your review</strong><p>Text is not added to your approved profile automatically.</p><pre>{cv.text_preview || "No preview available."}</pre></div> : null}
+    {cvReadState === "available" && cv.present && cvPreview ? <div className="cv-text-preview"><strong>Extracted text for your review</strong><p>Text is not added to your approved profile automatically.</p><pre>{cv.text_preview || "No preview available."}</pre></div> : null}
     <p className="privacy-note"><LockKeyhole size={14} /> Your CV stays in SmartPloy. It is not submitted to employers or sent to ObumAI automatically.</p>
   </section>;
 
@@ -1388,6 +1421,8 @@ export default function App() {
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
             onOpenApplications={() => navigate("applications")}
             cvPresent={cv.present} cvFilename={cv.filename} busyCV={busyCV}
+            cvUnavailable={cvReadState === "unavailable"} cvChecking={cvReadState === "checking"} cvRetrying={refreshing}
+            onRetryCV={() => void load(true)}
             onUpload={onUploadClick} onCreateCV={() => navigate("profile")}/>
           {preferences && !preferences.completed ? <details className="flow-advanced-setup flow-dashboard-setup">
             <summary>Optional: set your job search preferences</summary>
@@ -1414,9 +1449,22 @@ export default function App() {
           <ReleaseStatus apiRevision={health?.release_revision} />
           <div className="page-intro"><div><p className="section-kicker">SMARTPLOY / {selectedNav?.label.toUpperCase()}</p><h1>{selectedNav?.label}</h1><p>{preferences?.mode === "general" ? "General search across current Finnish vacancies." : "Your private workspace, ranked by the search criteria you chose."}</p></div>
             {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Save job</button> : null}
-            {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}
+            {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}
+              disabled={busyCV || cvReadState !== "available"}><UploadCloud size={17} />
+              {cvReadState !== "available" ? "CV check required" : cv.present ? "Replace CV" : "Upload CV"}</button> : null}
           </div>
-          {page === "apply" ? <ApplicationJourney
+          {page === "apply" && cvReadState !== "available" ? <section className="panel"
+            role={cvReadState === "unavailable" ? "alert" : "status"}>
+            <h2>{cvReadState === "checking" ? "Checking your saved CV…" :
+              "Your saved CV could not be verified"}</h2>
+            <p>SmartPloy must verify your CV before opening an application method
+              or preparing a job. Existing drafts remain in My applications.</p>
+            {cvReadState === "unavailable" ? <button type="button" className="secondary-btn"
+              disabled={refreshing} onClick={() => void load(true)}>
+              {refreshing ? "Checking CV…" : "Retry CV check"}
+            </button> : null}
+          </section> : null}
+          {page === "apply" && cvReadState === "available" ? <ApplicationJourney
             key={accountViewKey} userId={session?.user_id || ""}
             cv={cv} mode={flowMode} selectedJobKey={flowSelectedJob}
             uploading={busyCV} preparing={preparing} queueBusy={flowQueueBusy}
@@ -1433,7 +1481,21 @@ export default function App() {
           {page === "training" ? <TrainingProgramsPanel /> : null}
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">
             {cvBlock}
-            <MasterCVEditor key={accountViewKey} expectedUserId={session?.user_id || ""}
+            {cvReadState === "unavailable" && unsavedDocumentRef.current.masterCV
+              ? <section className="panel" role="alert">
+                <h2>CV check failed — your unsaved edits are preserved</h2>
+                <p>The open editor remains on this page. Retry the CV check
+                  before saving; do not discard your unsaved changes.</p>
+                <button className="secondary-btn" type="button" disabled={refreshing}
+                  onClick={() => void load(true)}>{refreshing ? "Checking CV…" : "Retry CV check"}</button>
+              </section> : null}
+            {cvReadState !== "available" && !unsavedDocumentRef.current.masterCV
+              ? <section className="panel" role={cvReadState === "checking" ? "status" : "alert"}>
+              <h2>{cvReadState === "checking" ? "Checking your saved CV…" : "CV verification is temporarily unavailable"}</h2>
+              <p>Your saved CV may still exist. Its status must be checked before editing or replacing it.</p>
+              {cvReadState === "unavailable" ? <button className="secondary-btn" type="button" disabled={refreshing}
+                onClick={() => void load(true)}>{refreshing ? "Checking CV…" : "Retry CV check"}</button> : null}
+            </section> : <MasterCVEditor key={accountViewKey} expectedUserId={session?.user_id || ""}
               cv={cv} onUnsavedChange={reportMasterCVUnsaved}
               onSave={(text, expectedSha256) => runPrivateMutation(
                 (userId) => saveCVEditor(text, expectedSha256, userId)
@@ -1449,7 +1511,7 @@ export default function App() {
                 unsavedDocumentRef.current.masterCV = false;
                 invalidateCVSelection();
                 const firstCV = !cv.present && saved.present;
-                setCV(saved); setCVPreview(false);
+                setCV(saved); setCVReadState("available"); setCVPreview(false);
                 setFlowMode(null); setFlowSelectedJob("");
                 if (firstCV) {
                   // Creating a CV is equivalent to uploading one: immediately
@@ -1459,7 +1521,7 @@ export default function App() {
                 } else {
                   setNotice("Master CV saved. Revisit your application method and job documents before sending.");
                 }
-              }} />
+              }} />}
             {factPanel}</div><aside>{sidePanel}</aside></div> : null}
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}

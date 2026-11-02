@@ -2132,3 +2132,85 @@ describe("SP104 secure refresh after account switch", () => {
     } finally { confirmation.mockRestore(); }
   });
 });
+
+describe("SP109: verified CV status gates", () => {
+
+  it("keeps the chooser locked while the initial CV read is still pending", async () => {
+    let finishCV!: (value: Awaited<ReturnType<typeof api.getCV>>) => void;
+    const pending = new Promise<Awaited<ReturnType<typeof api.getCV>>>((resolve) => {
+      finishCV = resolve;
+    });
+    vi.mocked(api.getCV).mockReturnValue(pending);
+    render(<App/>);
+    expect(await screen.findByRole("heading", { name: "Checking your saved CV." })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Upload CV first" })).toBeNull();
+    const mode = screen.getByRole("button", { name: /Assisted.*Apply with AI/i }) as HTMLButtonElement;
+    expect(mode.disabled).toBe(true);
+    expect(mode.getAttribute("aria-describedby")).toBe("flow-start-cv-checking");
+    await act(async () => {
+      finishCV({ present: true, filename: "Previously saved CV.pdf", sha256: "a".repeat(64) });
+    });
+    expect(await screen.findByRole("heading", { name: "CV connected. Choose how to apply." })).toBeTruthy();
+    expect((screen.getByRole("button", { name: /Assisted.*Apply with AI/i }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("preserves unsaved editor text through a failed periodic CV read and recovery", async () => {
+    const storedCV = { present: true, filename: "Saved original.pdf", sha256: "a".repeat(64) };
+    vi.mocked(api.getCV).mockResolvedValue(storedCV);
+    // Capture the real App's 60-second background refresh, not the
+    // toolbar refresh that rightly asks before discarding unsaved edits.
+    const originalSetInterval = window.setInterval.bind(window);
+    let backgroundRefresh: (() => void) | undefined;
+    const timerSpy = vi.spyOn(window, "setInterval").mockImplementation(
+      (handler, timeout, ...args) => {
+        if (timeout === 60_000 && typeof handler === "function") {
+          backgroundRefresh = handler as () => void;
+          return 123456;
+        }
+        return originalSetInterval(handler, timeout, ...args);
+      },
+    );
+    try {
+      render(<App/>);
+      expect(await screen.findByRole("heading", { name: "CV connected. Choose how to apply." })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
+      fireEvent.click(screen.getByRole("button", { name: "Edit synthetic master CV" }));
+      vi.mocked(api.getCV).mockRejectedValueOnce(new Error("Synthetic timeout"));
+      expect(backgroundRefresh).toBeTypeOf("function");
+      await act(async () => { backgroundRefresh?.(); });
+      expect(await screen.findByRole("heading", { name: "CV check failed — your unsaved edits are preserved" })).toBeTruthy();
+      expect(screen.getByTestId("master-cv-editor")).toBeTruthy();
+      expect(screen.queryByText("No CV uploaded yet")).toBeNull();
+      expect(screen.getAllByRole("button", { name: "CV check required" }).length).toBeGreaterThan(0);
+      const beforeUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(beforeUnload);
+      expect(beforeUnload.defaultPrevented).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Retry CV check" }));
+      await waitFor(() => expect(api.getCV).toHaveBeenCalledTimes(3));
+      expect(await screen.findByRole("button", { name: "Edit synthetic master CV" })).toBeTruthy();
+      expect(screen.queryByRole("heading", { name: /CV check failed — your unsaved edits are preserved/i })).toBeNull();
+      const stillDirty = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(stillDirty);
+      expect(stillDirty.defaultPrevented).toBe(true);
+    } finally { timerSpy.mockRestore(); }
+  });
+  it("does not pretend a failed CV read means no file and recovers after a retry", async () => {
+    vi.mocked(api.getCV)
+      .mockRejectedValueOnce(new Error("Synthetic CV read unavailable"))
+      .mockResolvedValue({ present: true, filename: "My earlier CV.pdf", sha256: "a".repeat(64) });
+    render(<App/>);
+    expect(await screen.findByRole("heading", { name: "We couldn't verify your CV." })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Upload CV first" })).toBeNull();
+    expect((screen.getByRole("button", { name: /Apply manually/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/This is not proof that your CV was removed/i)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), { target: {
+      files: [new File(["fake"], "UnsafeReplacement.pdf", { type: "application/pdf" })],
+    } });
+    expect(api.uploadCV).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry CV check" }));
+    expect(await screen.findByRole("heading", { name: "CV connected. Choose how to apply." })).toBeTruthy();
+    expect((screen.getByRole("button", { name: /Apply manually/i }) as HTMLButtonElement).disabled).toBe(false);
+    expect(api.getCV).toHaveBeenCalledTimes(2);
+    expect(api.uploadCV).not.toHaveBeenCalled();
+  });
+});
