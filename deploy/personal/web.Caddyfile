@@ -38,6 +38,14 @@
         file_server
     }
 
+    # SP110: a real static local Playwright bundle, never the HTML SPA fallback.
+    @playwright_assistant path /smartploy-playwright-assistant.zip /smartploy-playwright-assistant.zip.sha256
+    handle @playwright_assistant {
+        header Cache-Control "no-store"
+        root * /srv
+        file_server
+    }
+
     handle {
         root * /srv
         try_files {path} /index.html
