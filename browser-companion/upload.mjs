@@ -51,7 +51,8 @@ export function exactGreenhouseForm(activeUrl, packetUrl) {
    The existing Lever-only final-click adapter stays unchanged. */
 export function exactAssistedForm(activeUrl, packetUrl) {
   if (exactLeverForm(activeUrl, packetUrl) ||
-      exactGreenhouseForm(activeUrl, packetUrl)) return true;
+      exactGreenhouseForm(activeUrl, packetUrl) ||
+      exactTalentAdoreForm(activeUrl, packetUrl)) return true;
   try {
     const current = new URL(activeUrl);
     const intended = new URL(packetUrl);
@@ -73,6 +74,22 @@ export function exactAssistedForm(activeUrl, packetUrl) {
   }
 }
 
+
+/* SP118: TalentAdore hosted exact-job form help only, never final submit.
+   The applicant opens the form in the visible browser. */
+export function exactTalentAdoreForm(activeUrl, packetUrl) {
+  try {
+    const page = new URL(activeUrl), intended = new URL(packetUrl);
+    return page.protocol === "https:" && intended.protocol === "https:" &&
+      page.hostname === "ats.talentadore.com" &&
+      intended.hostname === "ats.talentadore.com" &&
+      !page.username && !page.password && !intended.username && !intended.password &&
+      !page.port && !intended.port &&
+      !page.search && !page.hash && !intended.search && !intended.hash &&
+      /^\/apply\/[A-Za-z0-9_-]{1,120}\/[A-Za-z0-9_-]{5,30}\/?$/.test(intended.pathname) &&
+      page.pathname.replace(/\/+$/, "") === intended.pathname.replace(/\/+$/, "");
+  } catch { return false; }
+}
 
 /* SP47: observation-only scope for the existing three supported providers.
    No caller may infer final-click rights from this result. Reject ambiguous

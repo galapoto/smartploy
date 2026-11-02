@@ -1845,7 +1845,7 @@ export default function ApplicationStudio(props: {
           aria-label="Browser application assistant">
           <div className="studio-handoff-header">
             <div><p className="section-kicker">EMPLOYER APPLICATION</p><h4>Fill the employer's form</h4>
-              <p>Use the optional SmartPloy companion for reviewed contact details, ordinary answers and PDF assistance on supported Lever, Ashby and hosted Greenhouse forms. Greenhouse submission remains manual; Ashby requires separately authorized partner API rights and your fresh final approval.</p></div>
+              <p>Use the optional SmartPloy companion for reviewed contact details, ordinary answers and PDF assistance on supported Lever, Ashby, hosted Greenhouse and exact TalentAdore forms. TalentAdore requires you to open the form visibly and submit personally; no unattended final click is available. Ashby partner APIs require separate rights and approval.</p></div>
             <ExternalLink size={18} />
           </div>
           {employerAttempt?.previous_attempt_reserved ? (
@@ -1930,9 +1930,9 @@ export default function ApplicationStudio(props: {
             Playwright assistant ZIP, read its INSTALL.txt and run it with Python 3.11+
             and Playwright 1.55.0. It reuses the same short-lived reviewed packet
             and fills only unique, ordinary contact/cover-letter fields on supported
-            Lever, Ashby and Greenhouse pages after your explicit approval.
+            Lever, Ashby, hosted Greenhouse and TalentAdore pages after your explicit approval.
             It can attach the exact saved CV PDF only after a SECOND explicit approval
-            and digest verification. The local browser can also reuse the Chrome
+            and digest verification. On TalentAdore, first click "Hae tähän työpaikkaan" in the visible employer tab and inspect the opened form. The local browser can also reuse the Chrome
             companion question rules to show required employer questions and fill
             ONLY your own reviewed ordinary text answers once. Sensitive questions
             remain manual. Some employer websites upload immediately on file
@@ -1940,7 +1940,7 @@ export default function ApplicationStudio(props: {
             a reference-bearing employer confirmation using the original browser
             companion inspector, marked UNVERIFIED. The Playwright helper never
             clicks Submit or runs on our server.
-            Keep the Chrome companion for filling inside your existing signed-in browser.
+            TalentAdore receipt recognition is not verified: retain your employer email confirmation and mark an application manually. Keep the Chrome companion for filling inside your existing signed-in browser.
           </p>
           {handoffPacketText && selected.status === "draft" && !browserReceipt &&
             !partnerReceipt

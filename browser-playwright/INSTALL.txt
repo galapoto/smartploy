@@ -22,7 +22,9 @@ Preferred: connect once, fill from SmartPloy (applicant-local pairing)
    the terminal and click "Open reviewed employer form". Check the consent
    prompt: the local helper receives only the approved packet.
 4. A visible, isolated Chromium browser opens on the exact employer posting.
-   Navigate to its application form. Complete login or MFA yourself.
+   Navigate to its application form. On TalentAdore, click
+   "Hae tähän työpaikkaan" in the visible employer tab and then inspect.
+   Complete login or MFA yourself.
    Return to SmartPloy and click "Inspect current employer form".
 5. Review the suggested field names and click "Fill reviewed fields once".
    SmartPloy asks you to confirm explicitly. The helper verifies the exact
@@ -46,7 +48,11 @@ Preferred: connect once, fill from SmartPloy (applicant-local pairing)
    Salary, immigration, legal consent, EEO and other sensitive questions
    are listed for you to answer MANUALLY on the employer website.
    Any uncertain result is one-use: do not retry the same inputs blindly.
-8. Review everything in the visible browser. Confirm the employer actually
+8. Review everything in the visible browser. TalentAdore form fields and
+   conditional questions vary by employer: unsupported/custom fields must be
+   completed manually; do not infer answers. TalentAdore receipt detection is
+   not yet verified. Keep the employer confirmation email and record your own
+   application outcome in SmartPloy. Confirm the employer actually
    accepted the attached CV, or upload the CV manually if no eligible input
    was found. Answer salary/visa/legal/consent questions PERSONALLY. If you
    choose to apply, click the employer's Submit button PERSONALLY and save
@@ -98,7 +104,7 @@ SmartPloy local Playwright form assistant (SP110)
 ================================================
 
 First-party, applicant-controlled helper for supported hosted Lever, Ashby and
-Greenhouse job application forms. This is NOT an unattended auto-submit agent.
+Greenhouse and exact TalentAdore job application forms. This is NOT an unattended auto-submit agent.
 
 Requirements: desktop Linux, macOS or Windows, Python 3.11+, internet to
 install the official Playwright package and its pinned Chromium browser, and a
@@ -135,7 +141,9 @@ terms, security checks, CAPTCHA, anti-bot measures or required consent.
 
 Support scope: exact jobs.lever.co / jobs.eu.lever.co /apply,
 jobs.ashbyhq.com /application, and standard boards.greenhouse.io /
-job-boards.greenhouse.io /{board}/jobs/{numeric-id}. Embedded/custom ATS,
+job-boards.greenhouse.io /{board}/jobs/{numeric-id}, and
+ats.talentadore.com/apply/{slug}/{job-id} without tracking parameters.
+Embedded/custom ATS,
 iframe-only forms, arbitrary sites and unsupported fields remain manual.
 
 The existing Chrome extension remains the supported fallback for an already

@@ -1,6 +1,6 @@
 {
   "schema": "smartploy.integrated_release_candidate.sp115.v1",
-  "purpose": "Exact full reviewed CV-first source plus SP116 owner-private profile and SP117 time-limited Chrome question sync; SOURCE REVIEW ONLY.",
+  "purpose": "Reviewed CV-first SmartPloy SP115–SP118 dependency chain: optional private profile, Chrome sync and exact TalentAdore-assisted form demonstration; SOURCE REVIEW ONLY.",
   "base_main_sha": "804747bd9f01f999f9e806dcf96459bb215bb8f1",
   "source_head_sha": "d98881296081007c8e70447982cce67e847dcb94",
   "source_dependency_prs": [
@@ -31,36 +31,76 @@
   ],
   "source_artifacts": [
     {
-      "path": "AGENTS.md",
-      "git_blob_sha1": "89975b56e77872b6617ea7bc1017a61390c81682"
-    },
-    {
       "path": ".github/workflows/ci.yml",
       "git_blob_sha1": "b4db3fd6d10bf8304503950124e0ce62b8bf02d6"
     },
     {
-      "path": "browser-companion/logic.mjs",
-      "git_blob_sha1": "164f7a1aba14f7da21238a8577803b187a8d77ff"
+      "path": "AGENTS.md",
+      "git_blob_sha1": "89975b56e77872b6617ea7bc1017a61390c81682"
     },
     {
-      "path": "browser-companion/questions.mjs",
-      "git_blob_sha1": "b8873417f83c32bf03fcbf563814b2c00aec2794"
+      "path": "browser-companion/logic.mjs",
+      "git_blob_sha1": "e6f9c40478da733792f2d5aaf275a5ab3eaae1ee"
+    },
+    {
+      "path": "browser-companion/manifest.json",
+      "git_blob_sha1": "a076506420cd37e5ba94e2699303e28c0edc4a25"
+    },
+    {
+      "path": "browser-companion/page-question-sync.mjs",
+      "git_blob_sha1": "ce8bb3b7c40bbad97c242d66df3d74b080e264ac"
     },
     {
       "path": "browser-companion/page-questions.mjs",
       "git_blob_sha1": "cc0ffb78957c98abdb263789e3d2aa8195fd4249"
     },
     {
+      "path": "browser-companion/popup.html",
+      "git_blob_sha1": "3afb77e314baf72d319de879f668b113fda7c03b"
+    },
+    {
       "path": "browser-companion/popup.mjs",
-      "git_blob_sha1": "643be2228bfde9229aee490bf81a66c712ef2ad3"
+      "git_blob_sha1": "b1825f096dcd520176a3b7ff47c9994a32a7e858"
+    },
+    {
+      "path": "browser-companion/question-sync.mjs",
+      "git_blob_sha1": "94fc5711c8fb0ede0764e258cf2ee004ec762512"
+    },
+    {
+      "path": "browser-companion/questions.mjs",
+      "git_blob_sha1": "b8873417f83c32bf03fcbf563814b2c00aec2794"
+    },
+    {
+      "path": "browser-companion/tests/logic.test.mjs",
+      "git_blob_sha1": "c2c6e63a40bf1c1fe6279fe5f8d72f9803b95754"
+    },
+    {
+      "path": "browser-companion/tests/page-question-sync.test.mjs",
+      "git_blob_sha1": "a7420f1b7bed07725ca553380beba5786976356b"
+    },
+    {
+      "path": "browser-companion/tests/question-sync.test.mjs",
+      "git_blob_sha1": "1bf906b41f794d97234ca964d0986389362ccee7"
+    },
+    {
+      "path": "browser-companion/tests/upload.test.mjs",
+      "git_blob_sha1": "41c56327f1473d212d0d04b9ce724ea8a28a7cde"
+    },
+    {
+      "path": "browser-companion/upload.mjs",
+      "git_blob_sha1": "142050bf7649289aae857151b38f61d0af9e333d"
     },
     {
       "path": "browser-playwright/assistant.py",
-      "git_blob_sha1": "91bdc0a081574a1dceeb63d8dba5bbe0a0095838"
+      "git_blob_sha1": "e865d1148e75b2ee7cccfcb958fd06b5f11234ad"
     },
     {
       "path": "browser-playwright/bridge.py",
-      "git_blob_sha1": "a7eb4a4f2bba0f312ed7a2335004761f8e0f770c"
+      "git_blob_sha1": "4b83c02f620bd34dbac21053bf33bc22868feb85"
+    },
+    {
+      "path": "browser-playwright/INSTALL.txt",
+      "git_blob_sha1": "9d1c2adb6b80c7670505beedf0945045fd875821"
     },
     {
       "path": "deploy/personal/scripts/deploy.sh",
@@ -75,88 +115,80 @@
       "git_blob_sha1": "566a380822a670b7e66ae268aad0b914114184c6"
     },
     {
-      "path": "smartploy/api.py",
-      "git_blob_sha1": "8bb4ad6c0026e7b3b64e17855278c3b09833d3a8"
+      "path": "docs/SP116_PERSISTENT_APPLICATION_PROFILE.md",
+      "git_blob_sha1": "32c41d9ca553846cbe317e0bcce119ec6d38628c"
     },
     {
-      "path": "smartploy/browser_handoff.py",
-      "git_blob_sha1": "ff0b27eca7a455549e0e8a1b37da6b42a3ecae1d"
+      "path": "docs/SP117_CHROME_QUESTION_SYNC.md",
+      "git_blob_sha1": "20f98b76843f247a3ab7240c3da0f0923e06a918"
     },
     {
-      "path": "web/browser-tests/onboarding.e2e.ts",
-      "git_blob_sha1": "64d6c19da807cae3d0b110f54acce6fb46f73b3e"
-    },
-    {
-      "path": "web/scripts/package_playwright_assistant.py",
-      "git_blob_sha1": "0f62afbb74da53f8d20a335bc4a9abdd0b1c6846"
-    },
-    {
-      "path": "web/src/App.tsx",
-      "git_blob_sha1": "1404c9f80dbcc982151bab4be492ad1fc252158e"
-    },
-    {
-      "path": "web/src/ApplicationJourney.tsx",
-      "git_blob_sha1": "02c388fe3d6609e83ccb202a725040ec2c225878"
-    },
-    {
-      "path": "web/src/ApplicationStudio.tsx",
-      "git_blob_sha1": "9df3d029bc7958054e91758df8750d3feb353b22"
-    },
-    {
-      "path": "web/src/AuthorizedAutoApplyBatch.tsx",
-      "git_blob_sha1": "7fe72e0da22ff61f60ae7a68851eb51d6e615935"
-    },
-    {
-      "path": "web/src/LocalPlaywrightAssist.tsx",
-      "git_blob_sha1": "df0e4850e64ab17e4978cbc68c92ef9ae91e91c9"
-    },
-    {
-      "path": "web/src/StartChoices.tsx",
-      "git_blob_sha1": "0e39170a640d757ae2a680e21dc9fa4f6974ff33"
-    },
-    {
-      "path": "web/src/localPlaywrightBridge.ts",
-      "git_blob_sha1": "1ec7aa4fe52465608f38c646aa3f7d218e583d84"
-    },
-    {
-      "path": "web/src/types.ts",
-      "git_blob_sha1": "196580c6319a87cf3d4e4bc951f262be8e904704"
-    },
-    {
-      "path": "tests/test_autoapply_e2e_contract.py",
-      "git_blob_sha1": "7babcfe357e5aaad1c1483d905f810c2a52196c8"
-    },
-    {
-      "path": "smartploy/profile.py",
-      "git_blob_sha1": "4a8f618135bcea52d9fad1cc5e252d3a6c5fbe78"
-    },
-    {
-      "path": "smartploy/account_erasure.py",
-      "git_blob_sha1": "dde51024ff5fadd42f903d5fdc3151726536b4f6"
-    },
-    {
-      "path": "smartploy/application_question_memory.py",
-      "git_blob_sha1": "97d9ee54bd161a6eb1ba5cd16c77b52f82405e1d"
-    },
-    {
-      "path": "smartploy/profile_cv_suggestions.py",
-      "git_blob_sha1": "b9ead6600f05db2cdd41e6d7243023104ec71d9d"
+      "path": "docs/SP118_TALENTADORE_ASSISTED_DEMO.md",
+      "git_blob_sha1": "426e9bd8d6ac12a75771dccc3f4eb2de45d848ef"
     },
     {
       "path": "migrations/030_application_profile_questions.sql",
       "git_blob_sha1": "992659d60133ac8c4fa0ac824e7dacb2341f114b"
     },
     {
-      "path": "web/src/ApplicationProfilePanel.tsx",
-      "git_blob_sha1": "eb4c018a623343603a99bc4cba52294196df09db"
+      "path": "smartploy/account_erasure.py",
+      "git_blob_sha1": "dde51024ff5fadd42f903d5fdc3151726536b4f6"
     },
     {
-      "path": "web/src/ApplicationProfilePanel.test.tsx",
-      "git_blob_sha1": "499057f0e8da044ec82775f99af5ca104ae75ec7"
+      "path": "smartploy/api.py",
+      "git_blob_sha1": "8bb4ad6c0026e7b3b64e17855278c3b09833d3a8"
     },
     {
-      "path": "web/src/application-profile.css",
-      "git_blob_sha1": "bff4f24a59422eee6528a50854fcd2374ae39ffd"
+      "path": "smartploy/application_question_memory.py",
+      "git_blob_sha1": "97d9ee54bd161a6eb1ba5cd16c77b52f82405e1d"
+    },
+    {
+      "path": "smartploy/browser_handoff.py",
+      "git_blob_sha1": "fb3c34723f1e11b8b55eec91ed1836f1ff7272e2"
+    },
+    {
+      "path": "smartploy/profile_cv_suggestions.py",
+      "git_blob_sha1": "b9ead6600f05db2cdd41e6d7243023104ec71d9d"
+    },
+    {
+      "path": "smartploy/profile.py",
+      "git_blob_sha1": "4a8f618135bcea52d9fad1cc5e252d3a6c5fbe78"
+    },
+    {
+      "path": "tests/test_application_question_memory_oidc.py",
+      "git_blob_sha1": "9b784bc7f01a6965efe24724c4d1cac15e3f72fa"
+    },
+    {
+      "path": "tests/test_application_question_memory.py",
+      "git_blob_sha1": "c997e288837fe7837ad31b3af7516c7933b1f2de"
+    },
+    {
+      "path": "tests/test_autoapply_e2e_contract.py",
+      "git_blob_sha1": "7babcfe357e5aaad1c1483d905f810c2a52196c8"
+    },
+    {
+      "path": "tests/test_browser_handoff.py",
+      "git_blob_sha1": "e0c3d28db734d06fdb9e6fda5ad02ab275593508"
+    },
+    {
+      "path": "tests/test_playwright_assistant_chromium.py",
+      "git_blob_sha1": "4ff8f177c1eb4d3cb9f1c7bbc777f0c983f60128"
+    },
+    {
+      "path": "tests/test_playwright_assistant.py",
+      "git_blob_sha1": "baf3858b683c685311344f9d66ac5763f27bc974"
+    },
+    {
+      "path": "web/browser-tests/onboarding.e2e.ts",
+      "git_blob_sha1": "64d6c19da807cae3d0b110f54acce6fb46f73b3e"
+    },
+    {
+      "path": "web/scripts/package_companion.py",
+      "git_blob_sha1": "02d4e11b4a40f64c9c4179cc9d281c0937573f80"
+    },
+    {
+      "path": "web/scripts/package_playwright_assistant.py",
+      "git_blob_sha1": "0f62afbb74da53f8d20a335bc4a9abdd0b1c6846"
     },
     {
       "path": "web/src/api.ts",
@@ -167,52 +199,52 @@
       "git_blob_sha1": "a8e05e50c0f2f153e059e3a305118e375d2a8241"
     },
     {
+      "path": "web/src/App.tsx",
+      "git_blob_sha1": "1404c9f80dbcc982151bab4be492ad1fc252158e"
+    },
+    {
+      "path": "web/src/application-profile.css",
+      "git_blob_sha1": "bff4f24a59422eee6528a50854fcd2374ae39ffd"
+    },
+    {
+      "path": "web/src/ApplicationJourney.tsx",
+      "git_blob_sha1": "02c388fe3d6609e83ccb202a725040ec2c225878"
+    },
+    {
+      "path": "web/src/ApplicationProfilePanel.test.tsx",
+      "git_blob_sha1": "499057f0e8da044ec82775f99af5ca104ae75ec7"
+    },
+    {
+      "path": "web/src/ApplicationProfilePanel.tsx",
+      "git_blob_sha1": "eb4c018a623343603a99bc4cba52294196df09db"
+    },
+    {
+      "path": "web/src/ApplicationStudio.tsx",
+      "git_blob_sha1": "586fdc70f67c441fccb59bcf18d3195aec307cc0"
+    },
+    {
+      "path": "web/src/AuthorizedAutoApplyBatch.tsx",
+      "git_blob_sha1": "7fe72e0da22ff61f60ae7a68851eb51d6e615935"
+    },
+    {
       "path": "web/src/LocalPlaywrightAssist.test.tsx",
       "git_blob_sha1": "d3a80a854c20ca6879a52027c04a3e98312b5c1c"
     },
     {
-      "path": "tests/test_application_question_memory.py",
-      "git_blob_sha1": "c997e288837fe7837ad31b3af7516c7933b1f2de"
+      "path": "web/src/LocalPlaywrightAssist.tsx",
+      "git_blob_sha1": "df0e4850e64ab17e4978cbc68c92ef9ae91e91c9"
     },
     {
-      "path": "tests/test_application_question_memory_oidc.py",
-      "git_blob_sha1": "9b784bc7f01a6965efe24724c4d1cac15e3f72fa"
+      "path": "web/src/localPlaywrightBridge.ts",
+      "git_blob_sha1": "1ec7aa4fe52465608f38c646aa3f7d218e583d84"
     },
     {
-      "path": "docs/SP116_PERSISTENT_APPLICATION_PROFILE.md",
-      "git_blob_sha1": "32c41d9ca553846cbe317e0bcce119ec6d38628c"
+      "path": "web/src/StartChoices.tsx",
+      "git_blob_sha1": "0e39170a640d757ae2a680e21dc9fa4f6974ff33"
     },
     {
-      "path": "browser-companion/popup.html",
-      "git_blob_sha1": "4b2bb426dcc9cf502075a21f41bf9a343ae152f9"
-    },
-    {
-      "path": "browser-companion/manifest.json",
-      "git_blob_sha1": "a076506420cd37e5ba94e2699303e28c0edc4a25"
-    },
-    {
-      "path": "browser-companion/question-sync.mjs",
-      "git_blob_sha1": "94fc5711c8fb0ede0764e258cf2ee004ec762512"
-    },
-    {
-      "path": "browser-companion/page-question-sync.mjs",
-      "git_blob_sha1": "ce8bb3b7c40bbad97c242d66df3d74b080e264ac"
-    },
-    {
-      "path": "browser-companion/tests/question-sync.test.mjs",
-      "git_blob_sha1": "1bf906b41f794d97234ca964d0986389362ccee7"
-    },
-    {
-      "path": "browser-companion/tests/page-question-sync.test.mjs",
-      "git_blob_sha1": "a7420f1b7bed07725ca553380beba5786976356b"
-    },
-    {
-      "path": "web/scripts/package_companion.py",
-      "git_blob_sha1": "02d4e11b4a40f64c9c4179cc9d281c0937573f80"
-    },
-    {
-      "path": "docs/SP117_CHROME_QUESTION_SYNC.md",
-      "git_blob_sha1": "20f98b76843f247a3ab7240c3da0f0923e06a918"
+      "path": "web/src/types.ts",
+      "git_blob_sha1": "196580c6319a87cf3d4e4bc951f262be8e904704"
     }
   ],
   "scope": {
@@ -277,5 +309,22 @@
     "review_status": "PENDING_INDEPENDENT_SECURITY_AND_PRODUCTION_APPROVAL",
     "independent_approval_received": false,
     "production_deployed": false
+  },
+  "sp118_extension": {
+    "depends_on_prs": [
+      281,
+      282,
+      283
+    ],
+    "base_sha": "abc120740c3967ae504afd5803b7c597571dbd8e",
+    "reviewed_public_target": "https://ats.talentadore.com/apply/junior-analyst/m6rpoy",
+    "scope": "reviewed_talentadore_form_fill_and_separate_exact_cv_attach_only",
+    "pinned_paths": 54,
+    "real_employer_form_verified": false,
+    "real_applicant_submitted": false,
+    "unattended_employer_submission_authorized": false,
+    "production_deployed": false,
+    "independent_approval_received": false,
+    "review_status": "SOURCE_REVIEW_HOLD"
   }
 }

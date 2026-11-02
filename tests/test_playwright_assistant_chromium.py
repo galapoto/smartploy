@@ -421,3 +421,118 @@ def test_sp114_chromium_denies_question_fill_after_other_employer_job():
             assert page.evaluate("window.submits") == 0
         finally:
             browser.close()
+
+# SP118: This page is synthetic, intercepted inside local Chromium; no real
+# HOK-Elanto job site, applicant identity or employer submission is contacted.
+SP118_TALENTADORE_URL = "https://ats.talentadore.com/apply/junior-analyst/m6rpoy"
+SP118_TALENTADORE_HTML = """<!doctype html><html lang="fi"><head>
+<meta charset="utf-8"><title>Junior Analyst | HOK-Elanto — synthetic form</title>
+</head><body><h1>Junior Analyst · HOK-Elanto (synthetic test)</h1>
+<form id="application-form">
+<label for="given">Etunimi</label><input id="given" name="first_name" autocomplete="given-name" required>
+<label for="family">Sukunimi</label><input id="family" name="last_name" autocomplete="family-name" required>
+<label for="email">Sähköposti</label><input id="email" name="email" type="email" autocomplete="email" required>
+<label for="letter">Saatekirje</label><textarea id="letter" name="cover_letter"></textarea>
+<label for="resume">Ansioluettelo (PDF)</label>
+<input id="resume" name="cv" type="file" accept="application/pdf" required>
+<label for="wage">Palkkatoive</label><input id="wage" name="salaryExpectation" type="text">
+<label for="visa">Työlupa</label><input id="visa" name="visaStatus" type="text">
+<label for="gdpr">Tietosuojaseloste</label><input id="gdpr" name="gdprConsent" type="checkbox" required>
+<button type="submit">Lähetä hakemus</button></form>
+<script>
+window.submits=0;window.fileChanges=0;
+document.querySelector("form").addEventListener("submit",event=>{
+  event.preventDefault();window.submits++;
+});
+document.querySelector("#resume").addEventListener("change",()=>window.fileChanges++);
+</script></body></html>"""
+
+
+def test_sp118_talentadore_reviewed_chromium_autofill_and_exact_cv_no_submit():
+    """Applicant-controlled demo on the EXACT public job URL but synthetic DOM."""
+    p = packet(SP118_TALENTADORE_URL)
+    p["cv_pdf_sha256"] = sha256(SP112_PDF).hexdigest()
+    p["cv_pdf_size"] = len(SP112_PDF)
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(viewport={"width": 1200, "height": 900})
+            external = []
+            def route_synthetic(route):
+                if route.request.url != SP118_TALENTADORE_URL:
+                    external.append(route.request.url)
+                    route.abort()
+                else:
+                    route.fulfill(status=200, content_type="text/html",
+                                  body=SP118_TALENTADORE_HTML)
+            page.route("**/*", route_synthetic)
+            page.goto(SP118_TALENTADORE_URL, wait_until="domcontentloaded")
+            assert assistant.same_reviewed_form(p["application_url"], page.url)
+            rows = assistant.inspect_page(page)
+            plan = assistant.plan_fields(rows, p)
+            assert [item["key"] for item in plan] == [
+                "first_name", "last_name", "email", "cover_letter",
+            ]
+            outcome = assistant.fill_reviewed_page(page, p, plan, rows)
+            assert outcome == {
+                "filled": 4, "planned": 4,
+                "stopped_on_change": False, "submitted": False, "uploaded": False,
+            }
+            assert page.locator("#given").input_value() == "Applicant"
+            assert page.locator("#family").input_value() == "Example"
+            assert page.locator("#email").input_value() == "person@example.invalid"
+            assert page.locator("#letter").input_value() == p["fields"]["cover_letter"]
+            # Salary, work authorization and legal consent NEVER guessed.
+            assert page.locator("#wage").input_value() == ""
+            assert page.locator("#visa").input_value() == ""
+            assert page.locator("#gdpr").is_checked() is False
+            assert page.evaluate("window.submits") == 0
+            file_field = assistant.choose_cv_attachment(rows)
+            assert file_field is not None and file_field["name"] == "cv"
+            result = assistant.attach_reviewed_cv_pdf(
+                page, p, rows, file_field, SP112_PDF, SP118_TALENTADORE_URL,
+            )
+            assert result == {
+                "attached_locally": True, "employer_upload_confirmed": False,
+                "submitted": False,
+            }
+            assert page.evaluate("window.fileChanges") == 1
+            assert page.evaluate("window.submits") == 0
+            assert external == []
+            # Public CI artifact contains ONLY fictional applicant and fake ATS
+            # fixture, not the user's private CV/profile or real employer HTML.
+            from pathlib import Path
+            screenshot = Path(__file__).resolve().parents[1] / "web" / "browser-evidence" / "sp118-talentadore-synthetic.png"
+            screenshot.parent.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(screenshot), full_page=True)
+        finally:
+            browser.close()
+
+
+def test_sp118_talentadore_dynamic_question_change_stops_autofill_without_submit():
+    p = packet(SP118_TALENTADORE_URL)
+    html = SP118_TALENTADORE_HTML.replace(
+        "</body>",
+        """<script>document.querySelector("#given").addEventListener("input",()=>{
+          const item=document.createElement("input");
+          item.id="conditional";item.name="conditional_question";
+          document.querySelector("form").append(item);
+        });</script></body>""",
+    )
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=html,
+            ))
+            page.goto(SP118_TALENTADORE_URL)
+            rows = assistant.inspect_page(page)
+            planned = assistant.plan_fields(rows, p)
+            result = assistant.fill_reviewed_page(page, p, planned, rows)
+            assert result["filled"] == 1
+            assert result["stopped_on_change"] is True
+            assert page.locator("#family").input_value() == ""
+            assert page.evaluate("window.submits") == 0
+        finally:
+            browser.close()

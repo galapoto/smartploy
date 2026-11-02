@@ -8,7 +8,7 @@ First-party reuse/adaptation (not a new general browser agent):
   employer hosts, ordinary-contact field matching and sensitive-field denial.
 
 The browser runs on the applicant's own computer. Only exact approved hosted
-Lever/Ashby/Greenhouse forms are supported. The legacy CLI never
+Lever/Ashby/Greenhouse/TalentAdore forms are supported. The legacy CLI never
 uploads, and the paired SP112 bridge attaches ONLY the exact reviewed
 CV PDF after separate user approval. No submit/click, CAPTCHA bypass,
 credential collection, hidden browser or background employer actions.
@@ -64,6 +64,7 @@ ASHBY_PATH = re.compile(
     rf"/[A-Za-z0-9_-]{{1,100}}/[A-Za-z0-9_-]{{1,160}}(?:/application/?)?\Z"
 )
 GH_PATH = re.compile(r"/[A-Za-z0-9_-]{1,100}/jobs/[0-9]{1,20}/?\Z")
+TALENTADORE_PATH = re.compile(r"/apply/[A-Za-z0-9_-]{1,120}/[A-Za-z0-9_-]{5,30}/?\Z")
 
 READ_FIELDS_JS = """
 els => els.map((el, index) => {
@@ -125,6 +126,14 @@ def same_reviewed_form(posting_url: str, current_url: str) -> bool:
             return False
         base = re.sub(r"/application/?$", "", p.path).rstrip("/")
         return c.path.rstrip("/") == base + "/application"
+    if p.hostname == "ats.talentadore.com":
+        # SP118: accept only the exact hosted posting id and slug. The
+        # applicant opens the form visibly from its original job page.
+        return (
+            c.hostname == "ats.talentadore.com"
+            and TALENTADORE_PATH.fullmatch(p.path) is not None
+            and c.path.rstrip("/") == p.path.rstrip("/")
+        )
     if p.hostname in {"boards.greenhouse.io", "job-boards.greenhouse.io"}:
         return (
             c.hostname in {"boards.greenhouse.io", "job-boards.greenhouse.io"}
@@ -184,7 +193,7 @@ def validate_packet(raw: Any, *, now: datetime | None = None) -> dict[str, Any]:
         for suffix in ("/apply", "/application", "")
     ):
         # Greenhouse form URL is its original exact job URL.
-        raise PacketError("Only exact hosted Lever, Ashby and Greenhouse forms are supported")
+        raise PacketError("Only exact hosted Lever, Ashby, Greenhouse and TalentAdore forms are supported")
     f = raw.get("fields")
     if not isinstance(f, dict) or set(f) != set(FIELD_NAMES) or any(
         not isinstance(f[name], str) for name in FIELD_NAMES

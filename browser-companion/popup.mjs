@@ -544,7 +544,11 @@ async function onInspect() {
     }
     const candidate = planFields(result.result.elements, pkt);
     if (!candidate.actions.length && !candidate.skippedUploads.length) {
-      throw new PacketError("No supported empty fields or file inputs were found. Fill this application manually.");
+      throw new PacketError(
+        new URL(pkt.application_url).hostname === "ats.talentadore.com"
+          ? "Click Hae tähän työpaikkaan on the visible TalentAdore page, then inspect the form again. Do not click the final Submit button."
+          : "No supported empty fields or file inputs were found. Fill this application manually."
+      );
     }
     targetTabId = tab.id;
     currentPacket = pkt;
@@ -566,15 +570,18 @@ async function onInspect() {
     $("reserveFinal").disabled = !leverSubmit;
     $("check").disabled = !leverSubmit;
     $("approve").disabled = !leverSubmit;
-    const providerName = new URL(pkt.application_url).hostname === "jobs.ashbyhq.com"
-      ? "Ashby" : "Greenhouse";
-    $("resume").disabled = false;
-    $("receipt").disabled = false;
+    const providerHost = new URL(pkt.application_url).hostname;
+    const talentAdore = providerHost === "ats.talentadore.com";
+    const providerName = talentAdore ? "TalentAdore" :
+      providerHost === "jobs.ashbyhq.com" ? "Ashby" : "Greenhouse";
+    $("resume").disabled = talentAdore;
+    $("receipt").disabled = talentAdore;
     $("finalClaimInfo").textContent = leverSubmit ? "" :
       providerName + ": reviewed contacts, ordinary questions and CV PDF assistance only. " +
       "Submit personally on the employer website; no automatic final click. " +
-      "You may import a same-job, reference-bearing manual confirmation. " +
-      "Otherwise use I applied on employer site to track your own report.";
+      (talentAdore
+        ? "Receipt inspection has not been verified for TalentAdore. Keep the employer's confirmation email and track manually."
+        : "You may import a reference-bearing manual confirmation or track your own report.");
     $("uploadInfo").textContent = "";
     $("cvFile").value = "";
     $("attach").disabled = false;
