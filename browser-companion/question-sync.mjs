@@ -12,6 +12,7 @@ export const PENDING_QUESTION_SYNC_KEY = "smartploy.pending_questions.v1";
 export const PENDING_QUESTION_SYNC_MS = 5 * 60 * 1000;
 const HEX64 = /^[a-f0-9]{64}$/;
 const WORKSPACE = /^kit-[a-f0-9]{30}$/;
+const PRIVATE_VALUE = /https?:\/\/|\b\S+@\S+\.\S+/i;
 const ALLOWED_KEYS = [
   "schema", "workspace_id", "expected_revision",
   "expected_document_sha256", "expected_cv_pdf_sha256",
@@ -23,6 +24,7 @@ function checkedQuestion(row) {
   if (!row || typeof row !== "object" ||
       typeof row.label !== "string" || row.label.trim().length < 3 ||
       row.label.length > 150 || /[\x00-\x1f\x7f]/.test(row.label) ||
+      PRIVATE_VALUE.test(row.label) ||
       isSensitiveQuestion({
         label: row.label, id: row.expected_id,
         name: row.expected_name, placeholder: row.expected_placeholder,
@@ -33,7 +35,7 @@ function checkedQuestion(row) {
   for (const key of ["expected_id", "expected_name", "expected_placeholder"]) {
     const value = row[key] || "";
     if (typeof value !== "string" || value.length > 150 ||
-        /[\x00-\x1f\x7f]/.test(value)) {
+        /[\x00-\x1f\x7f]/.test(value) || PRIVATE_VALUE.test(value)) {
       throw new QuestionError("Invalid employer field identifier.");
     }
     answerFree[key] = value;
