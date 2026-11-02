@@ -2132,3 +2132,25 @@ describe("SP104 secure refresh after account switch", () => {
     } finally { confirmation.mockRestore(); }
   });
 });
+
+describe("SP109: verified CV status gates", () => {
+  it("does not pretend a failed CV read means no file and recovers after a retry", async () => {
+    vi.mocked(api.getCV)
+      .mockRejectedValueOnce(new Error("Synthetic CV read unavailable"))
+      .mockResolvedValue({ present: true, filename: "My earlier CV.pdf", sha256: "a".repeat(64) });
+    render(<App/>);
+    expect(await screen.findByRole("heading", { name: "We couldn't verify your CV." })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Upload CV first" })).toBeNull();
+    expect((screen.getByRole("button", { name: /Apply manually/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/This is not proof that your CV was removed/i)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), { target: {
+      files: [new File(["fake"], "UnsafeReplacement.pdf", { type: "application/pdf" })],
+    } });
+    expect(api.uploadCV).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry CV check" }));
+    expect(await screen.findByRole("heading", { name: "CV connected. Choose how to apply." })).toBeTruthy();
+    expect((screen.getByRole("button", { name: /Apply manually/i }) as HTMLButtonElement).disabled).toBe(false);
+    expect(api.getCV).toHaveBeenCalledTimes(2);
+    expect(api.uploadCV).not.toHaveBeenCalled();
+  });
+});
