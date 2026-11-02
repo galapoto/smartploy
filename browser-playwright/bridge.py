@@ -27,9 +27,6 @@ MAX_BAD_CODES = 5
 TRUSTED_ORIGINS = frozenset({
     "https://smartploy.komplyint.fi",
     "https://smartploy.obumai.com",
-    # Browser CI serves a local, synthetic Vite build with no applicant data.
-    "http://127.0.0.1:4173",
-    "http://localhost:4173",
 })
 CHALLENGES = (
     "captcha", "verify you are human", "security check", "i am not a robot",
@@ -262,6 +259,11 @@ def make_handler(state: BridgeState) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         server_version = "SmartPloyLocal/1"
         sys_version = ""
+
+        def setup(self) -> None:
+            super().setup()
+            # Single-threaded local HTTPServer must not hang on partial reads.
+            self.connection.settimeout(10)
 
         def log_message(self, _format: str, *_args: Any) -> None:
             # NEVER log request paths, headers or private applicant packet.
