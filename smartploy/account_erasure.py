@@ -252,7 +252,8 @@ class PostgresAccountErasureRepository:
 EXPECTED_OWNER_TABLES = frozenset({
     "smartploy_users", "smartploy_user_identities",
     "smartploy_user_profiles", "smartploy_sessions",
-    "smartploy_profile_facts", "smartploy_cv_files", "smartploy_cv_history",
+    "smartploy_profile_facts", "smartploy_application_profile_questions",
+    "smartploy_cv_files", "smartploy_cv_history",
     "smartploy_application_preparations", "smartploy_applications",
     "smartploy_application_workspaces", "smartploy_browser_receipts",
     "smartploy_application_agents",
@@ -312,6 +313,10 @@ def inspect_quarantined_account(
         ),
         "profile_facts": (
             "SELECT count(*) FROM smartploy_profile_facts WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "application_profile_questions": (
+            "SELECT count(*) FROM smartploy_application_profile_questions WHERE profile_id=%s",
             (profile_id,),
         ),
         "cv_files": (
