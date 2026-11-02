@@ -319,6 +319,9 @@ jobs:
           # SP45: compare current source ZIP to the real Caddy download before
           # considering this source artifact a verified release candidate.
           bash deploy/personal/scripts/assert-companion-release.sh smartploy.obumai.com 18091
+          # SP110: same source-to-running-Caddy ZIP parity for the reused
+          # local Playwright assistant. No applicant or employer traffic.
+          bash deploy/personal/scripts/assert-playwright-release.sh smartploy.obumai.com 18091
           # Negative control: tag an unrelated existing image as a fake release;
           # the image-ID gate must detect that the running containers are stale.
           BAD_SHA="0000000000000000000000000000000000000000"
