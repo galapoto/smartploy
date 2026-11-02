@@ -52,6 +52,80 @@ def reviewed_receipt_script() -> bytes:
     return script.encode("utf-8")
 
 
+# SP114: DO NOT build another employer-question mapper. Recompile the original
+# owner-reviewed MV3 logic.mjs, questions.mjs, page-questions.mjs and popup's
+# inspectForm() into one deterministic self-contained Playwright expression.
+QUESTION_LOGIC = ROOT / "browser-companion/logic.mjs"
+QUESTION_POLICY = ROOT / "browser-companion/questions.mjs"
+QUESTION_FILLER = ROOT / "browser-companion/page-questions.mjs"
+FORM_START = "function inspectForm()"
+FORM_END = "\n/* Strictly fill only"
+
+
+def reviewed_questions_script() -> bytes:
+    logic = QUESTION_LOGIC.read_text(encoding="utf-8")
+    questions = QUESTION_POLICY.read_text(encoding="utf-8")
+    filler = QUESTION_FILLER.read_text(encoding="utf-8")
+    popup = RECEIPT_OWNER_SOURCE.read_text(encoding="utf-8")
+    start = popup.find(FORM_START)
+    end = popup.find(FORM_END, start)
+    if start < 0 or end <= start or popup.count(FORM_START) != 1:
+        raise ValueError("The original browser companion form inspector changed")
+    form = popup[start:end].strip()
+    importer = 'import { identifyField } from "./logic.mjs";'
+    if questions.count(importer) != 1:
+        raise ValueError("The original question policy dependencies changed")
+    questions = questions.replace(importer, "")
+    for source, checks in (
+        (logic, ("export function identifyField(", "function unsafeContactMetadata(")),
+        (questions, ("export function planReviewedQuestions(", "export function validateReviewedAnswers(")),
+        (filler, ("export function fillReviewedAnswers(", "location.href !== inspectedUrl")),
+        (form, ("function inspectForm()", "allElementsCount: all.length")),
+    ):
+        if any(gate not in source for gate in checks):
+            raise ValueError("Original companion question security contract changed")
+    # 'export ' is the ONLY allowed transformation. Preserve original rules
+    # exactly; separate IIFEs prevent distinct modules' tidy() collisions.
+    script = (
+        "(request) => {\n"
+        "  const identifyField = (() => {\n"
+        + logic.replace("export ", "") + "\nreturn identifyField;\n})();\n"
+        "  const rules = (() => {\n"
+        + questions.replace("export ", "") +
+        "\nreturn {planReviewedQuestions, validateReviewedAnswers};\n})();\n"
+        + form + "\n"
+        + filler.replace("export ", "") + "\n"
+        "  if (!request || typeof request !== 'object' ||\n"
+        "      location.href !== request.inspectedUrl) {\n"
+        "    return {status:'blocked',reason:'The reviewed employer form changed.'};\n"
+        "  }\n"
+        "  const current = inspectForm();\n"
+        "  if (current.allElementsCount > 250 || current.url !== request.inspectedUrl) {\n"
+        "    return {status:'blocked',reason:'Employer fields changed or exceeded limit.'};\n"
+        "  }\n"
+        "  try {\n"
+        "    const plan = rules.planReviewedQuestions(current.elements);\n"
+        "    if (request.operation === 'inspect') {\n"
+        "      return {status:'inspected', questions:plan.questions,\n"
+        "              humanOnly:plan.humanOnly};\n"
+        "    }\n"
+        "    if (request.operation === 'fill' &&\n"
+        "        Array.isArray(request.reviewedQuestions) &&\n"
+        "        JSON.stringify(plan.questions) === JSON.stringify(request.reviewedQuestions)) {\n"
+        "      const actions = rules.validateReviewedAnswers(plan, request.values);\n"
+        "      return fillReviewedAnswers(actions, request.approvedUrl, request.inspectedUrl);\n"
+        "    }\n"
+        "    return {status:'blocked',reason:'Reviewed employer questions changed.'};\n"
+        "  } catch {\n"
+        "    return {status:'blocked',reason:'Review employer questions manually.'};\n"
+        "  }\n"
+        "}\n"
+    )
+    if len(script.encode("utf-8")) > MAX_SOURCE_BYTES:
+        raise ValueError("Compiled original question rules exceeded source limit")
+    return script.encode("utf-8")
+
+
 def reviewed_files() -> dict[str, bytes]:
     files = {}
     for name in FILES:
@@ -63,6 +137,7 @@ def reviewed_files() -> dict[str, bytes]:
             raise ValueError(f"Unreviewed or invalid Playwright assistant asset: {name}")
         files[name] = item.read_bytes()
     files["receipt-inspector.js"] = reviewed_receipt_script()
+    files["questions-review.js"] = reviewed_questions_script()
     if (
         b"def validate_packet(" not in files["assistant.py"]
         or b"def fill_reviewed_page(" not in files["assistant.py"]
