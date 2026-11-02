@@ -66,6 +66,7 @@ from .cv_job_matching import cv_job_matches
 from .cv_storage import CVArchiveNotFound, CVRevisionConflict, MemoryCVRepository, PostgresCVRepository
 from .cv_editor import render_editor_cv
 from .profile import FACT_TYPES, ProfileFact
+from .profile_cv_suggestions import cv_review_suggestions
 from .identity import (
     AuthenticatedPrincipal,
     IdentityRepository,
@@ -238,6 +239,11 @@ class ApplicationQuestionObservePayload(BaseModel):
     workspace_id: str = Field(min_length=1, max_length=160)
     expected_revision: int = Field(ge=1, le=2147483647)
     questions: list[ApplicationQuestionDescriptor] = Field(min_length=1, max_length=12)
+
+
+class CVProfileSuggestionsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm_inspect_saved_cv: StrictBool
 
 
 class ApplicationProfileModePayload(BaseModel):
@@ -1183,6 +1189,47 @@ def create_app(
         if not tenant.profile_repository.delete_fact(fact_id):
             raise HTTPException(status_code=404, detail="Profile fact not found")
         return {"deleted": True}
+
+    @app.post("/api/v1/profile/cv/suggest-facts")
+    def suggest_missing_profile_facts_from_cv(
+        payload: CVProfileSuggestionsPayload, request: Request,
+    ) -> JSONResponse:
+        """Exact private CV evidence only. All suggestions stay UNAPPROVED."""
+        tenant, _ = _application_profile_mutation_owner(request)
+        if not payload.confirm_inspect_saved_cv:
+            raise HTTPException(
+                status_code=422, detail="Applicant must request private CV inspection"
+            )
+        profile_id = tenant.profile_repository.profile_id
+        if app.state.application_question_memory.mode(profile_id) == "cv_only":
+            raise HTTPException(
+                status_code=409,
+                detail="CV-only profile does not extract or retain profile suggestions",
+            )
+        stored = app.state.cv_repository.get(profile_id)
+        if stored is None or not stored.text.strip():
+            raise HTTPException(status_code=409, detail="A readable private CV is required")
+        candidates = cv_review_suggestions(stored.text)
+        prior = {
+            (fact.fact_type, fact.value.strip().casefold())
+            for fact in tenant.profile_repository.list_facts()
+        }
+        created = 0
+        for item in candidates:
+            identity = (item.fact_type, item.value.casefold())
+            if identity in prior:
+                continue
+            # Preserve old approvals across repeated scans and overlapping CV
+            # replacements; never revoke or upgrade an existing career fact.
+            tenant.profile_repository.upsert_fact(item)
+            prior.add(identity)
+            created += 1
+        return JSONResponse({
+            "created": created, "already_known": len(candidates) - created,
+            "suggestions_are_approved": False,
+            "external_ai_forwarding": False,
+            "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
 
     @app.get("/api/v1/profile/cv")
     def get_cv(request: Request) -> dict[str, Any]:
