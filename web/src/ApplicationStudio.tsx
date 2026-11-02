@@ -1919,6 +1919,11 @@ export default function ApplicationStudio(props: {
             Select the extracted folder containing manifest.json. The companion
             runs only when you click it; it does not submit jobs in the background.
             It is not a Chrome Web Store install and does not update automatically.
+            To keep ordinary unanswered employer questions for later applications,
+            review them in the companion, return to your signed-in SmartPloy tab
+            and select Sync eligible questions within five minutes. Only question
+            prompts are temporarily queued; answers and CV files are never saved
+            by the extension. CV-only profile mode remembers nothing.
           </p>
           <p className="muted" aria-label="Playwright option and limitations">
             Prefer a visible Playwright session on your own desktop? Download the local

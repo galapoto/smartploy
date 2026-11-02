@@ -1,6 +1,6 @@
 {
   "schema": "smartploy.integrated_release_candidate.sp115.v1",
-  "purpose": "Full reviewed CV-first, Manual/Assisted/Authorized AutoApply source plus SP116 owner-private profile memory, CV-only option and CV suggestions; source verification only.",
+  "purpose": "Exact full reviewed CV-first source plus SP116 owner-private profile and SP117 time-limited Chrome question sync; SOURCE REVIEW ONLY.",
   "base_main_sha": "804747bd9f01f999f9e806dcf96459bb215bb8f1",
   "source_head_sha": "d98881296081007c8e70447982cce67e847dcb94",
   "source_dependency_prs": [
@@ -52,7 +52,7 @@
     },
     {
       "path": "browser-companion/popup.mjs",
-      "git_blob_sha1": "afa5252f3a83d8215502a5a06d76e3128c9ba2be"
+      "git_blob_sha1": "643be2228bfde9229aee490bf81a66c712ef2ad3"
     },
     {
       "path": "browser-playwright/assistant.py",
@@ -100,7 +100,7 @@
     },
     {
       "path": "web/src/ApplicationStudio.tsx",
-      "git_blob_sha1": "ad818131eeef7ccf02616196ca9e4ac2feeac374"
+      "git_blob_sha1": "9df3d029bc7958054e91758df8750d3feb353b22"
     },
     {
       "path": "web/src/AuthorizedAutoApplyBatch.tsx",
@@ -181,6 +181,38 @@
     {
       "path": "docs/SP116_PERSISTENT_APPLICATION_PROFILE.md",
       "git_blob_sha1": "32c41d9ca553846cbe317e0bcce119ec6d38628c"
+    },
+    {
+      "path": "browser-companion/popup.html",
+      "git_blob_sha1": "4b2bb426dcc9cf502075a21f41bf9a343ae152f9"
+    },
+    {
+      "path": "browser-companion/manifest.json",
+      "git_blob_sha1": "a076506420cd37e5ba94e2699303e28c0edc4a25"
+    },
+    {
+      "path": "browser-companion/question-sync.mjs",
+      "git_blob_sha1": "94fc5711c8fb0ede0764e258cf2ee004ec762512"
+    },
+    {
+      "path": "browser-companion/page-question-sync.mjs",
+      "git_blob_sha1": "ce8bb3b7c40bbad97c242d66df3d74b080e264ac"
+    },
+    {
+      "path": "browser-companion/tests/question-sync.test.mjs",
+      "git_blob_sha1": "1bf906b41f794d97234ca964d0986389362ccee7"
+    },
+    {
+      "path": "browser-companion/tests/page-question-sync.test.mjs",
+      "git_blob_sha1": "a7420f1b7bed07725ca553380beba5786976356b"
+    },
+    {
+      "path": "web/scripts/package_companion.py",
+      "git_blob_sha1": "02d4e11b4a40f64c9c4179cc9d281c0937573f80"
+    },
+    {
+      "path": "docs/SP117_CHROME_QUESTION_SYNC.md",
+      "git_blob_sha1": "20f98b76843f247a3ab7240c3da0f0923e06a918"
     }
   ],
   "scope": {
@@ -231,6 +263,18 @@
         "to": "196580c6319a87cf3d4e4bc951f262be8e904704"
       }
     ],
+    "independent_approval_received": false,
+    "production_deployed": false
+  },
+  "sp117_extension": {
+    "integrates_after_pr": 282,
+    "proposed_branch": "feature/sp117-chrome-question-profile-sync-20261102",
+    "pinned_paths": 46,
+    "use_same_origin_first_party_oidc": true,
+    "new_extension_host_permissions": false,
+    "stores_answers_or_cv_in_extension": false,
+    "automatic_unattended_employer_submission_authorized": false,
+    "review_status": "PENDING_INDEPENDENT_SECURITY_AND_PRODUCTION_APPROVAL",
     "independent_approval_received": false,
     "production_deployed": false
   }
