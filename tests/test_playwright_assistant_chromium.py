@@ -297,3 +297,127 @@ def test_sp113_observer_compiled_from_unmodified_original_chrome_source():
     assert "chrome.runtime" not in compiled
     assert "chrome.tabs" not in compiled
     assert compiled.count("async function inspectReceipt(") == 1
+
+
+SP114_FORM = """<!doctype html><html><head><meta charset="utf-8"></head><body>
+<form id="application">
+  <label for="name">Full Name</label>
+  <input id="name" name="full_name" type="text" value="Applicant Example" required>
+  <label for="project">Describe a project you led</label>
+  <textarea id="project" name="project_example" required></textarea>
+  <label for="tools">Which data tools have you used?</label>
+  <input id="tools" name="tools_experience" type="text" required maxlength="150">
+  <label for="visa">Do you need visa sponsorship?</label>
+  <input id="visa" name="visaStatus" type="text" required>
+  <label for="salary">Salary expectation</label>
+  <input id="salary" name="salaryExpectation" type="text" required>
+  <label for="consent">I agree to privacy terms</label>
+  <input id="consent" name="GDPRConsent" type="checkbox" required>
+  <button id="submit" type="submit">Submit application</button>
+</form>
+<script>
+window.inputEvents = 0; window.submits = 0;
+document.querySelector("form").addEventListener("input",() => window.inputEvents++);
+document.querySelector("form").addEventListener("submit",e=>{
+  e.preventDefault(); window.submits++;
+});
+</script></body></html>"""
+
+
+def test_sp114_real_chromium_original_question_planner_human_first_and_one_fill():
+    p = packet("https://jobs.lever.co/example/position")
+    target = p["application_url"] + "/apply"
+    script = load_module(
+        PACKAGER, "sp114_chrome_question_policy"
+    ).reviewed_questions_script().decode()
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            traffic = []
+            def route_request(route):
+                if route.request.method != "GET" or route.request.url != target:
+                    traffic.append(route.request.url)
+                    route.abort()
+                else:
+                    route.fulfill(
+                        status=200, content_type="text/html", body=SP114_FORM,
+                    )
+            page.route("**/*", route_request)
+            page.goto(target)
+            reviewed = assistant.inspect_reviewed_questions(page, p, script)
+            labels = [item["label"] for item in reviewed["questions"]]
+            assert labels == [
+                "Describe a project you led",
+                "Which data tools have you used?",
+            ]
+            assert "Do you need visa sponsorship?" in reviewed["human_only"]
+            assert "Salary expectation" in reviewed["human_only"]
+            assert "I agree to privacy terms" in reviewed["human_only"]
+            assert all(item["max_answer_length"] <= 1500 for item in reviewed["questions"])
+            result = assistant.fill_reviewed_questions(
+                page, p, script, reviewed,
+                ["Led a verified monitoring dashboard project.",
+                 "Used Python, SQL and Power BI on a verified task."],
+            )
+            assert result == {
+                "status": "filled_for_review",
+                "filled": 2, "planned": 2,
+                "submitted": False, "uploaded": False,
+            }
+            assert page.locator("#project").input_value().startswith("Led a")
+            assert page.locator("#tools").input_value().startswith("Used Python")
+            assert page.locator("#visa").input_value() == ""
+            assert page.locator("#salary").input_value() == ""
+            assert page.locator("#consent").is_checked() is False
+            assert page.evaluate("window.inputEvents") == 2
+            assert page.evaluate("window.submits") == 0
+            assert traffic == []
+        finally:
+            browser.close()
+
+
+def test_sp114_chromium_blocks_changed_question_identity_without_any_fill():
+    p = packet("https://jobs.lever.co/example/position")
+    url = p["application_url"] + "/apply"
+    script = load_module(PACKAGER, "sp114_questions_drift").reviewed_questions_script().decode()
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=SP114_FORM,
+            ))
+            page.goto(url)
+            reviewed = assistant.inspect_reviewed_questions(page, p, script)
+            page.locator("#project").evaluate('el => {el.name = "salaryExpected";}')
+            verdict = assistant.fill_reviewed_questions(
+                page, p, script, reviewed,
+                ["A truthful verified project", "A truthful verified toolset"],
+            )
+            assert verdict["status"] == "blocked"
+            assert verdict["filled"] == 0
+            assert page.locator("#project").input_value() == ""
+            assert page.locator("#tools").input_value() == ""
+            assert page.evaluate("window.submits") == 0
+        finally:
+            browser.close()
+
+
+def test_sp114_chromium_denies_question_fill_after_other_employer_job():
+    p = packet("https://jobs.lever.co/example/position")
+    script = load_module(PACKAGER, "sp114_questions_wrong_job").reviewed_questions_script().decode()
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=SP114_FORM,
+            ))
+            page.goto("https://jobs.lever.co/example/another-job/apply")
+            with pytest.raises(assistant.PacketError):
+                assistant.inspect_reviewed_questions(page, p, script)
+            assert page.locator("#project").input_value() == ""
+            assert page.evaluate("window.submits") == 0
+        finally:
+            browser.close()
