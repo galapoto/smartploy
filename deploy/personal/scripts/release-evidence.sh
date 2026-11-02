@@ -115,6 +115,12 @@ if ! COMPANION_FIELDS="$(bash "${SCRIPT_DIR}/assert-companion-release.sh" "${PRO
 fi
 [[ "${COMPANION_FIELDS}" == *"companion_release_verified=true"* ]] \
   || fail "companion release proof is incomplete"
+# SP110: independently attest the distinct applicant-local Playwright ZIP.
+if ! PLAYWRIGHT_FIELDS="$(bash "${SCRIPT_DIR}/assert-playwright-release.sh" "${PRODUCTION_HOST}" "${WEB_PORT}")"; then
+  fail "running Playwright ZIP/checksum differs from approved source"
+fi
+[[ "${PLAYWRIGHT_FIELDS}" == *"playwright_release_verified=true"* ]] \
+  || fail "Playwright release proof is incomplete"
 # SP74: never attest a healthy API while an older frontend is served by
 # Caddy. Optional public parity is performed only for first-party OIDC.
 WEB_RELEASE_ARGS=( "${DEPLOYED_SHA}" )
@@ -323,6 +329,7 @@ ${WEB_RELEASE_FIELDS}
 ${AGENT_ZERO_FIELDS}
 ${AUTO_DRAFT_FIELDS}
 ${COMPANION_FIELDS}
+${PLAYWRIGHT_FIELDS}
 latest_backup_file=${LATEST_BACKUP_FILE}
 latest_backup_sha256=${LATEST_BACKUP_SHA256}
 latest_backup_metadata_valid=${LATEST_BACKUP_METADATA_VALID}

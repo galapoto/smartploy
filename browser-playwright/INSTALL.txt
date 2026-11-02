@@ -1,0 +1,104 @@
+SmartPloy local Playwright form assistant (SP111)
+================================================
+
+Preferred: connect once, fill from SmartPloy (applicant-local pairing)
+--------------------------------------------------------------------
+1. Extract SmartPloy's reviewed ZIP to your own computer. Verify checksum.
+   Requires desktop Python 3.11+ and Chromium; install once in a venv:
+      python -m pip install playwright==1.55.0
+      python -m playwright install chromium
+2. In that extracted directory, start the OPTIONAL local helper:
+      python bridge.py
+   The terminal displays a temporary pairing code. Keep it private.
+   The helper listens ONLY at http://127.0.0.1:48741 on your computer, not
+   on SmartPloy's server or the public Internet. It never stores applicant
+   passwords, uploaded CV files, cookies from Chrome or employer credentials.
+   Leave this terminal running until you complete one application.
+3. In signed-in SmartPloy, prepare/review and save the exact CV and letter.
+   Under My applications > Fill the employer's form, click
+   "Prepare Playwright handoff (no clipboard)" to create the expiring
+   private packet in this browser tab without a clipboard copy.
+   Then find "Connect my local Playwright browser", enter the code shown in
+   the terminal and click "Open reviewed employer form". Check the consent
+   prompt: the local helper receives only the approved packet.
+4. A visible, isolated Chromium browser opens on the exact employer posting.
+   Navigate to its application form. Complete login or MFA yourself.
+   Return to SmartPloy and click "Inspect current employer form".
+5. Review the suggested field names and click "Fill reviewed fields once".
+   SmartPloy asks you to confirm explicitly. The helper verifies the exact
+   job, expiry, form/field metadata and one-use review before each input.
+   A field input may transmit immediately to the employer's website.
+6. Review everything in the visible browser. Upload your CV PDF and answer
+   any salary/visa/legal/consent questions PERSONALLY. If you choose to apply,
+   click the employer's own Submit button PERSONALLY, save its receipt, then
+   click "Stop local browser session" in SmartPloy or Ctrl+C in the helper.
+7. The helper is single-use. Restart it for a new application (new pairing
+   code). If local networking is blocked by your browser's security policy,
+   use the retained Chrome companion extension instead.
+
+Security: the browser sends requests ONLY to 127.0.0.1:48741 with
+credentials: omit and no referrer. The local helper accepts requests only
+from the two authorized SmartPloy production origins (plus isolated local
+test-origin ports), rejects DNS-rebinding Host headers and unknown origins,
+uses a time-limited one-use code and random in-memory session token, and
+allows at most one explicitly approved field-fill attempt. There is no
+remote server browser, background auto-submit or general-any-site control.
+No CAPTCHA/MFA bypass, hidden password/consent filling, file upload, retries
+after uncertain outcomes or automatic final employer click. The bridge does
+not keep applicant packets on disk; its temporary Chromium profile is
+destroyed after the helper stops. Chrome/Chromium may require local-network
+permission; a browser that denies this permission must fail closed.
+
+Alternative: original terminal-only one-job workflow (SP110)
+-------------------------------------------------------------
+SmartPloy local Playwright form assistant (SP110)
+================================================
+
+First-party, applicant-controlled helper for supported hosted Lever, Ashby and
+Greenhouse job application forms. This is NOT an unattended auto-submit agent.
+
+Requirements: desktop Linux, macOS or Windows, Python 3.11+, internet to
+install the official Playwright package and its pinned Chromium browser, and a
+graphical desktop session. Run the script ONLY on your own computer. The
+SmartPloy production server does not launch this browser.
+
+1. Extract the downloaded SmartPloy ZIP. Verify its sidecar .sha256 if desired.
+2. Inspect assistant.py. No employer secrets, CVs or signed-in sessions are
+   contained in this static download.
+3. In an isolated Python virtual environment install Playwright:
+      python -m pip install playwright==1.55.0
+      python -m playwright install chromium
+4. In SmartPloy, sign in, prepare a job-specific CV/letter and save after review.
+   Open My applications > Fill the employer's form, and click
+   "Copy approved autofill packet". The packet expires in 15 minutes.
+5. Open a terminal inside this extracted folder:
+      python assistant.py
+   Paste the current packet at the hidden-input prompt (do NOT save it to a
+   file or shell history). A new visible temporary Chromium profile opens.
+6. Navigate to the exact employer application form; sign in and solve any
+   login or MFA challenge personally. Return to the terminal, press Enter.
+7. Review the list of proposed ordinary contact/cover-letter fields. The list
+   does NOT print private values. Type "FILL REVIEWED FIELDS" only if you
+   accept that the employer website may transmit each field as it is entered.
+8. Inspect the completed fields, upload CV/PDF manually, answer sensitive
+   questions, agree to terms and click Submit manually if you choose to apply.
+   Press Enter after finishing to close the temporary browser session.
+
+If the approved form cannot be verified, a packet has expired, controls change
+or inputs are ambiguous, the runner stops. It never uploads a file, submits an
+application, retries a final employer action, reads browser cookies from your
+normal Chrome profile or connects to ObumAI server. It never bypasses employer
+terms, security checks, CAPTCHA, anti-bot measures or required consent.
+
+Support scope: exact jobs.lever.co / jobs.eu.lever.co /apply,
+jobs.ashbyhq.com /application, and standard boards.greenhouse.io /
+job-boards.greenhouse.io /{board}/jobs/{numeric-id}. Embedded/custom ATS,
+iframe-only forms, arbitrary sites and unsupported fields remain manual.
+
+The existing Chrome extension remains the supported fallback for an already
+signed-in Chrome session. This new helper is an optional standalone local
+Playwright runner; there is no browser extension auto-update or server-side
+installation. Tests against synthetic sites are NOT proof of a live employer
+submission. Do not share your SmartPloy packet or use an untrusted download.
+
+Source reuse: see docs/SP110_OBUMAI_PLAYWRIGHT_ASSIST.md in SmartPloy.
