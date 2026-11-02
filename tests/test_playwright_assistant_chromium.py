@@ -6,6 +6,8 @@ Run in browser CI after installing pinned Python Playwright + Chromium.
 """
 from __future__ import annotations
 
+from hashlib import sha256
+
 import pytest
 from test_playwright_assistant import assistant, packet
 
@@ -89,3 +91,128 @@ def test_sp110_real_chromium_dynamic_form_change_stops_before_next_field():
             assert page.evaluate("window.submissionCount") == 0
         finally:
             browser.close()
+
+
+SP112_PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n"
+SP112_HTML = """<!doctype html><html><head><meta charset="utf-8"></head><body>
+<form id="job-application">
+  <label for="full">Full Name</label><input id="full" name="full_name">
+  <label for="resume">Résumé</label>
+  <input type="file" id="resume" name="resume" accept="application/pdf">
+  <label for="cover-file">Cover Letter</label>
+  <input type="file" id="cover-file" name="cover_letter_file" accept="application/pdf">
+  <button type="submit">Submit</button>
+</form>
+<script>
+window.uploadEvents=0;window.submissions=0;
+document.querySelector("#resume").addEventListener("change",()=>window.uploadEvents++);
+document.querySelector("form").addEventListener("submit",e=>{
+  e.preventDefault();window.submissions++;
+});
+</script></body></html>"""
+
+
+def _reviewed_pdf_packet():
+    p = packet("https://jobs.lever.co/example/position")
+    p["cv_pdf_sha256"] = sha256(SP112_PDF).hexdigest()
+    p["cv_pdf_size"] = len(SP112_PDF)
+    return p
+
+
+def test_sp112_real_chromium_attaches_only_exact_reviewed_pdf_without_submit():
+    target = "https://jobs.lever.co/example/position/apply"
+    p = _reviewed_pdf_packet()
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            external_requests = []
+            def respond(route):
+                if route.request.url != target:
+                    external_requests.append(route.request.url)
+                    route.abort()
+                else:
+                    route.fulfill(status=200, content_type="text/html", body=SP112_HTML)
+            page.route("**/*", respond)
+            page.goto(target)
+            rows = assistant.inspect_page(page)
+            selected = assistant.choose_cv_attachment(rows)
+            assert selected is not None
+            assert selected["id"] == "resume"
+            result = assistant.attach_reviewed_cv_pdf(
+                page, p, rows, selected, SP112_PDF, target,
+            )
+            assert result == {
+                "attached_locally": True,
+                "employer_upload_confirmed": False,
+                "submitted": False,
+            }
+            cv = page.locator("#resume").evaluate(
+                "el => ({name:el.files[0]?.name,size:el.files[0]?.size})"
+            )
+            other = page.locator("#cover-file").evaluate("el => el.files.length")
+            assert cv == {"name": "smartploy-reviewed-cv.pdf", "size": len(SP112_PDF)}
+            assert other == 0
+            assert page.evaluate("window.uploadEvents") == 1
+            assert page.evaluate("window.submissions") == 0
+            assert external_requests == []
+        finally:
+            browser.close()
+
+
+def test_sp112_real_chromium_blocks_file_input_drift_and_bad_pdf():
+    target = "https://jobs.lever.co/example/position/apply"
+    p = _reviewed_pdf_packet()
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=SP112_HTML,
+            ))
+            page.goto(target)
+            original = assistant.inspect_page(page)
+            chosen = assistant.choose_cv_attachment(original)
+            assert chosen is not None
+            with pytest.raises(assistant.PacketError):
+                assistant.attach_reviewed_cv_pdf(
+                    page, p, original, chosen, SP112_PDF + b"extra", target,
+                )
+            with pytest.raises(assistant.PacketError):
+                assistant.attach_reviewed_cv_pdf(
+                    page, p, original, chosen, b"%PDF-spoof\n%%EOF\n", target,
+                )
+            page.locator("#resume").evaluate(
+                'el => {el.name="passport_upload";}',
+            )
+            with pytest.raises(assistant.PacketError):
+                assistant.attach_reviewed_cv_pdf(
+                    page, p, original, chosen, SP112_PDF, target,
+                )
+            assert page.locator("#resume").evaluate("el => el.files.length") == 0
+            assert page.evaluate("window.submissions") == 0
+        finally:
+            browser.close()
+
+
+def test_sp112_resume_selector_rejects_hidden_duplicate_and_nonpdf_fields():
+    rows = [
+        {"index": 0, "tag": "input", "type": "file",
+         "id": "resume", "name": "resume", "label": "Resume",
+         "accept": "image/jpeg", "visible": True, "inForm": True,
+         "disabled": False, "readonly": False,
+         "hasValue": False, "multiple": False},
+    ]
+    assert assistant.choose_cv_attachment(rows) is None
+    rows[0]["accept"] = ".pdf"
+    rows[0]["multiple"] = True
+    assert assistant.choose_cv_attachment(rows) is None
+    rows[0]["multiple"] = False
+    rows[0]["visible"] = False
+    assert assistant.choose_cv_attachment(rows) is None
+    rows[0]["visible"] = True
+    assert assistant.choose_cv_attachment(rows) == rows[0]
+    rows.append({**rows[0], "index": 1, "id": "other", "name": "other"})
+    assert assistant.choose_cv_attachment(rows) is None
+    rows[1]["label"] = "Cover Letter"
+    assert assistant.choose_cv_attachment(rows) == rows[0]
