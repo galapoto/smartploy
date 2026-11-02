@@ -1,0 +1,191 @@
+// @vitest-environment jsdom
+// @vitest-environment-options {"url":"https://smartploy.komplyint.fi/"}
+/** SP111: real UI interactions, fake loopback service, no network/employers. */
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+import { getSession } from "./api";
+import LocalPlaywrightAssist from "./LocalPlaywrightAssist";
+import { localBridgeOriginAllowed } from "./localPlaywrightBridge";
+
+vi.mock("./api", () => ({ getSession: vi.fn() }));
+
+const pairing = "synthetic-review-only-pairing-code";
+const localToken = "L".repeat(43);
+const planId = "P".repeat(22);
+const packet = JSON.stringify({
+  schema: "smartploy.browser_handoff.v2",
+  company: "Synthetic Employer", role_title: "QA Engineer",
+  application_url: "https://jobs.lever.co/example/role",
+  fields: { full_name: "Private Applicant", email: "private@example.invalid" },
+});
+const session = {
+  authenticated: true, user_id: "user-A", profile_id: "profile-A",
+  auth_source: "oidc", email: "same@example.invalid",
+};
+
+function mockReply(stage: "opened" | "inspected" | "filled" | "stopped") {
+  const values = {
+    opened: {
+      ok: true, stage: "opened", token: localToken,
+      company: "Synthetic Employer", role_title: "QA Engineer",
+      submitted: false, uploaded: false,
+    },
+    inspected: {
+      ok: true, stage: "inspected", plan_id: planId, total_controls: 3,
+      approved_fields: [{ key: "full_name", label: "Full Name" },
+        { key: "email", label: "Email" }],
+      submitted: false, uploaded: false,
+    },
+    filled: {
+      ok: true, stage: "filled", filled: 2, planned: 2,
+      stopped_on_change: false, submitted: false, uploaded: false,
+    },
+    stopped: { ok: true, stage: "stopped", submitted: false, uploaded: false },
+  };
+  return { ok: true, status: 200, json: async () => values[stage] };
+}
+
+const component = (enabled = true) => render(<LocalPlaywrightAssist
+  packetText={packet} enabled={enabled}
+  expectedUserId="user-A" expectedAuthSource="oidc"
+/>);
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.mocked(getSession).mockResolvedValue(session);
+  vi.stubGlobal("confirm", vi.fn(() => true));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.endsWith("/v1/prepare")) return mockReply("opened");
+    if (url.endsWith("/v1/inspect")) return mockReply("inspected");
+    if (url.endsWith("/v1/fill")) return mockReply("filled");
+    if (url.endsWith("/v1/stop")) return mockReply("stopped");
+    throw new Error("Unexpected route");
+  }));
+});
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+describe("SP111 paired browser review-first UI", () => {
+  it("only approved origins can connect, no hidden GET or unrelated website", () => {
+    expect(localBridgeOriginAllowed("https://smartploy.komplyint.fi")).toBe(true);
+    expect(localBridgeOriginAllowed("https://smartploy.obumai.com")).toBe(true);
+    expect(localBridgeOriginAllowed("https://evil.invalid")).toBe(false);
+    expect(localBridgeOriginAllowed("http://localhost:3000")).toBe(false);
+    component();
+    expect(screen.getByRole("region", { name: "Paired local Playwright browser" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open reviewed employer form" })
+      .hasAttribute("disabled")).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("pairs only with explicit consent, previews safe fields and fills once", async () => {
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: { value: pairing },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
+    expect(await screen.findByRole("button", { name: "Inspect current employer form" })).toBeTruthy();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, args] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:48741/v1/prepare");
+    expect(args.method).toBe("POST");
+    expect(args.credentials).toBe("omit");
+    expect(args.redirect).toBe("error");
+    expect(args.referrerPolicy).toBe("no-referrer");
+    expect(args.headers).not.toHaveProperty("Authorization");
+    expect(JSON.parse(String(args.body))).toEqual({ pairing_code: pairing, packet: JSON.parse(packet) });
+    expect(document.body.textContent).not.toContain("private@example.invalid");
+    expect(document.body.textContent).not.toContain(localToken);
+    expect(document.body.textContent).not.toContain(pairing);
+
+    fireEvent.click(screen.getByRole("button", { name: "Inspect current employer form" }));
+    expect(await screen.findByText("Full Name")).toBeTruthy();
+    expect(screen.getByText("Email")).toBeTruthy();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const inspected = vi.mocked(fetch).mock.calls[1] as [string, RequestInit];
+    expect(inspected[0]).toBe("http://127.0.0.1:48741/v1/inspect");
+    expect((inspected[1].headers as Record<string, string>).Authorization).toBe(
+      "Bearer " + localToken
+    );
+    expect(screen.getByRole("button", { name: "Fill reviewed fields once (never submit)" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Fill reviewed fields once (never submit)" }));
+    expect(await screen.findByText(/Field-fill action completed/)).toBeTruthy();
+    const filled = vi.mocked(fetch).mock.calls[2] as [string, RequestInit];
+    expect(filled[0]).toBe("http://127.0.0.1:48741/v1/fill");
+    expect(JSON.parse(String(filled[1].body))).toEqual({
+      plan_id: planId, confirmation: "FILL REVIEWED FIELDS",
+    });
+    expect(screen.queryByRole("button", {
+      name: "Fill reviewed fields once (never submit)",
+    })).toBeNull();
+    expect(screen.getByText(/application is NOT submitted/)).toBeTruthy();
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop local browser session" }));
+    expect(await screen.findByText(/Restart the helper for another job/)).toBeTruthy();
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect((vi.mocked(fetch).mock.calls[3][0] as string).endsWith("/v1/stop")).toBe(true);
+  });
+
+  it("blocks cross-account login changes before any local data transfer", async () => {
+    vi.mocked(getSession).mockResolvedValue({ ...session, user_id: "different-subject" });
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: { value: pairing },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
+    const errors = await screen.findAllByRole("alert");
+    expect(errors.some((node) => node.textContent?.includes("sign-in changed"))).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps unsafe/unsaved applications disabled without local requests", () => {
+    component(false);
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: { value: pairing },
+    });
+    const button = screen.getByRole("button", { name: "Open reviewed employer form" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(button);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on local-network denial; no fallback sends applicant data elsewhere", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("local network blocked"); }));
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: { value: pairing },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
+    const errors = await screen.findAllByRole("alert");
+    expect(errors.some((node) => node.textContent?.includes("local-network permission denied"))).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.every((call) =>
+      String(call[0]).startsWith("http://127.0.0.1:48741/")
+    )).toBe(true);
+    expect(screen.queryByRole("button", { name: "Inspect current employer form" })).toBeNull();
+  });
+
+  it("never retries a fill whose browser outcome is uncertain", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/v1/fill")) throw new Error("network disconnected after input");
+      if (url.endsWith("/v1/prepare")) return mockReply("opened");
+      if (url.endsWith("/v1/inspect")) return mockReply("inspected");
+      if (url.endsWith("/v1/stop")) return mockReply("stopped");
+      throw new Error("Unexpected route");
+    }));
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: { value: pairing },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
+    await screen.findByRole("button", { name: "Inspect current employer form" });
+    fireEvent.click(screen.getByRole("button", { name: "Inspect current employer form" }));
+    await screen.findByRole("button", { name: "Fill reviewed fields once (never submit)" });
+    fireEvent.click(screen.getByRole("button", { name: "Fill reviewed fields once (never submit)" }));
+    expect(await screen.findByText(/The fill attempt may have changed/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Local helper unavailable or local-network permission denied/)).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Fill reviewed fields once (never submit)" })).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+});
