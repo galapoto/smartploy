@@ -6,7 +6,9 @@ Run in browser CI after installing pinned Python Playwright + Chromium.
 """
 from __future__ import annotations
 
-from playwright.sync_api import sync_playwright
+import pytest
+
+sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 
 from test_playwright_assistant import assistant, packet
 
