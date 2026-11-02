@@ -21,6 +21,7 @@ import ApplicationAttemptAudit from "./ApplicationAttemptAudit";
 import AuthorizedAutoApplyBatch from "./AuthorizedAutoApplyBatch";
 import DocumentCoach from "./DocumentCoach";
 import DocumentComparison from "./DocumentComparison";
+import LocalPlaywrightAssist from "./LocalPlaywrightAssist";
 import { prepareAISummaryCV } from "./aiSummaryReview";
 import type { ApplicationFlowMode, ApplicationWorkspace, CVDocument, LocalAIStatus, LocalAISuggestion, LocalAIInferenceProof, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
@@ -1906,6 +1907,17 @@ export default function ApplicationStudio(props: {
             It never uploads your CV, submits an application or runs on our server.
             Keep the Chrome companion for filling inside your existing signed-in browser.
           </p>
+          {handoffPacketText && selected.status === "draft" && !browserReceipt &&
+            !partnerReceipt && employerAttempt?.previous_attempt_reserved !== true
+            ? <LocalPlaywrightAssist
+                key={props.expectedUserId + ":" + selected.workspace_id + ":" + selected.revision}
+                packetText={handoffPacketText}
+                expectedUserId={props.expectedUserId}
+                expectedAuthSource={props.expectedAuthSource}
+                enabled={handoff?.ready === true && !dirty && !busy &&
+                  !handoffBusy && !accountBlocked}
+              />
+            : null}
           {handoffPacketText ? <div className="studio-packet-fallback">
             <label htmlFor="smartploy-browser-packet">Private packet for your browser companion</label>
             <textarea id="smartploy-browser-packet" readOnly rows={4}
