@@ -253,6 +253,7 @@ EXPECTED_OWNER_TABLES = frozenset({
     "smartploy_users", "smartploy_user_identities",
     "smartploy_user_profiles", "smartploy_sessions",
     "smartploy_profile_facts", "smartploy_application_profile_questions",
+    "smartploy_application_profile_settings",
     "smartploy_cv_files", "smartploy_cv_history",
     "smartploy_application_preparations", "smartploy_applications",
     "smartploy_application_workspaces", "smartploy_browser_receipts",
@@ -317,6 +318,10 @@ def inspect_quarantined_account(
         ),
         "application_profile_questions": (
             "SELECT count(*) FROM smartploy_application_profile_questions WHERE profile_id=%s",
+            (profile_id,),
+        ),
+        "application_profile_settings": (
+            "SELECT count(*) FROM smartploy_application_profile_settings WHERE profile_id=%s",
             (profile_id,),
         ),
         "cv_files": (
