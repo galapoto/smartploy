@@ -28,6 +28,15 @@ const PROFILE_FIELDS = [
   {type:"language", label:"Languages", category:"Preferences"},
   {type:"domain", label:"Preferred industries", category:"Preferences"},
   {type:"preference", label:"Employment preferences", category:"Preferences"},
+  {type:"availability", label:"Availability window", category:"Preferences"},
+  {type:"employment_type", label:"Employment type", category:"Preferences"},
+  {type:"relocation", label:"Relocation flexibility", category:"Preferences"},
+  {type:"portfolio", label:"Portfolio site", category:"Online presence"},
+  {type:"website", label:"Personal website", category:"Online presence"},
+  {type:"work_authorization", label:"Work authorization (manual only)", category:"Sensitive"},
+  {type:"notice_period", label:"Notice period (manual only)", category:"Sensitive"},
+  {type:"salary_expectation", label:"Salary preference (manual only)", category:"Sensitive"},
+  {type:"references", label:"References (manual only)", category:"Sensitive"},
 ] as const;
 
 export function applicantProfileReadiness(facts: CandidateFact[]) {
