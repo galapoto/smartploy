@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   deleteApplicationQuestion, getApplicationQuestionMemory, getSession,
-  saveApplicationQuestionAnswer, setApplicationProfileMode,
+  saveApplicationQuestionAnswer, setApplicationProfileMode, suggestProfileFactsFromCV,
 } from "./api";
 import ApplicationProfilePanel, {applicantProfileReadiness} from "./ApplicationProfilePanel";
 import type { ApplicationProfileQuestion, CandidateFact } from "./types";
@@ -13,6 +13,7 @@ vi.mock("./api", () => ({
   deleteApplicationQuestion: vi.fn(), getApplicationQuestionMemory: vi.fn(),
   getSession: vi.fn(), saveApplicationQuestionAnswer: vi.fn(),
   setApplicationProfileMode: vi.fn(),
+  suggestProfileFactsFromCV: vi.fn(),
 }));
 
 const key = "c".repeat(64);
@@ -53,6 +54,10 @@ beforeEach(() => {
     employer_actions_performed:0,
     automatic_employer_submission_authorized:false,
   });
+  vi.mocked(suggestProfileFactsFromCV).mockResolvedValue({
+    created:3,already_known:1,suggestions_are_approved:false,
+    external_ai_forwarding:false,employer_actions_performed:0,
+  });
   vi.mocked(deleteApplicationQuestion).mockResolvedValue({
     deleted:true,employer_actions_performed:0,
   });
@@ -90,6 +95,21 @@ describe("SP116 guided complete profile / optional CV-only", () => {
     expect(await screen.findByText(/Answer saved in your private profile/)).toBeTruthy();
     expect(screen.getByText(/suggest on exact matching questions/)).toBeTruthy();
   });
+  it("SP116 saved CV facts remain unapproved until applicant reviews", async () => {
+    const onFactsSuggested = vi.fn();
+    render(<ApplicationProfilePanel expectedUserId="user-A"
+      facts={facts} cvPresent={true} cvVerified
+      onFactsSuggested={onFactsSuggested} />);
+    const button = await screen.findByRole("button", {
+      name: "Find reviewable facts in my CV",
+    });
+    fireEvent.click(button);
+    await waitFor(() => expect(suggestProfileFactsFromCV).toHaveBeenCalledWith("user-A"));
+    expect(onFactsSuggested).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/unapproved contact\/skill suggestion/)).toBeTruthy();
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+  });
+
   it("lets each applicant remove remembered questions", async () => {
     instance();
     await screen.findByRole("button", {name:"Remove question"});
