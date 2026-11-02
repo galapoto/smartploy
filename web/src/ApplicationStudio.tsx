@@ -1928,11 +1928,14 @@ export default function ApplicationStudio(props: {
             Lever, Ashby and Greenhouse pages after your explicit approval.
             It can attach the exact saved CV PDF only after a SECOND explicit approval
             and digest verification. Some employer websites upload immediately on file
-            input changes. It never clicks Submit or runs Playwright on our server.
+            input changes. After you submit personally, you can observe and save
+            a reference-bearing employer confirmation using the original browser
+            companion inspector, marked UNVERIFIED. The Playwright helper never
+            clicks Submit or runs on our server.
             Keep the Chrome companion for filling inside your existing signed-in browser.
           </p>
           {handoffPacketText && selected.status === "draft" && !browserReceipt &&
-            !partnerReceipt && employerAttempt?.previous_attempt_reserved !== true
+            !partnerReceipt
             ? <LocalPlaywrightAssist
                 key={props.expectedUserId + ":" + selected.workspace_id + ":" + selected.revision}
                 packetText={handoffPacketText}
@@ -1941,7 +1944,17 @@ export default function ApplicationStudio(props: {
                 expectedWorkspaceId={selected.workspace_id}
                 expectedRevision={selected.revision}
                 enabled={handoff?.ready === true && !dirty && !busy &&
-                  !handoffBusy && !accountBlocked}
+                  !handoffBusy && !accountBlocked &&
+                  employerAttempt?.previous_attempt_reserved !== true}
+                observationEnabled={!dirty && !busy && !handoffBusy &&
+                  !accountBlocked && !receiptBusy}
+                onReceiptImported={(receipt) => {
+                  setBrowserReceipt(receipt);
+                  setReceiptInput(""); setReceiptOpen(false);
+                  setMessage("The visible employer confirmation was recorded as " +
+                    "browser-observed and UNVERIFIED. The applicant submitted " +
+                    "personally; SmartPloy did not submit or verify the employer receipt.");
+                }}
               />
             : null}
           {handoffPacketText ? <div className="studio-packet-fallback">
