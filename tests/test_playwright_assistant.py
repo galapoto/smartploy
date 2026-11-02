@@ -88,7 +88,7 @@ def field(index, label, name, **overrides):
     ("https://jobs.lever.co/a/role", "http://jobs.lever.co/a/role/apply", False),
     ("https://jobs.lever.co/a/role", "https://jobs.lever.co:8443/a/role/apply", False),
     ("https://jobs.lever.co/a/role", "https://user:secret@jobs.lever.co/a/role/apply", False),
-]):
+])
 def test_sp110_exact_reviewed_employer_form_url(source, active, expected):
     assert assistant.same_reviewed_form(source, active) is expected
 
