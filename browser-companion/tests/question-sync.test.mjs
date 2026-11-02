@@ -44,10 +44,8 @@ test("temporary queue retains only safe question prompts, never answers, CV, URL
   const serialized = JSON.stringify(batch);
   for (const forbidden of [
     "PRIVATE ANSWER", "Never persist", "Do not persist", "jobs.ashbyhq",
-    "application_url", "fields", "bearer_token", "session_cookie",
+    "https://", "bearer_token", "session_cookie",
   ]) {
-    // "expected_fields_sha256" is a digest name, not private field content.
-    if (forbidden === "fields") continue;
     assert.equal(serialized.includes(forbidden), false, forbidden);
   }
   await queuePendingQuestions(store, batch);
