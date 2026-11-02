@@ -1,25 +1,27 @@
 # SP111 — Pair the existing ObumAI Playwright browser directly from SmartPloy
 
 Date: 2026-11-02. Implemented on existing
-\`feature/sp110-obumai-playwright-assist-20261102\` (PR #277), **not**
+`feature/sp110-obumai-playwright-assist-20261102` (PR #277), **not**
 a standalone new branch and **not** a production deployment.
 
 ## What now works in source
 
-The reviewed \`browser-playwright\` ZIP includes \`bridge.py\`, a tiny,
+The reviewed `browser-playwright` ZIP includes `bridge.py`, a tiny,
 explicitly launched Python-stdlib HTTP server listening **only** on the
-applicant's own \`127.0.0.1:48741\`. It reuses \`assistant.py\`'s
+applicant's own `127.0.0.1:48741`. It reuses `assistant.py`'s
 ObumAI-derived Playwright persistent browser session, exact-host/job
-inspection, safety/field mapping and \`locator.fill\`. It does not add a
+inspection, safety/field mapping and `locator.fill`. It does not add a
 server-side headless browser or second automation engine.
 
 In **My applications → Fill the employer's form**, after saving a
-reviewed job-specific CV/letter and generating the usual existing
-\`smartploy.browser_handoff.v2\` packet, a new
+reviewed job-specific CV/letter, choose **Prepare Playwright handoff (no
+clipboard)** to generate the existing `smartploy.browser_handoff.v2` packet
+in tab memory without a clipboard copy (the old clipboard button remains
+for the Chrome extension). A new
 **Connect my local Playwright browser** panel offers a complete in-page
 handoff with no packet pasted into a terminal per application:
 
-1. Install Python Playwright + Chromium once, run \`python bridge.py\` on
+1. Install Python Playwright + Chromium once, run `python bridge.py` on
    the applicant computer. A one-use pairing code appears in the terminal.
 2. Enter that code in SmartPloy's panel and explicitly approve sending the
    existing reviewed private packet **only to localhost**. A visible,
@@ -46,37 +48,37 @@ packets elsewhere. No login/password collection or CAPTCHA bypass.
 
 ## Reuse-first and REA
 
-- Pinned first-party original: \`obumai/obumellm\`
-  @ \`d682da2582ebfa3f013cf37dc542384fe605f303\`, files
-  \`obumellm/browser/fill.py\` and \`live_session.py\`: visible
-  \`launch_persistent_context\` and safe DOM fill, already adapted in SP110
-  \`browser-playwright/assistant.py\`. **SP111 shares the exact
-  \`start_visible_browser\` function** between legacy CLI and new bridge.
-- Pinned SmartPloy original: \`smartploy/browser_handoff.py\`, existing
-  OIDC owner-checked \`browser-packet\` API and original Chrome
-  \`browser-companion/logic.mjs\` field safety. No new applicant/backend
+- Pinned first-party original: `obumai/obumellm`
+  @ `d682da2582ebfa3f013cf37dc542384fe605f303`, files
+  `obumellm/browser/fill.py` and `live_session.py`: visible
+  `launch_persistent_context` and safe DOM fill, already adapted in SP110
+  `browser-playwright/assistant.py`. **SP111 shares the exact
+  `start_visible_browser` function** between legacy CLI and new bridge.
+- Pinned SmartPloy original: `smartploy/browser_handoff.py`, existing
+  OIDC owner-checked `browser-packet` API and original Chrome
+  `browser-companion/logic.mjs` field safety. No new applicant/backend
   identity store, employer rights, CV renderer or browser session code.
 - Bundles with original deterministic allowlisted Python stdlib ZIP
   package/checksum, existing frontend, Caddy static-origin parity and
   release proof checks (SP110). No remote code download in archive.
-- Official REA \`morluto/rea\` @
-  \`93b8b82db70279e40f484114cff9dc1958dc14ee\` was
+- Official REA `morluto/rea` @
+  `93b8b82db70279e40f484114cff9dc1958dc14ee` was
   source-inspected during SP110. **REA_BLOCKED** on available coding host:
   CLI/MCP was unavailable and npm acquisition DNS failed. No recovered
   binaries/decompilation or tool-generated REA traces are asserted.
   Readable, authorized first-party code was directly reused;
-  \`savings=unknown\` without measured scratch baseline. Do not use REA
+  `savings=unknown` without measured scratch baseline. Do not use REA
   to inspect unrelated employer sites without authorization.
 
 ## Strict security controls
 
-- \`bridge.py\` uses \`HTTPServer\` on 127.0.0.1:48741, accepts only
+- `bridge.py` uses `HTTPServer` on 127.0.0.1:48741, accepts only
   POST and CORS preflight for exact allowed first-party SmartPloy origins
   only. Local Vite previews are deliberately excluded from production
-  helper access. Exact loopback \`Host\` prevents DNS
+  helper access. Exact loopback `Host` prevents DNS
   rebinding. No cookies/CORS credentials. Hard request-body size limit;
-  no URLs or raw packet values printed; \`Cache-Control: no-store\`;
-  \`Access-Control-Allow-Private-Network\` only for trusted origins.
+  no URLs or raw packet values printed; `Cache-Control: no-store`;
+  `Access-Control-Allow-Private-Network` only for trusted origins.
 - Random pairing code expires in 30 minutes, locks after five bad tries,
   is usable only once, and never appears in HTTP responses. The helper
   issues a separate, random in-memory session token for subsequent steps.
@@ -101,23 +103,23 @@ packets elsewhere. No login/password collection or CAPTCHA bypass.
 ## Tests and release posture
 
 Python:
-- \`tests/test_playwright_assistant.py\` verifies original v2 packet,
+- `tests/test_playwright_assistant.py` verifies original v2 packet,
   expiry, contact-hash and exact ATS safety.
-- \`tests/test_playwright_assistant_chromium.py\` executes real
+- `tests/test_playwright_assistant_chromium.py` executes real
   ObumAI-derived Playwright filling against offline synthetic forms.
-- \`tests/test_playwright_local_bridge.py\` verifies pairing lockout,
+- `tests/test_playwright_local_bridge.py` verifies pairing lockout,
   token and exact origin/Host CORS guards via real loopback HTTP,
   private-field non-disclosure, one-shot action, DOM changes, stale
   packet rejection, stop/recovery.
-- \`tests/test_playwright_release_gate.py\` plus existing Docker
+- `tests/test_playwright_release_gate.py` plus existing Docker
   release checks enforce byte-for-byte source ZIP parity, real 404
   vs SPA fallback and sha256 checks.
 
 Frontend:
-- \`web/src/LocalPlaywrightAssist.tsx\` + \`localPlaywrightBridge.ts\`
-  provide account-aware open/inspect/fill/stop with local-only \`fetch\`,
+- `web/src/LocalPlaywrightAssist.tsx` + `localPlaywrightBridge.ts`
+  provide account-aware open/inspect/fill/stop with local-only `fetch`,
   no local data persistence, explicit consent and usable dark mode.
-- \`web/src/LocalPlaywrightAssist.test.tsx\` verifies in-page interaction,
+- `web/src/LocalPlaywrightAssist.test.tsx` verifies in-page interaction,
   OIDC account switch denial, private packet delivery only to loopback,
   no automatic submission, local network refusal and no retry.
 
