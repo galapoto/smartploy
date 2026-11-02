@@ -190,6 +190,7 @@ def validate_packet(raw: Any, *, now: datetime | None = None) -> dict[str, Any]:
         or raw.get("privacy") != {
             "approved_contact_only": True,
             "original_cv_included": False,
+            "browser_form_fill_allowed_after_user_click": True,
             "employer_submit_allowed_without_new_approval": False,
         }
     ):
