@@ -4,17 +4,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { getSession } from "./api";
+import { getBrowserHandoffReadiness, getSession } from "./api";
 import LocalPlaywrightAssist from "./LocalPlaywrightAssist";
 import { localBridgeOriginAllowed } from "./localPlaywrightBridge";
 
-vi.mock("./api", () => ({ getSession: vi.fn() }));
+vi.mock("./api", () => ({ getSession: vi.fn(), getBrowserHandoffReadiness: vi.fn() }));
 
 const pairing = "synthetic-review-only-pairing-code";
 const localToken = "L".repeat(43);
 const planId = "P".repeat(22);
 const packet = JSON.stringify({
   schema: "smartploy.browser_handoff.v2",
+  workspace_id: "workspace-A", revision: 2,
   company: "Synthetic Employer", role_title: "QA Engineer",
   application_url: "https://jobs.lever.co/example/role",
   fields: { full_name: "Private Applicant", email: "private@example.invalid" },
@@ -49,11 +50,17 @@ function mockReply(stage: "opened" | "inspected" | "filled" | "stopped") {
 const component = (enabled = true) => render(<LocalPlaywrightAssist
   packetText={packet} enabled={enabled}
   expectedUserId="user-A" expectedAuthSource="oidc"
+  expectedWorkspaceId="workspace-A" expectedRevision={2}
 />);
 
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(getSession).mockResolvedValue(session);
+  vi.mocked(getBrowserHandoffReadiness).mockResolvedValue({
+    ready: true, document_revision: 2, blockers: [],
+    contact_fields_ready: true, employer_submission_performed: false,
+    will_require_manual_review: true, files_attached: false,
+  });
   vi.stubGlobal("confirm", vi.fn(() => true));
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     if (url.endsWith("/v1/prepare")) return mockReply("opened");
@@ -151,6 +158,25 @@ describe("SP111 paired browser review-first UI", () => {
     expect(button.hasAttribute("disabled")).toBe(true);
     fireEvent.click(button);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+
+  it("rejects stale application revisions before sending to the helper", async () => {
+    vi.mocked(getBrowserHandoffReadiness).mockResolvedValue({
+      ready: false, document_revision: 3,
+      blockers: ["CV changed in another tab"],
+      contact_fields_ready: true, employer_submission_performed: false,
+      will_require_manual_review: true, files_attached: false,
+    });
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: { value: pairing },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts.some((a) => a.textContent?.includes("CV/letter changed"))).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(getBrowserHandoffReadiness).toHaveBeenCalledWith("workspace-A");
   });
 
   it("fails closed on local-network denial; no fallback sends applicant data elsewhere", async () => {
