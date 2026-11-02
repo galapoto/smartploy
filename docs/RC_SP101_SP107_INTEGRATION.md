@@ -30,6 +30,17 @@ A single additional FastAPI integration test in `tests/test_authenticated_accoun
 
 The RC must pass the original complete Python + PostgreSQL synthetic AutoApply contract, React tests/build, Chromium/Playwright tests, Compose smoke and exact-checkout review receipt at **its own final exact SHA**. PR-only green checks are review evidence, **not** post-merge main evidence.
 
+## Real PostgreSQL identity and binary-document isolation (release hardening)
+
+The additional `tests/test_rc_postgres_document_isolation.py` runs against the CI's actual migrated **PostgreSQL 17** service (guarded by `SMARTPLOY_TEST_DATABASE_URL`), not the in-memory workspace simulation. It constructs two separate OIDC principals with the **same email** and distinct subjects, resolves them using `PostgresIdentityRepository`, creates actual `PostgresSessionRepository` cookies and persists distinct private workspaces through `PostgresWorkspaceRepository`. The authenticated FastAPI app itself uses the PostgreSQL DSN.
+
+- Each account can view **its own actual rendered CV and cover-letter PDFs**, read its standalone DOCX, and download a five-entry ZIP containing the correctly isolated PDF+DOCX documents. All formats are parsed, so mere HTTP 200 cannot pass the test.
+- Both signed-in accounts receive **404** for the other owner's workspace URL, across inline PDF and ZIP routes; stale exact PDF revision is **409**; anonymous requests are **401**. All authenticated binary responses are private/no-store, and `actually_submitted=0`.
+- An intentional attempt to insert the *other* account's opaque workspace ID is **rejected by PostgreSQL with a unique constraint**. This differs from the memory-fixture collision used by the earlier source test: `migrations/011_application_workspaces.sql` has `workspace_id TEXT PRIMARY KEY`. The production test therefore never claims two physically identical keys can coexist in the real SQL table.
+- The synthetic test uses uniquely generated test subject/workspace identifiers and only the **isolated test database**. Cleanup deletes only its own workspace and identity rows. No real external OIDC request, employer transfer, private production key or customer data is required.
+
+This is stronger source verification, **not** evidence of a real OVH login or production deployment. The GitHub CI job must pass at the current *revised* RC commit; the earlier head `bf216178...` no longer qualifies after this hardening change.
+
 ## Release gates — do not skip
 
 - [ ] Independent code/privacy reviewer examines **cumulative diff against `main`**, including server response headers, account scopes, owner/DOCX/PDF/ZIP identity checks, unsaved editor protection, and employer rights controls.
@@ -46,7 +57,7 @@ The RC must pass the original complete Python + PostgreSQL synthetic AutoApply c
 ## Release/go-no-go summary
 
 **DONE at creation:** feature source for SP101–SP107 exists and their prior component-PR exact-SHA CI passed; the cumulative branch is linear from the stated baseline.  
-**IN PROGRESS:** the extra OIDC two-account full document test and the consolidated **PR-to-main** exact-head CI.  
+**IN PROGRESS:** the real-memory and real-PostgreSQL OIDC two-account document tests and the consolidated **PR-to-main** exact-head CI.  
 **BLOCKED:** independent approval, native release CI evidence where designated, post-merge main CI, operator production deployment and signed-in two-account acceptance.  
 **NOT STARTED:** any actual employer submission under this RC. No automatic ATS rights granted.
 
