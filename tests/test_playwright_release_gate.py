@@ -154,7 +154,7 @@ def test_sp110_release_proof_must_run_before_marking_deploy_sha():
     evidence = (ROOT / "deploy/personal/scripts/release-evidence.sh").read_text()
     assert "PLAYWRIGHT_FIELDS" in evidence
     assert "playwright_release_verified=true" in evidence
-    assert "${COMPANION_FIELDS}" in evidence
+    assert "${PLAYWRIGHT_FIELDS}" in evidence
     woodpecker = (ROOT / ".woodpecker/smartploy.yaml").read_text()
     assert "python3 --version" in woodpecker
     assert "npm run build" in woodpecker
