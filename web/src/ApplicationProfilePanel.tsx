@@ -7,6 +7,7 @@ import { CheckCircle2, CircleHelp, LockKeyhole, ShieldCheck } from "lucide-react
 import {
   deleteApplicationQuestion, getApplicationQuestionMemory, getSession,
   saveApplicationQuestionAnswer, setApplicationProfileMode,
+  suggestProfileFactsFromCV,
 } from "./api";
 import type {
   ApplicationProfileMode, ApplicationProfileQuestion, CandidateFact,
@@ -58,6 +59,8 @@ export default function ApplicationProfilePanel(props: {
   cvPresent: boolean;
   compact?: boolean;
   onOpenProfile?: () => void;
+  cvVerified?: boolean;
+  onFactsSuggested?: () => void;
 }) {
   const [mode, setMode] = useState<ApplicationProfileMode>("guided");
   const [questions, setQuestions] = useState<ApplicationProfileQuestion[]>([]);
@@ -144,6 +147,31 @@ export default function ApplicationProfilePanel(props: {
       setMessage(next === "cv_only"
         ? "CV-only preference saved. You can still apply; automation will have fewer verified fields."
         : "Guided profile enabled. New ordinary employer questions can be remembered for future review.");
+    });
+  }
+
+  function suggestCVFacts() {
+    if (!props.cvPresent || props.cvVerified === false ||
+        !loaded || busy || mode === "cv_only") return;
+    if (!window.confirm(
+      "SUGGEST MISSING PROFILE FACTS FROM YOUR SAVED CV? SmartPloy will inspect " +
+      "only the CV already stored in your private account and propose directly " +
+      "written contact details and recognized skill names. All suggestions " +
+      "remain UNAPPROVED until you review them individually. No CV, facts " +
+      "or applications will be sent to any employer or AI provider."
+    )) return;
+    void guarded(async () => {
+      const result = await suggestProfileFactsFromCV(props.expectedUserId);
+      if (result.suggestions_are_approved !== false ||
+          result.external_ai_forwarding !== false ||
+          result.employer_actions_performed !== 0) {
+        throw new Error("CV suggestions must remain private and unapproved.");
+      }
+      if (!alive.current) return;
+      props.onFactsSuggested?.();
+      setMessage(result.created + " unapproved contact/skill suggestion(s) saved " +
+        "from your own CV. Review each one in Skills & experience below. " +
+        "No fact was automatically approved.");
     });
   }
 
@@ -235,6 +263,16 @@ export default function ApplicationProfilePanel(props: {
         <LockKeyhole size={16} aria-hidden="true"/> Use CV only
       </button>
     </div>
+    {mode === "guided" && loaded && props.cvPresent &&
+      props.cvVerified !== false && !props.compact ?
+      <div className="application-profile-cv-suggestions">
+        <strong>Build your profile from your existing CV</strong>
+        <p className="muted">Find contact details and explicit technical skills
+          already written in your private CV. Suggestions are saved as
+          unapproved facts; you decide what to keep and approve.</p>
+        <button type="button" className="outline-btn" disabled={busy}
+          onClick={suggestCVFacts}>Find reviewable facts in my CV</button>
+      </div> : null}
     {mode === "cv_only" && loaded ? <p role="status" className="muted">
       CV-only mode is active. No new employer questions will be stored in
       your profile. The Manual and Assisted workflows remain available;
