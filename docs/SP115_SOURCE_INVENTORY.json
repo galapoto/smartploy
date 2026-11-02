@@ -192,15 +192,15 @@
     },
     {
       "path": "browser-companion/question-sync.mjs",
-      "git_blob_sha1": "1f8d76283b63ead3dcd85d276a88c0a1ecf75523"
+      "git_blob_sha1": "94fc5711c8fb0ede0764e258cf2ee004ec762512"
     },
     {
       "path": "browser-companion/page-question-sync.mjs",
-      "git_blob_sha1": "162007e491c9a0445fdd3424c083a26ea8331fbc"
+      "git_blob_sha1": "ce8bb3b7c40bbad97c242d66df3d74b080e264ac"
     },
     {
       "path": "browser-companion/tests/question-sync.test.mjs",
-      "git_blob_sha1": "e07175ca5bff1a63b33bd1a80c9517332dcab388"
+      "git_blob_sha1": "1bf906b41f794d97234ca964d0986389362ccee7"
     },
     {
       "path": "browser-companion/tests/page-question-sync.test.mjs",
