@@ -282,9 +282,10 @@ def test_sp110_archive_deterministic_allowlisted_and_checksum(tmp_path):
         digest1 + "  " + path1.name + "\n"
     )
     with zipfile.ZipFile(path1) as archive:
-        assert archive.namelist() == ["INSTALL.txt", "SHA256SUMS.txt", "assistant.py"]
+        assert archive.namelist() == ["INSTALL.txt", "SHA256SUMS.txt", "assistant.py", "bridge.py"]
         assert archive.testzip() is None
         assert archive.read("assistant.py") == SOURCE.read_bytes()
+        assert archive.read("bridge.py") == (ROOT / "browser-playwright/bridge.py").read_bytes()
         assert b"pip install playwright==1.55.0" in archive.read("INSTALL.txt")
         assert not any("/" in name or ".." in name for name in archive.namelist())
 
