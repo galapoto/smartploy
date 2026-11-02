@@ -408,7 +408,8 @@ def test_sp112_real_http_binary_pdf_transfer_exact_headers_and_origin():
                 "X-Smartploy-Attach-Id": aid,
                 "X-Smartploy-Attach-Confirmation": "ATTACH REVIEWED CV",
             }
-            if change: headers.update(change)
+            if change:
+                headers.update(change)
             conn.request("POST", "/v1/attach", body=pdf, headers=headers)
             response = conn.getresponse()
             data = json.loads(response.read())
