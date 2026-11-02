@@ -169,6 +169,65 @@ export function getCV(): Promise<CVDocument> {
   return request<CVDocument>("/api/v1/profile/cv");
 }
 
+/** SP116 owner-private profile. CV-only is a first-class persisted choice. */
+export function getApplicationQuestionMemory(): Promise<import("./types").ApplicationQuestionMemory> {
+  return request<import("./types").ApplicationQuestionMemory>(
+    "/api/v1/profile/application-questions"
+  );
+}
+
+export function setApplicationProfileMode(
+  mode: import("./types").ApplicationProfileMode, expectedUserId: string,
+): Promise<{mode: import("./types").ApplicationProfileMode; cv_only_allowed: true; employer_actions_performed: 0}> {
+  return request("/api/v1/profile/application-mode", {
+    method: "PUT", body: JSON.stringify({mode}),
+  }, expectedUserId);
+}
+
+export type ApplicationQuestionDescriptor = {
+  label: string; expected_id: string; expected_name: string;
+  expected_placeholder: string;
+};
+export function rememberApplicationQuestions(
+  workspaceId: string, revision: number,
+  questions: ApplicationQuestionDescriptor[], expectedUserId: string,
+): Promise<{
+  questions: import("./types").ApplicationProfileQuestion[];
+  remembered_count: number; skipped_sensitive_or_duplicate: number;
+  profile_mode?: "cv_only";
+  answers_inferred_from_cv: 0; employer_actions_performed: 0;
+}> {
+  return request("/api/v1/profile/application-questions/observe", {
+    method: "POST", body: JSON.stringify({
+      workspace_id: workspaceId, expected_revision: revision, questions,
+    }),
+  }, expectedUserId);
+}
+
+export function saveApplicationQuestionAnswer(
+  key: string, expectedVersion: number, answer: string,
+  approvedForReuse: boolean, expectedUserId: string,
+): Promise<{
+  question: import("./types").ApplicationProfileQuestion;
+  employer_actions_performed: 0; automatic_employer_submission_authorized: false;
+}> {
+  return request("/api/v1/profile/application-questions/" + encodeURIComponent(key), {
+    method: "PUT", body: JSON.stringify({
+      expected_version: expectedVersion, answer,
+      approved_for_reuse: approvedForReuse,
+      confirm_personally_reviewed: true,
+    }),
+  }, expectedUserId);
+}
+
+export function deleteApplicationQuestion(
+  key: string, expectedUserId: string,
+): Promise<{deleted: true; employer_actions_performed: 0}> {
+  return request("/api/v1/profile/application-questions/" + encodeURIComponent(key), {
+    method: "DELETE",
+  }, expectedUserId);
+}
+
 export function getProfileFacts(): Promise<ProfileFactsResponse> {
   return request<ProfileFactsResponse>("/api/v1/profile/facts");
 }
