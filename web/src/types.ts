@@ -255,6 +255,30 @@ export interface CVEditorRestored extends CVEditorSaved {
   restored_sha256: string;
 }
 
+/** Durable account-private memory. A question prompt is remembered even before
+ * an applicant supplies an answer. Only exact, personally approved answers may
+ * be suggested for later job applications, NEVER submitted automatically.
+ */
+export type ApplicationProfileMode = "guided" | "cv_only";
+export interface ApplicationProfileQuestion {
+  question_key: string;
+  label: string;
+  answer: string;
+  approved_for_reuse: boolean;
+  reusable_scope: "exact_question" | "manual_only";
+  version: number;
+  first_seen_at: string;
+  updated_at: string;
+}
+export interface ApplicationQuestionMemory {
+  questions: ApplicationProfileQuestion[];
+  count: number;
+  mode: ApplicationProfileMode;
+  cv_only_allowed: true;
+  approved_answers_auto_submitted: false;
+  employer_actions_performed: 0;
+}
+
 export interface CandidateFact {
   fact_id: string;
   fact_type: string;
