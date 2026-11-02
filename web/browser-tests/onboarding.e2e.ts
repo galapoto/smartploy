@@ -1062,25 +1062,25 @@ test("SP98: real inference is an explicit synthetic-only action inside a saved A
 });
 
 
-test("SP99 original Finnish panorama and complete logo restore the earlier page without hiding CV flow", async ({ page }) => {
+test("SP119 application banner loads honest original career artwork and keeps the real CV CTA", async ({ page }) => {
   await installSyntheticApi(page);
   await page.goto("/");
-  const panorama = page.getByRole("region", { name: "Finland winter archipelago cover" });
-  await expect(panorama).toBeVisible();
-  const image = panorama.getByRole("img", { name: /Original artwork: rose-gold winter light/ });
-  await expect(image).toBeVisible();
-  const loaded = await image.evaluate((node) => {
-    const picture = node as HTMLImageElement;
-    return { complete: picture.complete, naturalWidth: picture.naturalWidth };
+  const banner = page.getByRole("region", { name: "Your job application journey" });
+  await expect(banner).toBeVisible();
+  const art = banner.locator("img.sp119-cover-art");
+  await expect(art).toBeVisible();
+  const loaded = await art.evaluate((node) => {
+    const image = node as HTMLImageElement;
+    return { complete: image.complete, naturalWidth: image.naturalWidth, alt: image.alt };
   });
   expect(loaded.complete).toBe(true);
   expect(loaded.naturalWidth).toBeGreaterThan(100);
-  const avif = await page.request.get("/finland-archipelago-winter.avif");
-  expect(avif.ok()).toBe(true);
-  expect((await avif.body()).byteLength).toBeGreaterThan(2000);
-  const svg = await page.request.get("/finland-archipelago-winter.svg");
+  expect(loaded.alt).toBe("");
+  const svg = await page.request.get("/application-workspace-banner.svg");
   expect(svg.ok()).toBe(true);
-  expect(await svg.text()).toContain("Original Finland winter archipelago");
+  expect(await svg.text()).toContain("Decorative job application workspace illustration");
+  await expect(banner.getByText("From your CV to your next role.")).toBeVisible();
+  await expect(banner.getByRole("button", { name: "Upload a CV to begin" })).toBeEnabled();
   const fullLogo = page.getByRole("group", { name: "SmartPloy complete page logo" });
   await expect(fullLogo).toBeVisible();
   const brandMark = fullLogo.locator(".sp99-identity-mark");
@@ -1088,15 +1088,14 @@ test("SP99 original Finnish panorama and complete logo restore the earlier page 
   const logoRect = await brandMark.boundingBox();
   expect(logoRect?.width).toBeGreaterThanOrEqual(48);
   expect(logoRect?.height).toBeGreaterThanOrEqual(48);
-  const pageLogo = fullLogo.locator(".sp99-identity-text strong");
-  await expect(pageLogo).toHaveText("SmartPloy");
+  await expect(fullLogo.locator(".sp99-identity-text strong")).toHaveText("SmartPloy");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
   await expect(page.locator('.flow-start-card[data-flow-mode="assisted"]')).toBeDisabled();
-  await evidence(page, "sp99-finland-cover-full-logo-cv-first-light.png");
+  await evidence(page, "sp119-application-banner-cv-first-light.png");
 });
 
-test("SP99 dark/light mode is usable, persists after reload, and does not remove the sidebar", async ({ page }) => {
+test("SP119 dark/light mode fixes real masthead and banner contrast without removing the sidebar", async ({ page }) => {
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
@@ -1108,9 +1107,20 @@ test("SP99 dark/light mode is usable, persists after reload, and does not remove
   await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
   const darkSurface = await panel.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(darkSurface).not.toBe(lightSurface);
+  const masthead = await page.locator(".flow-start-masthead span:last-child").evaluate((element) => ({
+    foreground: getComputedStyle(element).color,
+    background: getComputedStyle(element.closest(".flow-start")!).backgroundColor,
+  }));
+  expect(masthead).toEqual({
+    foreground: "rgb(166, 223, 229)",
+    background: "rgb(25, 42, 64)",
+  });
+  const bannerTitleColor = await page.locator(".sp119-cover-title")
+    .evaluate((element) => getComputedStyle(element).color);
+  expect(bannerTitleColor).toBe("rgb(248, 252, 255)");
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
   await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeVisible();
-  await evidence(page, "sp99-finland-cover-full-logo-dark.png");
+  await evidence(page, "sp119-application-banner-dark-readable.png");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
   await expect(page.getByRole("button", { name: "Switch to light mode" })).toBeVisible();
@@ -1120,11 +1130,13 @@ test("SP99 dark/light mode is usable, persists after reload, and does not remove
   expect(restored).toBe(lightSurface);
 });
 
-test("SP99 mobile has visible whole logo and an operable theme toggle without losing navigation", async ({ page }) => {
+test("SP119 mobile preserves actionable career banner and entire sidebar with no horizontal clipping", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installSyntheticApi(page);
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "Finland winter archipelago cover" })).toBeVisible();
+  const banner = page.getByRole("region", { name: "Your job application journey" });
+  await expect(banner).toBeVisible();
+  await expect(banner.getByRole("button", { name: "Upload a CV to begin" })).toBeVisible();
   await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Switch to dark mode" })).toBeVisible();
   await page.getByRole("button", { name: "Switch to dark mode" }).click();
@@ -1137,5 +1149,5 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   const horizontalOverflow = await page.evaluate(() =>
     document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(horizontalOverflow).toBe(false);
-  await evidence(page, "sp99-finland-mobile-dark-logo.png");
+  await evidence(page, "sp119-application-banner-mobile-dark.png");
 });
