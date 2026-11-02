@@ -5,8 +5,10 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Monitor, ShieldCheck, XCircle } from "lucide-react";
-import { getBrowserHandoffReadiness, getSession } from "./api";
+import { applicationDownloadUrl, getBrowserHandoffReadiness,
+  getEmployerAttemptStatus, getSession } from "./api";
 import {
+  attachExactReviewedCvLocally, fetchExactReviewedCvPdf,
   callLocalPlaywrightBridge, localBridgeOriginAllowed,
   type LocalBridgeOpened, type LocalBridgeInspected,
   type LocalBridgeFilled, type LocalBridgeStopped, type LocalBridgeField,
@@ -29,6 +31,12 @@ export default function LocalPlaywrightAssist(props: {
   const [phase, setPhase] = useState<Phase>("not-paired");
   const [fields, setFields] = useState<LocalBridgeField[]>([]);
   const [planId, setPlanId] = useState("");
+  const [cvAttachment, setCvAttachment] = useState<{
+    available: boolean; label: string; attach_id: string;
+  }>({ available: false, label: "", attach_id: "" });
+  const [cvAttached, setCvAttached] = useState(false);
+  const [cvAttachAttempted, setCvAttachAttempted] = useState(false);
+  const [cvAttachBusy, setCvAttachBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
@@ -61,6 +69,14 @@ export default function LocalPlaywrightAssist(props: {
     // Existing owner-scoped backend readiness must recheck source/job and
     // document revision immediately before each local browser action.
     // The helper's 15-minute packet is NOT enough to detect another tab edit.
+    // A held/uncertain employer attempt must not lead to a second CV
+    // transmission from a stale browser tab; reuse the server's original
+    // one-use attempt ledger, not a UI-derived submission status.
+    const attempt = await getEmployerAttemptStatus(props.expectedWorkspaceId);
+    if (attempt.previous_attempt_reserved !== false) {
+      throw new Error("An employer application attempt is already reserved or uncertain. " +
+        "Review its receipt before any new local browser action.");
+    }
     const readiness = await getBrowserHandoffReadiness(props.expectedWorkspaceId);
     if (readiness.ready !== true ||
         readiness.document_revision !== props.expectedRevision) {
@@ -141,6 +157,8 @@ export default function LocalPlaywrightAssist(props: {
       if (!mounted.current) return;
       setFields(response.approved_fields);
       setPlanId(response.plan_id);
+      setCvAttachment(response.cv_attachment);
+      setCvAttached(false); setCvAttachAttempted(false);
       setPhase("inspected");
       setFeedback(response.approved_fields.length
         ? "Inspect these exact field names. Nothing has been filled or submitted."
@@ -154,7 +172,8 @@ export default function LocalPlaywrightAssist(props: {
     if (!window.confirm(
       "Fill these " + fields.length + " reviewed, ordinary fields ONCE in the " +
       "visible employer form? The employer page may transmit each value " +
-      "immediately. SmartPloy will not upload any file or click Submit. " +
+      "immediately. A separate reviewed CV attachment action is optional; " +
+      "SmartPloy will never click Submit. " +
       "A changed form or uncertain outcome stops without retry."
     )) return;
     // Even after a network timeout the local helper may have filled some
@@ -175,6 +194,63 @@ export default function LocalPlaywrightAssist(props: {
     });
   }
 
+  function attachCurrentReviewedCv() {
+    if (!props.enabled || inFlight.current || !sessionToken.current ||
+        !cvAttachment.available || !cvAttachment.attach_id ||
+        cvAttachAttempted || cvAttachBusy ||
+        !["inspected", "filled"].includes(phase)) return;
+    if (!window.confirm(
+      "Attach the EXACT saved SmartPloy CV PDF to the reviewed \"" +
+      cvAttachment.label + "\" field in the visible employer browser? " +
+      "SmartPloy will re-download and verify the current private PDF, then " +
+      "transfer it ONLY through localhost. The employer website may upload " +
+      "the PDF as soon as the file input changes. This is a single attempt; " +
+      "you must verify the employer's attachment and submit personally."
+    )) return;
+    void guarded(async () => {
+      let packet: unknown;
+      try { packet = JSON.parse(props.packetText); }
+      catch { throw new Error("The private reviewed packet is invalid. Prepare a fresh one."); }
+      if (!packet || typeof packet !== "object") {
+        throw new Error("No reviewed CV document is available for attachment.");
+      }
+      const info = packet as Record<string, unknown>;
+      if (info.workspace_id !== props.expectedWorkspaceId ||
+          info.revision !== props.expectedRevision ||
+          typeof info.cv_pdf_sha256 !== "string" ||
+          typeof info.cv_pdf_size !== "number") {
+        throw new Error("The saved CV revision no longer matches your reviewed application.");
+      }
+      setCvAttachBusy(true);
+      try {
+        const pdf = await fetchExactReviewedCvPdf(
+          applicationDownloadUrl(props.expectedWorkspaceId, "cv", "pdf",
+            props.expectedRevision),
+          { cv_pdf_sha256: info.cv_pdf_sha256, cv_pdf_size: info.cv_pdf_size },
+        );
+        // A second identity check AFTER the private download prevents a
+        // stale account from transferring someone else's CV to localhost.
+        await verifyAccount();
+        await verifyCurrentDraft();
+        await verifyAccount();
+        if (!mounted.current || !props.enabled) return;
+        // Burn the UI attempt BEFORE the local helper sees valid PDF bytes.
+        // A timeout may follow an actual employer-upload event; never retry.
+        setCvAttachAttempted(true);
+        const result = await attachExactReviewedCvLocally(
+          pdf, sessionToken.current, cvAttachment.attach_id,
+        );
+        if (!mounted.current) return;
+        setCvAttached(result.attached_locally);
+        setFeedback("Exact reviewed CV PDF placed in the employer's " +
+          cvAttachment.label + " field. This is NOT employer upload confirmation. " +
+          "Check the employer page and click Submit personally.");
+      } finally {
+        if (mounted.current) setCvAttachBusy(false);
+      }
+    });
+  }
+
   function stopLocalBrowser() {
     if (!sessionToken.current || inFlight.current) return;
     const token = sessionToken.current;
@@ -190,7 +266,10 @@ export default function LocalPlaywrightAssist(props: {
       );
     }).finally(() => {
       if (!mounted.current) return;
-      setPhase("stopped"); setFields([]); setPlanId(""); setBusy(false);
+      setPhase("stopped"); setFields([]); setPlanId("");
+      setCvAttachment({ available: false, label: "", attach_id: "" });
+      setCvAttached(false); setCvAttachAttempted(true);
+      setBusy(false);
     });
   }
 
@@ -206,7 +285,7 @@ export default function LocalPlaywrightAssist(props: {
     </div>
     <p className="local-playwright-notice">
       <ShieldCheck size={15} aria-hidden="true" />
-      Private local connection only · 127.0.0.1 · no employer submission or automatic CV upload
+      Private local connection only · 127.0.0.1 · CV attachment only after consent · no employer submission
     </p>
     <p className="muted">
       Install the reviewed Playwright ZIP once, then start <code>python bridge.py</code> on
@@ -248,6 +327,30 @@ export default function LocalPlaywrightAssist(props: {
         Fill reviewed fields once (never submit)
       </button>
     </div> : null}
+    {cvAttachment.available && ["inspected", "filled"].includes(phase) ?
+      <div className="local-playwright-actions" aria-label="Reviewed CV PDF attachment">
+        <strong>CV PDF · {cvAttachment.label}</strong>
+        <p className="muted">
+          Reuse your exact saved SmartPloy CV PDF (SHA-256 and file size verified
+          against this reviewed job). The PDF goes to your own local helper,
+          then to the employer input ONLY after another explicit approval.
+          The employer may upload it immediately on input.
+        </p>
+        <button className="outline-btn" type="button"
+          disabled={!props.enabled || busy || cvAttachBusy || cvAttachAttempted}
+          onClick={attachCurrentReviewedCv}>
+          {cvAttachBusy ? "Verifying local reviewed CV…" :
+            "Attach exact saved CV PDF once"}
+        </button>
+        {cvAttached ? <p role="status">
+          CV placed in the employer file input, but server acceptance is
+          unverified. Review the visible employer page before submitting.
+        </p> : null}
+        {cvAttachAttempted && !cvAttached ? <p role="alert">
+          Attachment result uncertain. Inspect the visible employer browser
+          manually and do not retry this file action.
+        </p> : null}
+      </div> : null}
     {phase === "uncertain" ? <p role="alert">
       The fill attempt may have changed the employer form. Inspect the visible
       browser manually; do not retry an uncertain application.

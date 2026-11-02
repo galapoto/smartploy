@@ -5,8 +5,9 @@ field planner and _fill_one runtime. Reuses Python's stdlib HTTPServer; no
 new browser engine, backend integration, account store or service dependency.
 
 Run on the applicant's desktop only: python bridge.py
-Binds ONLY 127.0.0.1:48741; no GET, cookies, file uploads, submit, remote
-browser API, hidden automation, logging of PII or background employer actions.
+Binds ONLY 127.0.0.1:48741; no GET, cookies, automatic employer submit,
+remote browser API, hidden automation, PII logs or background employer actions.
+SP112 permits a ONE-USE, explicitly reviewed, exact-SHA CV PDF FileList attachment.
 """
 from __future__ import annotations
 
@@ -89,6 +90,12 @@ class ChromiumActor:
              plan: list[dict], rows: list[dict]) -> dict[str, Any]:
         return assistant.fill_reviewed_page(page, packet, plan, rows)
 
+    def attach(self, page: Any, packet: dict[str, Any], rows: list[dict],
+               file_field: dict, raw_pdf: bytes, expected_url: str) -> dict:
+        return assistant.attach_reviewed_cv_pdf(
+            page, packet, rows, file_field, raw_pdf, expected_url,
+        )
+
     def close(self) -> None:
         try:
             if self.context is not None:
@@ -121,6 +128,10 @@ class BridgeState:
         self.plan: list[dict] = []
         self.plan_id = ""
         self.fill_claimed = False
+        self.cv_field: dict[str, Any] | None = None
+        self.attach_id = ""
+        self.attach_claimed = False
+        self.inspected_url = ""
 
     def prepare(self, pairing_code: Any, raw_packet: Any) -> dict:
         if self.pairing_used or self.actor is not None:
@@ -181,6 +192,9 @@ class BridgeState:
         self.rows = []
         self.plan = []
         self.plan_id = ""
+        self.cv_field = None
+        self.attach_id = ""
+        self.inspected_url = ""
         try:
             page, rows, plan = self.actor.inspect(packet)
         except assistant.PacketError as exc:
@@ -193,11 +207,20 @@ class BridgeState:
             ) from exc
         self.page, self.rows, self.plan = page, rows, plan
         self.plan_id = secrets.token_urlsafe(16)
+        self.cv_field = assistant.choose_cv_attachment(rows)
+        self.attach_id = secrets.token_urlsafe(16) if self.cv_field else ""
+        self.inspected_url = page.url
         return {
             "ok": True,
             "stage": "inspected",
             "plan_id": self.plan_id,
             "total_controls": len(rows),
+            "cv_attachment": {
+                "available": self.cv_field is not None,
+                "label": str(self.cv_field.get("label") or "CV")[:100]
+                    if self.cv_field else "",
+                "attach_id": self.attach_id if self.cv_field else "",
+            },
             "approved_fields": [
                 {"key": item["key"],
                  "label": str(item["row"].get("label") or item["key"])[:100]}
@@ -234,6 +257,43 @@ class BridgeState:
             "uploaded": False,
         }
 
+    def attach(self, attach_id: Any, approval: Any, raw_pdf: bytes) -> dict:
+        packet = self._current_packet()
+        if (self.attach_claimed or self.cv_field is None or self.page is None
+                or not self.attach_id or not self.inspected_url):
+            raise BridgeError("No safe, unattempted reviewed CV attachment. Attach manually.", 409)
+        if (not isinstance(attach_id, str)
+                or not hmac.compare_digest(attach_id, self.attach_id)
+                or approval != "ATTACH REVIEWED CV"):
+            raise BridgeError("Fresh CV input plan and exact applicant approval required.", 403)
+        try:
+            assistant.validate_reviewed_cv_pdf(raw_pdf, packet)
+        except assistant.PacketError as exc:
+            raise BridgeError(str(exc), 422) from exc
+        # IMPORTANT: burn before touching the employer form.
+        # Unknown/cancelled network outcomes MUST NOT trigger a blind retry.
+        self.attach_claimed = True
+        assert self.actor is not None
+        try:
+            result = self.actor.attach(
+                self.page, packet, self.rows, self.cv_field, raw_pdf,
+                self.inspected_url,
+            )
+        except Exception as exc:
+            raise BridgeError(
+                "CV may have been attached or transferred. Inspect employer browser manually; "
+                "do not retry.", 409,
+            ) from exc
+        if result.get("attached_locally") is not True:
+            raise BridgeError(
+                "CV attachment was not verified locally. Inspect manually; do not retry.", 409,
+            )
+        return {
+            "ok": True, "stage": "attached", "attached_locally": True,
+            "employer_upload_confirmed": False, "submitted": False,
+            "uploaded": True,
+        }
+
     def stop(self) -> dict:
         actor = self.actor
         self.actor = None
@@ -241,6 +301,8 @@ class BridgeState:
         self.token = ""
         self.page = None
         self.rows, self.plan, self.plan_id = [], [], ""
+        self.cv_field, self.attach_id, self.inspected_url = None, "", ""
+        self.attach_claimed = True
         self.fill_claimed = True
         if actor is not None:
             try:
@@ -291,7 +353,8 @@ def make_handler(state: BridgeState) -> type[BaseHTTPRequestHandler]:
             if preflight:
                 self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
                 self.send_header("Access-Control-Allow-Headers",
-                                 "Content-Type, Authorization")
+                                 "Content-Type, Authorization, "
+                                 "X-Smartploy-Attach-Id, X-Smartploy-Attach-Confirmation")
                 self.send_header("Access-Control-Max-Age", "120")
             else:
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -306,7 +369,7 @@ def make_handler(state: BridgeState) -> type[BaseHTTPRequestHandler]:
         def do_OPTIONS(self) -> None:
             origin = self._origin()
             allowed = (origin is not None and self.path in {
-                "/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/stop",
+                "/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/attach", "/v1/stop",
             } and self.headers.get("Access-Control-Request-Method") == "POST")
             self._headers(origin if allowed else None,
                           204 if allowed else 403, 0, preflight=allowed)
@@ -320,8 +383,30 @@ def make_handler(state: BridgeState) -> type[BaseHTTPRequestHandler]:
                 self._reply(403, {"ok": False, "error": "Untrusted site or host."}, None)
                 return
             try:
-                if self.path not in {"/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/stop"}:
+                if self.path not in {"/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/attach", "/v1/stop"}:
                     raise BridgeError("Unsupported local action.", 404)
+                if self.path == "/v1/attach":
+                    state.authenticate(self.headers.get("Authorization"))
+                    if self.headers.get("Content-Type", "").strip().lower() != "application/pdf":
+                        raise BridgeError("Exact PDF content type required.", 415)
+                    try:
+                        size = int(self.headers.get("Content-Length", "0"))
+                    except ValueError as exc:
+                        raise BridgeError("Invalid PDF request length.", 400) from exc
+                    if not 12 <= size <= 2 * 1024 * 1024:
+                        raise BridgeError("CV PDF request exceeds reviewed size.", 413)
+                    if state.packet is None or size != state.packet.get("cv_pdf_size"):
+                        raise BridgeError("CV size is not the saved reviewed PDF.", 422)
+                    raw = self.rfile.read(size)
+                    if len(raw) != size:
+                        raise BridgeError("CV transfer incomplete.", 422)
+                    result = state.attach(
+                        self.headers.get("X-Smartploy-Attach-Id"),
+                        self.headers.get("X-Smartploy-Attach-Confirmation"),
+                        raw,
+                    )
+                    self._reply(200, result, origin)
+                    return
                 if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
                     raise BridgeError("JSON requests only.", 415)
                 try:
