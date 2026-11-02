@@ -50,6 +50,7 @@ class FakeActor:
         ])
         self.closed = False
         self.attachments = []
+        self.receipt_finding = {"confirmed": False}
         self.instances.append(self)
 
     def inspect(self, p):
@@ -68,6 +69,10 @@ class FakeActor:
         self.attachments.append((file_field["name"], sha256(raw_pdf).hexdigest()))
         return {"attached_locally": True, "employer_upload_confirmed": False,
                 "submitted": False}
+
+    def observe(self, p):
+        assert p is self.packet
+        return self.receipt_finding
 
     def close(self):
         self.closed = True
@@ -431,3 +436,118 @@ def test_sp112_real_http_binary_pdf_transfer_exact_headers_and_origin():
         again, _, _ = send_pdf(FAKE_PDF)
         assert again == 409
         assert len(FakeActor.instances[0].attachments) == 1
+
+
+SP113_PAGE = "https://jobs.lever.co/example/position/thanks"
+SP113_REFERENCE = "SYNTHETIC-REF-1234"
+
+
+def fake_reference_confirmation():
+    return {
+        "confirmed": True,
+        "reference": SP113_REFERENCE,
+        "confirmation_page_url": SP113_PAGE,
+        "confirmation_page_sha256": "f" * 64,
+        "explanation": "Browser-visible reference observed",
+    }
+
+
+def test_sp113_receipt_observation_requires_pairing_explicit_user_approval():
+    current = state()
+    with pytest.raises(bridge.BridgeError):
+        current.observe("OBSERVE EMPLOYER CONFIRMATION")
+    current.prepare(PAIR_CODE, packet())
+    with pytest.raises(bridge.BridgeError) as unapproved:
+        current.observe("SUBMIT")
+    assert unapproved.value.status == 403
+    uncertain = current.observe("OBSERVE EMPLOYER CONFIRMATION")
+    assert uncertain == {
+        "ok": True, "stage": "observed", "confirmed": False,
+        "receipt": None, "employer_acknowledged": False,
+        "submitted": False, "uploaded": False,
+    }
+    # Observation is read-only and may be explicitly requested again
+    # after the applicant navigates to the confirmed job receipt.
+    FakeActor.instances[0].receipt_finding = fake_reference_confirmation()
+    result = current.observe("OBSERVE EMPLOYER CONFIRMATION")
+    assert result["stage"] == "observed"
+    assert result["confirmed"] is True
+    assert result["receipt"] == {
+        "schema": "smartploy.browser_receipt.v1",
+        "workspace_id": current.packet["workspace_id"],
+        "document_revision": current.packet["revision"],
+        "document_sha256": current.packet["document_sha256"],
+        "application_url": current.packet["application_url"],
+        "confirmation_page_url": SP113_PAGE,
+        "reference": SP113_REFERENCE,
+        "confirmation_page_sha256": "f" * 64,
+        "observed_at": result["receipt"]["observed_at"],
+        "confirmed_visible": True,
+    }
+    assert result["employer_acknowledged"] is False
+    assert result["submitted"] is False
+    assert result["uploaded"] is False
+    assert len(result["receipt"]) == 10
+    assert "fields" not in str(result)
+    assert "cv_pdf" not in str(result)
+    with pytest.raises(bridge.BridgeError) as duplicate:
+        current.observe("OBSERVE EMPLOYER CONFIRMATION")
+    assert duplicate.value.status == 409
+    current.stop()
+
+
+def test_sp113_expired_review_cannot_create_false_receipt():
+    current = state()
+    current.prepare(PAIR_CODE, packet())
+    FakeActor.instances[0].receipt_finding = fake_reference_confirmation()
+    current.packet["expires_at"] = "2000-01-01T00:00:00+00:00"
+    with pytest.raises(bridge.BridgeError) as denied:
+        current.observe("OBSERVE EMPLOYER CONFIRMATION")
+    assert denied.value.status == 410
+    current.stop()
+
+
+def test_sp113_receipt_http_origin_token_and_user_confirmation():
+    current = state()
+    with fake_local_http_server(current) as port:
+        status, _, opened = http_request(
+            port, "/v1/prepare",
+            {"pairing_code": PAIR_CODE, "packet": packet()},
+        )
+        assert status == 200
+        token = opened["token"]
+        FakeActor.instances[0].receipt_finding = fake_reference_confirmation()
+        auth = {"Authorization": "Bearer " + token}
+        denied, cors, _ = http_request(
+            port, "/v1/observe",
+            {"confirmation": "OBSERVE EMPLOYER CONFIRMATION"},
+            origin="https://evil.invalid", headers=auth,
+        )
+        assert denied == 403
+        assert "Access-Control-Allow-Origin" not in cors
+        denied, _, _ = http_request(
+            port, "/v1/observe",
+            {"confirmation": "OBSERVE EMPLOYER CONFIRMATION"},
+        )
+        assert denied == 403
+        denied, _, _ = http_request(
+            port, "/v1/observe", {"confirmation": "SUBMIT"}, headers=auth,
+        )
+        assert denied == 403
+        success, _, observed = http_request(
+            port, "/v1/observe",
+            {"confirmation": "OBSERVE EMPLOYER CONFIRMATION"}, headers=auth,
+        )
+        assert success == 200
+        assert observed["confirmed"] is True
+        assert observed["receipt"]["reference"] == SP113_REFERENCE
+        assert observed["employer_acknowledged"] is False
+        assert observed["submitted"] is False
+        again, _, _ = http_request(
+            port, "/v1/observe",
+            {"confirmation": "OBSERVE EMPLOYER CONFIRMATION"}, headers=auth,
+        )
+        assert again == 409
+        assert FakeActor.instances[0].attachments == []
+        assert FakeActor.instances[0].page.filled == []
+        current.stop()
