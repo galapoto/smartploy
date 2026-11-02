@@ -1,6 +1,6 @@
 {
   "schema": "smartploy.integrated_release_candidate.sp115.v1",
-  "purpose": "Review-only complete CV-first Manual/Assisted/Automatic integration from existing tested source",
+  "purpose": "Full reviewed CV-first, Manual/Assisted/Authorized AutoApply source plus SP116 owner-private profile memory, CV-only option and CV suggestions; source verification only.",
   "base_main_sha": "804747bd9f01f999f9e806dcf96459bb215bb8f1",
   "source_head_sha": "d98881296081007c8e70447982cce67e847dcb94",
   "source_dependency_prs": [
@@ -76,7 +76,7 @@
     },
     {
       "path": "smartploy/api.py",
-      "git_blob_sha1": "d94c4366eeea42c4fac80b5f222c3634bceb3e28"
+      "git_blob_sha1": "8bb4ad6c0026e7b3b64e17855278c3b09833d3a8"
     },
     {
       "path": "smartploy/browser_handoff.py",
@@ -92,7 +92,7 @@
     },
     {
       "path": "web/src/App.tsx",
-      "git_blob_sha1": "f8eb79df1d718e2f552b50c9516f92c5259d14a6"
+      "git_blob_sha1": "1404c9f80dbcc982151bab4be492ad1fc252158e"
     },
     {
       "path": "web/src/ApplicationJourney.tsx",
@@ -108,7 +108,7 @@
     },
     {
       "path": "web/src/LocalPlaywrightAssist.tsx",
-      "git_blob_sha1": "fc77a2f4a972ed372aaad6ca1fb06eb36dc803ba"
+      "git_blob_sha1": "df0e4850e64ab17e4978cbc68c92ef9ae91e91c9"
     },
     {
       "path": "web/src/StartChoices.tsx",
@@ -120,11 +120,67 @@
     },
     {
       "path": "web/src/types.ts",
-      "git_blob_sha1": "1b822a308c2410c63388c468eb55456ce4fca6d0"
+      "git_blob_sha1": "196580c6319a87cf3d4e4bc951f262be8e904704"
     },
     {
       "path": "tests/test_autoapply_e2e_contract.py",
       "git_blob_sha1": "7babcfe357e5aaad1c1483d905f810c2a52196c8"
+    },
+    {
+      "path": "smartploy/profile.py",
+      "git_blob_sha1": "4a8f618135bcea52d9fad1cc5e252d3a6c5fbe78"
+    },
+    {
+      "path": "smartploy/account_erasure.py",
+      "git_blob_sha1": "dde51024ff5fadd42f903d5fdc3151726536b4f6"
+    },
+    {
+      "path": "smartploy/application_question_memory.py",
+      "git_blob_sha1": "97d9ee54bd161a6eb1ba5cd16c77b52f82405e1d"
+    },
+    {
+      "path": "smartploy/profile_cv_suggestions.py",
+      "git_blob_sha1": "b9ead6600f05db2cdd41e6d7243023104ec71d9d"
+    },
+    {
+      "path": "migrations/030_application_profile_questions.sql",
+      "git_blob_sha1": "992659d60133ac8c4fa0ac824e7dacb2341f114b"
+    },
+    {
+      "path": "web/src/ApplicationProfilePanel.tsx",
+      "git_blob_sha1": "eb4c018a623343603a99bc4cba52294196df09db"
+    },
+    {
+      "path": "web/src/ApplicationProfilePanel.test.tsx",
+      "git_blob_sha1": "725b7661ca0cf0af0d4ac151cbd3c119395a1b75"
+    },
+    {
+      "path": "web/src/application-profile.css",
+      "git_blob_sha1": "bff4f24a59422eee6528a50854fcd2374ae39ffd"
+    },
+    {
+      "path": "web/src/api.ts",
+      "git_blob_sha1": "af8ad3cce52c4d05cb459e2a64cea5d741507f30"
+    },
+    {
+      "path": "web/src/App.test.tsx",
+      "git_blob_sha1": "a8e05e50c0f2f153e059e3a305118e375d2a8241"
+    },
+    {
+      "path": "web/src/LocalPlaywrightAssist.test.tsx",
+      "git_blob_sha1": "d3a80a854c20ca6879a52027c04a3e98312b5c1c"
+    },
+    {
+      "path": "tests/test_application_question_memory.py",
+      "git_blob_sha1": "c997e288837fe7837ad31b3af7516c7933b1f2de"
+    },
+    {
+      "path": "tests/test_application_question_memory_oidc.py",
+      "git_blob_sha1": "9b784bc7f01a6965efe24724c4d1cac15e3f72fa"
+    },
+    {
+      "path": "docs/SP116_PERSISTENT_APPLICATION_PROFILE.md",
+      "git_blob_sha1": "32c41d9ca553846cbe317e0bcce119ec6d38628c"
     }
   ],
   "scope": {
@@ -146,5 +202,36 @@
     "native_delivery_ci_required": true,
     "production_deployment_approved": false,
     "real_employer_acceptance_verified": false
+  },
+  "sp116_extension": {
+    "integrates_after_pr": 281,
+    "upstream_untouched_origin_sha": "d98881296081007c8e70447982cce67e847dcb94",
+    "prior_rollup_sha": "b5be7ab40399ad6eb091d26322b9edf315ee1b5c",
+    "pinned_paths": 38,
+    "review_status": "PENDING_INDEPENDENT_SECURITY_AND_PRODUCTION_APPROVAL",
+    "original_blob_changes": [
+      {
+        "path": "smartploy/api.py",
+        "from": "d94c4366eeea42c4fac80b5f222c3634bceb3e28",
+        "to": "8bb4ad6c0026e7b3b64e17855278c3b09833d3a8"
+      },
+      {
+        "path": "web/src/App.tsx",
+        "from": "f8eb79df1d718e2f552b50c9516f92c5259d14a6",
+        "to": "1404c9f80dbcc982151bab4be492ad1fc252158e"
+      },
+      {
+        "path": "web/src/LocalPlaywrightAssist.tsx",
+        "from": "fc77a2f4a972ed372aaad6ca1fb06eb36dc803ba",
+        "to": "df0e4850e64ab17e4978cbc68c92ef9ae91e91c9"
+      },
+      {
+        "path": "web/src/types.ts",
+        "from": "1b822a308c2410c63388c468eb55456ce4fca6d0",
+        "to": "196580c6319a87cf3d4e4bc951f262be8e904704"
+      }
+    ],
+    "independent_approval_received": false,
+    "production_deployed": false
   }
 }
