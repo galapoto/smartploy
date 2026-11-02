@@ -26,6 +26,7 @@ FILES = (
     "manifest.json", "popup.html", "popup.css", "popup.mjs", "icon128.png",
     "logic.mjs", "upload.mjs", "questions.mjs", "page-questions.mjs",
     "page-attachment.mjs", "page-review.mjs", "review-bridge.mjs",
+    "question-sync.mjs", "page-question-sync.mjs",
     "page-final-claim.mjs", "page-final-submit.mjs", "attempt-lock.mjs",
 )
 MAX_SOURCE_BYTES = 500_000
