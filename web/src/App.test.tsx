@@ -2154,29 +2154,45 @@ describe("SP109: verified CV status gates", () => {
     expect((screen.getByRole("button", { name: /Assisted.*Apply with AI/i }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("preserves unsaved editor text through a transient CV read failure and recovery", async () => {
+  it("preserves unsaved editor text through a failed periodic CV read and recovery", async () => {
     const storedCV = { present: true, filename: "Saved original.pdf", sha256: "a".repeat(64) };
     vi.mocked(api.getCV).mockResolvedValue(storedCV);
-    render(<App/>);
-    expect(await screen.findByRole("heading", { name: "CV connected. Choose how to apply." })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
-    fireEvent.click(screen.getByRole("button", { name: "Edit synthetic master CV" }));
-    vi.mocked(api.getCV).mockRejectedValueOnce(new Error("Synthetic timeout"));
-    fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
-    expect(await screen.findByRole("heading", { name: "CV check failed — your unsaved edits are preserved" })).toBeTruthy();
-    expect(screen.getByTestId("master-cv-editor")).toBeTruthy();
-    expect(screen.queryByText("No CV uploaded yet")).toBeNull();
-    expect(screen.getAllByRole("button", { name: "CV check required" }).length).toBeGreaterThan(0);
-    const beforeUnload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(beforeUnload);
-    expect(beforeUnload.defaultPrevented).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Retry CV check" }));
-    await waitFor(() => expect(api.getCV).toHaveBeenCalledTimes(3));
-    expect(await screen.findByRole("button", { name: "Edit synthetic master CV" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: /CV check failed — your unsaved edits are preserved/i })).toBeNull();
-    const stillDirty = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(stillDirty);
-    expect(stillDirty.defaultPrevented).toBe(true);
+    // Capture the real App's 60-second background refresh, not the
+    // toolbar refresh that rightly asks before discarding unsaved edits.
+    const originalSetInterval = window.setInterval.bind(window);
+    let backgroundRefresh: (() => void) | undefined;
+    const timerSpy = vi.spyOn(window, "setInterval").mockImplementation(
+      (handler, timeout, ...args) => {
+        if (timeout === 60_000 && typeof handler === "function") {
+          backgroundRefresh = handler;
+          return 123456;
+        }
+        return originalSetInterval(handler, timeout, ...args);
+      },
+    );
+    try {
+      render(<App/>);
+      expect(await screen.findByRole("heading", { name: "CV connected. Choose how to apply." })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
+      fireEvent.click(screen.getByRole("button", { name: "Edit synthetic master CV" }));
+      vi.mocked(api.getCV).mockRejectedValueOnce(new Error("Synthetic timeout"));
+      expect(backgroundRefresh).toBeTypeOf("function");
+      await act(async () => { backgroundRefresh?.(); });
+      expect(await screen.findByRole("heading", { name: "CV check failed — your unsaved edits are preserved" })).toBeTruthy();
+      expect(screen.getByTestId("master-cv-editor")).toBeTruthy();
+      expect(screen.queryByText("No CV uploaded yet")).toBeNull();
+      expect(screen.getAllByRole("button", { name: "CV check required" }).length).toBeGreaterThan(0);
+      const beforeUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(beforeUnload);
+      expect(beforeUnload.defaultPrevented).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Retry CV check" }));
+      await waitFor(() => expect(api.getCV).toHaveBeenCalledTimes(3));
+      expect(await screen.findByRole("button", { name: "Edit synthetic master CV" })).toBeTruthy();
+      expect(screen.queryByRole("heading", { name: /CV check failed — your unsaved edits are preserved/i })).toBeNull();
+      const stillDirty = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(stillDirty);
+      expect(stillDirty.defaultPrevented).toBe(true);
+    } finally { timerSpy.mockRestore(); }
   });
   it("does not pretend a failed CV read means no file and recovers after a retry", async () => {
     vi.mocked(api.getCV)
