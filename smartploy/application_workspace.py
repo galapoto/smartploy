@@ -245,8 +245,14 @@ class ApplicationWorkspace:
 def new_workspace(
     candidate: JobCandidate, profile: CandidateProfile,
     source_cv_text: str = "", source_cv_sha256: str = "",
+    *, allow_private_unverified: bool = False,
 ) -> ApplicationWorkspace:
-    if not candidate.source_current:
+    user_saved = (
+        candidate.metadata.get("private_saved_job") is True
+        and candidate.metadata.get("owner_profile_id") == profile.profile_id
+        and candidate.source_current is False
+    )
+    if not candidate.source_current and not (allow_private_unverified and user_saved):
         raise WorkspaceError("This job is no longer current. Check the employer posting.")
     source = source_cv_text.strip()
     if source and len(source) > MAX_CV_CHARACTERS:

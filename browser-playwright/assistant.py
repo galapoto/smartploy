@@ -16,6 +16,7 @@ credential collection, hidden browser or background employer actions.
 from __future__ import annotations
 
 import getpass
+import ipaddress
 from hashlib import sha256
 import json
 import re
@@ -92,55 +93,82 @@ class PacketError(ValueError):
     """Refuse unsupported/stale packets, changed forms and unsafe actions."""
 
 
+PUBLIC_DOMAIN = re.compile(
+    r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}\Z"
+)
+RESERVED_SUFFIXES = (
+    ".local", ".localhost", ".internal", ".test",
+    ".invalid", ".example", ".onion",
+)
+
+
 def _url_parts(raw: str) -> SplitResult:
+    """One reviewed PUBLIC HTTPS employer URL; never an internal resource."""
     if not isinstance(raw, str) or len(raw) > 1500 or not raw.startswith("https://"):
-        raise PacketError("A reviewed HTTPS employer URL is required")
+        raise PacketError("A reviewed public HTTPS employer URL is required")
+    if "\\" in raw or any(ord(ch) < 32 or ord(ch) == 127 for ch in raw):
+        raise PacketError("Employer URL has forbidden characters")
     try:
         parsed = urlsplit(raw)
-        _ = parsed.port  # Reject malformed ports rather than accepting them.
+        host = (parsed.hostname or "").lower()
+        if (
+            parsed.scheme != "https" or parsed.username or parsed.password
+            or parsed.port not in (None, 443) or parsed.fragment
+            or not host or not PUBLIC_DOMAIN.fullmatch(host)
+            or host.endswith(RESERVED_SUFFIXES)
+            or (not parsed.path.strip("/") and not parsed.query)
+            or len(parsed.query) > 800
+        ):
+            raise ValueError
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            raise ValueError
     except ValueError as exc:
-        raise PacketError("Malformed employer URL") from exc
-    if (
-        parsed.scheme != "https" or parsed.username or parsed.password
-        or parsed.port not in (None, 443) or parsed.query or parsed.fragment
-        or not parsed.hostname or parsed.hostname != parsed.netloc.lower().removesuffix(":443")
-        or "\\" in raw
-    ):
-        raise PacketError("Employer URL has credentials, tracking, an unsafe port or fragment")
+        raise PacketError("Employer URL is not a public, reviewable HTTPS job link") from exc
     return parsed
 
 
 def same_reviewed_form(posting_url: str, current_url: str) -> bool:
-    """Reuse the extension's exact-job/host boundary, NOT generic URL allowlisting."""
+    """Exact hosted ATS job, or one manually selected public employer origin.
+
+    Generic sites use the SAME public hostname, never any redirected third
+    party. The applicant sees the full Chromium URL and must inspect fields
+    before the explicit one-use fill; no final submit right follows.
+    """
     try:
         p, c = _url_parts(posting_url), _url_parts(current_url)
     except PacketError:
         return False
     if p.hostname in {"jobs.lever.co", "jobs.eu.lever.co"}:
-        if c.hostname != p.hostname or not LEVER_PATH.fullmatch(p.path):
+        if c.hostname != p.hostname or p.query or c.query or not LEVER_PATH.fullmatch(p.path):
             return False
         base = re.sub(r"/apply/?$", "", p.path).rstrip("/")
         return c.path.rstrip("/") == base + "/apply"
     if p.hostname == "jobs.ashbyhq.com":
-        if c.hostname != p.hostname or not ASHBY_PATH.fullmatch(p.path):
+        if c.hostname != p.hostname or p.query or c.query or not ASHBY_PATH.fullmatch(p.path):
             return False
         base = re.sub(r"/application/?$", "", p.path).rstrip("/")
         return c.path.rstrip("/") == base + "/application"
     if p.hostname == "ats.talentadore.com":
-        # SP118: accept only the exact hosted posting id and slug. The
-        # applicant opens the form visibly from its original job page.
         return (
             c.hostname == "ats.talentadore.com"
+            and not p.query and not c.query
             and TALENTADORE_PATH.fullmatch(p.path) is not None
             and c.path.rstrip("/") == p.path.rstrip("/")
         )
     if p.hostname in {"boards.greenhouse.io", "job-boards.greenhouse.io"}:
         return (
             c.hostname in {"boards.greenhouse.io", "job-boards.greenhouse.io"}
+            and not p.query and not c.query
             and GH_PATH.fullmatch(p.path) is not None
             and c.path.rstrip("/") == p.path.rstrip("/")
         )
-    return False
+    # Unlisted employer site: user must recognize the visible job/form;
+    # hostname boundary is strict, so no silent cross-provider redirects.
+    return c.hostname == p.hostname
 
 
 def _approved_fields_sha256(fields: dict[str, str]) -> str:
@@ -193,7 +221,7 @@ def validate_packet(raw: Any, *, now: datetime | None = None) -> dict[str, Any]:
         for suffix in ("/apply", "/application", "")
     ):
         # Greenhouse form URL is its original exact job URL.
-        raise PacketError("Only exact hosted Lever, Ashby, Greenhouse and TalentAdore forms are supported")
+        raise PacketError("Use the reviewed exact public HTTPS employer job URL")
     f = raw.get("fields")
     if not isinstance(f, dict) or set(f) != set(FIELD_NAMES) or any(
         not isinstance(f[name], str) for name in FIELD_NAMES

@@ -48,6 +48,7 @@ export default function ApplicationJourney(props: {
   onUpload: () => void;
   onReviewCV: () => void;
   onFindJobs: () => void;
+  onAddPrivateJob?: () => void;
   onOpenApplications: (workspaceId?: string) => void;
   onPrepare: (canonicalKey: string) => Promise<void>;
   onPrepareSelected: (
@@ -707,6 +708,18 @@ export default function ApplicationJourney(props: {
             (results?.other_jobs_count ?? results?.other_jobs.length ?? 0) + ")"}
         </button>
       </div> : null}
+      {props.cv.present && props.mode === "assisted" && props.onAddPrivateJob ?
+        <div className="sp120-search-escape" role="note">
+          <div>
+            <strong>Can't find the employer's job in these results?</strong>
+            <p>Search covers imported vacancies only. Add the direct employer link
+              to open a real private Assisted application instead of a bookmark dead end.</p>
+          </div>
+          <button type="button" className="primary-btn"
+            onClick={props.onAddPrivateJob}>
+            Add employer link & start Assisted <ArrowRight size={16}/>
+          </button>
+        </div> : null}
       {!props.cv.present ? <div className="empty-state">
         <UploadCloud size={28}/><h3>Your matching jobs appear here</h3>
         <p>Upload your CV above to continue. If you just want to browse, use Find Jobs without uploading anything.</p>

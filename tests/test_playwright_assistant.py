@@ -73,6 +73,18 @@ def field(index, label, name, **overrides):
 
 
 @pytest.mark.parametrize(("source", "active", "expected"), [
+    ("https://careers.example.org/jobs/junior-analyst",
+     "https://careers.example.org/jobs/junior-analyst/apply", True),
+    ("https://careers.example.org/jobs/junior-analyst",
+     "https://careers.example.org/jobs/other", True),
+    ("https://careers.example.org/jobs/junior-analyst",
+     "https://sub.careers.example.org/jobs/junior-analyst/apply", False),
+    ("https://careers.example.org/jobs/junior-analyst",
+     "https://careers.example.invalid/jobs/junior-analyst", False),
+    ("https://careers.example.org/jobs/junior-analyst",
+     "https://127.0.0.1/private", False),
+    ("https://careers.example.org/jobs/junior-analyst",
+     "https://careers.example.org:8443/private", False),
     ("https://jobs.lever.co/a/role", "https://jobs.lever.co/a/role/apply", True),
     ("https://jobs.eu.lever.co/a/role/apply", "https://jobs.eu.lever.co/a/role/apply/", True),
     ("https://jobs.ashbyhq.com/a/role", "https://jobs.ashbyhq.com/a/role/application", True),
@@ -104,7 +116,7 @@ def test_sp110_exact_reviewed_employer_form_url(source, active, expected):
     lambda p: p.update(schema="old"), lambda p: p.update(revision=1),
     lambda p: p.update(revision=True), lambda p: p.update(workspace_id="kit-invalid"),
     lambda p: p.update(cv_pdf_size=10), lambda p: p.update(document_sha256="123"),
-    lambda p: p.update(application_url="https://www.linkedin.com/jobs/123"),
+    lambda p: p.update(application_url="https://localhost/jobs/123"),
     lambda p: p.update(application_url="http://jobs.lever.co/a/b"),
     lambda p: p.update(application_url="https://jobs.lever.co/a/b?track=yes"),
     lambda p: p["fields"].update(email="not-an-email"),
@@ -128,6 +140,7 @@ def test_sp110_valid_packet_matches_existing_production_browser_handoff_privacy(
     assert assistant.validate_packet(packet("https://jobs.ashbyhq.com/a/id"))
     assert assistant.validate_packet(packet("https://boards.greenhouse.io/a/jobs/123"))
     assert assistant.validate_packet(packet("https://ats.talentadore.com/apply/junior-analyst/m6rpoy"))
+    assert assistant.validate_packet(packet("https://careers.example.org/jobs/junior-analyst"))
 
 
 def test_sp110_expiry_and_clock_boundaries():

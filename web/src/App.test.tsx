@@ -7,7 +7,7 @@ import App from "./App";
 import type { PrivateSavedJob, SearchPreferences, SearchResults } from "./types";
 
 vi.mock("./api", () => ({
-  addManualJob: vi.fn(), approveFact: vi.fn(), createFact: vi.fn(),
+  addManualJob: vi.fn(), startPrivateSavedApplication: vi.fn(), approveFact: vi.fn(), createFact: vi.fn(),
   deletePrivateSavedJob: vi.fn(), getPrivateSavedJobs: vi.fn(),
   deleteCV: vi.fn(), deleteFact: vi.fn(), getApplications: vi.fn(),
   getCV: vi.fn(), getCVJobMatches: vi.fn(), getDashboard: vi.fn(), getHealth: vi.fn(),
@@ -2222,5 +2222,97 @@ describe("SP109: verified CV status gates", () => {
     expect((screen.getByRole("button", { name: /Apply manually/i }) as HTMLButtonElement).disabled).toBe(false);
     expect(api.getCV).toHaveBeenCalledTimes(2);
     expect(api.uploadCV).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP120: no-results Assisted job -> a real private application workspace", () => {
+  it("converts newly added employer job to an exact private CV/letter case", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      vi.mocked(api.getCV).mockResolvedValue({
+        present: true, filename: "Synthetic-owned-CV.pdf", sha256: "abc123",
+      });
+      vi.mocked(api.getCVJobMatches).mockResolvedValue({
+        cv_present: true, cv_filename: "Synthetic-owned-CV.pdf",
+        match_mode: "cv_text_signals",
+        detected_roles: ["Analyst"], detected_topics: [], recommended: [],
+        other_jobs: [], current_jobs_count: 0, recommended_count: 0,
+        matched_from: "local_cv_text_not_approved_evidence",
+        qualifications_verified: false, employer_actions_performed: false,
+      });
+      vi.mocked(api.startPrivateSavedApplication).mockResolvedValue({
+        workspace: { workspace_id: "kit-sp120-private-test", role_title: "Junior Analyst" },
+        created: true, source: "private_saved_unverified",
+        employer_verified: false, final_submit_authorized: false,
+        next_step: "review_cv_and_letter_then_start_playwright",
+        external_actions_performed: 0,
+      } as never);
+      render(<App />);
+      expect(await screen.findByRole("heading", { name: "CV connected. Choose how to apply." })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: /Assisted · Apply with AI/ }));
+      expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
+      const opens = screen.getAllByRole("button", { name: /Add employer job.*start Assisted/i });
+      fireEvent.click(opens[0]);
+      const dialog = screen.getByRole("dialog");
+      fireEvent.change(within(dialog).getByPlaceholderText("e.g. Junior Data Analyst"), {
+        target: { value: "Junior Analyst" },
+      });
+      fireEvent.change(within(dialog).getByPlaceholderText("Employer name"), {
+        target: { value: "Synthetic HOK-Elanto" },
+      });
+      fireEvent.change(within(dialog).getByPlaceholderText("https://..."), {
+        target: { value: "https://ats.talentadore.com/apply/junior-analyst/m6rpoy" },
+      });
+      fireEvent.change(within(dialog).getByPlaceholderText(
+        "Paste the responsibilities and key requirements here.",
+      ), { target: { value: "Synthetic analyst with Python SQL reporting" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save & start Assisted" }));
+      await waitFor(() => expect(api.startPrivateSavedApplication).toHaveBeenCalledWith(
+        "saved-synthetic-1", "usr-synthetic-1",
+      ));
+      expect(await screen.findByTestId("application-editor")).toBeTruthy();
+      expect(screen.getByTestId("application-editor").getAttribute("data-workspace"))
+        .toBe("kit-sp120-private-test");
+      expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining("NOT verified"));
+    } finally { confirm.mockRestore(); }
+  });
+
+  it("reopens existing saved vacancy with Start application, with no silent employer action", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      vi.mocked(api.getCV).mockResolvedValue({
+        present: true, filename: "ApplicantCV.pdf", sha256: "abc123",
+      });
+      const url = "https://careers.example.org/jobs/junior-analyst";
+      vi.mocked(api.getPrivateSavedJobs).mockResolvedValue({
+        jobs: [{
+          saved_job_id: "saved-123", company: "Example Oy", role_title: "Junior Analyst",
+          location: "Helsinki", description: "Python SQL analytics", application_url: url,
+          private: true, employer_availability_verified: false,
+          external_actions_authorized: false, created_at: "2026-11-03T01:00:00Z",
+        }], count: 1, private: true,
+      });
+      vi.mocked(api.startPrivateSavedApplication).mockResolvedValue({
+        workspace: { workspace_id: "kit-sp120-existing" }, created: false,
+        source: "private_saved_unverified", employer_verified: false,
+        final_submit_authorized: false,
+        next_step: "review_cv_and_letter_then_start_playwright",
+        external_actions_performed: 0,
+      } as never);
+      render(<App />);
+      await screen.findByRole("heading", { name: "CV connected. Choose how to apply." });
+      fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+      fireEvent.click(screen.getByRole("button", { name: "Start application" }));
+      await waitFor(() => expect(api.startPrivateSavedApplication).toHaveBeenCalledWith(
+        "saved-123", "usr-synthetic-1",
+      ));
+      expect(await screen.findByTestId("application-editor")).toBeTruthy();
+      expect(screen.getByTestId("application-editor").getAttribute("data-workspace"))
+        .toBe("kit-sp120-existing");
+      expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+      expect(screen.getByText(/Application opened. Next: review and save/)).toBeTruthy();
+    } finally { confirm.mockRestore(); }
   });
 });

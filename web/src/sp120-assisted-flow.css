@@ -1,0 +1,86 @@
+/* SP120: one obvious escape path from empty ATS search into private Assisted.
+   Shared product typography, clear focus, no false "application sent" badges. */
+.sp120-private-quickstart,
+.sp120-search-escape {
+  border: 1px solid #bfdeea;
+  border-left: 4px solid #1484a8;
+  background: linear-gradient(115deg, #f4fbff, #e8f7f6);
+  border-radius: 14px;
+  padding: clamp(15px, 2vw, 21px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: #143b53;
+}
+.sp120-private-quickstart h2 {
+  font-size: clamp(17px, 2vw, 21px);
+  font-weight: 800;
+  line-height: 1.24;
+  color: #11364d;
+  margin: 4px 0 8px;
+}
+.sp120-private-quickstart p,
+.sp120-search-escape p {
+  max-width: 67ch;
+  margin: 0;
+  color: #385d75;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.sp120-search-escape { margin: 16px 0 22px; }
+.sp120-search-escape strong { color: #173f59; font-size: 15px; }
+.sp120-private-quickstart > button,
+.sp120-search-escape > button { flex: 0 0 auto; min-height: 44px; }
+.sp120-private-quicklist {
+  flex-basis: 100%;
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+  border-top: 1px solid #bedce6;
+  padding-top: 14px;
+}
+.sp120-private-quicklist button { white-space: normal; text-align: left; }
+.sp120-playwright-start {
+  min-height: 46px;
+  font-weight: 800;
+  border: 2px solid #65d5eb;
+  box-shadow: 0 7px 18px rgba(10, 77, 109, .13);
+}
+.sp120-playwright-start:focus-visible,
+.sp120-private-quickstart button:focus-visible,
+.sp120-search-escape button:focus-visible,
+.sp120-private-quicklist button:focus-visible {
+  outline: 3px solid #188ab1;
+  outline-offset: 3px;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .sp120-private-quickstart, .sp120-search-escape
+) {
+  background: #1b354a;
+  border-color: #4a748d;
+  border-left-color: #82e0eb;
+  color: #f4fbff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .sp120-private-quickstart h2, .sp120-search-escape strong
+) { color: #eff9ff; }
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .sp120-private-quickstart p, .sp120-search-escape p
+) { color: #c7dceb; }
+html[data-smartploy-theme="dark"] .smartploy-app .sp120-private-quicklist {
+  border-color: #4b687f;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp120-playwright-start {
+  background: #177c9a;
+  border-color: #78e3e8;
+  color: #fff;
+}
+@media (max-width: 700px) {
+  .sp120-private-quickstart > button, .sp120-search-escape > button {
+    width: 100%;
+    justify-content: center;
+  }
+  .sp120-private-quicklist button { width: 100%; }
+}

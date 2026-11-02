@@ -37,7 +37,7 @@ from .application_workspace import (
 from .complete_letter import compose_completed_letter
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from .application_agents import ApplicationAgentConflict, PostgresApplicationAgentRepository
-from .browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
+from .browser_handoff import HandoffError, _assisted_posting_url, approved_fields_sha256, make_browser_packet, review_handoff
 from .employer_submit_claim_storage import EmployerSubmitClaimDenied, PostgresEmployerSubmitClaimRepository
 from .employer_review_intent_storage import (
     EmployerReviewIntentDenied, PostgresEmployerReviewIntentRepository,
@@ -99,7 +99,7 @@ from .oidc import (
 from .private_saved_jobs import (
     MemoryPrivateSavedJobRepository,
     PostgresPrivateSavedJobRepository,
-    PrivateSavedJobError,
+    PrivateSavedJobError, private_candidate,
 )
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
 from .preparations import (
@@ -288,6 +288,12 @@ class ApplicationWorkspaceStartPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     start_private_agent: StrictBool = False
     confirm_in_app_tracking_only: StrictBool = False
+
+
+class PrivateSavedApplicationStartPayload(BaseModel):
+    """Explicit applicant review of an unverified saved employer link."""
+    model_config = ConfigDict(extra="forbid")
+    acknowledge_unverified_employer: StrictBool = False
 
 
 class WorkspaceEditPayload(BaseModel):
@@ -1550,6 +1556,67 @@ def create_app(
             headers={"Cache-Control": "private, no-store"},
         )
 
+    def _candidate_for_workspace(tenant: SmartployService, workspace: Any) -> Any:
+        """Resolve only the current applicant's private bookmark, never shared jobs."""
+        key = workspace.canonical_key
+        if not key.startswith("private-saved-"):
+            return tenant.get_job(key)
+        match = re.fullmatch(r"private-saved-([a-f0-9]{32})", key)
+        if match is None:
+            return None
+        profile_id = tenant.profile_repository.profile_id
+        saved = app.state.private_saved_jobs.get(profile_id, "saved-" + match.group(1))
+        return private_candidate(saved) if saved is not None else None
+
+    @app.post("/api/v1/private-jobs/{saved_job_id}/application-workspace")
+    def start_private_saved_application(
+        saved_job_id: str, payload: PrivateSavedApplicationStartPayload, request: Request,
+    ) -> JSONResponse:
+        """Connect a user-added job directly to Assisted application documents."""
+        tenant, binding = tenant_context(request)
+        if binding is None or (
+            request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Origin", public_origin) != public_origin
+            or request.headers.get("Sec-Fetch-Site", "").casefold()
+               not in {"", "same-origin", "none"}
+        ):
+            raise HTTPException(status_code=403, detail="Signed-in same-origin applicant required")
+        if payload.acknowledge_unverified_employer is not True:
+            raise HTTPException(status_code=422, detail="Review the unverified employer before starting")
+        if re.fullmatch(r"saved-[a-f0-9]{32}", saved_job_id) is None:
+            raise HTTPException(status_code=404, detail="Saved job not found")
+        profile_id = tenant.profile_repository.profile_id
+        item = app.state.private_saved_jobs.get(profile_id, saved_job_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Saved job not found")
+        try:
+            _assisted_posting_url(item.application_url)
+            candidate = private_candidate(item)
+        except (HandoffError, PrivateSavedJobError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        cv = app.state.cv_repository.get(profile_id)
+        if cv is None or not cv.text.strip():
+            raise HTTPException(status_code=409, detail="Upload or create your CV before starting this application")
+        try:
+            proposed = new_workspace(
+                candidate, tenant.profile(),
+                source_cv_text=cv.text, source_cv_sha256=cv.digest,
+                allow_private_unverified=True,
+            )
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        stored, created = app.state.workspace_repository.create_or_get(proposed)
+        return JSONResponse(
+            {
+                "workspace": stored.to_dict(), "created": created,
+                "source": "private_saved_unverified",
+                "employer_verified": False, "final_submit_authorized": False,
+                "next_step": "review_cv_and_letter_then_start_playwright",
+                "external_actions_performed": 0,
+            },
+            headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"},
+        )
+
     @app.delete("/api/v1/private-jobs/{saved_job_id}")
     def remove_private_saved_job(saved_job_id: str, request: Request) -> JSONResponse:
         profile_id = private_saved_jobs_profile(request)
@@ -2175,8 +2242,10 @@ def create_app(
             raise HTTPException(
                 status_code=409, detail="Submitted application already has a browser receipt",
             )
-        candidate = tenant.get_job(current.canonical_key)
-        if candidate is None or not candidate.source_current:
+        candidate = _candidate_for_workspace(tenant, current)
+        if candidate is None or not (
+            candidate.source_current or candidate.metadata.get("private_saved_job") is True
+        ):
             raise HTTPException(status_code=409, detail="Employer posting is no longer current")
         if candidate.description_fingerprint != current.job_fingerprint:
             raise HTTPException(
@@ -2235,8 +2304,10 @@ def create_app(
             raise HTTPException(status_code=409, detail="Review the current saved draft before requesting AI")
         if app.state.browser_receipts.get(pid, workspace_id) is not None:
             raise HTTPException(status_code=409, detail="This submitted application already has a browser-observed confirmation")
-        candidate = tenant.get_job(current.canonical_key)
-        if candidate is None or not candidate.source_current:
+        candidate = _candidate_for_workspace(tenant, current)
+        if candidate is None or not (
+            candidate.source_current or candidate.metadata.get("private_saved_job") is True
+        ):
             raise HTTPException(status_code=409, detail="Job is no longer available")
         if candidate.description_fingerprint != current.job_fingerprint:
             raise HTTPException(status_code=409, detail="The employer job text changed; review it before generating")
@@ -3140,7 +3211,7 @@ def create_app(
         tenant, _ = tenant_context(request)
         try:
             packet = make_browser_packet(
-                workspace, tenant.get_job(workspace.canonical_key), tenant.profile()
+                workspace, _candidate_for_workspace(tenant, workspace), tenant.profile()
             )
         except HandoffError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -3193,7 +3264,7 @@ def create_app(
         # Keep human-reviewed autofill but never issue a fresh packet once
         # this signed-in account's employer job has a durable attempt.
         claim = existing_employer_claim(binding, item) if binding else None
-        job = tenant.get_job(item.canonical_key)
+        job = _candidate_for_workspace(tenant, item)
         result = review_handoff(item, job, tenant.profile())
         if claim is not None:
             result["ready"] = False
@@ -3225,7 +3296,7 @@ def create_app(
             raise HTTPException(status_code=409, detail="Document revision changed; review and retry")
         if app.state.browser_receipts.get(tenant.profile_repository.profile_id, workspace_id) is not None:
             raise HTTPException(status_code=409, detail="An employer confirmation is already recorded for this application")
-        job = tenant.get_job(item.canonical_key)
+        job = _candidate_for_workspace(tenant, item)
         try:
             packet = make_browser_packet(item, job, tenant.profile())
         except HandoffError as exc:
