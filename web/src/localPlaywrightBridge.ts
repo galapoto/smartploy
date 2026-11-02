@@ -1,3 +1,4 @@
+import type { BrowserReceiptImport } from "./types";
 /** SP111–SP112: explicit, applicant-local Playwright bridge transport.
  * Uses existing same-origin SmartPloy saved-CV GET only on separate user
  * consent. Never proxies employer/browser activity via SmartPloy's server.
@@ -31,18 +32,25 @@ export type LocalBridgeAttached = {
   ok: true; stage: "attached"; attached_locally: true;
   employer_upload_confirmed: false; submitted: false; uploaded: true;
 };
+/** SP113 observation is NOT an employer acknowledgement or send grant. */
+export type LocalBridgeObserved = {
+  ok: true; stage: "observed";
+  confirmed: boolean; receipt: BrowserReceiptImport | null;
+  employer_acknowledged: false;
+  submitted: false; uploaded: false;
+};
 export type LocalBridgeStopped = {
   ok: true; stage: "stopped"; submitted: false; uploaded: false;
 };
-type BridgeStage = "opened" | "inspected" | "filled" | "stopped";
-type BridgeResult = LocalBridgeOpened | LocalBridgeInspected | LocalBridgeFilled | LocalBridgeStopped;
+type BridgeStage = "opened" | "inspected" | "filled" | "observed" | "stopped";
+type BridgeResult = LocalBridgeOpened | LocalBridgeInspected | LocalBridgeFilled | LocalBridgeObserved | LocalBridgeStopped;
 
 export function localBridgeOriginAllowed(origin: string): boolean {
   return ALLOWED_PAGE_ORIGINS.has(origin);
 }
 
 export async function callLocalPlaywrightBridge<T extends BridgeResult>(
-  route: "prepare" | "inspect" | "fill" | "stop",
+  route: "prepare" | "inspect" | "fill" | "observe" | "stop",
   payload: Record<string, unknown>,
   options: { token?: string; expectedStage: BridgeStage }
 ): Promise<T> {
@@ -125,6 +133,62 @@ export async function callLocalPlaywrightBridge<T extends BridgeResult>(
       typeof field.label !== "string" || field.label.length > 100
     ))
   )) throw new Error("Unsafe or invalid local form preview.");
+  // The server only imports this independently via the original signed-in
+  // owner-scoped API after a second applicant approval. Browser observation
+  // must never become "submitted" or provider-acknowledged by type coercion.
+  if (route === "observe") {
+    if (body.employer_acknowledged !== false ||
+        typeof body.confirmed !== "boolean" ||
+        (body.confirmed === false && body.receipt !== null) ||
+        (body.confirmed === true && (
+          !body.receipt || typeof body.receipt !== "object" ||
+          Object.keys(body.receipt as object).sort().join("|") !== [
+            "application_url", "confirmation_page_sha256", "confirmation_page_url",
+            "confirmed_visible", "document_revision", "document_sha256",
+            "observed_at", "reference", "schema", "workspace_id"
+          ].sort().join("|")
+        ))) {
+      throw new Error("The local browser did not provide a bounded, unverified receipt.");
+    }
+    if (body.confirmed) {
+      const r = body.receipt as Record<string, unknown>;
+      if (r.schema !== "smartploy.browser_receipt.v1" ||
+          r.confirmed_visible !== true ||
+          typeof r.workspace_id !== "string" ||
+          !/^kit-[a-f0-9]{30}$/.test(r.workspace_id) ||
+          !Number.isSafeInteger(r.document_revision) ||
+          (r.document_revision as number) < 1 ||
+          typeof r.document_sha256 !== "string" ||
+          !/^[a-f0-9]{64}$/.test(r.document_sha256) ||
+          typeof r.application_url !== "string" ||
+          typeof r.confirmation_page_url !== "string" ||
+          typeof r.reference !== "string" ||
+          !/^[A-Za-z0-9][A-Za-z0-9._/-]{3,63}$/.test(r.reference) ||
+          typeof r.confirmation_page_sha256 !== "string" ||
+          !/^[a-f0-9]{64}$/.test(r.confirmation_page_sha256) ||
+          typeof r.observed_at !== "string" ||
+          !Number.isFinite(Date.parse(r.observed_at))) {
+        throw new Error("The visible receipt's job, reference or evidence format is invalid.");
+      }
+      let actual: URL;
+      let employer: URL;
+      try {
+        actual = new URL(r.confirmation_page_url as string);
+        employer = new URL(r.application_url as string);
+      } catch {
+        throw new Error("The employer confirmation URL is invalid.");
+      }
+      const greenhouseHosts = ["boards.greenhouse.io", "job-boards.greenhouse.io"];
+      if (actual.protocol !== "https:" || employer.protocol !== "https:" ||
+          actual.username || actual.password || employer.username || employer.password ||
+          actual.search || actual.hash || actual.port || employer.search || employer.hash ||
+          employer.port || (actual.origin !== employer.origin &&
+          !(greenhouseHosts.includes(actual.hostname) &&
+            greenhouseHosts.includes(employer.hostname)))) {
+        throw new Error("The employer confirmation belongs to another origin.");
+      }
+    }
+  }
   if (route === "fill" && (
     !Number.isSafeInteger(body.filled) ||
     !Number.isSafeInteger(body.planned) ||
