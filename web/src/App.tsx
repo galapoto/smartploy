@@ -1220,14 +1220,27 @@ export default function App() {
         {notice ? <div className="toast-notice" role="status"><Activity size={16} /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X size={17} /></button></div> : null}
         {error ? <div className="toast-notice error" role="alert"><AlertCircle size={16} /><span>{error}</span><button type="button" onClick={() => void load()} aria-label="Retry"><RefreshCw size={17} /></button></div> : null}
         {page === "dashboard" ? <>
-          <section className="sp99-finland-cover" aria-label="Finland winter archipelago cover">
-            <picture>
-              <source srcSet="/finland-archipelago-winter.avif" type="image/avif" />
-              <img src="/finland-archipelago-winter.svg" width={1200} height={164}
-                loading="eager" decoding="async"
-                alt="Original artwork: rose-gold winter light over Finland's rocky, ice-edged archipelago" />
-            </picture>
-            <span className="sp99-cover-credit">Original artwork · Finland's winter archipelago</span>
+          <section className="sp119-application-cover" aria-label="Your job application journey">
+            <img className="sp119-cover-art" src="/application-workspace-banner.svg"
+              width={1440} height={260} loading="eager" decoding="async" alt=""
+              aria-hidden="true" />
+            <div className="sp119-cover-copy">
+              <span className="sp119-cover-kicker">
+                <BriefcaseBusiness size={14} aria-hidden="true" /> YOUR NEXT OPPORTUNITY
+              </span>
+              <p className="sp119-cover-title">From your CV to your next role.</p>
+              <p className="sp119-cover-description">
+                Find relevant jobs, tailor your documents and apply with confidence.
+              </p>
+              <button className="sp119-cover-action" type="button"
+                onClick={cv.present ? () => navigate("apply") : onUploadClick}>
+                {cv.present ? "Choose how to apply" : "Upload a CV to begin"}
+                <ArrowRight size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <span className="sp119-cover-steps" aria-hidden="true">
+              CV <b>→</b> MATCH <b>→</b> REVIEW
+            </span>
           </section>
           <FinlandPageIdentity />
           {/* Keep CV -> Manual/Assisted/Auto directly after the compact cover.

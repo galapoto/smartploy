@@ -1801,17 +1801,18 @@ describe("SP97: AI writing tools have an honest, working CV-first entry", () => 
 });
 
 
-describe("SP99: original Finland cover, complete in-page identity and persistent theme", () => {
-  it("renders the panorama before the actionable CV-first journey, plus the complete logo", async () => {
+describe("SP119: actionable application banner, complete in-page identity and persistent theme", () => {
+  it("renders work-and-application artwork before CV-first steps without implying an employer send", async () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
-    const cover = screen.getByRole("region", { name: "Finland winter archipelago cover" });
-    const image = within(cover).getByRole("img", {
-      name: /Original artwork: rose-gold winter light/,
-    }) as HTMLImageElement;
-    expect(image.getAttribute("src")).toBe("/finland-archipelago-winter.svg");
-    expect(cover.querySelector('source[type="image/avif"]')?.getAttribute("srcset"))
-      .toBe("/finland-archipelago-winter.avif");
+    const cover = screen.getByRole("region", { name: "Your job application journey" });
+    const image = cover.querySelector("img.sp119-cover-art") as HTMLImageElement;
+    expect(image.getAttribute("src")).toBe("/application-workspace-banner.svg");
+    expect(image.getAttribute("alt")).toBe("");
+    expect(image.getAttribute("aria-hidden")).toBe("true");
+    expect(within(cover).getByText("From your CV to your next role.")).toBeTruthy();
+    expect(within(cover).getByRole("button", { name: /Upload a CV to begin/i })).toBeTruthy();
+    expect(cover.textContent).not.toMatch(/application submitted|sent to employer/i);
     const fullLogo = screen.getByRole("group", { name: "SmartPloy complete page logo" });
     expect(within(fullLogo).getByRole("img", {
       name: "SmartPloy turquoise and navy mark",
@@ -1825,6 +1826,21 @@ describe("SP99: original Finland cover, complete in-page identity and persistent
     expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Upload CV first/ })).toBeTruthy();
     expect(document.querySelectorAll(".flow-start-card[data-flow-mode]")).toHaveLength(3);
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("routes a CV-connected user into actual application method selection", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "SyntheticCV.pdf", sha256: "synthetic-cv-sha",
+    });
+    render(<App />);
+    expect(await screen.findByRole("heading", {
+      name: "CV connected. Choose how to apply.",
+    })).toBeTruthy();
+    const cover = screen.getByRole("region", { name: "Your job application journey" });
+    fireEvent.click(within(cover).getByRole("button", { name: "Choose how to apply" }));
+    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
   it("switches theme without losing navigation, remembers it and keeps full logo on other pages", async () => {
