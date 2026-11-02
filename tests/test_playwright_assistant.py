@@ -77,6 +77,13 @@ def field(index, label, name, **overrides):
     ("https://jobs.eu.lever.co/a/role/apply", "https://jobs.eu.lever.co/a/role/apply/", True),
     ("https://jobs.ashbyhq.com/a/role", "https://jobs.ashbyhq.com/a/role/application", True),
     ("https://boards.greenhouse.io/a/jobs/123", "https://job-boards.greenhouse.io/a/jobs/123", True),
+    ("https://ats.talentadore.com/apply/junior-analyst/m6rpoy", "https://ats.talentadore.com/apply/junior-analyst/m6rpoy", True),
+    ("https://ats.talentadore.com/apply/junior-analyst/m6rpoy", "https://ats.talentadore.com/apply/junior-analyst/m6rpoy/", True),
+    ("https://ats.talentadore.com/apply/junior-analyst/m6rpoy", "https://ats.talentadore.com/apply/junior-analyst/another", False),
+    ("https://ats.talentadore.com/apply/junior-analyst/m6rpoy", "https://ats.talentadore.com/apply/other-job/m6rpoy", False),
+    ("https://ats.talentadore.com/apply/junior-analyst/m6rpoy", "https://ats.talentadore.com/apply/junior-analyst/m6rpoy?source=duunitori", False),
+    ("https://ats.talentadore.com/apply/junior-analyst/m6rpoy", "https://ats.talentadore.com.evil.invalid/apply/junior-analyst/m6rpoy", False),
+    ("https://ats.talentadore.com/apply/junior-analyst/m6rpoy", "https://ats.talentadore.com/apply/junior-analyst/m6rpoy/submit", False),
     ("https://jobs.lever.co/a/role", "https://jobs.lever.co/a/other/apply", False),
     ("https://jobs.lever.co/a/role", "https://evil.invalid/a/role/apply", False),
     ("https://jobs.lever.co/a/role", "https://jobs.eu.lever.co/a/role/apply", False),
@@ -120,6 +127,7 @@ def test_sp110_valid_packet_matches_existing_production_browser_handoff_privacy(
     assert assistant.validate_packet(value) is value
     assert assistant.validate_packet(packet("https://jobs.ashbyhq.com/a/id"))
     assert assistant.validate_packet(packet("https://boards.greenhouse.io/a/jobs/123"))
+    assert assistant.validate_packet(packet("https://ats.talentadore.com/apply/junior-analyst/m6rpoy"))
 
 
 def test_sp110_expiry_and_clock_boundaries():

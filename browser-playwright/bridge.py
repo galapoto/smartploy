@@ -127,6 +127,11 @@ class ChromiumActor:
             encoding="utf-8",
         )
         original_host = urlsplit(packet["application_url"]).hostname
+        if original_host == "ats.talentadore.com":
+            raise BridgeError(
+                "TalentAdore confirmation recognition has not been verified. "
+                "Save the employer email and mark your own application manually.", 409
+            )
         allowed = (
             {"boards.greenhouse.io", "job-boards.greenhouse.io"}
             if original_host in {"boards.greenhouse.io", "job-boards.greenhouse.io"}

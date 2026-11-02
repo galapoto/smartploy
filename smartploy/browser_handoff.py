@@ -94,7 +94,7 @@ def _posting_url(raw: str) -> str:
 
 
 def _assisted_posting_url(raw: str) -> str:
-    """Accept exact hosted Lever, Ashby or Greenhouse for reviewed form HELP.
+    """Accept exact hosted Lever, Ashby, Greenhouse or TalentAdore for reviewed form HELP.
 
     The original `_posting_url` remains Lever-only and is used by independent
     final-submit rights. Greenhouse and Ashby never acquire submit authority.
@@ -121,6 +121,13 @@ def _assisted_posting_url(raw: str) -> str:
                     )
                 )
                 or (
+                    parsed.hostname == "ats.talentadore.com"
+                    and re.fullmatch(
+                        r"/apply/[A-Za-z0-9_-]{1,120}/[A-Za-z0-9_-]{5,30}/?",
+                        parsed.path,
+                    )
+                )
+                or (
                     parsed.hostname in {"job-boards.greenhouse.io", "boards.greenhouse.io"}
                     and re.fullmatch(
                         r"/[A-Za-z0-9_-]{1,100}/jobs/[0-9]{1,20}/?",
@@ -132,7 +139,7 @@ def _assisted_posting_url(raw: str) -> str:
             raise ValueError
     except (ValueError, TypeError) as exc:
         raise HandoffError(
-            "An exact hosted Lever, Ashby or Greenhouse HTTPS job URL is required"
+            "An exact hosted Lever, Ashby, Greenhouse or TalentAdore HTTPS job URL is required"
         ) from exc
     return raw
 

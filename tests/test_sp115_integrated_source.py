@@ -23,7 +23,7 @@ def manifest():
 def test_sp115_exact_integrated_source_inventory_passes_without_network(manifest):
     assert manifest["schema"] == EXPECTED_SCHEMA
     assert manifest["source_head_sha"] == EXPECTED_HEAD
-    assert verify_inventory(ROOT, manifest) == 46
+    assert verify_inventory(ROOT, manifest) == 54
 
 
 def test_sp115_single_byte_source_mutation_is_rejected(manifest):

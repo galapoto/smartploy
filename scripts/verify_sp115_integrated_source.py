@@ -59,6 +59,15 @@ MANDATORY = frozenset({
     "browser-companion/tests/page-question-sync.test.mjs",
     "web/scripts/package_companion.py",
     "docs/SP117_CHROME_QUESTION_SYNC.md",
+    # SP118 exact ATS assistance; no applicant data or remote final action.
+    "browser-playwright/INSTALL.txt",
+    "browser-companion/upload.mjs",
+    "browser-companion/tests/logic.test.mjs",
+    "browser-companion/tests/upload.test.mjs",
+    "tests/test_browser_handoff.py",
+    "tests/test_playwright_assistant.py",
+    "tests/test_playwright_assistant_chromium.py",
+    "docs/SP118_TALENTADORE_ASSISTED_DEMO.md",
 })
 
 
