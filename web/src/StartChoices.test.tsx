@@ -64,3 +64,20 @@ describe("SP101: CV replacement handshake on the first screen", () => {
     expect(onMode).toHaveBeenCalledWith("assisted");
   });
 });
+
+describe("SP109: unavailable CV is neither deleted nor safe to replace", () => {
+  it("hides upload/create actions and links disabled modes to a retryable alert", () => {
+    const retry = vi.fn();
+    render(<StartChoices cvPresent cvFilename="Private.pdf" cvUnavailable
+      onMode={vi.fn()} onBrowse={vi.fn()} onUpload={vi.fn()}
+      onCreateCV={vi.fn()} onRetryCV={retry} />);
+    expect(screen.getByRole("heading", { name: "We couldn't verify your CV." })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Upload CV first/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Create CV from scratch/i })).toBeNull();
+    const choice = screen.getByRole("button", { name: /Automatic.*AutoApply/i }) as HTMLButtonElement;
+    expect(choice.disabled).toBe(true);
+    expect(choice.getAttribute("aria-describedby")).toBe("flow-start-cv-unavailable");
+    fireEvent.click(screen.getByRole("button", { name: "Retry CV check" }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+});
