@@ -796,6 +796,56 @@ describe("Application Studio private-read account boundary", () => {
   });
 
 
+  it("SP111 prepares owner-reviewed Playwright packet in tab memory without clipboard", async () => {
+    const clipboard = vi.fn(async (_value: string) => undefined);
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true, value: { writeText: clipboard },
+    });
+    try {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({
+        packet: {
+          schema: "smartploy.browser_handoff.v2",
+          issued_at: new Date().toISOString(), expires_at: "2099-01-01T00:10:00Z",
+          application_url: "https://jobs.lever.co/synthetic/role",
+          company: "Synthetic", role_title: "QA Engineer",
+          workspace_id: "workspace-A", revision: 1,
+          document_sha256: "a".repeat(64), cv_pdf_sha256: "b".repeat(64),
+          approved_fields_sha256: "c".repeat(64), cv_pdf_size: 1024,
+          fields: { full_name: "Private Applicant", first_name: "Private",
+            last_name: "Applicant", email: "private@example.invalid",
+            phone: "", location: "", linkedin: "", github: "",
+            cover_letter: "Private approved synthetic cover letter" },
+          privacy: { approved_contact_only: true, original_cv_included: false,
+            browser_form_fill_allowed_after_user_click: true,
+            employer_submit_allowed_without_new_approval: false },
+        },
+        external_actions_performed: false,
+      });
+      studio("assisted");
+      expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+      const prepare = screen.getByRole("button", {
+        name: "Prepare Playwright handoff (no clipboard)",
+      });
+      await waitFor(() => expect((prepare as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(prepare);
+      await waitFor(() => expect(api.createBrowserHandoffPacket).toHaveBeenCalledWith(
+        "workspace-A", 1, "usr-a",
+      ));
+      expect(await screen.findByRole("region", {
+        name: "Paired local Playwright browser",
+      })).toBeTruthy();
+      expect(screen.getByText(/Private Playwright packet prepared only in this tab/)).toBeTruthy();
+      expect(clipboard).not.toHaveBeenCalled();
+      expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+      expect(api.submitAuthorizedAutoApplyBatch).not.toHaveBeenCalled();
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
+
   it("records the approved packet hashes for one job and can cancel, without a submit API", async () => {
     const packet = {
       schema: "smartploy.browser_handoff.v2" as const,
