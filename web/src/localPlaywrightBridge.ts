@@ -1,5 +1,7 @@
-/** SP111: explicit, applicant-local Playwright bridge transport.
- * No SmartPloy API/proxy, hidden remote browser, cookies or redirects.
+/** SP111–SP112: explicit, applicant-local Playwright bridge transport.
+ * Uses existing same-origin SmartPloy saved-CV GET only on separate user
+ * consent. Never proxies employer/browser activity via SmartPloy's server.
+ * No hidden remote browser, cookies to localhost or redirects.
  * A production HTTPS app may be refused local-network access by the browser:
  * that refusal is a blocker, never a reason to forward data elsewhere.
  */
