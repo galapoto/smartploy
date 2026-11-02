@@ -1,3 +1,55 @@
+SmartPloy local Playwright form assistant (SP111)
+================================================
+
+Preferred: connect once, fill from SmartPloy (applicant-local pairing)
+--------------------------------------------------------------------
+1. Extract SmartPloy's reviewed ZIP to your own computer. Verify checksum.
+   Requires desktop Python 3.11+ and Chromium; install once in a venv:
+      python -m pip install playwright==1.55.0
+      python -m playwright install chromium
+2. In that extracted directory, start the OPTIONAL local helper:
+      python bridge.py
+   The terminal displays a temporary pairing code. Keep it private.
+   The helper listens ONLY at http://127.0.0.1:48741 on your computer, not
+   on SmartPloy's server or the public Internet. It never stores applicant
+   passwords, uploaded CV files, cookies from Chrome or employer credentials.
+   Leave this terminal running until you complete one application.
+3. In signed-in SmartPloy, prepare/review and save the exact CV and letter.
+   Under My applications > Fill the employer's form, click
+   Copy approved autofill packet (this creates the expiring reviewed packet).
+   Then find "Connect my local Playwright browser", enter the code shown in
+   the terminal and click "Open reviewed employer form". Check the consent
+   prompt: the local helper receives only the approved packet.
+4. A visible, isolated Chromium browser opens on the exact employer posting.
+   Navigate to its application form. Complete login or MFA yourself.
+   Return to SmartPloy and click "Inspect current employer form".
+5. Review the suggested field names and click "Fill reviewed fields once".
+   SmartPloy asks you to confirm explicitly. The helper verifies the exact
+   job, expiry, form/field metadata and one-use review before each input.
+   A field input may transmit immediately to the employer's website.
+6. Review everything in the visible browser. Upload your CV PDF and answer
+   any salary/visa/legal/consent questions PERSONALLY. If you choose to apply,
+   click the employer's own Submit button PERSONALLY, save its receipt, then
+   click "Stop local browser session" in SmartPloy or Ctrl+C in the helper.
+7. The helper is single-use. Restart it for a new application (new pairing
+   code). If local networking is blocked by your browser's security policy,
+   use the retained Chrome companion extension instead.
+
+Security: the browser sends requests ONLY to 127.0.0.1:48741 with
+credentials: omit and no referrer. The local helper accepts requests only
+from the two authorized SmartPloy production origins (plus isolated local
+test-origin ports), rejects DNS-rebinding Host headers and unknown origins,
+uses a time-limited one-use code and random in-memory session token, and
+allows at most one explicitly approved field-fill attempt. There is no
+remote server browser, background auto-submit or general-any-site control.
+No CAPTCHA/MFA bypass, hidden password/consent filling, file upload, retries
+after uncertain outcomes or automatic final employer click. The bridge does
+not keep applicant packets on disk; its temporary Chromium profile is
+destroyed after the helper stops. Chrome/Chromium may require local-network
+permission; a browser that denies this permission must fail closed.
+
+Alternative: original terminal-only one-job workflow (SP110)
+-------------------------------------------------------------
 SmartPloy local Playwright form assistant (SP110)
 ================================================
 
