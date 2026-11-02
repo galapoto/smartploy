@@ -14,6 +14,7 @@ CAPTCHA bypass, credential collection, hidden browser or background actions.
 from __future__ import annotations
 
 import getpass
+from hashlib import sha256
 import json
 import re
 import sys
@@ -130,6 +131,13 @@ def same_reviewed_form(posting_url: str, current_url: str) -> bool:
     return False
 
 
+def _approved_fields_sha256(fields: dict[str, str]) -> str:
+    """Copy SmartPloy's original length-prefixed, canonical fields fingerprint."""
+    parts = [str(len(fields[key].encode("utf-8"))) + ":" + fields[key]
+             for key in FIELD_NAMES]
+    return sha256(("smartploy.fields.v1\0" + "\0".join(parts)).encode("utf-8")).hexdigest()
+
+
 def _parse_time(value: str) -> datetime:
     try:
         stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -180,7 +188,8 @@ def validate_packet(raw: Any, *, now: datetime | None = None) -> dict[str, Any]:
     ):
         raise PacketError("The packet must contain approved text fields only")
     if (
-        not f["full_name"].strip()
+        raw.get("approved_fields_sha256") != _approved_fields_sha256(f)
+        or not f["full_name"].strip()
         or re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", f["email"]) is None
         or any(len(f[k]) > maximum for k, maximum in {
             "full_name": 160, "first_name": 160, "last_name": 160,
