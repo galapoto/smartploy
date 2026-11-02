@@ -1500,7 +1500,8 @@ export default function App() {
             {cvBlock}
             <ApplicationProfilePanel key={accountViewKey + "-profile"}
               expectedUserId={session?.user_id || ""} facts={facts}
-              cvPresent={cv.present} />
+              cvPresent={cv.present} cvVerified={cvReadState === "available"}
+              onFactsSuggested={() => void load(true)} />
             {cvReadState === "unavailable" && unsavedDocumentRef.current.masterCV
               ? <section className="panel" role="alert">
                 <h2>CV check failed — your unsaved edits are preserved</h2>
