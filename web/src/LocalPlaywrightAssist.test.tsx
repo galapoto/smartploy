@@ -92,6 +92,8 @@ describe("SP111 paired browser review-first UI", () => {
     expect(args.credentials).toBe("omit");
     expect(args.redirect).toBe("error");
     expect(args.referrerPolicy).toBe("no-referrer");
+    expect((args as RequestInit & { targetAddressSpace: "loopback" }).targetAddressSpace)
+      .toBe("loopback");
     expect(args.headers).not.toHaveProperty("Authorization");
     expect(JSON.parse(String(args.body))).toEqual({ pairing_code: pairing, packet: JSON.parse(packet) });
     expect(document.body.textContent).not.toContain("private@example.invalid");
