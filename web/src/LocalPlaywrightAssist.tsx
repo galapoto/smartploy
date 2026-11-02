@@ -12,7 +12,8 @@ import {
   attachExactReviewedCvLocally, fetchExactReviewedCvPdf,
   callLocalPlaywrightBridge, localBridgeOriginAllowed,
   type LocalBridgeOpened, type LocalBridgeInspected,
-  type LocalBridgeFilled, type LocalBridgeObserved,
+  type LocalBridgeFilled, type LocalQuestionsInspected,
+  type LocalAnswersFilled, type LocalReviewedQuestion, type LocalBridgeObserved,
   type LocalBridgeStopped, type LocalBridgeField,
 } from "./localPlaywrightBridge";
 import "./local-playwright.css";
@@ -41,6 +42,13 @@ export default function LocalPlaywrightAssist(props: {
   const [cvAttached, setCvAttached] = useState(false);
   const [cvAttachAttempted, setCvAttachAttempted] = useState(false);
   const [cvAttachBusy, setCvAttachBusy] = useState(false);
+  const [reviewedQuestions, setReviewedQuestions] = useState<LocalReviewedQuestion[]>([]);
+  const [humanOnlyQuestions, setHumanOnlyQuestions] = useState<string[]>([]);
+  const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
+  const [questionPlanId, setQuestionPlanId] = useState("");
+  const [questionAttempted, setQuestionAttempted] = useState(false);
+  const [questionInspectionDone, setQuestionInspectionDone] = useState(false);
+  const [questionStatus, setQuestionStatus] = useState("");
   const [observedReceipt, setObservedReceipt] = useState<BrowserReceiptImport | null>(null);
   const [receiptSaveClaimed, setReceiptSaveClaimed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -233,6 +241,64 @@ export default function LocalPlaywrightAssist(props: {
     });
   }
 
+  function reviewEmployerQuestions() {
+    if (!props.enabled || inFlight.current || !sessionToken.current ||
+        questionAttempted || !["opened", "inspected", "filled"].includes(phase)) return;
+    void guarded(async () => {
+      const result = await callLocalPlaywrightBridge<LocalQuestionsInspected>(
+        "questions", {}, {
+          token: sessionToken.current, expectedStage: "questions_inspected",
+        },
+      );
+      if (!mounted.current) return;
+      setReviewedQuestions(result.questions);
+      setHumanOnlyQuestions(result.human_only);
+      setQuestionAnswers(result.questions.map(() => ""));
+      setQuestionPlanId(result.plan_id);
+      setQuestionInspectionDone(true);
+      setQuestionStatus(result.questions.length
+        ? "Only eligible unanswered text questions are shown here. Enter " +
+          "truthful, personally reviewed answers. Leave sensitive and " +
+          "unlisted fields for the visible employer form."
+        : "No safe unanswered text questions. Complete remaining questions " +
+          "personally in the employer browser.");
+    });
+  }
+
+  function fillReviewedEmployerAnswers() {
+    if (!props.enabled || !sessionToken.current || inFlight.current ||
+        !questionInspectionDone || !questionPlanId || questionAttempted ||
+        !["opened", "inspected", "filled"].includes(phase) ||
+        !questionAnswers.some(item => item.trim())) return;
+    if (!window.confirm(
+      "FILL YOUR REVIEWED EMPLOYER ANSWERS ONCE? You confirm every entered " +
+      "statement is accurate and truthful. The employer may receive answers " +
+      "immediately on input/change. Sensitive questions, salary, visa, legal " +
+      "consent and identity details remain manual. SmartPloy NEVER clicks " +
+      "Submit. An uncertain fill will NOT be retried."
+    )) return;
+    // An HTTP response can be lost AFTER employer page input/change.
+    // Consume the local attempt before contacting the helper.
+    setQuestionAttempted(true);
+    const approved = [...questionAnswers];
+    setQuestionAnswers([]);
+    void guarded(async () => {
+      const result = await callLocalPlaywrightBridge<LocalAnswersFilled>(
+        "fill-questions", {
+          plan_id: questionPlanId,
+          confirmation: "FILL REVIEWED ANSWERS",
+          answers: approved,
+        }, { token: sessionToken.current, expectedStage: "answers_filled" },
+      );
+      if (!mounted.current) return;
+      setQuestionStatus("Reviewed employer answers: " + result.filled + " of " +
+        result.planned + " filled. " + (result.status === "filled_for_review"
+          ? "Review every value in the employer browser before submitting."
+          : "Some inputs changed or were refused; inspect the employer page " +
+            "manually and do not retry."));
+    });
+  }
+
   function attachCurrentReviewedCv() {
     if (!props.enabled || inFlight.current || !sessionToken.current ||
         !cvAttachment.available || !cvAttachment.attach_id ||
@@ -380,6 +446,10 @@ export default function LocalPlaywrightAssist(props: {
       setPhase("stopped"); setFields([]); setPlanId("");
       setCvAttachment({ available: false, label: "", attach_id: "" });
       setCvAttached(false); setCvAttachAttempted(true);
+      setReviewedQuestions([]); setHumanOnlyQuestions([]);
+      setQuestionAnswers([]); setQuestionPlanId("");
+      setQuestionAttempted(true); setQuestionInspectionDone(false);
+      setQuestionStatus("");
       setBusy(false);
     });
   }
@@ -438,6 +508,57 @@ export default function LocalPlaywrightAssist(props: {
         Fill reviewed fields once (never submit)
       </button>
     </div> : null}
+    {sessionToken.current && ["opened", "inspected", "filled"].includes(phase) ?
+      <div className="local-playwright-actions" aria-label="Reviewed employer questions">
+        <strong>Employer questions · applicant review</strong>
+        <p className="muted">
+          Reuses the original Chrome companion question policy. Only safe,
+          unanswered required text questions are eligible for optional
+          one-time filling. You must answer salary, work authorization,
+          legal consent, identity and other sensitive questions yourself.
+        </p>
+        <button type="button" className="outline-btn"
+          disabled={!props.enabled || busy || questionAttempted}
+          onClick={reviewEmployerQuestions}>
+          {questionInspectionDone ? "Reinspect unanswered questions" :
+            "Review unanswered employer questions"}
+        </button>
+        {questionInspectionDone ? <>
+          {reviewedQuestions.length > 0 ? <div className="local-playwright-questions">
+            {reviewedQuestions.map((question, i) =>
+              <label key={question.index + ":" + question.label}>
+                {question.label}
+                <textarea rows={3}
+                  value={questionAnswers[i] || ""}
+                  maxLength={question.max_answer_length}
+                  autoComplete="off" spellCheck={false}
+                  placeholder="Write a truthful answer; leave blank to handle manually"
+                  disabled={!props.enabled || busy || questionAttempted}
+                  onChange={(event) => setQuestionAnswers(previous =>
+                    previous.map((value, n) => n === i ? event.target.value : value)
+                  )}/>
+              </label>)}
+            <button type="button" className="navy-btn"
+              disabled={!props.enabled || busy || questionAttempted ||
+                !questionAnswers.some(value => value.trim())}
+              onClick={fillReviewedEmployerAnswers}>
+              Fill my reviewed answers once (never submit)
+            </button>
+          </div> : null}
+          {humanOnlyQuestions.length ? <div className="local-playwright-manual">
+            <strong>Answer personally on the employer website</strong>
+            <ul>{humanOnlyQuestions.slice(0, 12).map((label, i) =>
+              <li key={label + ":" + i}>{label}</li>)}</ul>
+            {humanOnlyQuestions.length > 12 ?
+              <p>Additional manual fields: {humanOnlyQuestions.length - 12}</p> : null}
+          </div> : null}
+          {questionStatus ? <p role="status">{questionStatus}</p> : null}
+          {questionAttempted ? <p role="alert">
+            Answer filling has been attempted once. Do not retry after
+            an uncertain result; review the actual employer form manually.
+          </p> : null}
+        </> : null}
+      </div> : null}
     {cvAttachment.available && ["inspected", "filled"].includes(phase) ?
       <div className="local-playwright-actions" aria-label="Reviewed CV PDF attachment">
         <strong>CV PDF · {cvAttachment.label}</strong>

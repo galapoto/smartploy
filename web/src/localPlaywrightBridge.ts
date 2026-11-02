@@ -33,6 +33,30 @@ export type LocalBridgeAttached = {
   employer_upload_confirmed: false; submitted: false; uploaded: true;
 };
 /** SP113 observation is NOT an employer acknowledgement or send grant. */
+/** SP114: original Chrome question rules, not generated model answers.
+ * Applicant must type truthful answers and approve a one-time form fill.
+ */
+export type LocalReviewedQuestion = {
+  index: number;
+  label: string;
+  type: "text" | "textarea";
+  expected_id: string;
+  expected_name: string;
+  expected_placeholder: string;
+  expected_max_length: number;
+  max_answer_length: number;
+};
+export type LocalQuestionsInspected = {
+  ok: true; stage: "questions_inspected"; plan_id: string;
+  questions: LocalReviewedQuestion[]; human_only: string[];
+  submitted: false; uploaded: false;
+};
+export type LocalAnswersFilled = {
+  ok: true; stage: "answers_filled";
+  status: "filled_for_review" | "partial_needs_review" | "blocked";
+  filled: number; planned: number;
+  submitted: false; uploaded: false;
+};
 export type LocalBridgeObserved = {
   ok: true; stage: "observed";
   confirmed: boolean; receipt: BrowserReceiptImport | null;
@@ -42,15 +66,15 @@ export type LocalBridgeObserved = {
 export type LocalBridgeStopped = {
   ok: true; stage: "stopped"; submitted: false; uploaded: false;
 };
-type BridgeStage = "opened" | "inspected" | "filled" | "observed" | "stopped";
-type BridgeResult = LocalBridgeOpened | LocalBridgeInspected | LocalBridgeFilled | LocalBridgeObserved | LocalBridgeStopped;
+type BridgeStage = "opened" | "inspected" | "filled" | "questions_inspected" | "answers_filled" | "observed" | "stopped";
+type BridgeResult = LocalBridgeOpened | LocalBridgeInspected | LocalBridgeFilled | LocalQuestionsInspected | LocalAnswersFilled | LocalBridgeObserved | LocalBridgeStopped;
 
 export function localBridgeOriginAllowed(origin: string): boolean {
   return ALLOWED_PAGE_ORIGINS.has(origin);
 }
 
 export async function callLocalPlaywrightBridge<T extends BridgeResult>(
-  route: "prepare" | "inspect" | "fill" | "observe" | "stop",
+  route: "prepare" | "inspect" | "fill" | "questions" | "fill-questions" | "observe" | "stop",
   payload: Record<string, unknown>,
   options: { token?: string; expectedStage: BridgeStage }
 ): Promise<T> {
@@ -189,6 +213,39 @@ export async function callLocalPlaywrightBridge<T extends BridgeResult>(
       }
     }
   }
+  if (route === "questions") {
+    if (!/^[A-Za-z0-9_-]{16,100}$/.test(String(body.plan_id || "")) ||
+        !Array.isArray(body.questions) || body.questions.length > 12 ||
+        !Array.isArray(body.human_only) || body.human_only.length > 250 ||
+        body.human_only.some(item => typeof item !== "string" ||
+          !item.length || item.length > 150) ||
+        body.questions.some(q => {
+          if (!q || typeof q !== "object") return true;
+          const item = q as Record<string, unknown>;
+          return !Number.isSafeInteger(item.index) ||
+            (item.index as number) < 0 || (item.index as number) >= 250 ||
+            typeof item.label !== "string" ||
+            !item.label.length || item.label.length > 150 ||
+            (item.type !== "text" && item.type !== "textarea") ||
+            ["expected_id", "expected_name", "expected_placeholder"].some(key =>
+              typeof item[key] !== "string" ||
+              (item[key] as string).length > 150
+            ) ||
+            !Number.isSafeInteger(item.expected_max_length) ||
+            !Number.isSafeInteger(item.max_answer_length) ||
+            (item.max_answer_length as number) < 2 ||
+            (item.max_answer_length as number) > 1500;
+        })
+    ) throw new Error("Invalid employer question review; complete manually.");
+  }
+  if (route === "fill-questions" && (
+    !["filled_for_review", "partial_needs_review", "blocked"].includes(
+      String(body.status || "")) ||
+    !Number.isSafeInteger(body.filled) || !Number.isSafeInteger(body.planned) ||
+    (body.filled as number) < 0 || (body.planned as number) < 0 ||
+    (body.planned as number) > 12 ||
+    (body.filled as number) > (body.planned as number)
+  )) throw new Error("Uncertain employer answer result; inspect manually.");
   if (route === "fill" && (
     !Number.isSafeInteger(body.filled) ||
     !Number.isSafeInteger(body.planned) ||

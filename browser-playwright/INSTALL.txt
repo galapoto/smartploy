@@ -1,4 +1,4 @@
-SmartPloy local Playwright form assistant (SP113)
+SmartPloy local Playwright form assistant (SP114)
 ================================================
 
 Preferred: connect once, fill from SmartPloy (applicant-local pairing)
@@ -36,12 +36,22 @@ Preferred: connect once, fill from SmartPloy (applicant-local pairing)
    then transfers it ONLY to your paired local Playwright helper. The
    helper re-verifies the exact PDF and employer field before attaching it
    ONCE. Do not retry an uncertain result; inspect the page manually.
-7. Review everything in the visible browser. Confirm the employer actually
+7. OPTIONAL reviewed employer questions: click
+   "Review unanswered employer questions" after filling contact details.
+   This runs the EXACT existing SmartPloy Chrome companion question rules
+   inside your visible Playwright form. Review eligible text questions,
+   type ONLY truthful personally checked answers, and click
+   "Fill my reviewed answers once (never submit)" if you agree.
+   Your answers may transmit immediately when the employer field changes.
+   Salary, immigration, legal consent, EEO and other sensitive questions
+   are listed for you to answer MANUALLY on the employer website.
+   Any uncertain result is one-use: do not retry the same inputs blindly.
+8. Review everything in the visible browser. Confirm the employer actually
    accepted the attached CV, or upload the CV manually if no eligible input
    was found. Answer salary/visa/legal/consent questions PERSONALLY. If you
    choose to apply, click the employer's Submit button PERSONALLY and save
    any actual employer acknowledgement or receipt.
-8. OPTIONAL observation, ONLY AFTER personally clicking the employer's
+9. OPTIONAL observation, ONLY AFTER personally clicking the employer's
    Submit button: if the exact job's confirmation is still visible in the
    paired Chromium browser, select "Observe employer confirmation (read-only)"
    in SmartPloy and explicitly approve the read-only inspection.
@@ -49,15 +59,15 @@ Preferred: connect once, fill from SmartPloy (applicant-local pairing)
    Chrome companion. It does not submit, retry, sign in, or click anything.
    If no unique confirmation reference exists, do not retry the employer
    Submit action. Check the employer portal yourself.
-9. If a matching reference is visible, select "Save unverified observation
+10. If a matching reference is visible, select "Save unverified observation
    to SmartPloy". Approve a SECOND confirmation. The existing private
    SmartPloy owner-scoped receipt endpoint records it as
    "browser_observed_unverified": this is NOT independent employer
    acknowledgement and does not count as a verified application submission.
    Do not repeat a save if a network outcome is uncertain; refresh My
    Applications and inspect the existing record instead.
-10. Stop the local browser (or Ctrl+C in its terminal).
-11. For another application, start a new helper with a new pairing code.
+11. Stop the local browser (or Ctrl+C in its terminal).
+12. For another application, start a new helper with a new pairing code.
     If localhost access is blocked, use the Chrome companion instead.
 
 Security: the browser sends requests ONLY to 127.0.0.1:48741 with
@@ -69,6 +79,11 @@ remote server browser, background auto-submit or general-any-site control.
 No CAPTCHA/MFA bypass, hidden password/consent filling, unattended
 file attachment, retries after uncertain outcomes or final employer click.
 Optional exact CV attachment is a separate applicant-reviewed action.
+The employer-question assistant only INSPECTS unanswered required text
+questions and fills the applicant's own explicitly reviewed answers ONCE.
+The ORIGINAL browser-companion question policy refuses protected/sensitive
+answer types, ambiguous fields and changed form controls. It never composes
+employment claims, chooses legal consents, or submits a form.
 Read-only receipt observation is likewise separate: only an original
 reference-bearing confirmation for the SAME employer job may be saved
 as an UNVERIFIED observation. Never infer a provider-issued receipt,

@@ -33,7 +33,7 @@ const session = {
   auth_source: "oidc", email: "same@example.invalid",
 };
 
-function mockReply(stage: "opened" | "inspected" | "filled" | "attached" | "stopped") {
+function mockReply(stage: "opened" | "inspected" | "filled" | "questions_inspected" | "answers_filled" | "attached" | "stopped") {
   const values = {
     opened: {
       ok: true, stage: "opened", token: localToken,
@@ -50,6 +50,21 @@ function mockReply(stage: "opened" | "inspected" | "filled" | "attached" | "stop
     filled: {
       ok: true, stage: "filled", filled: 2, planned: 2,
       stopped_on_change: false, submitted: false, uploaded: false,
+    },
+    questions_inspected: {
+      ok: true, stage: "questions_inspected", plan_id: "Q".repeat(22),
+      questions: [{
+        index: 3, label: "Describe a project you led", type: "textarea",
+        expected_id: "project", expected_name: "project_example",
+        expected_placeholder: "", expected_max_length: -1,
+        max_answer_length: 1500,
+      }],
+      human_only: ["Visa sponsorship", "Salary expectation", "GDPR consent"],
+      submitted: false, uploaded: false,
+    },
+    answers_filled: {
+      ok: true, stage: "answers_filled", status: "filled_for_review",
+      filled: 1, planned: 1, submitted: false, uploaded: false,
     },
     attached: { ok: true, stage: "attached",
       attached_locally: true, employer_upload_confirmed: false,
@@ -86,6 +101,8 @@ beforeEach(() => {
     if (url.endsWith("/v1/inspect")) return mockReply("inspected");
     if (url.endsWith("/v1/fill")) return mockReply("filled");
     if (url.endsWith("/v1/attach")) return mockReply("attached");
+    if (url.endsWith("/v1/questions")) return mockReply("questions_inspected");
+    if (url.endsWith("/v1/fill-questions")) return mockReply("answers_filled");
     if (url.endsWith("/v1/observe")) return {
       ok: true, status: 200, json: async () => ({
         ok: true, stage: "observed", confirmed: false,
@@ -302,6 +319,76 @@ describe("SP111 paired browser review-first UI", () => {
       u.includes("/api/v1/application-workspaces/"))).toBe(true);
     expect(ui.container.textContent).not.toContain("private@example.invalid");
     expect(window.confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it("SP114 reviews only eligible employer questions and fills user-written answers once", async () => {
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    const review = await screen.findByRole("button", {
+      name: "Review unanswered employer questions",
+    });
+    fireEvent.click(review);
+    const answer = await screen.findByLabelText("Describe a project you led");
+    expect(screen.getByText("Visa sponsorship")).toBeTruthy();
+    expect(screen.getByText("Salary expectation")).toBeTruthy();
+    expect(screen.getByText("GDPR consent")).toBeTruthy();
+    expect(screen.queryByLabelText("Visa sponsorship")).toBeNull();
+    expect(screen.queryByLabelText("Salary expectation")).toBeNull();
+    const qCall = vi.mocked(fetch).mock.calls.find(c =>
+      String(c[0]).endsWith("/v1/questions"),
+    )!;
+    expect((qCall[1] as RequestInit).credentials).toBe("omit");
+    expect(JSON.parse(String((qCall[1] as RequestInit).body))).toEqual({});
+    fireEvent.change(answer, {
+      target: {value: "I led an actual Python data-quality project."},
+    });
+    fireEvent.click(screen.getByRole("button", {
+      name: "Fill my reviewed answers once (never submit)",
+    }));
+    expect(await screen.findByText(/Reviewed employer answers: 1 of 1 filled/)).toBeTruthy();
+    const fillCalls = vi.mocked(fetch).mock.calls.filter(c =>
+      String(c[0]).endsWith("/v1/fill-questions"),
+    );
+    expect(fillCalls).toHaveLength(1);
+    const request = fillCalls[0][1] as RequestInit;
+    expect(request.credentials).toBe("omit");
+    expect(request.redirect).toBe("error");
+    expect(JSON.parse(String(request.body))).toEqual({
+      plan_id: "Q".repeat(22), confirmation: "FILL REVIEWED ANSWERS",
+      answers: ["I led an actual Python data-quality project."],
+    });
+    expect(screen.getByText(/Do not retry after an uncertain result/)).toBeTruthy();
+    expect(screen.getByRole("button", {
+      name: "Fill my reviewed answers once (never submit)",
+    }).hasAttribute("disabled")).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it("SP114 refuses employer question review after prior application attempt", async () => {
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    const review = await screen.findByRole("button", {
+      name: "Review unanswered employer questions",
+    });
+    vi.mocked(getEmployerAttemptStatus).mockResolvedValue({
+      previous_attempt_reserved: true, state: "uncertain",
+      requires_human_reconciliation: true,
+      automatic_employer_submit_authorized: false,
+      external_confirmation_verified: false, cross_device_server_claim_required: true,
+    });
+    fireEvent.click(review);
+    const warnings = await screen.findAllByRole("alert");
+    expect(warnings.some(w => w.textContent?.includes("reserved or uncertain"))).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.some(c =>
+      String(c[0]).endsWith("/v1/questions"),
+    )).toBe(false);
   });
 
   it("SP113 reads the original browser observation then imports only on second approval", async () => {

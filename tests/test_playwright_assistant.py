@@ -282,7 +282,7 @@ def test_sp110_archive_deterministic_allowlisted_and_checksum(tmp_path):
         digest1 + "  " + path1.name + "\n"
     )
     with zipfile.ZipFile(path1) as archive:
-        assert archive.namelist() == ["INSTALL.txt", "SHA256SUMS.txt", "assistant.py", "bridge.py", "receipt-inspector.js"]
+        assert archive.namelist() == ["INSTALL.txt", "SHA256SUMS.txt", "assistant.py", "bridge.py", "questions-review.js", "receipt-inspector.js"]
         assert archive.testzip() is None
         assert archive.read("assistant.py") == SOURCE.read_bytes()
         assert archive.read("bridge.py") == (ROOT / "browser-playwright/bridge.py").read_bytes()
@@ -296,6 +296,19 @@ def test_sp110_archive_deterministic_allowlisted_and_checksum(tmp_path):
         assert "return await inspectReceipt(expectedApplicationUrl)" in compiled
         assert "chrome.tabs" not in compiled
         assert "chrome.scripting.executeScript" not in compiled
+        original_question = (ROOT / "browser-companion/questions.mjs").read_text()
+        original_logic = (ROOT / "browser-companion/logic.mjs").read_text()
+        original_fill = (ROOT / "browser-companion/page-questions.mjs").read_text()
+        compiled_questions = archive.read("questions-review.js").decode("utf-8")
+        assert compiled_questions == packager.reviewed_questions_script().decode("utf-8")
+        assert original_question.replace(
+            'import { identifyField } from "./logic.mjs";', ''
+        ).replace("export ", "").strip() in compiled_questions
+        assert original_logic.replace("export ", "").strip() in compiled_questions
+        assert original_fill.replace("export ", "").strip() in compiled_questions
+        assert "chrome.tabs" not in compiled_questions
+        assert "chrome.scripting" not in compiled_questions
+
 
         assert b"pip install playwright==1.55.0" in archive.read("INSTALL.txt")
         assert not any("/" in name or ".." in name for name in archive.namelist())
