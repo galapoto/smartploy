@@ -106,6 +106,10 @@ from .preparations import (
     approved_evidence_snapshot, preparation_job_snapshot,
 )
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
+from .application_question_memory import (
+    QuestionMemoryError, MemoryApplicationQuestionRepository,
+    PostgresApplicationQuestionRepository,
+)
 from .search_preferences import SearchPreferenceConflict, SearchPreferenceError, search_jobs
 from .search_preference_storage import MemorySearchPreferenceRepository, PostgresSearchPreferenceRepository
 from .service import SmartployService
@@ -219,6 +223,29 @@ class ProfileFactPayload(BaseModel):
     fact_type: str = Field(min_length=1, max_length=40)
     value: str = Field(min_length=1, max_length=700)
     approved: bool = False
+
+
+class ApplicationQuestionDescriptor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: str = Field(min_length=3, max_length=150)
+    expected_id: str = Field(default="", max_length=150)
+    expected_name: str = Field(default="", max_length=150)
+    expected_placeholder: str = Field(default="", max_length=150)
+
+
+class ApplicationQuestionObservePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    workspace_id: str = Field(min_length=1, max_length=160)
+    expected_revision: int = Field(ge=1, le=2147483647)
+    questions: list[ApplicationQuestionDescriptor] = Field(min_length=1, max_length=12)
+
+
+class ApplicationQuestionAnswerPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=1, le=2147483647)
+    answer: str = Field(min_length=2, max_length=1500)
+    approved_for_reuse: StrictBool
+    confirm_personally_reviewed: StrictBool
 
 
 class FactApprovalPayload(BaseModel):
@@ -642,6 +669,10 @@ def create_app(
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
     )
+    app.state.application_question_memory = (
+        PostgresApplicationQuestionRepository(dsn) if dsn
+        else MemoryApplicationQuestionRepository()
+    )
     app.state.private_saved_jobs = (
         PostgresPrivateSavedJobRepository(dsn) if dsn
         else MemoryPrivateSavedJobRepository()
@@ -970,6 +1001,112 @@ def create_app(
             "subject_fingerprint": principal.subject_fingerprint,
             "auth_source": principal.auth_source or "external_identity",
         }
+
+    def _application_profile_mutation_owner(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
+        tenant, binding = tenant_context(request)
+        # Original account, CSRF/Origin and intended-user guards; a browser
+        # companion or third-party site can NEVER directly set profile memory.
+        if binding is None and authentication.mode != "disabled":
+            raise HTTPException(status_code=403, detail="Verified profile owner required")
+        if binding is not None and (
+            request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Origin", "") != public_origin
+            or request.headers.get("Sec-Fetch-Site", "").casefold()
+                not in {"", "same-origin", "none"}
+        ):
+            raise HTTPException(
+                status_code=403, detail="Verified same-origin profile change required"
+            )
+        return tenant, binding
+
+    @app.get("/api/v1/profile/application-questions")
+    def get_application_profile_questions(request: Request) -> JSONResponse:
+        tenant, _ = tenant_context(request)
+        profile_id = tenant.profile_repository.profile_id
+        records = app.state.application_question_memory.list(profile_id)
+        return JSONResponse({
+            "questions": [record.public() for record in records],
+            "count": len(records), "cv_only_allowed": True,
+            "approved_answers_auto_submitted": False,
+            "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
+
+    @app.post("/api/v1/profile/application-questions/observe")
+    def observe_application_profile_questions(
+        payload: ApplicationQuestionObservePayload, request: Request,
+    ) -> JSONResponse:
+        tenant, _ = _application_profile_mutation_owner(request)
+        profile_id = tenant.profile_repository.profile_id
+        workspace = app.state.workspace_repository.get(profile_id, payload.workspace_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="Owned application not found")
+        if workspace.revision != payload.expected_revision or workspace.status != "draft":
+            raise HTTPException(
+                status_code=409, detail="Application revision changed or is no longer a draft"
+            )
+        descriptors = payload.questions
+        # The applicant's existing paired-local Chrome question inspector
+        # performed read-only classification. Independently recheck every
+        # identifier and label here: do not trust external employer DOM text.
+        try:
+            seen, skipped = app.state.application_question_memory.observe(
+                profile_id,
+                [item.label for item in descriptors],
+                [tuple((item.expected_id, item.expected_name,
+                        item.expected_placeholder)) for item in descriptors],
+            )
+        except (QuestionMemoryError, PostgresError) as exc:
+            raise HTTPException(status_code=503, detail="Profile questions are temporarily unavailable") from exc
+        return JSONResponse({
+            "questions": [record.public() for record in seen],
+            "remembered_count": len(seen), "skipped_sensitive_or_duplicate": skipped,
+            "answers_inferred_from_cv": 0, "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
+
+    @app.put("/api/v1/profile/application-questions/{question_key}")
+    def save_application_profile_answer(
+        question_key: str, payload: ApplicationQuestionAnswerPayload,
+        request: Request,
+    ) -> JSONResponse:
+        tenant, _ = _application_profile_mutation_owner(request)
+        if not payload.confirm_personally_reviewed:
+            raise HTTPException(
+                status_code=422, detail="Confirm the exact reusable answer personally"
+            )
+        try:
+            saved = app.state.application_question_memory.save(
+                tenant.profile_repository.profile_id,
+                question_key, payload.answer, payload.expected_version,
+                payload.approved_for_reuse,
+            )
+        except QuestionMemoryError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Profile answer save unavailable") from exc
+        return JSONResponse({
+            "question": saved.public(), "employer_actions_performed": 0,
+            "automatic_employer_submission_authorized": False,
+        }, headers={"Cache-Control": "private, no-store"})
+
+    @app.delete("/api/v1/profile/application-questions/{question_key}")
+    def forget_application_profile_question(
+        question_key: str, request: Request,
+    ) -> JSONResponse:
+        tenant, _ = _application_profile_mutation_owner(request)
+        try:
+            removed = app.state.application_question_memory.delete(
+                tenant.profile_repository.profile_id, question_key,
+            )
+        except QuestionMemoryError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Profile question deletion unavailable") from exc
+        if not removed:
+            raise HTTPException(status_code=404, detail="Profile question not found")
+        return JSONResponse(
+            {"deleted": True, "employer_actions_performed": 0},
+            headers={"Cache-Control": "private, no-store"},
+        )
 
     @app.get("/api/v1/profile/status")
     def profile_status(request: Request) -> dict[str, Any]:
