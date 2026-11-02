@@ -75,6 +75,8 @@ test("sensitive identifiers, duplicate labels, excessive questions and stale pac
     { ...questions[0], expected_name: "salaryExpectation" },
     { ...questions[0], expected_id: "gdprConsent" },
     { ...questions[0], label: "Your bank account?" },
+    { ...questions[0], label: "Verify person@example.invalid" },
+    { ...questions[0], expected_placeholder: "https://example.invalid" },
   ]) {
     assert.throws(() => buildPendingQuestionSync(packet, [unsafe], digests, now), QuestionError);
   }
