@@ -7,10 +7,9 @@ Run in browser CI after installing pinned Python Playwright + Chromium.
 from __future__ import annotations
 
 import pytest
+from test_playwright_assistant import assistant, packet
 
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
-
-from test_playwright_assistant import assistant, packet
 
 
 SAFE_HTML = """<!doctype html><html><head><meta charset="utf-8"></head><body>
