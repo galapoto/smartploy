@@ -22,3 +22,10 @@ CREATE TABLE IF NOT EXISTS smartploy_application_profile_questions (
 CREATE INDEX IF NOT EXISTS smartploy_app_profile_questions_review_idx
   ON smartploy_application_profile_questions
   (profile_id, approved_for_reuse, updated_at DESC);
+
+-- CV-only is an explicit opt-in, persisted per signed-in account.
+CREATE TABLE IF NOT EXISTS smartploy_application_profile_settings (
+  profile_id TEXT PRIMARY KEY,
+  mode TEXT NOT NULL DEFAULT 'guided' CHECK (mode IN ('guided','cv_only')),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
