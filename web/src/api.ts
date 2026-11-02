@@ -170,6 +170,19 @@ export function getCV(): Promise<CVDocument> {
 }
 
 /** SP116 owner-private profile. CV-only is a first-class persisted choice. */
+/** Applicant-triggered private CV parsing: every new fact starts unapproved. */
+export function suggestProfileFactsFromCV(
+  expectedUserId: string,
+): Promise<{
+  created: number; already_known: number;
+  suggestions_are_approved: false;
+  external_ai_forwarding: false; employer_actions_performed: 0;
+}> {
+  return request("/api/v1/profile/cv/suggest-facts", {
+    method: "POST", body: JSON.stringify({confirm_inspect_saved_cv:true}),
+  }, expectedUserId);
+}
+
 export function getApplicationQuestionMemory(): Promise<import("./types").ApplicationQuestionMemory> {
   return request<import("./types").ApplicationQuestionMemory>(
     "/api/v1/profile/application-questions"
