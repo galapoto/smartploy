@@ -1881,6 +1881,11 @@ export default function ApplicationStudio(props: {
               aria-label="Download Chrome companion ZIP from SmartPloy">
               <Download size={15}/> Download Chrome companion ZIP
             </a>
+            <a className="outline-btn" href="/smartploy-playwright-assistant.zip"
+              download="smartploy-playwright-assistant.zip"
+              aria-label="Download local Playwright form assistant">
+              <Download size={15}/> Playwright · local form assistant
+            </a>
             <a className="outline-btn"
               href="https://github.com/galapoto/smartploy/blob/main/docs/BROWSER_APPLY_COMPANION.md"
               target="_blank" rel="noopener noreferrer">Installation instructions <ArrowUpRight size={15}/></a>
@@ -1891,6 +1896,15 @@ export default function ApplicationStudio(props: {
             Select the extracted folder containing manifest.json. The companion
             runs only when you click it; it does not submit jobs in the background.
             It is not a Chrome Web Store install and does not update automatically.
+          </p>
+          <p className="muted" aria-label="Playwright option and limitations">
+            Prefer a visible Playwright session on your own desktop? Download the local
+            Playwright assistant ZIP, read its INSTALL.txt and run it with Python 3.11+
+            and Playwright 1.55.0. It reuses the same short-lived reviewed packet
+            and fills only unique, ordinary contact/cover-letter fields on supported
+            Lever, Ashby and Greenhouse pages after your explicit approval.
+            It never uploads your CV, submits an application or runs on our server.
+            Keep the Chrome companion for filling inside your existing signed-in browser.
           </p>
           {handoffPacketText ? <div className="studio-packet-fallback">
             <label htmlFor="smartploy-browser-packet">Private packet for your browser companion</label>
