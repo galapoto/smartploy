@@ -1,4 +1,4 @@
-SmartPloy local Playwright form assistant (SP112)
+SmartPloy local Playwright form assistant (SP113)
 ================================================
 
 Preferred: connect once, fill from SmartPloy (applicant-local pairing)
@@ -41,9 +41,24 @@ Preferred: connect once, fill from SmartPloy (applicant-local pairing)
    was found. Answer salary/visa/legal/consent questions PERSONALLY. If you
    choose to apply, click the employer's Submit button PERSONALLY and save
    any actual employer acknowledgement or receipt.
-8. Stop the local browser in SmartPloy (or Ctrl+C in its terminal).
-9. For a new application, restart the local helper with a new pairing code.
-   If localhost access is blocked, use the Chrome companion instead.
+8. OPTIONAL observation, ONLY AFTER personally clicking the employer's
+   Submit button: if the exact job's confirmation is still visible in the
+   paired Chromium browser, select "Observe employer confirmation (read-only)"
+   in SmartPloy and explicitly approve the read-only inspection.
+   This executes the SAME reference-bearing page observer from SmartPloy's
+   Chrome companion. It does not submit, retry, sign in, or click anything.
+   If no unique confirmation reference exists, do not retry the employer
+   Submit action. Check the employer portal yourself.
+9. If a matching reference is visible, select "Save unverified observation
+   to SmartPloy". Approve a SECOND confirmation. The existing private
+   SmartPloy owner-scoped receipt endpoint records it as
+   "browser_observed_unverified": this is NOT independent employer
+   acknowledgement and does not count as a verified application submission.
+   Do not repeat a save if a network outcome is uncertain; refresh My
+   Applications and inspect the existing record instead.
+10. Stop the local browser (or Ctrl+C in its terminal).
+11. For another application, start a new helper with a new pairing code.
+    If localhost access is blocked, use the Chrome companion instead.
 
 Security: the browser sends requests ONLY to 127.0.0.1:48741 with
 credentials: omit and no referrer. The local helper accepts requests only
@@ -53,7 +68,11 @@ allows at most one explicitly approved field-fill attempt. There is no
 remote server browser, background auto-submit or general-any-site control.
 No CAPTCHA/MFA bypass, hidden password/consent filling, unattended
 file attachment, retries after uncertain outcomes or final employer click.
-Optional exact CV attachment is a separate applicant-reviewed action. The bridge does
+Optional exact CV attachment is a separate applicant-reviewed action.
+Read-only receipt observation is likewise separate: only an original
+reference-bearing confirmation for the SAME employer job may be saved
+as an UNVERIFIED observation. Never infer a provider-issued receipt,
+second submission authority or successful application from this scan. The bridge does
 not keep applicant packets on disk; its temporary Chromium profile is
 destroyed after the helper stops. Chrome/Chromium may require local-network
 permission; a browser that denies this permission must fail closed.

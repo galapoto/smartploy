@@ -9,7 +9,7 @@ from __future__ import annotations
 from hashlib import sha256
 
 import pytest
-from test_playwright_assistant import assistant, packet
+from test_playwright_assistant import PACKAGER, assistant, load_module, packet
 
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 
@@ -216,3 +216,84 @@ def test_sp112_resume_selector_rejects_hidden_duplicate_and_nonpdf_fields():
     assert assistant.choose_cv_attachment(rows) is None
     rows[1]["label"] = "Cover Letter"
     assert assistant.choose_cv_attachment(rows) == rows[0]
+
+
+SP113_CONFIRMATION = """<!doctype html><html><body><main>
+  <h1>Thank you for your application</h1>
+  <p>Confirmation ID: SYNTHETIC-REF-1234</p>
+</main></body></html>"""
+
+
+def test_sp113_original_chrome_receipt_observer_in_real_playwright_chromium():
+    # The source is extracted, not rewritten, from the actual Chrome companion.
+    script = load_module(PACKAGER, "sp113_chrome_receipt").reviewed_receipt_script().decode()
+    current = "https://jobs.lever.co/example/position/thanks?private=discard#token"
+    p = packet("https://jobs.lever.co/example/position")
+    external = []
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            def fulfill(route):
+                if route.request.url != current.split("#", 1)[0]:
+                    external.append(route.request.url)
+                    route.abort()
+                else:
+                    route.fulfill(status=200, content_type="text/html",
+                                  body=SP113_CONFIRMATION)
+            page.route("**/*", fulfill)
+            page.goto(current)
+            observed = assistant.observe_reviewed_receipt(page, p, script)
+            assert observed["confirmed"] is True
+            assert observed["reference"] == "SYNTHETIC-REF-1234"
+            assert observed["confirmation_page_url"] == (
+                "https://jobs.lever.co/example/position/thanks"
+            )
+            assert len(observed["confirmation_page_sha256"]) == 64
+            assert "discard" not in str(observed)
+            assert "token" not in str(observed)
+            assert external == []
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize("hosted_page,html", [
+    ("https://jobs.lever.co/example/another-job/thanks", SP113_CONFIRMATION),
+    ("https://jobs.lever.co/example/position/thanks",
+     SP113_CONFIRMATION.replace("</body>",
+         "<button>Submit application</button></body>")),
+    ("https://jobs.lever.co/example/position/thanks",
+     "<!doctype html><body><p>Thank you for your application.</p></body>"),
+])
+def test_sp113_chrome_receipt_observer_rejects_unrelated_or_incomplete_proof(
+    hosted_page, html,
+):
+    script = load_module(PACKAGER, "sp113_chrome_receipt_negative").reviewed_receipt_script().decode()
+    p = packet("https://jobs.lever.co/example/position")
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=html
+            ))
+            page.goto(hosted_page)
+            observed = assistant.observe_reviewed_receipt(page, p, script)
+            assert observed["confirmed"] is False
+            assert "reference" not in observed
+            assert "confirmation_page_sha256" not in observed
+        finally:
+            browser.close()
+
+
+def test_sp113_observer_compiled_from_unmodified_original_chrome_source():
+    from pathlib import Path
+    owner = Path(__file__).resolve().parents[1] / "browser-companion/popup.mjs"
+    original = owner.read_text(encoding="utf-8")
+    begin = original.index("async function inspectReceipt(")
+    end = original.index("\n/* Ashby has NO", begin)
+    compiled = load_module(PACKAGER, "sp113_chrome_receipt_parity").reviewed_receipt_script().decode()
+    assert original[begin:end].strip() in compiled
+    assert "chrome.runtime" not in compiled
+    assert "chrome.tabs" not in compiled
+    assert compiled.count("async function inspectReceipt(") == 1

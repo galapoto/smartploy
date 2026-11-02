@@ -518,6 +518,69 @@ def fill_reviewed_page(page: Any, packet: dict[str, Any], plan: list[dict[str, A
             "submitted": False, "uploaded": False}
 
 
+# SP113: the browser observer itself is COPIED AT BUILD from the already
+# tested MV3 Chrome companion popup.mjs `inspectReceipt` function.
+# The helper runs that single pure read-only function in visible Chromium.
+# Browser text, cookies and uploaded files are NEVER sent to SmartPloy here.
+RECEIPT_REFERENCE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{3,63}\Z")
+
+
+def observe_reviewed_receipt(
+    page: Any, packet: dict[str, Any], receipt_script: str,
+) -> dict[str, Any]:
+    """Use existing Chrome receipt observer in ObumAI's visible Playwright page.
+
+    Detection is only a BROWSER observation. This does not prove that a
+    provider issued a receipt, update any application state, or submit.
+    """
+    validate_packet(packet)
+    if (
+        not isinstance(receipt_script, str) or
+        len(receipt_script) < 1500 or len(receipt_script) > 100_000 or
+        "inspectReceipt(expectedApplicationUrl)" not in receipt_script
+    ):
+        raise PacketError("Reviewed receipt inspector is unavailable")
+    current_url = page.url
+    try:
+        outcome = page.evaluate(receipt_script, packet["application_url"])
+    except Exception as exc:
+        raise PacketError("Could not read the visible employer confirmation") from exc
+    if not isinstance(outcome, dict):
+        raise PacketError("Invalid employer confirmation observation")
+    if not outcome.get("confirmed"):
+        return {
+            "confirmed": False,
+            "explanation": "No sufficient reference-bearing employer confirmation was found. "
+                           "Review the visible browser personally; do not retry submission.",
+        }
+    reference = outcome.get("reference")
+    page_url = outcome.get("confirmation_page_url")
+    digest = outcome.get("confirmation_page_sha256")
+    if (
+        not isinstance(reference, str) or not RECEIPT_REFERENCE.fullmatch(reference)
+        or not isinstance(page_url, str) or not 14 <= len(page_url) <= 1500
+        or not isinstance(digest, str) or not HEXDIGEST.fullmatch(digest)
+    ):
+        raise PacketError("Receipt lacks a bounded reference and page digest")
+    # Never return query/fragment contents or employer page text to the
+    # SmartPloy UI. The original JS already compares the exact ATS posting
+    # identity and hashes a stable, reference-bearing page without Submit.
+    try:
+        current = urlsplit(current_url)
+        safe = current.scheme + "://" + current.netloc + current.path
+    except ValueError as exc:
+        raise PacketError("Employer confirmation URL is invalid") from exc
+    if page.url != current_url or page_url != safe:
+        raise PacketError("Employer confirmation changed during observation")
+    validate_packet(packet)
+    return {
+        "confirmed": True, "reference": reference,
+        "confirmation_page_url": page_url,
+        "confirmation_page_sha256": digest,
+        "explanation": "Browser-visible reference observed; employer server not independently verified.",
+    }
+
+
 def start_visible_browser(playwright: Any, profile_dir: str) -> Any:
     """Reuse ObumAI live_session.py's persistent visible Chromium start."""
     return playwright.chromium.launch_persistent_context(

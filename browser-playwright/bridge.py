@@ -12,7 +12,10 @@ SP112 permits a ONE-USE, explicitly reviewed, exact-SHA CV PDF FileList attachme
 from __future__ import annotations
 
 import hmac
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from urllib.parse import urlsplit
 import json
 import secrets
 import sys
@@ -96,6 +99,36 @@ class ChromiumActor:
             page, packet, rows, file_field, raw_pdf, expected_url,
         )
 
+    def observe(self, packet: dict[str, Any]) -> dict:
+        """Read-only: run the original SP47 receipt observer in local Chromium."""
+        if self.context is None:
+            raise BridgeError("Local browser has closed.", 409)
+        source = Path(__file__).with_name("receipt-inspector.js").read_text(
+            encoding="utf-8",
+        )
+        original_host = urlsplit(packet["application_url"]).hostname
+        allowed = (
+            {"boards.greenhouse.io", "job-boards.greenhouse.io"}
+            if original_host in {"boards.greenhouse.io", "job-boards.greenhouse.io"}
+            else {original_host}
+        )
+        pages = self.context.pages
+        if len(pages) > 12:
+            raise BridgeError("Too many employer tabs for one verified observation.", 409)
+        matches = []
+        for page in pages:
+            if urlsplit(page.url).hostname not in allowed:
+                continue
+            finding = assistant.observe_reviewed_receipt(page, packet, source)
+            if finding["confirmed"]:
+                matches.append(finding)
+        if len(matches) > 1:
+            raise BridgeError("Multiple visible receipts; choose one manually.", 409)
+        return matches[0] if matches else {
+            "confirmed": False,
+            "explanation": "No unique reference-bearing employer confirmation is visible.",
+        }
+
     def close(self) -> None:
         try:
             if self.context is not None:
@@ -132,6 +165,7 @@ class BridgeState:
         self.attach_id = ""
         self.attach_claimed = False
         self.inspected_url = ""
+        self.receipt_observed = False
 
     def prepare(self, pairing_code: Any, raw_packet: Any) -> dict:
         if self.pairing_used or self.actor is not None:
@@ -294,6 +328,54 @@ class BridgeState:
             "uploaded": True,
         }
 
+    def observe(self, confirmation: Any) -> dict:
+        # A browser confirmation is an UNVERIFIED user observation.
+        # This read-only endpoint never asks for or permits a Submit click.
+        if confirmation != "OBSERVE EMPLOYER CONFIRMATION":
+            raise BridgeError("Explicit applicant receipt observation required.", 403)
+        if self.actor is None or self.receipt_observed:
+            raise BridgeError("Local browser receipt observation is unavailable or used.", 409)
+        packet = self._current_packet()
+        try:
+            result = self.actor.observe(packet)
+            packet = self._current_packet()
+        except (assistant.PacketError, BridgeError) as exc:
+            raise BridgeError(
+                "Employer confirmation could not be verified in this visible browser.", 409
+            ) from exc
+        except Exception as exc:
+            raise BridgeError(
+                "Read-only receipt observation failed. Inspect the employer page manually.", 409
+            ) from exc
+        if not result.get("confirmed"):
+            return {
+                "ok": True, "stage": "observed",
+                "confirmed": False, "receipt": None,
+                "employer_acknowledged": False,
+                "submitted": False, "uploaded": False,
+            }
+        fields = ("reference", "confirmation_page_url", "confirmation_page_sha256")
+        if any(not isinstance(result.get(key), str) for key in fields):
+            raise BridgeError("Browser receipt evidence is malformed.", 409)
+        self.receipt_observed = True
+        return {
+            "ok": True, "stage": "observed", "confirmed": True,
+            "receipt": {
+                "schema": "smartploy.browser_receipt.v1",
+                "workspace_id": packet["workspace_id"],
+                "document_revision": packet["revision"],
+                "document_sha256": packet["document_sha256"],
+                "application_url": packet["application_url"],
+                "confirmation_page_url": result["confirmation_page_url"],
+                "reference": result["reference"],
+                "confirmation_page_sha256": result["confirmation_page_sha256"],
+                "observed_at": datetime.now(timezone.utc).isoformat(),
+                "confirmed_visible": True,
+            },
+            "employer_acknowledged": False,
+            "submitted": False, "uploaded": False,
+        }
+
     def stop(self) -> dict:
         actor = self.actor
         self.actor = None
@@ -304,6 +386,7 @@ class BridgeState:
         self.cv_field, self.attach_id, self.inspected_url = None, "", ""
         self.attach_claimed = True
         self.fill_claimed = True
+        self.receipt_observed = True
         if actor is not None:
             try:
                 actor.close()
@@ -369,7 +452,7 @@ def make_handler(state: BridgeState) -> type[BaseHTTPRequestHandler]:
         def do_OPTIONS(self) -> None:
             origin = self._origin()
             allowed = (origin is not None and self.path in {
-                "/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/attach", "/v1/stop",
+                "/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/attach", "/v1/observe", "/v1/stop",
             } and self.headers.get("Access-Control-Request-Method") == "POST")
             self._headers(origin if allowed else None,
                           204 if allowed else 403, 0, preflight=allowed)
@@ -383,7 +466,7 @@ def make_handler(state: BridgeState) -> type[BaseHTTPRequestHandler]:
                 self._reply(403, {"ok": False, "error": "Untrusted site or host."}, None)
                 return
             try:
-                if self.path not in {"/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/attach", "/v1/stop"}:
+                if self.path not in {"/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/attach", "/v1/observe", "/v1/stop"}:
                     raise BridgeError("Unsupported local action.", 404)
                 if self.path == "/v1/attach":
                     state.authenticate(self.headers.get("Authorization"))
@@ -431,6 +514,8 @@ def make_handler(state: BridgeState) -> type[BaseHTTPRequestHandler]:
                         result = state.inspect()
                     elif self.path == "/v1/fill":
                         result = state.fill(body.get("plan_id"), body.get("confirmation"))
+                    elif self.path == "/v1/observe":
+                        result = state.observe(body.get("confirmation"))
                     else:
                         result = state.stop()
                 self._reply(200, result, origin)

@@ -4,7 +4,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { getBrowserHandoffReadiness, getEmployerAttemptStatus, getSession } from "./api";
+import { getBrowserHandoffReadiness, getEmployerAttemptStatus,
+  getSession, importBrowserReceipt } from "./api";
 import LocalPlaywrightAssist from "./LocalPlaywrightAssist";
 import { localBridgeOriginAllowed } from "./localPlaywrightBridge";
 
@@ -13,6 +14,7 @@ vi.mock("./api", async (importOriginal) => ({
   getSession: vi.fn(),
   getBrowserHandoffReadiness: vi.fn(),
   getEmployerAttemptStatus: vi.fn(),
+  importBrowserReceipt: vi.fn(),
 }));
 
 const pairing = "synthetic-review-only-pairing-code";
@@ -66,6 +68,7 @@ const component = (enabled = true) => render(<LocalPlaywrightAssist
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(getSession).mockResolvedValue(session);
+  vi.mocked(importBrowserReceipt).mockReset();
   vi.mocked(getEmployerAttemptStatus).mockResolvedValue({
     previous_attempt_reserved: false, state: "not_reserved",
     requires_human_reconciliation: false,
@@ -83,6 +86,13 @@ beforeEach(() => {
     if (url.endsWith("/v1/inspect")) return mockReply("inspected");
     if (url.endsWith("/v1/fill")) return mockReply("filled");
     if (url.endsWith("/v1/attach")) return mockReply("attached");
+    if (url.endsWith("/v1/observe")) return {
+      ok: true, status: 200, json: async () => ({
+        ok: true, stage: "observed", confirmed: false,
+        receipt: null, employer_acknowledged: false,
+        submitted: false, uploaded: false,
+      }),
+    };
     if (url.endsWith("/v1/stop")) return mockReply("stopped");
     throw new Error("Unexpected route");
   }));
@@ -292,6 +302,116 @@ describe("SP111 paired browser review-first UI", () => {
       u.includes("/api/v1/application-workspaces/"))).toBe(true);
     expect(ui.container.textContent).not.toContain("private@example.invalid");
     expect(window.confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it("SP113 reads the original browser observation then imports only on second approval", async () => {
+    const exactWorkspace = "kit-" + "a".repeat(30);
+    const privatePacket = JSON.stringify({
+      ...JSON.parse(packet), workspace_id: exactWorkspace,
+      document_sha256: "b".repeat(64),
+    });
+    const observed = {
+      schema: "smartploy.browser_receipt.v1" as const,
+      workspace_id: exactWorkspace, document_revision: 2,
+      document_sha256: "b".repeat(64),
+      application_url: "https://jobs.lever.co/example/role",
+      confirmation_page_url: "https://jobs.lever.co/example/role/thanks",
+      reference: "SYNTHETIC-REF-1234",
+      confirmation_page_sha256: "c".repeat(64),
+      observed_at: new Date().toISOString(),
+      confirmed_visible: true as const,
+    };
+    const onImported = vi.fn();
+    const receiptFromServer = {
+      workspace_id: exactWorkspace, document_revision: 2,
+      document_sha256: observed.document_sha256,
+      reference: observed.reference,
+      confirmation_page_url: observed.confirmation_page_url,
+      confirmation_page_sha256: observed.confirmation_page_sha256,
+      observed_at: observed.observed_at, evidence_digest: "d".repeat(64),
+      status: "browser_observed_unverified" as const,
+      independently_verified_by_employer: false as const,
+      actually_submitted_count_changed: false as const,
+    };
+    vi.mocked(importBrowserReceipt).mockResolvedValue({
+      receipt: receiptFromServer,
+      external_confirmation_verified: false,
+    });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/v1/prepare")) return mockReply("opened");
+      if (url.endsWith("/v1/observe")) return {
+        ok: true, status: 200, json: async () => ({
+          ok: true, stage: "observed", confirmed: true,
+          receipt: observed, employer_acknowledged: false,
+          submitted: false, uploaded: false,
+        }),
+      };
+      if (url.endsWith("/v1/stop")) return mockReply("stopped");
+      throw new Error("Unexpected route");
+    }));
+    render(<LocalPlaywrightAssist packetText={privatePacket} enabled={true}
+      expectedUserId="user-A" expectedAuthSource="oidc"
+      expectedWorkspaceId={exactWorkspace} expectedRevision={2}
+      onReceiptImported={onImported} observationEnabled={true}
+    />);
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    const observe = await screen.findByRole("button", {
+      name: "Observe employer confirmation (read-only)",
+    });
+    // An already reserved attempt blocks another form fill but MUST NOT
+    // block read-only observation of that same personally submitted job.
+    vi.mocked(getEmployerAttemptStatus).mockResolvedValue({
+      previous_attempt_reserved: true, state: "reserved_unverified",
+      requires_human_reconciliation: true,
+      automatic_employer_submit_authorized: false,
+      external_confirmation_verified: false, cross_device_server_claim_required: true,
+    });
+    fireEvent.click(observe);
+    expect(await screen.findByText("SYNTHETIC-REF-1234")).toBeTruthy();
+    expect(importBrowserReceipt).not.toHaveBeenCalled();
+    const observedCall = vi.mocked(fetch).mock.calls.find(c =>
+      String(c[0]).endsWith("/v1/observe"),
+    )!;
+    expect(JSON.parse(String((observedCall[1] as RequestInit).body))).toEqual({
+      confirmation: "OBSERVE EMPLOYER CONFIRMATION",
+    });
+    expect((observedCall[1] as RequestInit).credentials).toBe("omit");
+    const save = screen.getByRole("button", {
+      name: "Save unverified observation to SmartPloy",
+    });
+    fireEvent.click(save);
+    await waitFor(() => expect(importBrowserReceipt).toHaveBeenCalledTimes(1));
+    expect(importBrowserReceipt).toHaveBeenCalledWith(exactWorkspace, observed, "user-A");
+    expect(onImported).toHaveBeenCalledWith(receiptFromServer);
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(save);
+    expect(importBrowserReceipt).toHaveBeenCalledTimes(1);
+    expect(window.confirm).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(fetch).mock.calls.every(c =>
+      String(c[0]).startsWith("http://127.0.0.1:48741/")
+    )).toBe(true);
+    expect(document.body.textContent).not.toContain("private@example.invalid");
+  });
+
+  it("SP113 never imports an unconfirmed or ambiguous browser page", async () => {
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    const observe = await screen.findByRole("button", {
+      name: "Observe employer confirmation (read-only)",
+    });
+    fireEvent.click(observe);
+    expect(await screen.findByText(/No unique, reference-bearing confirmation/)).toBeTruthy();
+    expect(screen.queryByRole("button", {
+      name: "Save unverified observation to SmartPloy",
+    })).toBeNull();
+    expect(importBrowserReceipt).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it("never retries a fill whose browser outcome is uncertain", async () => {

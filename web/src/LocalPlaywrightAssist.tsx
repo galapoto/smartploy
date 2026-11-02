@@ -6,12 +6,14 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Monitor, ShieldCheck, XCircle } from "lucide-react";
 import { applicationDownloadUrl, getBrowserHandoffReadiness,
-  getEmployerAttemptStatus, getSession } from "./api";
+  getEmployerAttemptStatus, getSession, importBrowserReceipt } from "./api";
+import type { BrowserReceiptImport, BrowserObservedReceipt } from "./types";
 import {
   attachExactReviewedCvLocally, fetchExactReviewedCvPdf,
   callLocalPlaywrightBridge, localBridgeOriginAllowed,
   type LocalBridgeOpened, type LocalBridgeInspected,
-  type LocalBridgeFilled, type LocalBridgeStopped, type LocalBridgeField,
+  type LocalBridgeFilled, type LocalBridgeObserved,
+  type LocalBridgeStopped, type LocalBridgeField,
 } from "./localPlaywrightBridge";
 import "./local-playwright.css";
 
@@ -26,6 +28,8 @@ export default function LocalPlaywrightAssist(props: {
   expectedAuthSource: string;
   expectedWorkspaceId: string;
   expectedRevision: number;
+  observationEnabled?: boolean;
+  onReceiptImported?: (receipt: BrowserObservedReceipt) => void;
 }) {
   const [code, setCode] = useState("");
   const [phase, setPhase] = useState<Phase>("not-paired");
@@ -37,6 +41,8 @@ export default function LocalPlaywrightAssist(props: {
   const [cvAttached, setCvAttached] = useState(false);
   const [cvAttachAttempted, setCvAttachAttempted] = useState(false);
   const [cvAttachBusy, setCvAttachBusy] = useState(false);
+  const [observedReceipt, setObservedReceipt] = useState<BrowserReceiptImport | null>(null);
+  const [receiptSaveClaimed, setReceiptSaveClaimed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
@@ -82,6 +88,39 @@ export default function LocalPlaywrightAssist(props: {
         readiness.document_revision !== props.expectedRevision) {
       throw new Error("This job or reviewed CV/letter changed. Stop the local browser, " +
         "save and prepare a fresh application packet.");
+    }
+  }
+
+  async function verifyReceiptDraftIdentity() {
+    // Browser receipt IMPORT is allowed after an employer attempt has been
+    // reserved. A reserved ledger prevents another send, not a read-only
+    // observation of that same exact application. This checks REVISION only.
+    const readiness = await getBrowserHandoffReadiness(props.expectedWorkspaceId);
+    if (readiness.document_revision !== props.expectedRevision) {
+      throw new Error("The saved CV/letter revision changed. A confirmation for " +
+        "the old job cannot be imported into this application.");
+    }
+  }
+
+  async function guardedReceipt(action: () => Promise<void>) {
+    if (!mounted.current || inFlight.current ||
+        props.observationEnabled === false || !sessionToken.current) return;
+    inFlight.current = true;
+    setBusy(true); setError(""); setFeedback("");
+    try {
+      await verifyAccount();
+      await verifyReceiptDraftIdentity();
+      await verifyAccount();
+      if (!mounted.current) return;
+      await action();
+      await verifyAccount();
+    } catch (exc) {
+      if (mounted.current) setError(
+        exc instanceof Error ? exc.message : "Receipt observation was blocked."
+      );
+    } finally {
+      inFlight.current = false;
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -251,6 +290,78 @@ export default function LocalPlaywrightAssist(props: {
     });
   }
 
+  function observeManualEmployerReceipt() {
+    if (!sessionToken.current || props.observationEnabled === false ||
+        !["opened", "inspected", "filled", "uncertain"].includes(phase) ||
+        inFlight.current || observedReceipt) return;
+    if (!window.confirm(
+      "OBSERVE THIS EMPLOYER CONFIRMATION? You PERSONALLY clicked the employer's " +
+      "Submit button and can see a reference-bearing confirmation for this exact job. " +
+      "SmartPloy will only LOOK at the visible Chromium page using the original " +
+      "Chrome companion inspector. It will NOT submit, retry, or claim independent " +
+      "employer verification. A separate action is required to record evidence."
+    )) return;
+    void guardedReceipt(async () => {
+      const result = await callLocalPlaywrightBridge<LocalBridgeObserved>(
+        "observe", { confirmation: "OBSERVE EMPLOYER CONFIRMATION" },
+        { token: sessionToken.current, expectedStage: "observed" },
+      );
+      if (!mounted.current) return;
+      if (!result.confirmed || !result.receipt) {
+        setFeedback("No unique, reference-bearing confirmation is visible for " +
+          "this exact job. Do NOT repeat an employer Submit action. " +
+          "Check the existing employer portal manually.");
+        return;
+      }
+      const r = result.receipt;
+      if (r.workspace_id !== props.expectedWorkspaceId ||
+          r.document_revision !== props.expectedRevision) {
+        throw new Error("Observed receipt belongs to a different application.");
+      }
+      setObservedReceipt(r);
+      setFeedback("Browser-visible reference found. The employer has NOT " +
+        "independently confirmed delivery through SmartPloy. You may save the " +
+        "observation below after another confirmation.");
+    });
+  }
+
+  function saveManualReceiptObservation() {
+    if (!observedReceipt || receiptSaveClaimed || inFlight.current ||
+        props.observationEnabled === false || !sessionToken.current) return;
+    if (!window.confirm(
+      "SAVE THIS UNVERIFIED BROWSER OBSERVATION? Reference: " +
+      observedReceipt.reference + ". You personally observed the employer page " +
+      "after submitting this exact application. This records an owner-reported " +
+      "browser observation only. It is NOT a provider acknowledgement, " +
+      "does NOT increment independently verified submission counts, and " +
+      "does NOT send or retry the application."
+    )) return;
+    void guardedReceipt(async () => {
+      if (observedReceipt.workspace_id !== props.expectedWorkspaceId ||
+          observedReceipt.document_revision !== props.expectedRevision) {
+        throw new Error("Receipt no longer matches the current saved job.");
+      }
+      // A network timeout could follow a successfully committed receipt.
+      // Never blindly replay a state-changing import for this observation.
+      setReceiptSaveClaimed(true);
+      const result = await importBrowserReceipt(
+        props.expectedWorkspaceId, observedReceipt, props.expectedUserId,
+      );
+      if (result.external_confirmation_verified !== false ||
+          result.receipt.status !== "browser_observed_unverified" ||
+          result.receipt.independently_verified_by_employer !== false ||
+          result.receipt.actually_submitted_count_changed !== false ||
+          result.receipt.workspace_id !== props.expectedWorkspaceId ||
+          result.receipt.document_revision !== props.expectedRevision) {
+        throw new Error("The server did not return a valid unverified receipt status.");
+      }
+      if (!mounted.current) return;
+      props.onReceiptImported?.(result.receipt);
+      setFeedback("Employer page observation saved as UNVERIFIED. No application " +
+        "was submitted by SmartPloy, and no employer acknowledgement was verified.");
+    });
+  }
+
   function stopLocalBrowser() {
     if (!sessionToken.current || inFlight.current) return;
     const token = sessionToken.current;
@@ -351,6 +462,36 @@ export default function LocalPlaywrightAssist(props: {
           manually and do not retry this file action.
         </p> : null}
       </div> : null}
+    {sessionToken.current && ["opened", "inspected", "filled", "uncertain"].includes(phase) &&
+      props.observationEnabled !== false ?
+      <div className="local-playwright-actions" aria-label="Manual employer receipt observation">
+        <strong>After you submit personally: observe the employer receipt</strong>
+        <p className="muted">
+          First click the employer's own Submit button PERSONALLY, then
+          inspect its confirmation here. This reuses SmartPloy's existing
+          Chrome companion receipt observer. SmartPloy never clicks Submit.
+          A visible reference is a browser observation, not provider verification.
+        </p>
+        <button type="button" className="outline-btn"
+          disabled={busy || !!observedReceipt}
+          onClick={observeManualEmployerReceipt}>
+          Observe employer confirmation (read-only)
+        </button>
+        {observedReceipt ? <div className="local-playwright-receipt">
+          <p><strong>Observed reference:</strong> {observedReceipt.reference}</p>
+          <p><strong>Exact job confirmation:</strong> {observedReceipt.confirmation_page_url}</p>
+          <p>Evidence is browser-observed and unverified by the employer.</p>
+          <button type="button" className="navy-btn"
+            disabled={busy || receiptSaveClaimed}
+            onClick={saveManualReceiptObservation}>
+            Save unverified observation to SmartPloy
+          </button>
+          {receiptSaveClaimed ? <p role="status">
+            Receipt import was attempted once. If its outcome is uncertain,
+            refresh My Applications to check the existing record; do not retry.
+          </p> : null}
+        </div> : null}
+      </div> : null}
     {phase === "uncertain" ? <p role="alert">
       The fill attempt may have changed the employer form. Inspect the visible
       browser manually; do not retry an uncertain application.
@@ -371,8 +512,9 @@ export default function LocalPlaywrightAssist(props: {
       Stop local browser session
     </button> : null}
     {!props.enabled ? <p role="alert">
-      Your reviewed application is no longer current or editing is in progress.
-      Save and copy a fresh packet before using local browser assistance.
+      Additional form filling and CV attachment are blocked or unavailable.
+      If you already submitted personally in this paired browser, you can
+      observe the confirmation without triggering another employer action.
     </p> : null}
   </section>;
 }
