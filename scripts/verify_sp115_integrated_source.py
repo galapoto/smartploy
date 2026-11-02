@@ -37,6 +37,19 @@ MANDATORY = frozenset({
     "deploy/personal/scripts/release-evidence.sh",
     "deploy/personal/web.Caddyfile",
     "tests/test_autoapply_e2e_contract.py",
+    # SP116 intentional extension: all new private profile and UI sources.
+    "smartploy/profile.py", "smartploy/account_erasure.py",
+    "smartploy/application_question_memory.py",
+    "smartploy/profile_cv_suggestions.py",
+    "migrations/030_application_profile_questions.sql",
+    "web/src/ApplicationProfilePanel.tsx",
+    "web/src/ApplicationProfilePanel.test.tsx",
+    "web/src/application-profile.css",
+    "web/src/api.ts", "web/src/App.test.tsx",
+    "web/src/LocalPlaywrightAssist.test.tsx",
+    "tests/test_application_question_memory.py",
+    "tests/test_application_question_memory_oidc.py",
+    "docs/SP116_PERSISTENT_APPLICATION_PROFILE.md",
 })
 
 
