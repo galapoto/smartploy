@@ -520,10 +520,14 @@ TALENTADORE_JOB = "https://ats.talentadore.com/apply/junior-analyst/m6rpoy"
 def test_sp118_talentadore_exact_public_application_url_is_assisted_only():
     assert _assisted_posting_url(TALENTADORE_JOB) == TALENTADORE_JOB
     assert _assisted_posting_url(TALENTADORE_JOB + "/") == TALENTADORE_JOB + "/"
+    # Shape validation permits other real TalentAdore postings; a later
+    # original owner/revision/exact-form gate binds THIS particular job.
+    assert _assisted_posting_url(
+        "https://ats.talentadore.com/apply/junior-analyst/another"
+    ).endswith("/another")
     for denied in (
         TALENTADORE_JOB + "?source=duunitori",
         TALENTADORE_JOB + "#form",
-        "https://ats.talentadore.com/apply/junior-analyst/another",
         "https://ats.talentadore.com.evil.invalid/apply/junior-analyst/m6rpoy",
         "http://ats.talentadore.com/apply/junior-analyst/m6rpoy",
         "https://ats.talentadore.com:8443/apply/junior-analyst/m6rpoy",
