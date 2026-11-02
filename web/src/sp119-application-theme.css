@@ -131,6 +131,15 @@
   .sp119-cover-description { max-width: 38ch; }
 }
 
+/* The existing global dark-mode `:is(p, small, ...)` rule otherwise overrides
+   banner HTML paragraph text despite the illustration remaining unaffected. */
+html[data-smartploy-theme="dark"] .smartploy-app .sp119-cover-title {
+  color: #f8fcff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp119-cover-description {
+  color: #c9e2ef;
+}
+
 /* Dark surfaces use documented text/background pairs above WCAG AA.
    Intentional decisions remain readable: current step, disabled choices,
    advisory states and user input never inherit a light-theme ink color. */
