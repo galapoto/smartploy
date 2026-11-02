@@ -16,7 +16,8 @@ Preferred: connect once, fill from SmartPloy (applicant-local pairing)
    Leave this terminal running until you complete one application.
 3. In signed-in SmartPloy, prepare/review and save the exact CV and letter.
    Under My applications > Fill the employer's form, click
-   Copy approved autofill packet (this creates the expiring reviewed packet).
+   "Prepare Playwright handoff (no clipboard)" to create the expiring
+   private packet in this browser tab without a clipboard copy.
    Then find "Connect my local Playwright browser", enter the code shown in
    the terminal and click "Open reviewed employer form". Check the consent
    prompt: the local helper receives only the approved packet.
