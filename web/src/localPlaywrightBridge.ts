@@ -54,7 +54,7 @@ export async function callLocalPlaywrightBridge<T extends BridgeResult>(
   if (options.token) headers.Authorization = "Bearer " + options.token;
   let response: Response;
   try {
-    response = await fetch(BRIDGE_ORIGIN + "/v1/" + route, {
+    const requestInit: RequestInit & { targetAddressSpace: "loopback" } = {
       method: "POST",
       // Chromium Local Network Access: loopback identity, mixed-content
       // exemption and user permission prompt. Older browsers ignore this.
@@ -66,7 +66,8 @@ export async function callLocalPlaywrightBridge<T extends BridgeResult>(
       cache: "no-store",
       headers,
       body: JSON.stringify(payload),
-    });
+    };
+    response = await fetch(BRIDGE_ORIGIN + "/v1/" + route, requestInit);
   } catch {
     throw new Error("Local helper unavailable or local-network permission denied. " +
       "Run python bridge.py on this computer, allow localhost access, or use the Chrome companion.");
