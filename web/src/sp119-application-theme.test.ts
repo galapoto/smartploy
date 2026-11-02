@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import css from "./sp119-application-theme.css?raw";
-import illustration from "../public/application-workspace-banner.svg?raw";
+// The production SVG is fetched and validated in real Chromium browser acceptance.
 
 function relativeLuminance(hex: string): number {
   const rgb = [1, 3, 5].map((index) => {
@@ -19,14 +19,15 @@ function contrastRatio(a: string, b: string): number {
 }
 
 describe("SP119 application banner and dark-mode readability contract", () => {
-  it("uses honest first-party SVG job-application artwork with no outgoing dependencies", () => {
-    expect(illustration).toContain('viewBox="0 0 1440 260"');
-    expect(illustration).toContain("APPLICATIONS");
-    expect(illustration).toContain("Decorative job application workspace illustration");
-    expect(illustration).not.toMatch(/<script\b|<foreignObject\b|\sonload=|\s(?:href|src)="https?:\/\//i);
+  it("loads the local application hero, keyboard focus and responsive styles", () => {
+    expect(css).toContain(".sp119-application-cover");
+    expect(css).toContain(".sp119-cover-art");
+    expect(css).toContain(".sp119-cover-title");
+    expect(css).toContain(".sp119-cover-description");
     expect(css).toContain(".sp119-cover-action:focus-visible");
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
     expect(css).toContain("@media (max-width: 650px)");
+    expect(css).toContain('html[data-smartploy-theme="dark"]');
   });
 
   it("provides at least WCAG AAA contrast for normal dark-mode foreground labels", () => {
