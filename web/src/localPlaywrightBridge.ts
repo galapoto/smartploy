@@ -7,8 +7,6 @@ const BRIDGE_ORIGIN = "http://127.0.0.1:48741";
 const ALLOWED_PAGE_ORIGINS = new Set([
   "https://smartploy.komplyint.fi",
   "https://smartploy.obumai.com",
-  "http://127.0.0.1:4173",
-  "http://localhost:4173",
 ]);
 
 export type LocalBridgeField = { key: string; label: string };
