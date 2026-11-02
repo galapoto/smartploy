@@ -1936,6 +1936,8 @@ export default function ApplicationStudio(props: {
                 packetText={handoffPacketText}
                 expectedUserId={props.expectedUserId}
                 expectedAuthSource={props.expectedAuthSource}
+                expectedWorkspaceId={selected.workspace_id}
+                expectedRevision={selected.revision}
                 enabled={handoff?.ready === true && !dirty && !busy &&
                   !handoffBusy && !accountBlocked}
               />
