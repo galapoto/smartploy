@@ -5,7 +5,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Monitor, ShieldCheck, XCircle } from "lucide-react";
-import { applicationDownloadUrl, getBrowserHandoffReadiness, getSession } from "./api";
+import { applicationDownloadUrl, getBrowserHandoffReadiness,
+  getEmployerAttemptStatus, getSession } from "./api";
 import {
   attachExactReviewedCvLocally, fetchExactReviewedCvPdf,
   callLocalPlaywrightBridge, localBridgeOriginAllowed,
@@ -68,6 +69,14 @@ export default function LocalPlaywrightAssist(props: {
     // Existing owner-scoped backend readiness must recheck source/job and
     // document revision immediately before each local browser action.
     // The helper's 15-minute packet is NOT enough to detect another tab edit.
+    // A held/uncertain employer attempt must not lead to a second CV
+    // transmission from a stale browser tab; reuse the server's original
+    // one-use attempt ledger, not a UI-derived submission status.
+    const attempt = await getEmployerAttemptStatus(props.expectedWorkspaceId);
+    if (attempt.previous_attempt_reserved !== false) {
+      throw new Error("An employer application attempt is already reserved or uncertain. " +
+        "Review its receipt before any new local browser action.");
+    }
     const readiness = await getBrowserHandoffReadiness(props.expectedWorkspaceId);
     if (readiness.ready !== true ||
         readiness.document_revision !== props.expectedRevision) {
