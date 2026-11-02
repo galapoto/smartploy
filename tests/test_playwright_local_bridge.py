@@ -292,3 +292,11 @@ def test_sp111_readonly_endpoint_and_unknown_methods_never_leak_data():
         conn.close()
         status, _, _ = http_request(port, "/v1/submit")
         assert status == 404
+
+
+def test_sp111_production_csp_permits_exact_loopback_bridge_only():
+    caddy = (ROOT / "deploy/personal/web.Caddyfile").read_text(encoding="utf-8")
+    assert "connect-src 'self' http://127.0.0.1:48741;" in caddy
+    assert "connect-src *" not in caddy
+    assert "http://localhost:*" not in caddy
+    assert "http://192.168." not in caddy
