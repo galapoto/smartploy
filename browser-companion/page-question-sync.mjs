@@ -30,8 +30,10 @@ export async function rememberQuestionsOnSmartPloy(batch) {
       batch.questions.some(q => !q || typeof q !== "object" ||
         typeof q.label !== "string" || q.label.trim().length < 3 ||
         q.label.length > 150 ||
+        /https?:\/\/|\S+@\S+\.\S+/i.test(q.label) ||
         ["expected_id", "expected_name", "expected_placeholder"].some(k =>
-          typeof q[k] !== "string" || q[k].length > 150))) {
+          typeof q[k] !== "string" || q[k].length > 150 ||
+          /https?:\/\/|\S+@\S+\.\S+/i.test(q[k])))) {
     return { synced: false, reason: "invalid_or_expired_handoff" };
   }
   const options = {
