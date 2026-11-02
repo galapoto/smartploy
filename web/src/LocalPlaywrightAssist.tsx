@@ -6,8 +6,11 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Monitor, ShieldCheck, XCircle } from "lucide-react";
 import { applicationDownloadUrl, getBrowserHandoffReadiness,
-  getEmployerAttemptStatus, getSession, importBrowserReceipt } from "./api";
-import type { BrowserReceiptImport, BrowserObservedReceipt } from "./types";
+  getEmployerAttemptStatus, getSession, importBrowserReceipt,
+  getApplicationQuestionMemory, rememberApplicationQuestions,
+  saveApplicationQuestionAnswer } from "./api";
+import type { BrowserReceiptImport, BrowserObservedReceipt,
+  ApplicationProfileQuestion, ApplicationProfileMode } from "./types";
 import {
   attachExactReviewedCvLocally, fetchExactReviewedCvPdf,
   callLocalPlaywrightBridge, localBridgeOriginAllowed,
@@ -49,6 +52,11 @@ export default function LocalPlaywrightAssist(props: {
   const [questionAttempted, setQuestionAttempted] = useState(false);
   const [questionInspectionDone, setQuestionInspectionDone] = useState(false);
   const [questionStatus, setQuestionStatus] = useState("");
+  const [questionMemory, setQuestionMemory] = useState<Record<string, ApplicationProfileQuestion>>({});
+  const [questionProfileMode, setQuestionProfileMode] = useState<ApplicationProfileMode>("guided");
+  const [questionMemoryAvailable, setQuestionMemoryAvailable] = useState(false);
+  const [rememberMyAnswers, setRememberMyAnswers] = useState(true);
+
   const [observedReceipt, setObservedReceipt] = useState<BrowserReceiptImport | null>(null);
   const [receiptSaveClaimed, setReceiptSaveClaimed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -251,15 +259,64 @@ export default function LocalPlaywrightAssist(props: {
         },
       );
       if (!mounted.current) return;
+      // Lane C: reuse the private profile API; a newly discovered ordinary
+      // question becomes a permanent MISSING profile prompt immediately.
+      // An approved answer may be suggested, but is never filled without
+      // this applicant's new, job-specific explicit confirmation.
+      let saved: ApplicationProfileQuestion[] = [];
+      let mode: ApplicationProfileMode = "guided";
+      let memoryAvailable = false;
+      try {
+        await verifyAccount();
+        const memory = await getApplicationQuestionMemory();
+        await verifyAccount();
+        mode = memory.mode;
+        if (mode === "guided" && result.questions.length) {
+          const registered = await rememberApplicationQuestions(
+            props.expectedWorkspaceId, props.expectedRevision,
+            result.questions.map(q => ({
+              label: q.label, expected_id: q.expected_id,
+              expected_name: q.expected_name,
+              expected_placeholder: q.expected_placeholder,
+            })), props.expectedUserId,
+          );
+          await verifyAccount();
+          if (registered.profile_mode !== "cv_only") {
+            saved = registered.questions;
+            memoryAvailable = true;
+          } else {
+            mode = "cv_only";
+          }
+        } else {
+          memoryAvailable = mode === "guided";
+        }
+      } catch {
+        // A failed profile read/write is never evidence of a remembered
+        // question. The original local browser form remains manually usable.
+        memoryAvailable = false;
+      }
+      if (!mounted.current) return;
       setReviewedQuestions(result.questions);
       setHumanOnlyQuestions(result.human_only);
-      setQuestionAnswers(result.questions.map(() => ""));
+      const byLabel = Object.fromEntries(saved.map(item => [item.label, item]));
+      setQuestionMemory(byLabel);
+      setQuestionProfileMode(mode);
+      setQuestionMemoryAvailable(memoryAvailable);
+      setRememberMyAnswers(mode === "guided" && memoryAvailable);
+      setQuestionAnswers(result.questions.map(q => {
+        const previous = byLabel[q.label];
+        // Exact-label, explicit owner-reviewed reusable answers only.
+        return previous?.approved_for_reuse && previous.reusable_scope === "exact_question"
+          ? previous.answer.slice(0, q.max_answer_length) : "";
+      }));
       setQuestionPlanId(result.plan_id);
       setQuestionInspectionDone(true);
       setQuestionStatus(result.questions.length
-        ? "Only eligible unanswered text questions are shown here. Enter " +
-          "truthful, personally reviewed answers. Leave sensitive and " +
-          "unlisted fields for the visible employer form."
+        ? (mode === "cv_only"
+          ? "CV-only mode: no question is saved to your profile. You can fill ordinary fields once, but more information will be manual."
+          : memoryAvailable
+            ? "New safe employer questions are now saved as missing profile prompts. Reviewed past answers are suggestions only; check them again for this employer."
+            : "Profile memory was unavailable: these questions have NOT been saved. You can complete the visible employer form manually or retry later.")
         : "No safe unanswered text questions. Complete remaining questions " +
           "personally in the employer browser.");
     });
@@ -273,16 +330,48 @@ export default function LocalPlaywrightAssist(props: {
     if (!window.confirm(
       "FILL YOUR REVIEWED EMPLOYER ANSWERS ONCE? You confirm every entered " +
       "statement is accurate and truthful. The employer may receive answers " +
-      "immediately on input/change. Sensitive questions, salary, visa, legal " +
-      "consent and identity details remain manual. SmartPloy NEVER clicks " +
-      "Submit. An uncertain fill will NOT be retried."
+      "immediately on input/change. " +
+      (rememberMyAnswers && questionProfileMode === "guided" && questionMemoryAvailable
+        ? "You ALSO approve saving these answers permanently to your private profile for future exact-question suggestions. "
+        : "No answer will be stored in your permanent profile. ") +
+      "Sensitive questions, salary, visa, legal consent and identity details " +
+      "remain manual. SmartPloy NEVER clicks Submit; uncertain fills are NOT retried."
     )) return;
-    // An HTTP response can be lost AFTER employer page input/change.
-    // Consume the local attempt before contacting the helper.
-    setQuestionAttempted(true);
     const approved = [...questionAnswers];
-    setQuestionAnswers([]);
     void guarded(async () => {
+      if (rememberMyAnswers && questionProfileMode === "guided") {
+        if (!questionMemoryAvailable) {
+          throw new Error("Profile memory is unavailable. Turn off answer saving or retry profile synchronization before filling.");
+        }
+        for (let i = 0; i < reviewedQuestions.length; i++) {
+          const q = reviewedQuestions[i], answer = approved[i]?.trim();
+          if (!answer) continue;
+          const remembered = questionMemory[q.label];
+          if (!remembered) {
+            throw new Error("This question is not yet saved to your profile. Reinspect it before filling.");
+          }
+          const reusable = remembered.reusable_scope === "exact_question";
+          if (remembered.answer === answer &&
+              remembered.approved_for_reuse === reusable) continue;
+          const saved = await saveApplicationQuestionAnswer(
+            remembered.question_key, remembered.version, answer, reusable,
+            props.expectedUserId,
+          );
+          await verifyAccount();
+          if (saved.employer_actions_performed !== 0 ||
+              saved.automatic_employer_submission_authorized !== false ||
+              saved.question.question_key !== remembered.question_key) {
+            throw new Error("The reviewed profile answer was not saved safely.");
+          }
+        }
+      }
+      await verifyAccount();
+      await verifyCurrentDraft();
+      await verifyAccount();
+      if (!mounted.current) return;
+      // Only NOW burn the one-use local attempt, before browser input events.
+      // A network response can be lost AFTER the employer site sees fields.
+      setQuestionAttempted(true);
       const result = await callLocalPlaywrightBridge<LocalAnswersFilled>(
         "fill-questions", {
           plan_id: questionPlanId,
@@ -291,6 +380,7 @@ export default function LocalPlaywrightAssist(props: {
         }, { token: sessionToken.current, expectedStage: "answers_filled" },
       );
       if (!mounted.current) return;
+      setQuestionAnswers([]);
       setQuestionStatus("Reviewed employer answers: " + result.filled + " of " +
         result.planned + " filled. " + (result.status === "filled_for_review"
           ? "Review every value in the employer browser before submitting."
@@ -448,6 +538,8 @@ export default function LocalPlaywrightAssist(props: {
       setCvAttached(false); setCvAttachAttempted(true);
       setReviewedQuestions([]); setHumanOnlyQuestions([]);
       setQuestionAnswers([]); setQuestionPlanId("");
+      setQuestionMemory({}); setQuestionMemoryAvailable(false);
+      setQuestionProfileMode("guided"); setRememberMyAnswers(false);
       setQuestionAttempted(true); setQuestionInspectionDone(false);
       setQuestionStatus("");
       setBusy(false);
@@ -538,6 +630,16 @@ export default function LocalPlaywrightAssist(props: {
                     previous.map((value, n) => n === i ? event.target.value : value)
                   )}/>
               </label>)}
+            <label className="local-playwright-remember">
+              <input type="checkbox"
+                checked={rememberMyAnswers}
+                disabled={!props.enabled || busy || questionAttempted ||
+                  questionProfileMode === "cv_only" || !questionMemoryAvailable}
+                onChange={event => setRememberMyAnswers(event.target.checked)}
+              />
+              Permanently remember my reviewed answers in my private profile
+              for future exact-question suggestions (never submit automatically)
+            </label>
             <button type="button" className="navy-btn"
               disabled={!props.enabled || busy || questionAttempted ||
                 !questionAnswers.some(value => value.trim())}
