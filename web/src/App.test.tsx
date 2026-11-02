@@ -2164,7 +2164,7 @@ describe("SP109: verified CV status gates", () => {
     const timerSpy = vi.spyOn(window, "setInterval").mockImplementation(
       (handler, timeout, ...args) => {
         if (timeout === 60_000 && typeof handler === "function") {
-          backgroundRefresh = handler;
+          backgroundRefresh = handler as () => void;
           return 123456;
         }
         return originalSetInterval(handler, timeout, ...args);
