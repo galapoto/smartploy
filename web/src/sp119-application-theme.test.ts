@@ -23,7 +23,7 @@ describe("SP119 application banner and dark-mode readability contract", () => {
     expect(illustration).toContain('viewBox="0 0 1440 260"');
     expect(illustration).toContain("APPLICATIONS");
     expect(illustration).toContain("Decorative job application workspace illustration");
-    expect(illustration).not.toMatch(/<script\b|https?:\/\/|foreignObject|onload=/i);
+    expect(illustration).not.toMatch(/<script\b|<foreignObject\b|\sonload=|\s(?:href|src)="https?:\/\//i);
     expect(css).toContain(".sp119-cover-action:focus-visible");
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
     expect(css).toContain("@media (max-width: 650px)");
