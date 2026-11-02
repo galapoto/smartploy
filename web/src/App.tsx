@@ -63,7 +63,13 @@ const FACT_TYPES: Array<{ value: string; label: string }> = [
   { value: "education", label: "Education" }, { value: "language", label: "Language" },
   { value: "certification", label: "Certification" }, { value: "project", label: "Project" },
   { value: "location", label: "Location" }, { value: "work_authorization", label: "Work authorization" },
-  { value: "domain", label: "Industry" }, { value: "preference", label: "Preference" }
+  { value: "domain", label: "Industry" }, { value: "preference", label: "Preference" },
+  { value: "availability", label: "Availability" }, { value: "employment_type", label: "Employment type" },
+  { value: "relocation", label: "Relocation preference" }, { value: "portfolio", label: "Portfolio URL" },
+  { value: "website", label: "Personal website URL" },
+  { value: "notice_period", label: "Notice period · manual only" },
+  { value: "salary_expectation", label: "Salary expectation · manual only" },
+  { value: "references", label: "References · manual only" }
 ];
 
 function cx(...parts: Array<string | undefined | false>): string {
