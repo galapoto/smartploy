@@ -83,6 +83,36 @@ def test_sp116_two_oidc_accounts_can_save_profile_questions_but_never_leak(monke
         assert initial.json()["count"] == 0
         assert initial.json()["mode"] == "guided"
 
+        app.state.cv_repository.put(
+            profile_a, "reviewed-fixture.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            b"synthetic-fixture-only",
+            "Applicant CV\nEmail: applicant@example.invalid\n"
+            "Skills: Python, SQL and Power BI",
+        )
+        denied_unconfirmed = api.post(
+            "/api/v1/profile/cv/suggest-facts", headers=a,
+            json={"confirm_inspect_saved_cv": False},
+        )
+        assert denied_unconfirmed.status_code == 422
+        suggestions = api.post(
+            "/api/v1/profile/cv/suggest-facts", headers=a,
+            json={"confirm_inspect_saved_cv": True},
+        )
+        assert suggestions.status_code == 200, suggestions.text
+        assert suggestions.json()["created"] >= 2
+        assert suggestions.json()["suggestions_are_approved"] is False
+        assert suggestions.json()["external_ai_forwarding"] is False
+        assert suggestions.json()["employer_actions_performed"] == 0
+        facts = api.get("/api/v1/profile/facts", headers=a).json()["facts"]
+        assert facts and all(fact["approved"] is False for fact in facts)
+        no_repeat = api.post(
+            "/api/v1/profile/cv/suggest-facts", headers=a,
+            json={"confirm_inspect_saved_cv": True},
+        )
+        assert no_repeat.status_code == 200
+        assert no_repeat.json()["created"] == 0
+
         inspection = {
             "workspace_id": workspace.workspace_id, "expected_revision": 2,
             "questions": [
@@ -166,6 +196,12 @@ def test_sp116_two_oidc_accounts_can_save_profile_questions_but_never_leak(monke
         )
         assert cv_only.status_code == 200
         assert cv_only.json()["mode"] == "cv_only"
+
+        no_cv_profile = api.post(
+            "/api/v1/profile/cv/suggest-facts", headers=a,
+            json={"confirm_inspect_saved_cv": True},
+        )
+        assert no_cv_profile.status_code == 409
         disabled = api.post(
             "/api/v1/profile/application-questions/observe",
             headers=a, json=inspection,
