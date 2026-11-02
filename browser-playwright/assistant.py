@@ -525,6 +525,115 @@ def fill_reviewed_page(page: Any, packet: dict[str, Any], plan: list[dict[str, A
 RECEIPT_REFERENCE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{3,63}\Z")
 
 
+# SP114 uses EXACT existing browser-companion/logic.mjs +
+# questions.mjs + page-questions.mjs, compiled from source into the ZIP.
+# This Python adapter never guesses employer-specific answers or fills legal,
+# salary, visa, EEO, consent or other protected application questions.
+def inspect_reviewed_questions(
+    page: Any, packet: dict[str, Any], original_script: str,
+) -> dict[str, Any]:
+    validate_packet(packet)
+    if not same_reviewed_form(packet["application_url"], page.url):
+        raise PacketError("Open only the exact employer application form")
+    if not isinstance(original_script, str) or not 1000 <= len(original_script) <= 100_000:
+        raise PacketError("The original Chrome question rules are unavailable")
+    original_url = page.url
+    try:
+        result = page.evaluate(
+            original_script,
+            {"operation": "inspect", "inspectedUrl": original_url},
+        )
+    except Exception as exc:
+        raise PacketError("Employer question inspection failed; complete manually") from exc
+    if page.url != original_url or not same_reviewed_form(packet["application_url"], page.url):
+        raise PacketError("The employer application changed during inspection")
+    if not isinstance(result, dict) or result.get("status") != "inspected":
+        raise PacketError("The employer questions cannot be safely inspected")
+    questions, human = result.get("questions"), result.get("humanOnly")
+    if not isinstance(questions, list) or not isinstance(human, list) or len(questions) > 12:
+        raise PacketError("Employer questions exceed safe reviewed limits")
+    for question in questions:
+        if (
+            not isinstance(question, dict)
+            or set(question) != {
+                "index", "label", "type", "expected_id", "expected_name",
+                "expected_placeholder", "expected_max_length", "max_answer_length",
+            }
+            or type(question["index"]) is not int or not 0 <= question["index"] < 250
+            or question["type"] not in ("text", "textarea")
+            or not isinstance(question["label"], str) or not 1 <= len(question["label"]) <= 150
+            or type(question["max_answer_length"]) is not int
+            or not 2 <= question["max_answer_length"] <= 1500
+            or not all(
+                isinstance(question[key], str) and len(question[key]) <= 150
+                for key in ("expected_id", "expected_name", "expected_placeholder")
+            )
+            or type(question["expected_max_length"]) is not int
+        ):
+            raise PacketError("Unsafe employer question plan returned")
+    if any(not isinstance(label, str) or not 1 <= len(label) <= 150 for label in human):
+        raise PacketError("Invalid manual employer question labels")
+    if len(human) > 250:
+        raise PacketError("Too many manual employer fields")
+    return {"questions": questions, "human_only": human, "inspected_url": original_url}
+
+
+def fill_reviewed_questions(
+    page: Any, packet: dict[str, Any], original_script: str,
+    reviewed_plan: dict[str, Any], answers: list[str],
+) -> dict[str, Any]:
+    validate_packet(packet)
+    if (not isinstance(reviewed_plan, dict)
+            or not isinstance(reviewed_plan.get("questions"), list)
+            or not isinstance(reviewed_plan.get("inspected_url"), str)
+            or not same_reviewed_form(packet["application_url"], page.url)
+            or page.url != reviewed_plan["inspected_url"]
+            or not isinstance(answers, list)
+            or len(answers) != len(reviewed_plan["questions"])
+            or len(answers) > 12):
+        raise PacketError("Employer form or reviewed answers changed")
+    if any(
+        not isinstance(answer, str) or len(answer) > 1500 or
+        any(ord(ch) < 32 and ch not in "\t\n\r" for ch in answer)
+        for answer in answers
+    ):
+        raise PacketError("An employer answer is invalid")
+    try:
+        # The ORIGINAL Chrome companion validateReviewedAnswers and
+        # fillReviewedAnswers enforce sensitive-field exclusion, exact
+        # DOM identity, honest user-typed answers and single-page scope.
+        result = page.evaluate(
+            original_script,
+            {
+                "operation": "fill",
+                "inspectedUrl": reviewed_plan["inspected_url"],
+                "approvedUrl": packet["application_url"],
+                "reviewedQuestions": reviewed_plan["questions"],
+                "values": answers,
+            },
+        )
+    except Exception as exc:
+        raise PacketError(
+            "Employer question fill outcome is uncertain; inspect manually"
+        ) from exc
+    if not isinstance(result, dict):
+        raise PacketError("Employer question fill result is uncertain")
+    status, filled = result.get("status"), result.get("filled")
+    if (
+        status not in ("filled_for_review", "partial_needs_review", "blocked")
+        or type(filled) is not int or not 0 <= filled <= len(reviewed_plan["questions"])
+    ):
+        raise PacketError("Employer question fill returned an invalid result")
+    return {
+        "status": status,
+        "filled": filled,
+        "planned": len(reviewed_plan["questions"]),
+        "submitted": False,
+        "uploaded": False,
+        # Do not echo question values, field IDs, profile data or the form.
+    }
+
+
 def observe_reviewed_receipt(
     page: Any, packet: dict[str, Any], receipt_script: str,
 ) -> dict[str, Any]:
