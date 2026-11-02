@@ -133,22 +133,22 @@
 
 /* The existing global dark-mode `:is(p, small, ...)` rule otherwise overrides
    banner HTML paragraph text despite the illustration remaining unaffected. */
-html[data-smartploy-theme="dark"] .smartploy-app .sp119-cover-title {
+html[data-smartploy-theme="dark"] .smartploy-app .sp119-application-cover .sp119-cover-copy p.sp119-cover-title {
   color: #f8fcff;
 }
-html[data-smartploy-theme="dark"] .smartploy-app .sp119-cover-description {
+html[data-smartploy-theme="dark"] .smartploy-app .sp119-application-cover .sp119-cover-copy p.sp119-cover-description {
   color: #c9e2ef;
 }
 
 /* Dark surfaces use documented text/background pairs above WCAG AA.
    Intentional decisions remain readable: current step, disabled choices,
    advisory states and user input never inherit a light-theme ink color. */
-html[data-smartploy-theme="dark"] .smartploy-app .flow-start {
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start.flow-start {
   background: #192a40;
   border-color: #42607c;
   box-shadow: 0 18px 46px rgba(2, 9, 19, .31);
 }
-html[data-smartploy-theme="dark"] .smartploy-app .flow-start-masthead {
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start .flow-start-masthead.flow-start-masthead {
   color: #bfdee9;
   border-bottom-color: #496780;
   background: transparent;
@@ -165,18 +165,18 @@ html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li {
   color: #c8dcec;
   border-color: #4a6580;
 }
-html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li.current {
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start .flow-start-progress li.current {
   background: #17475a;
   color: #efffff;
   border-color: #7fe4f2;
   box-shadow: inset 0 -3px #45dce8;
 }
-html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li.done {
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start .flow-start-progress li.done {
   background: #1b463f;
   border-color: #4eb99a;
   color: #d6fff0;
 }
-html[data-smartploy-theme="dark"] .smartploy-app .flow-start-how {
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start .flow-start-how.flow-start-how {
   background: #132b43;
   border-color: #4d7690;
 }
@@ -186,14 +186,14 @@ html[data-smartploy-theme="dark"] .smartploy-app .flow-start-cv-copy strong {
 html[data-smartploy-theme="dark"] .smartploy-app .flow-start-cv-copy p {
   color: #c0dcec;
 }
-html[data-smartploy-theme="dark"] .smartploy-app .flow-start-locked,
-html[data-smartploy-theme="dark"] .smartploy-app .flow-start-method-status.waiting {
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start .flow-start-locked.flow-start-locked,
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start .flow-start-method-status.waiting {
   background: #2b394c;
   color: #f1cf97;
   border-color: #6d6755;
 }
-html[data-smartploy-theme="dark"] .smartploy-app .flow-start-ready,
-html[data-smartploy-theme="dark"] .smartploy-app .flow-start-method-status.ready {
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start .flow-start-ready.flow-start-ready,
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start .flow-start-method-status.ready {
   background: #1b453a;
   color: #caffeb;
   border-color: #4a9e82;
