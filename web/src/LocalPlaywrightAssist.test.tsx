@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { getBrowserHandoffReadiness, getEmployerAttemptStatus,
-  getSession, importBrowserReceipt } from "./api";
+  getSession, importBrowserReceipt, getApplicationQuestionMemory,
+  rememberApplicationQuestions, saveApplicationQuestionAnswer } from "./api";
 import LocalPlaywrightAssist from "./LocalPlaywrightAssist";
 import { localBridgeOriginAllowed } from "./localPlaywrightBridge";
 
@@ -15,6 +16,9 @@ vi.mock("./api", async (importOriginal) => ({
   getBrowserHandoffReadiness: vi.fn(),
   getEmployerAttemptStatus: vi.fn(),
   importBrowserReceipt: vi.fn(),
+  getApplicationQuestionMemory: vi.fn(),
+  rememberApplicationQuestions: vi.fn(),
+  saveApplicationQuestionAnswer: vi.fn(),
 }));
 
 const pairing = "synthetic-review-only-pairing-code";
@@ -84,6 +88,37 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(getSession).mockResolvedValue(session);
   vi.mocked(importBrowserReceipt).mockReset();
+  vi.mocked(getApplicationQuestionMemory).mockResolvedValue({
+    questions: [], count: 0, mode: "guided",
+    cv_only_allowed: true, approved_answers_auto_submitted: false,
+    employer_actions_performed: 0,
+  });
+  vi.mocked(rememberApplicationQuestions).mockImplementation(
+    async (_id, _revision, questions) => ({
+      questions: questions.map(q => ({
+        question_key: "b".repeat(64), label: q.label, answer: "",
+        approved_for_reuse: false as const, reusable_scope: "exact_question" as const,
+        version: 1, first_seen_at: "2026-11-02T00:00:00Z",
+        updated_at: "2026-11-02T00:00:00Z",
+      })),
+      remembered_count: questions.length, skipped_sensitive_or_duplicate: 0,
+      answers_inferred_from_cv: 0, employer_actions_performed: 0,
+    }),
+  );
+  vi.mocked(saveApplicationQuestionAnswer).mockImplementation(
+    async (key, expectedVersion, answer, approved) => ({
+      question: {
+        question_key: key, label: "Describe a project you led", answer,
+        approved_for_reuse: approved,
+        reusable_scope: "exact_question" as const,
+        version: expectedVersion + 1,
+        first_seen_at: "2026-11-02T00:00:00Z",
+        updated_at: "2026-11-02T00:00:00Z",
+      },
+      employer_actions_performed: 0,
+      automatic_employer_submission_authorized: false,
+    }),
+  );
   vi.mocked(getEmployerAttemptStatus).mockResolvedValue({
     previous_attempt_reserved: false, state: "not_reserved",
     requires_human_reconciliation: false,
@@ -365,7 +400,80 @@ describe("SP111 paired browser review-first UI", () => {
       name: "Fill my reviewed answers once (never submit)",
     }).hasAttribute("disabled")).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(3);
+    expect(rememberApplicationQuestions).toHaveBeenCalledTimes(1);
+    expect(rememberApplicationQuestions).toHaveBeenCalledWith(
+      "workspace-A", 2, [{
+        label: "Describe a project you led", expected_id: "project",
+        expected_name: "project_example", expected_placeholder: "",
+      }], "user-A",
+    );
+    expect(saveApplicationQuestionAnswer).toHaveBeenCalledWith(
+      "b".repeat(64), 1, "I led an actual Python data-quality project.",
+      true, "user-A",
+    );
     expect(window.confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it("SP116 CV-only applicants may fill once without storing prompts or answers", async () => {
+    vi.mocked(getApplicationQuestionMemory).mockResolvedValue({
+      questions: [], count: 0, mode: "cv_only",
+      cv_only_allowed: true, approved_answers_auto_submitted: false,
+      employer_actions_performed: 0,
+    });
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Open reviewed employer form"}));
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Review unanswered employer questions",
+    }));
+    const answer = await screen.findByLabelText("Describe a project you led");
+    expect(screen.getByText(/CV-only mode: no question is saved/)).toBeTruthy();
+    expect(rememberApplicationQuestions).not.toHaveBeenCalled();
+    const remember = screen.getByLabelText(
+      /Permanently remember my reviewed answers in my private profile/,
+    ) as HTMLInputElement;
+    expect(remember.checked).toBe(false);
+    expect(remember.disabled).toBe(true);
+    fireEvent.change(answer, {target:{value:"Documented actual QA project"}});
+    fireEvent.click(screen.getByRole("button", {
+      name: "Fill my reviewed answers once (never submit)",
+    }));
+    expect(await screen.findByText(/Reviewed employer answers: 1 of 1 filled/)).toBeTruthy();
+    expect(saveApplicationQuestionAnswer).not.toHaveBeenCalled();
+  });
+
+  it("SP116 exact approved profile answer is suggested only for new applicant review", async () => {
+    vi.mocked(rememberApplicationQuestions).mockResolvedValue({
+      questions: [{
+        question_key: "b".repeat(64), label: "Describe a project you led",
+        answer: "Led a truthful historical task",
+        approved_for_reuse: true, reusable_scope: "exact_question",
+        version: 3, first_seen_at: "2026-11-02T00:00:00Z",
+        updated_at: "2026-11-02T00:00:00Z",
+      }], remembered_count: 1, skipped_sensitive_or_duplicate: 0,
+      answers_inferred_from_cv: 0, employer_actions_performed: 0,
+    });
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    fireEvent.click(await screen.findByRole("button", {
+      name:"Review unanswered employer questions",
+    }));
+    const answer = await screen.findByLabelText("Describe a project you led") as HTMLTextAreaElement;
+    expect(answer.value).toBe("Led a truthful historical task");
+    // This reused private text does NOT trigger a browser mutation until
+    // the person separately approves the exact application again.
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(saveApplicationQuestionAnswer).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", {
+      name:"Fill my reviewed answers once (never submit)",
+    }));
+    expect(await screen.findByText(/Reviewed employer answers: 1 of 1 filled/)).toBeTruthy();
+    expect(saveApplicationQuestionAnswer).not.toHaveBeenCalled();
   });
 
   it("SP114 refuses employer question review after prior application attempt", async () => {
