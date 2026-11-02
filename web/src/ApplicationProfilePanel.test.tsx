@@ -85,7 +85,7 @@ describe("SP116 guided complete profile / optional CV-only", () => {
   });
   it("remembers an eligible answer only after affirmative applicant confirmation",async () => {
     instance();
-    const answer = await screen.findByLabelText("Describe a project you led");
+    const answer = await screen.findByLabelText(/Describe a project you led/);
     fireEvent.change(answer,{target:{value:"Led a real data-quality project"}});
     fireEvent.click(screen.getByRole("button",{name:"Save reviewed answer"}));
     await waitFor(() => expect(saveApplicationQuestionAnswer).toHaveBeenCalledWith(
