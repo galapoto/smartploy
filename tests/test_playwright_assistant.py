@@ -33,7 +33,7 @@ assistant = load_module(SOURCE, "smartploy_sp110_local_assistant")
 
 def packet(url="https://jobs.lever.co/example/position", now=None):
     now = now or datetime.now(timezone.utc)
-    return {
+    value = {
         "schema": "smartploy.browser_handoff.v2",
         "issued_at": now.isoformat(),
         "expires_at": (now + timedelta(minutes=15)).isoformat(),
@@ -56,6 +56,8 @@ def packet(url="https://jobs.lever.co/example/position", now=None):
         },
         "approved_fields_sha256": "d" * 64,
     }
+    value["approved_fields_sha256"] = assistant._approved_fields_sha256(value["fields"])
+    return value
 
 
 def field(index, label, name, **overrides):
@@ -99,6 +101,7 @@ def test_sp110_exact_reviewed_employer_form_url(source, active, expected):
     lambda p: p.update(application_url="http://jobs.lever.co/a/b"),
     lambda p: p.update(application_url="https://jobs.lever.co/a/b?track=yes"),
     lambda p: p["fields"].update(email="not-an-email"),
+    lambda p: p["fields"].update(location="TAMPERED"),
     lambda p: p["fields"].update(password="secret"),
     lambda p: p["privacy"].update(employer_submit_allowed_without_new_approval=True),
     lambda p: p["privacy"].update(browser_form_fill_allowed_after_user_click=False),
