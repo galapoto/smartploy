@@ -383,7 +383,7 @@ def make_handler(state: BridgeState) -> type[BaseHTTPRequestHandler]:
                 self._reply(403, {"ok": False, "error": "Untrusted site or host."}, None)
                 return
             try:
-                if self.path not in {"/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/stop"}:
+                if self.path not in {"/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/attach", "/v1/stop"}:
                     raise BridgeError("Unsupported local action.", 404)
                 if self.path == "/v1/attach":
                     state.authenticate(self.headers.get("Authorization"))
