@@ -19,6 +19,38 @@ FILES = ("INSTALL.txt", "assistant.py", "bridge.py")
 ZIP_TIMESTAMP = (2026, 10, 1, 0, 0, 0)
 MAX_SOURCE_BYTES = 100_000
 
+# SP113: compile the actual SP47 Chrome companion's self-contained receipt
+# inspector into the Playwright ZIP. There is NO second receipt recognizer.
+# The function itself verifies exact ATS job, receipt phrase/reference,
+# sanitized confirmation URL and a stable SHA-256 DOM text digest.
+RECEIPT_OWNER_SOURCE = ROOT / "browser-companion/popup.mjs"
+RECEIPT_START = "async function inspectReceipt("
+RECEIPT_END = "\n/* Ashby has NO"
+
+
+def reviewed_receipt_script() -> bytes:
+    original = RECEIPT_OWNER_SOURCE.read_text(encoding="utf-8")
+    start = original.find(RECEIPT_START)
+    end = original.find(RECEIPT_END, start)
+    if start < 0 or end < start or original.count(RECEIPT_START) != 1:
+        raise ValueError("Original Chrome receipt inspector is missing or ambiguous")
+    function = original[start:end].strip()
+    for gate in (
+        "function exactReceiptPage(", "confirmation_page_sha256",
+        "hasLiveSubmit()", "crypto.subtle.digest",
+        "location.href !== here.href", "confirmed",
+    ):
+        if gate not in function:
+            raise ValueError("Original read-only browser receipt policy changed")
+    # JavaScript expression consumed by Playwright page.evaluate(expression, url).
+    # Deliberately no browser clicks, cookies, network access or full popup.js.
+    script = "(async (expectedApplicationUrl) => {\n" + function + (
+        "\nreturn await inspectReceipt(expectedApplicationUrl);\n})\n"
+    )
+    if len(script.encode("utf-8")) > MAX_SOURCE_BYTES:
+        raise ValueError("Receipt inspector exceeded reviewed source limit")
+    return script.encode("utf-8")
+
 
 def reviewed_files() -> dict[str, bytes]:
     files = {}
@@ -30,6 +62,7 @@ def reviewed_files() -> dict[str, bytes]:
         ):
             raise ValueError(f"Unreviewed or invalid Playwright assistant asset: {name}")
         files[name] = item.read_bytes()
+    files["receipt-inspector.js"] = reviewed_receipt_script()
     if (
         b"def validate_packet(" not in files["assistant.py"]
         or b"def fill_reviewed_page(" not in files["assistant.py"]
