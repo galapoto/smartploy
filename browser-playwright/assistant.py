@@ -392,6 +392,15 @@ def fill_reviewed_page(page: Any, packet: dict[str, Any], plan: list[dict[str, A
             "submitted": False, "uploaded": False}
 
 
+def start_visible_browser(playwright: Any, profile_dir: str) -> Any:
+    """Reuse ObumAI live_session.py's persistent visible Chromium start."""
+    return playwright.chromium.launch_persistent_context(
+        user_data_dir=profile_dir, headless=False,
+        viewport={"width": 1440, "height": 950},
+        accept_downloads=False,
+    )
+
+
 def run_local() -> int:
     """Run entirely on the applicant's desktop in a temporary browser profile."""
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
@@ -410,11 +419,7 @@ def run_local() -> int:
         # private directory so credentials/cookies are not shared across jobs.
         with tempfile.TemporaryDirectory(prefix="smartploy-local-browser-") as profile:
             with sync_playwright() as playwright:
-                context = playwright.chromium.launch_persistent_context(
-                    user_data_dir=profile, headless=False,
-                    viewport={"width": 1440, "height": 950},
-                    accept_downloads=False,
-                )
+                context = start_visible_browser(playwright, profile)
                 try:
                     page = context.pages[0] if context.pages else context.new_page()
                     page.goto(packet["application_url"], wait_until="domcontentloaded",
