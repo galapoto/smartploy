@@ -116,6 +116,16 @@ def _utc_now() -> str:
 class MemoryApplicationQuestionRepository:
     def __init__(self) -> None:
         self.data: dict[tuple[str, str], RememberedQuestion] = {}
+        self.modes: dict[str, str] = {}
+
+    def mode(self, profile_id: str) -> str:
+        return self.modes.get(profile_id, "guided")
+
+    def set_mode(self, profile_id: str, mode: str) -> str:
+        if mode not in {"guided", "cv_only"}:
+            raise QuestionMemoryError("Invalid application profile mode")
+        self.modes[profile_id] = mode
+        return mode
 
     def list(self, profile_id: str) -> list[RememberedQuestion]:
         return sorted(
@@ -198,6 +208,30 @@ class PostgresApplicationQuestionRepository:
         "question_key,label,answer,approved_for_reuse,"
         "reusable_scope,version,first_seen_at,updated_at"
     )
+
+    def mode(self, profile_id: str) -> str:
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT mode FROM smartploy_application_profile_settings "
+                    "WHERE profile_id=%s", (profile_id,),
+                )
+                row = cur.fetchone()
+        return str(row[0]) if row else "guided"
+
+    def set_mode(self, profile_id: str, mode: str) -> str:
+        if mode not in {"guided", "cv_only"}:
+            raise QuestionMemoryError("Invalid application profile mode")
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO smartploy_application_profile_settings
+                       (profile_id,mode) VALUES (%s,%s)
+                       ON CONFLICT(profile_id) DO UPDATE
+                         SET mode=EXCLUDED.mode,updated_at=now()""",
+                    (profile_id, mode),
+                )
+        return mode
 
     def list(self, profile_id: str) -> list[RememberedQuestion]:
         with connect(self.dsn) as conn:
