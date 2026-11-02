@@ -240,6 +240,11 @@ class ApplicationQuestionObservePayload(BaseModel):
     questions: list[ApplicationQuestionDescriptor] = Field(min_length=1, max_length=12)
 
 
+class ApplicationProfileModePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["guided", "cv_only"]
+
+
 class ApplicationQuestionAnswerPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_version: int = Field(ge=1, le=2147483647)
@@ -1019,6 +1024,22 @@ def create_app(
             )
         return tenant, binding
 
+    @app.put("/api/v1/profile/application-mode")
+    def choose_application_profile_mode(
+        payload: ApplicationProfileModePayload, request: Request,
+    ) -> JSONResponse:
+        tenant, _ = _application_profile_mutation_owner(request)
+        try:
+            selected = app.state.application_question_memory.set_mode(
+                tenant.profile_repository.profile_id, payload.mode,
+            )
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Profile preference unavailable") from exc
+        return JSONResponse({
+            "mode": selected, "cv_only_allowed": True,
+            "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
+
     @app.get("/api/v1/profile/application-questions")
     def get_application_profile_questions(request: Request) -> JSONResponse:
         tenant, _ = tenant_context(request)
@@ -1027,6 +1048,7 @@ def create_app(
         return JSONResponse({
             "questions": [record.public() for record in records],
             "count": len(records), "cv_only_allowed": True,
+            "mode": app.state.application_question_memory.mode(profile_id),
             "approved_answers_auto_submitted": False,
             "employer_actions_performed": 0,
         }, headers={"Cache-Control": "private, no-store"})
@@ -1044,6 +1066,13 @@ def create_app(
             raise HTTPException(
                 status_code=409, detail="Application revision changed or is no longer a draft"
             )
+        if app.state.application_question_memory.mode(profile_id) == "cv_only":
+            return JSONResponse({
+                "questions": [], "remembered_count": 0,
+                "skipped_sensitive_or_duplicate": len(payload.questions),
+                "profile_mode": "cv_only",
+                "answers_inferred_from_cv": 0, "employer_actions_performed": 0,
+            }, headers={"Cache-Control": "private, no-store"})
         descriptors = payload.questions
         # The applicant's existing paired-local Chrome question inspector
         # performed read-only classification. Independently recheck every
