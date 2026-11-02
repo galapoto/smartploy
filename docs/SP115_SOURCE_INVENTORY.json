@@ -168,7 +168,7 @@
     },
     {
       "path": "tests/test_browser_handoff.py",
-      "git_blob_sha1": "e0c3d28db734d06fdb9e6fda5ad02ab275593508"
+      "git_blob_sha1": "f1fb3dcb075287aa08f3af4b015b0c607ca12391"
     },
     {
       "path": "tests/test_playwright_assistant_chromium.py",
