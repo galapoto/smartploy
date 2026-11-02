@@ -1926,7 +1926,9 @@ export default function ApplicationStudio(props: {
             and Playwright 1.55.0. It reuses the same short-lived reviewed packet
             and fills only unique, ordinary contact/cover-letter fields on supported
             Lever, Ashby and Greenhouse pages after your explicit approval.
-            It never uploads your CV, submits an application or runs on our server.
+            It can attach the exact saved CV PDF only after a SECOND explicit approval
+            and digest verification. Some employer websites upload immediately on file
+            input changes. It never clicks Submit or runs Playwright on our server.
             Keep the Chrome companion for filling inside your existing signed-in browser.
           </p>
           {handoffPacketText && selected.status === "draft" && !browserReceipt &&
