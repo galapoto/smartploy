@@ -17,6 +17,7 @@ from smartploy.application_question_memory import (
     scope_for_question,
 )
 from smartploy.profile import CandidateProfile, ProfileFact
+from smartploy.profile_cv_suggestions import cv_review_suggestions
 from smartploy.storage import apply_migrations
 
 
@@ -156,3 +157,27 @@ def test_postgres_profile_question_cas_mode_and_cross_user_isolation():
                 "DELETE FROM smartploy_application_profile_settings "
                 "WHERE profile_id IN (%s,%s)", (pa, pb),
             )
+
+
+
+def test_sp116_cv_parser_only_suggests_explicit_evidence_and_never_approves():
+    text = """
+    Example CV
+    Email: applicant@example.invalid
+    Phone: +358 40 123 4567
+    LinkedIn: https://www.linkedin.com/in/synthetic-example
+    GitHub: https://github.com/example-synthetic
+    Skills: Python, SQL, Power BI, Excel and Docker
+    """
+    proposed = cv_review_suggestions(text)
+    values = {(p.fact_type, p.value) for p in proposed}
+    assert ("email", "applicant@example.invalid") in values
+    assert ("linkedin", "https://www.linkedin.com/in/synthetic-example") in values
+    assert ("github", "https://github.com/example-synthetic") in values
+    assert ("skill", "Python") in values
+    assert ("skill", "Power BI") in values
+    assert all(not p.approved for p in proposed)
+    assert "identity" not in {p.fact_type for p in proposed}
+    assert "work_authorization" not in {p.fact_type for p in proposed}
+    assert len(cv_review_suggestions("Two addresses: a@example.org b@example.org")) == 0
+    assert cv_review_suggestions("") == []
