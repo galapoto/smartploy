@@ -351,6 +351,7 @@ def test_integrated_rc_real_oidc_same_email_accounts_isolate_zip_and_exact_pdf(m
 
             archive = client.get(
                 f"/api/v1/application-workspaces/{shared_id}/download/package.zip"
+                f"?expected_revision={revision}"
             )
             assert archive.status_code == 200, (label, archive.text)
             assert archive.headers["content-type"].startswith("application/zip")
@@ -371,7 +372,15 @@ def test_integrated_rc_real_oidc_same_email_accounts_isolate_zip_and_exact_pdf(m
                 f"?expected_revision={5 - revision}"
             ).status_code == 409
             assert client.get(
+                f"/api/v1/application-workspaces/{shared_id}/download/package.zip"
+                f"?expected_revision={5 - revision}"
+            ).status_code == 409
+            assert client.get(
+                f"/api/v1/application-workspaces/{shared_id}/download/package.zip"
+            ).status_code == 422
+            assert client.get(
                 f"/api/v1/application-workspaces/{cannot_see}/download/package.zip"
+                f"?expected_revision={revision}"
             ).status_code == 404
             assert client.get(
                 f"/api/v1/application-workspaces/{cannot_see}/preview/cv/pdf"
@@ -382,6 +391,7 @@ def test_integrated_rc_real_oidc_same_email_accounts_isolate_zip_and_exact_pdf(m
         client.cookies.clear()
         assert client.get(
             f"/api/v1/application-workspaces/{shared_id}/download/package.zip"
+            "?expected_revision=2"
         ).status_code == 401
         assert client.get(
             f"/api/v1/application-workspaces/{shared_id}/preview/cv/pdf?expected_revision=2"

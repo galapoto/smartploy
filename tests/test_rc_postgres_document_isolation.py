@@ -171,10 +171,15 @@ def test_rc_real_postgres_oidc_pdf_and_zip_never_cross_owner(monkeypatch):
                     # Older standalone downloads use the same owner guard.
                     downloaded = client.get(
                         f"/api/v1/application-workspaces/{own_id}/download/{kind}/docx"
+                        "?expected_revision=2"
                     )
                     assert downloaded.status_code == 200
                     text = _docx_text(downloaded.content)
                     assert expected in text and forbidden not in text
+                    assert client.get(
+                        f"/api/v1/application-workspaces/{own_id}/download/{kind}/docx"
+                        "?expected_revision=1"
+                    ).status_code == 409
 
                     assert client.get(
                         f"/api/v1/application-workspaces/{other_id}/preview/"
@@ -183,6 +188,7 @@ def test_rc_real_postgres_oidc_pdf_and_zip_never_cross_owner(monkeypatch):
 
                 package = client.get(
                     f"/api/v1/application-workspaces/{own_id}/download/package.zip"
+                    "?expected_revision=2"
                 )
                 assert package.status_code == 200, (label, package.text)
                 assert package.headers["cache-control"] == "private, no-store"
@@ -199,7 +205,15 @@ def test_rc_real_postgres_oidc_pdf_and_zip_never_cross_owner(monkeypatch):
                             )
                             assert expected in text and forbidden not in text
                 assert client.get(
+                    f"/api/v1/application-workspaces/{own_id}/download/package.zip"
+                    "?expected_revision=1"
+                ).status_code == 409
+                assert client.get(
+                    f"/api/v1/application-workspaces/{own_id}/download/package.zip"
+                ).status_code == 422
+                assert client.get(
                     f"/api/v1/application-workspaces/{other_id}/download/package.zip"
+                    "?expected_revision=2"
                 ).status_code == 404
                 assert client.get(
                     f"/api/v1/application-workspaces/{own_id}/preview/cv/pdf"
@@ -211,7 +225,7 @@ def test_rc_real_postgres_oidc_pdf_and_zip_never_cross_owner(monkeypatch):
 
             client.cookies.clear()
             for path in (
-                f"/api/v1/application-workspaces/{workspace_ids['A']}/download/package.zip",
+                f"/api/v1/application-workspaces/{workspace_ids['A']}/download/package.zip?expected_revision=2",
                 f"/api/v1/application-workspaces/{workspace_ids['B']}/preview/cv/pdf?expected_revision=2",
             ):
                 denied = client.get(path)

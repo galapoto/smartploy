@@ -43,9 +43,13 @@ vi.mock("./api", () => ({
   proposeEvidenceLetter: vi.fn(),
   createBrowserHandoffPacket: vi.fn(),
   importBrowserReceipt: vi.fn(),
-  applicationDownloadUrl: vi.fn(() => "/synthetic-download"),
-  applicationPackageDownloadUrl: vi.fn((id: string) =>
-    "/api/v1/application-workspaces/" + encodeURIComponent(id) + "/download/package.zip"),
+  applicationDownloadUrl: vi.fn((id: string, kind: "cv" | "letter",
+    fmt: "pdf" | "docx", rev: number) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id)
+    + "/download/" + kind + "/" + fmt + "?expected_revision=" + rev),
+  applicationPackageDownloadUrl: vi.fn((id: string, rev: number) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id)
+    + "/download/package.zip?expected_revision=" + rev),
   applicationPdfPreviewUrl: vi.fn((id: string, kind: "cv" | "letter", rev: number) =>
     "/api/v1/application-workspaces/" + encodeURIComponent(id) +
     "/preview/" + kind + "/pdf?expected_revision=" + rev),
@@ -112,8 +116,12 @@ const studio = (mode: ApplicationFlowMode | null = null) => render(<ApplicationS
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(api.applicationPackageDownloadUrl).mockImplementation((id) =>
-    "/api/v1/application-workspaces/" + encodeURIComponent(id) + "/download/package.zip");
+  vi.mocked(api.applicationPackageDownloadUrl).mockImplementation((id, rev) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id)
+    + "/download/package.zip?expected_revision=" + rev);
+  vi.mocked(api.applicationDownloadUrl).mockImplementation((id, kind, fmt, rev) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id)
+    + "/download/" + kind + "/" + fmt + "?expected_revision=" + rev);
   vi.mocked(api.applicationPdfPreviewUrl).mockImplementation((id, kind, rev) =>
     "/api/v1/application-workspaces/" + encodeURIComponent(id) +
     "/preview/" + kind + "/pdf?expected_revision=" + rev);
@@ -2386,7 +2394,7 @@ describe("SP106 complete application package controls", () => {
     const section = screen.getByRole("region", {name: "Complete application file package"});
     const link = within(section).getByRole("link", {name});
     expect(link.getAttribute("href")).toBe(
-      "/api/v1/application-workspaces/workspace-A/download/package.zip"
+      "/api/v1/application-workspaces/workspace-A/download/package.zip?expected_revision=1"
     );
     expect(section.textContent).toContain("editable DOCX and printable PDF");
     expect(section.textContent).toContain("no application has been submitted");
@@ -2412,7 +2420,9 @@ describe("SP106 complete application package controls", () => {
       "workspace-A", 1, "PRIVATE-CV-A",
       "PRIVATE-LETTER-A with an applicant correction", "usr-a",
     ));
-    await waitFor(() => expect(within(section).getByRole("link", {name})).toBeTruthy());
+    await waitFor(() => expect(
+      within(section).getByRole("link", {name}).getAttribute("href")
+    ).toContain("?expected_revision=2"));
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
   });
 
@@ -2489,5 +2499,60 @@ describe("SP107 printable PDFs for exact saved, owner-private application revisi
     expect(await screen.findByRole("heading", {name: "Account verification required"})).toBeTruthy();
     expect(screen.queryByRole("link", {name: cvLabel})).toBeNull();
     expect(screen.queryByRole("link", {name: letterLabel})).toBeNull();
+  });
+});
+
+describe("SP108: standalone CV and letter documents and ZIP are bound to saved revision", () => {
+  it("gives all standalone documents unambiguous, versioned links", async () => {
+    studio("assisted");
+    await screen.findByRole("heading", {name: "A private role"});
+    const names: Array<[string, string]> = [
+      ["Download CV · DOCX", "/download/cv/docx"],
+      ["Download saved CV PDF", "/download/cv/pdf"],
+      ["Download letter · DOCX", "/download/letter/docx"],
+      ["Download saved cover letter PDF", "/download/letter/pdf"],
+    ];
+    for (const [name, path] of names) {
+      const a = screen.getByRole("link", {name});
+      expect(a.getAttribute("href")).toBe(
+        "/api/v1/application-workspaces/workspace-A" + path + "?expected_revision=1"
+      );
+      expect(a.getAttribute("aria-disabled")).toBe("false");
+    }
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("disables all five download links while dirty and re-binds each after the revision-2 save", async () => {
+    studio("manual");
+    await screen.findByRole("heading", {name: "A private role"});
+    const names = [
+      "Download CV · DOCX", "Download saved CV PDF",
+      "Download letter · DOCX", "Download saved cover letter PDF",
+    ];
+    const links = names.map(name => screen.getByRole("link", {name}));
+    const panel = screen.getByRole("region", {name: "Complete application file package"});
+    const zip = within(panel).getByRole("link", {
+      name: "Download complete application ZIP with CV and cover letter PDF and DOCX"
+    });
+    fireEvent.change(screen.getByRole("textbox", {name: "Editable CV text"}), {
+      target: {value: "PRIVATE-CV-A updated based on verified work"},
+    });
+    for (const a of [...links, zip]) {
+      expect(a.getAttribute("href")).toBeNull();
+      expect(a.getAttribute("aria-disabled")).toBe("true");
+      expect(a.getAttribute("tabindex")).toBe("-1");
+    }
+    fireEvent.click(screen.getByRole("button", {name: /^Save changes$/}));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", 1, "PRIVATE-CV-A updated based on verified work", "PRIVATE-LETTER-A", "usr-a"
+    ));
+    await waitFor(() => expect(zip.getAttribute("href")).toContain("?expected_revision=2"));
+    for (const a of [...links, zip]) {
+      expect(a.getAttribute("href")).toContain("?expected_revision=2");
+      expect(a.getAttribute("aria-disabled")).toBe("false");
+    }
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
   });
 });

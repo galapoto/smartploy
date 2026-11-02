@@ -358,12 +358,28 @@ def test_api_application_documents_review_and_download_does_not_fake_submission(
     }).status_code == 409
     for kind in ("cv", "letter"):
         for fmt in ("docx", "pdf"):
-            download = api.get(f"/api/v1/application-workspaces/{kid}/download/{kind}/{fmt}")
+            download = api.get(
+                f"/api/v1/application-workspaces/{kid}/download/{kind}/{fmt}"
+                "?expected_revision=2"
+            )
             assert download.status_code == 200, download.text
             assert download.headers["cache-control"] == "private, no-store"
             assert download.headers["x-content-type-options"] == "nosniff"
             assert download.headers["content-disposition"].startswith("attachment;")
             assert len(download.content) > 200
+    # SP108: all new browser links are revision pinned. Existing single-file
+    # links without a query still work for backward compatibility.
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/cv/docx"
+    ).status_code == 200
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/cv/docx"
+        "?expected_revision=1"
+    ).status_code == 409
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/letter/pdf"
+        "?expected_revision=0"
+    ).status_code == 422
     # SP107: the genuine PDF renderer in a separate read-only exact-revision view.
     for kind, expected in (("cv", "Approved SQL and data analytics"),
                            ("letter", "I have SQL skills and want to join your team.")):
@@ -404,7 +420,10 @@ def test_api_application_documents_review_and_download_does_not_fake_submission(
     ).status_code == 404
     assert api.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
     # SP106: the exact same saved job-specific files in one owner-scoped ZIP.
-    package = api.get(f"/api/v1/application-workspaces/{kid}/download/package.zip")
+    package = api.get(
+        f"/api/v1/application-workspaces/{kid}/download/package.zip"
+        "?expected_revision=2"
+    )
     assert package.status_code == 200, package.text
     assert package.headers["content-type"].startswith("application/zip")
     assert package.headers["cache-control"] == "private, no-store"
@@ -424,7 +443,19 @@ def test_api_application_documents_review_and_download_does_not_fake_submission(
         ).paragraphs)
         assert cv_paragraphs.endswith("Approved SQL and data analytics")
     assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/package.zip"
+        "?expected_revision=1"
+    ).status_code == 409
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/package.zip"
+    ).status_code == 422
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/package.zip"
+        "?expected_revision=0"
+    ).status_code == 422
+    assert api.get(
         f"/api/v1/application-workspaces/{kid}-other-account/download/package.zip"
+        "?expected_revision=2"
     ).status_code == 404
     assert api.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
     applied = api.post(f"/api/v1/application-workspaces/{kid}/report-applied", json={

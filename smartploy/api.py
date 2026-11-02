@@ -3120,6 +3120,14 @@ def create_app(
         app.state.browser_receipts.delete(profile_id, workspace_id)
         return {"deleted": True}
 
+    def _require_current_document_revision(item: Any, expected_revision: int) -> None:
+        # Read-only export fence: never substitute a later, unreviewed save.
+        if item.revision != expected_revision:
+            raise HTTPException(
+                status_code=409,
+                detail="Saved application changed. Refresh and review the current documents.",
+            )
+
     @app.get("/api/v1/application-workspaces/{workspace_id}/preview/{kind}/pdf")
     def preview_application_pdf(
         workspace_id: str, kind: str, request: Request,
@@ -3135,11 +3143,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="Application workspace not found")
         if kind not in {"cv", "letter"}:
             raise HTTPException(status_code=404, detail="Document kind not available")
-        if item.revision != expected_revision:
-            raise HTTPException(
-                status_code=409,
-                detail="Saved application changed. Refresh and review the current documents.",
-            )
+        _require_current_document_revision(item, expected_revision)
         try:
             content, mime, filename = render_document(
                 item, kind=kind, file_format="pdf",
@@ -3158,13 +3162,17 @@ def create_app(
         })
 
     @app.get("/api/v1/application-workspaces/{workspace_id}/download/package.zip")
-    def download_application_package(workspace_id: str, request: Request) -> Response:
+    def download_application_package(
+        workspace_id: str, request: Request,
+        expected_revision: int = Query(..., ge=1),
+    ) -> Response:
         tenant, _ = tenant_context(request)
         item = app.state.workspace_repository.get(
             tenant.profile_repository.profile_id, workspace_id,
         )
         if item is None:
             raise HTTPException(status_code=404, detail="Application workspace not found")
+        _require_current_document_revision(item, expected_revision)
         try:
             archive, filename = render_application_package(item)
         except WorkspaceError as exc:
@@ -3179,7 +3187,8 @@ def create_app(
 
     @app.get("/api/v1/application-workspaces/{workspace_id}/download/{kind}/{file_format}")
     def download_application_document(
-        workspace_id: str, kind: str, file_format: str, request: Request
+        workspace_id: str, kind: str, file_format: str, request: Request,
+        expected_revision: int | None = Query(None, ge=1),
     ) -> Response:
         tenant, _ = tenant_context(request)
         item = app.state.workspace_repository.get(tenant.profile_repository.profile_id, workspace_id)
@@ -3187,6 +3196,10 @@ def create_app(
             raise HTTPException(status_code=404, detail="Application workspace not found")
         if kind not in {"cv", "letter"} or file_format not in {"pdf", "docx"}:
             raise HTTPException(status_code=404, detail="Document format not available")
+        # Backward-compatible with existing individual-file links. All new
+        # first-party UI downloads supply a version to guard cross-device edits.
+        if expected_revision is not None:
+            _require_current_document_revision(item, expected_revision)
         try:
             content, mime, filename = render_document(
                 item, kind=kind, file_format=file_format,

@@ -1712,12 +1712,20 @@ export default function ApplicationStudio(props: {
           <DocumentCoach kind="job_cv" text={cvText} roleTitle={selected.role_title}
             company={selected.company} />
           <div className="studio-export">
-            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "cv", "docx")}
-              className={"outline-btn compact" + (dirty ? " disabled" : "")}
-              aria-disabled={dirty}><Download size={15}/> Download CV · DOCX</a>
-            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "cv", "pdf")}
-              className={"outline-btn compact" + (dirty ? " disabled" : "")}
-              aria-disabled={dirty}><Download size={15}/> PDF</a>
+            <a href={dirty || busy || !selected.authority.may_download ? undefined :
+                applicationDownloadUrl(selected.workspace_id, "cv", "docx", selected.revision)}
+              className={"outline-btn compact" +
+                (dirty || busy || !selected.authority.may_download ? " disabled" : "")}
+              aria-disabled={dirty || busy || !selected.authority.may_download}
+              tabIndex={dirty || busy || !selected.authority.may_download ? -1 : undefined}
+              ><Download size={15}/> Download CV · DOCX</a>
+            <a href={dirty || busy || !selected.authority.may_download ? undefined :
+                applicationDownloadUrl(selected.workspace_id, "cv", "pdf", selected.revision)}
+              className={"outline-btn compact" +
+                (dirty || busy || !selected.authority.may_download ? " disabled" : "")}
+              aria-disabled={dirty || busy || !selected.authority.may_download}
+              tabIndex={dirty || busy || !selected.authority.may_download ? -1 : undefined}
+              aria-label="Download saved CV PDF"><Download size={15}/> PDF</a>
           </div>
         </div>
         <div className="studio-document" id="smartploy-letter-review">
@@ -1750,12 +1758,20 @@ export default function ApplicationStudio(props: {
             company={selected.company} />
           <small>New application drafts begin with real Finnish or English letter prose, not coaching placeholders. Only approved, job-matched facts are used. If your profile lacks a confirmed name or relevant experience, edit the letter or use a language button to see the missing-information report. Older saved drafts stay unchanged until you edit them. Review and save explicitly; no employer is contacted.</small>
           <div className="studio-export">
-            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "letter", "docx")}
-              className={"outline-btn compact" + (dirty ? " disabled" : "")}
-              aria-disabled={dirty}><Download size={15}/> Download letter · DOCX</a>
-            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "letter", "pdf")}
-              className={"outline-btn compact" + (dirty ? " disabled" : "")}
-              aria-disabled={dirty}><Download size={15}/> PDF</a>
+            <a href={dirty || busy || !selected.authority.may_download ? undefined :
+                applicationDownloadUrl(selected.workspace_id, "letter", "docx", selected.revision)}
+              className={"outline-btn compact" +
+                (dirty || busy || !selected.authority.may_download ? " disabled" : "")}
+              aria-disabled={dirty || busy || !selected.authority.may_download}
+              tabIndex={dirty || busy || !selected.authority.may_download ? -1 : undefined}
+              ><Download size={15}/> Download letter · DOCX</a>
+            <a href={dirty || busy || !selected.authority.may_download ? undefined :
+                applicationDownloadUrl(selected.workspace_id, "letter", "pdf", selected.revision)}
+              className={"outline-btn compact" +
+                (dirty || busy || !selected.authority.may_download ? " disabled" : "")}
+              aria-disabled={dirty || busy || !selected.authority.may_download}
+              tabIndex={dirty || busy || !selected.authority.may_download ? -1 : undefined}
+              aria-label="Download saved cover letter PDF"><Download size={15}/> PDF</a>
           </div>
         </div>
         <section className="studio-application-package" aria-label="Complete application file package">
@@ -1769,7 +1785,7 @@ export default function ApplicationStudio(props: {
           <a className={"secondary-btn" + (dirty || busy ||
               !selected.authority.may_download ? " disabled" : "")}
             href={dirty || busy || !selected.authority.may_download
-              ? undefined : applicationPackageDownloadUrl(selected.workspace_id)}
+              ? undefined : applicationPackageDownloadUrl(selected.workspace_id, selected.revision)}
             aria-disabled={dirty || busy || !selected.authority.may_download}
             tabIndex={dirty || busy || !selected.authority.may_download ? -1 : undefined}
             aria-label="Download complete application ZIP with CV and cover letter PDF and DOCX">
@@ -1803,9 +1819,9 @@ export default function ApplicationStudio(props: {
             Save your CV and cover-letter edits before downloading or previewing; the package and
             PDFs show only the saved version.
           </p> : <p className="studio-application-package-note">
-            Review the exact saved printable PDFs in a new tab. Each preview is tied
-            to this application's revision; if it changes, refresh and review again.
-            Nothing is submitted to an employer.
+            Review the exact saved printable PDFs in a new tab. Every document and ZIP
+            download is tied to this application's revision; if it changes on another
+            device, refresh and review again. Nothing is submitted to an employer.
           </p>}
         </section>
         {selected.status === "draft" ? <section className="studio-handoff" id="smartploy-employer-step"

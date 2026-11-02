@@ -311,8 +311,14 @@ async function installSyntheticApi(page: Page, options: {
       ));
       const owned = (state.privateWorkspaces[state.userId] || [])
         .find(item => item.workspace_id === id);
+      const revisionParam = new URL(request.url()).searchParams.get("expected_revision");
       if (!owned) {
         await response(route, {detail: "No owner-scoped synthetic application"}, 404);
+      } else if (!revisionParam || !/^[1-9][0-9]*$/.test(revisionParam) ||
+                 !Number.isSafeInteger(Number(revisionParam))) {
+        await response(route, {detail: "Saved revision is required"}, 422);
+      } else if (Number(revisionParam) !== owned.revision) {
+        await response(route, {detail: "Saved documents changed; refresh to review"}, 409);
       } else {
         // Real file contents are tested by backend ZIP/PDF/DOCX tests.
         // An empty valid ZIP here proves browser download/filename routing.
@@ -1324,7 +1330,10 @@ test("SP106: one saved job downloads a private CV and letter ZIP without employe
   const link = panel.getByRole("link",{
     name:"Download complete application ZIP with CV and cover letter PDF and DOCX",
   });
-  await expect(link).toHaveAttribute("href",/\/download\/package\.zip$/);
+  await expect(link).toHaveAttribute(
+    "href", /\/download\/package\.zip\?expected_revision=1$/
+  );
+  const priorVersionUrl = (await link.getAttribute("href"))!;
   const letter = page.getByRole("textbox",{name:"Editable cover letter text"});
   await letter.fill("Saved applicant letter with a genuinely reviewed job-specific correction.");
   await expect(panel.getByLabel(
@@ -1332,6 +1341,20 @@ test("SP106: one saved job downloads a private CV and letter ZIP without employe
   )).toHaveAttribute("aria-disabled","true");
   await page.getByRole("button",{name:/^Save changes$/}).click();
   await expect(link).toHaveAttribute("aria-disabled","false");
+  await expect(link).toHaveAttribute(
+    "href", /\/download\/package\.zip\?expected_revision=2$/
+  );
+  // A stale link in another browser tab cannot silently export a newer CV.
+  const stale = await page.evaluate(async (url) => {
+    const result = await fetch(url, {credentials: "same-origin", cache: "no-store"});
+    return result.status;
+  }, priorVersionUrl);
+  expect(stale).toBe(409);
+  const missing = await page.evaluate(async (url) =>
+    (await fetch(url, {credentials: "same-origin", cache: "no-store"})).status,
+    priorVersionUrl.split("?")[0]
+  );
+  expect(missing).toBe(422);
   const downloadPromise = page.waitForEvent("download");
   await link.click();
   const file = await downloadPromise;

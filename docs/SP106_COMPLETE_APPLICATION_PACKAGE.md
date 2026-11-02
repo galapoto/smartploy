@@ -12,6 +12,12 @@ In the existing **My applications** studio, a signed-in applicant can download o
 
 The download is available in Manual and Assisted flows and as a way to save a copy of an existing application record. When either editor has **unsaved edits**, the package link is disabled, with an explanation that only the already-saved documents can be exported. After saving, the same job's link re-enables. Revisions, the master CV and the original cover letter remain unchanged by a GET download; it is not a review approval, agent job, submission attempt, acknowledgment, or contact with any employer.
 
+## SP108: exact-revision download correction (pre-release)
+
+A saved workspace is mutable in another browser session. The original complete ZIP endpoint accepted only its owner-private workspace identifier, which meant a user could click an old link and unknowingly export a newer, unreviewed CV or letter. **All new complete ZIP downloads now require an expected_revision query parameter.** Missing/invalid revisions return HTTP 422; an owned but stale revision returns HTTP 409 with an instruction to refresh and review. The check occurs before any ZIP generation. The browser's five download links (CV/letter DOCX/PDF and combined ZIP) all carry the same saved revision; while edits are unsaved or saving, the links have no href and cannot receive keyboard focus. Existing single-document API URLs without a revision remain accepted for compatibility with previously deployed interfaces, but if a revision is supplied it is enforced. A link can no longer silently export another device's newer document when opened from the new UI.
+
+This correction reuses SP107's server-side revision-fence logic and original document renderer, with no new dependency, external request or employer permission. Regression coverage includes missing/invalid/stale versions, two OIDC identities (in-memory and real PostgreSQL), a browser test of stale-link rejection, and original legacy individual-file URLs.
+
 ## Reuse, security, performance, accessibility
 
 - New server code composes four files from first-party \`smartploy/application_workspace.py::render_document\`, used by the already-live per-file download routes. It does not implement or duplicate its own document conversion, CV parsing, AI completion or identity check.

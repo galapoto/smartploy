@@ -41,6 +41,12 @@ The additional `tests/test_rc_postgres_document_isolation.py` runs against the C
 
 This is stronger source verification, **not** evidence of a real OVH login or production deployment. The GitHub CI job must pass at the current *revised* RC commit; the earlier head `bf216178...` no longer qualifies after this hardening change.
 
+## SP108 — revision-bound CV, cover-letter and ZIP exports
+
+The new complete package originally accepted the current workspace ID but could export a newer revision after a second device saved a change. **SP108** requires expected_revision on the new ZIP endpoint and returns 409 for an owned stale revision or 422 for a missing/invalid revision. All four individual saved CV/letter PDF/DOCX download links in the UI now also pin the applicant-reviewed revision; the existing per-document API remains backward compatible if an older client omits that parameter. All five links are disabled and unfocusable during unsaved edits or saves, or when download authority is missing.
+
+Tests cover the revision-aware URL builder, real PDF/DOCX/ZIP responses, stale/missing/invalid version refusal, in-memory and PostgreSQL two-account OIDC scope checks, and actual browser stale ZIP-link rejection after saving. No employer request or external permission is granted. Reuse-first decision: REA_NOT_APPLICABLE for first-party existing SP107 revision helper, ZIP/PDF/DOCX renderer, database access and React editor. Savings unknown.
+
 ## Release gates — do not skip
 
 - [ ] Independent code/privacy reviewer examines **cumulative diff against `main`**, including server response headers, account scopes, owner/DOCX/PDF/ZIP identity checks, unsaved editor protection, and employer rights controls.

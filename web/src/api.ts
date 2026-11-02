@@ -530,17 +530,21 @@ export function deleteApplicationWorkspace(workspaceId: string, expectedUserId: 
 }
 
 export function applicationDownloadUrl(
-  workspaceId: string, kind: "cv" | "letter", format: "pdf" | "docx"
+  workspaceId: string, kind: "cv" | "letter", format: "pdf" | "docx",
+  expectedRevision: number,
 ): string {
   return API_BASE + "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
-    + "/download/" + kind + "/" + format;
+    + "/download/" + kind + "/" + format
+    + "?expected_revision=" + encodeURIComponent(String(expectedRevision));
 }
 
 
-/** Private GET, rendered from the exact saved revision, never unsaved editor text. */
-export function applicationPackageDownloadUrl(workspaceId: string): string {
+/** Private ZIP GET for exactly the saved job revision reviewed in this UI. */
+export function applicationPackageDownloadUrl(
+  workspaceId: string, expectedRevision: number,
+): string {
   return API_BASE + "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
-    + "/download/package.zip";
+    + "/download/package.zip?expected_revision=" + encodeURIComponent(String(expectedRevision));
 }
 
 /** Opens a read-only PDF for precisely this saved application revision. */
