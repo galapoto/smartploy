@@ -8,7 +8,11 @@ import { getBrowserHandoffReadiness, getSession } from "./api";
 import LocalPlaywrightAssist from "./LocalPlaywrightAssist";
 import { localBridgeOriginAllowed } from "./localPlaywrightBridge";
 
-vi.mock("./api", () => ({ getSession: vi.fn(), getBrowserHandoffReadiness: vi.fn() }));
+vi.mock("./api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./api")>()),
+  getSession: vi.fn(),
+  getBrowserHandoffReadiness: vi.fn(),
+}));
 
 const pairing = "synthetic-review-only-pairing-code";
 const localToken = "L".repeat(43);
