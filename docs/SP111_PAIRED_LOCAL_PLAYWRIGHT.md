@@ -72,7 +72,7 @@ packets elsewhere. No login/password collection or CAPTCHA bypass.
 
 - \`bridge.py\` uses \`HTTPServer\` on 127.0.0.1:48741, accepts only
   POST and CORS preflight for exact allowed first-party SmartPloy origins
-  and local test preview origins. Exact loopback \`Host\` prevents DNS
+  only. Local Vite previews are deliberately excluded from production\n  helper access. Exact loopback \`Host\` prevents DNS
   rebinding. No cookies/CORS credentials. Hard request-body size limit;
   no URLs or raw packet values printed; \`Cache-Control: no-store\`;
   \`Access-Control-Allow-Private-Network\` only for trusted origins.
