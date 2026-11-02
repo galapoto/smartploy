@@ -12,6 +12,8 @@ vi.mock("./api", () => ({
   deleteCV: vi.fn(), deleteFact: vi.fn(), getApplications: vi.fn(),
   getCV: vi.fn(), getCVJobMatches: vi.fn(), getDashboard: vi.fn(), getHealth: vi.fn(),
   getJobs: vi.fn(), getProfileFacts: vi.fn(), getSession: vi.fn(),
+  getApplicationQuestionMemory: vi.fn(), setApplicationProfileMode: vi.fn(),
+  saveApplicationQuestionAnswer: vi.fn(), deleteApplicationQuestion: vi.fn(),
   startApplicationWorkspace: vi.fn(), uploadCV: vi.fn(),
   saveCVEditor: vi.fn(), restoreCVEditor: vi.fn(),
   getSearchPreferences: vi.fn(), updateSearchPreferences: vi.fn(),
@@ -126,6 +128,14 @@ beforeEach(() => {
   });
   vi.mocked(api.getHealth).mockResolvedValue({ obumai_configured: false } as never);
   vi.mocked(api.getCV).mockResolvedValue({ present: false });
+  vi.mocked(api.getApplicationQuestionMemory).mockResolvedValue({
+    questions: [], count: 0, mode: "guided",
+    cv_only_allowed: true, approved_answers_auto_submitted: false,
+    employer_actions_performed: 0,
+  });
+  vi.mocked(api.setApplicationProfileMode).mockImplementation(async mode => ({
+    mode, cv_only_allowed: true, employer_actions_performed: 0,
+  }));
   vi.mocked(api.getCVJobMatches).mockResolvedValue({
     cv_present: true, cv_filename: "synthetic-CV.pdf", match_mode: "cv_text_signals",
     detected_roles: ["Data Analyst"], detected_topics: ["Python"],

@@ -19,6 +19,7 @@ import {
   sectorLabel, type DisplayMode, type SectorFilter
 } from "./lib";
 import ApplicationStudio from "./ApplicationStudio";
+import ApplicationProfilePanel from "./ApplicationProfilePanel";
 import MasterCVEditor from "./MasterCVEditor";
 import ApplicationJourney from "./ApplicationJourney";
 import { describeAutoApplyBatchIssue } from "./autoapply_batch_errors";
@@ -62,7 +63,13 @@ const FACT_TYPES: Array<{ value: string; label: string }> = [
   { value: "education", label: "Education" }, { value: "language", label: "Language" },
   { value: "certification", label: "Certification" }, { value: "project", label: "Project" },
   { value: "location", label: "Location" }, { value: "work_authorization", label: "Work authorization" },
-  { value: "domain", label: "Industry" }, { value: "preference", label: "Preference" }
+  { value: "domain", label: "Industry" }, { value: "preference", label: "Preference" },
+  { value: "availability", label: "Availability" }, { value: "employment_type", label: "Employment type" },
+  { value: "relocation", label: "Relocation preference" }, { value: "portfolio", label: "Portfolio URL" },
+  { value: "website", label: "Personal website URL" },
+  { value: "notice_period", label: "Notice period · manual only" },
+  { value: "salary_expectation", label: "Salary expectation · manual only" },
+  { value: "references", label: "References · manual only" }
 ];
 
 function cx(...parts: Array<string | undefined | false>): string {
@@ -1424,6 +1431,11 @@ export default function App() {
             cvUnavailable={cvReadState === "unavailable"} cvChecking={cvReadState === "checking"} cvRetrying={refreshing}
             onRetryCV={() => void load(true)}
             onUpload={onUploadClick} onCreateCV={() => navigate("profile")}/>
+          {cvReadState === "available" && cv.present ?
+            <ApplicationProfilePanel key={accountViewKey + "-start"}
+              expectedUserId={session?.user_id || ""}
+              facts={facts} cvPresent={cv.present} compact
+              onOpenProfile={() => navigate("profile")} /> : null}
           {preferences && !preferences.completed ? <details className="flow-advanced-setup flow-dashboard-setup">
             <summary>Optional: set your job search preferences</summary>
             <SearchSetup key={accountViewKey} initial={preferences}
@@ -1464,6 +1476,11 @@ export default function App() {
               {refreshing ? "Checking CV…" : "Retry CV check"}
             </button> : null}
           </section> : null}
+          {page === "apply" && cvReadState === "available" && cv.present ?
+            <ApplicationProfilePanel key={accountViewKey + "-apply"}
+              expectedUserId={session?.user_id || ""} facts={facts}
+              cvPresent={cv.present} compact
+              onOpenProfile={() => navigate("profile")}/> : null}
           {page === "apply" && cvReadState === "available" ? <ApplicationJourney
             key={accountViewKey} userId={session?.user_id || ""}
             cv={cv} mode={flowMode} selectedJobKey={flowSelectedJob}
@@ -1481,6 +1498,10 @@ export default function App() {
           {page === "training" ? <TrainingProgramsPanel /> : null}
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">
             {cvBlock}
+            <ApplicationProfilePanel key={accountViewKey + "-profile"}
+              expectedUserId={session?.user_id || ""} facts={facts}
+              cvPresent={cv.present} cvVerified={cvReadState === "available"}
+              onFactsSuggested={() => void load(true)} />
             {cvReadState === "unavailable" && unsavedDocumentRef.current.masterCV
               ? <section className="panel" role="alert">
                 <h2>CV check failed — your unsaved edits are preserved</h2>
