@@ -137,6 +137,8 @@ class MemoryApplicationQuestionRepository:
         self, profile_id: str, labels: list[str],
         identifiers: list[tuple[str, ...]] | None = None,
     ) -> tuple[list[RememberedQuestion], int]:
+        if self.mode(profile_id) == "cv_only":
+            raise QuestionMemoryError("CV-only profile does not retain questions")
         seen: list[RememberedQuestion] = []
         skipped = 0
         keys_in_request: set[str] = set()
@@ -170,6 +172,8 @@ class MemoryApplicationQuestionRepository:
         self, profile_id: str, key: str, answer: str,
         expected_version: int, approve_for_reuse: bool,
     ) -> RememberedQuestion:
+        if self.mode(profile_id) == "cv_only":
+            raise QuestionMemoryError("CV-only profile does not retain answers")
         old = self.data.get((profile_id, key))
         if old is None:
             raise QuestionMemoryError("Question not found in this profile")
@@ -250,6 +254,8 @@ class PostgresApplicationQuestionRepository:
         seen: list[RememberedQuestion] = []
         skipped = 0
         unique: set[str] = set()
+        if self.mode(profile_id) == "cv_only":
+            raise QuestionMemoryError("CV-only profile does not retain questions")
         # One connection & transaction for all prompts. No raw employer URLs,
         # cookies, CV or employer PII are written into this table.
         with connect(self.dsn) as conn:
@@ -272,15 +278,17 @@ class PostgresApplicationQuestionRepository:
                         f"""INSERT INTO smartploy_application_profile_questions
                           (profile_id,question_key,label,reusable_scope)
                           SELECT %s,%s,%s,%s
-                          WHERE (SELECT count(*) FROM smartploy_application_profile_questions
+                          WHERE COALESCE((SELECT mode FROM smartploy_application_profile_settings
+                                           WHERE profile_id=%s),'guided') = 'guided'
+                            AND ((SELECT count(*) FROM smartploy_application_profile_questions
                                  WHERE profile_id=%s) < %s
                             OR EXISTS(SELECT 1 FROM smartploy_application_profile_questions
-                                      WHERE profile_id=%s AND question_key=%s)
+                                      WHERE profile_id=%s AND question_key=%s))
                           ON CONFLICT(profile_id,question_key) DO UPDATE
                           SET last_seen_at=now()
                           RETURNING {self._COLUMNS}""",
                         (profile_id, key, clean, scope_for_question(clean),
-                         profile_id, MAX_PRIVATE_QUESTIONS, profile_id, key),
+                         profile_id, profile_id, MAX_PRIVATE_QUESTIONS, profile_id, key),
                     )
                     row = cur.fetchone()
                     if row is None:
@@ -298,6 +306,8 @@ class PostgresApplicationQuestionRepository:
         if type(expected_version) is not int or expected_version < 1:
             raise QuestionMemoryError("Invalid question version")
         clean = validate_answer(answer)
+        if self.mode(profile_id) == "cv_only":
+            raise QuestionMemoryError("CV-only profile does not retain answers")
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -306,9 +316,11 @@ class PostgresApplicationQuestionRepository:
                           version=version+1, updated_at=now()
                         WHERE profile_id=%s AND question_key=%s AND version=%s
                           AND (NOT %s OR reusable_scope='exact_question')
+                          AND COALESCE((SELECT mode FROM smartploy_application_profile_settings
+                                        WHERE profile_id=%s),'guided')='guided'
                         RETURNING {self._COLUMNS}""",
                     (clean, approve_for_reuse, profile_id, key,
-                     expected_version, approve_for_reuse),
+                     expected_version, approve_for_reuse, profile_id),
                 )
                 row = cur.fetchone()
                 if row is None:
