@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Monitor, ShieldCheck, XCircle } from "lucide-react";
-import { getSession } from "./api";
+import { getBrowserHandoffReadiness, getSession } from "./api";
 import {
   callLocalPlaywrightBridge, localBridgeOriginAllowed,
   type LocalBridgeOpened, type LocalBridgeInspected,
@@ -22,6 +22,8 @@ export default function LocalPlaywrightAssist(props: {
   enabled: boolean;
   expectedUserId: string;
   expectedAuthSource: string;
+  expectedWorkspaceId: string;
+  expectedRevision: number;
 }) {
   const [code, setCode] = useState("");
   const [phase, setPhase] = useState<Phase>("not-paired");
@@ -55,11 +57,26 @@ export default function LocalPlaywrightAssist(props: {
     }
   }
 
+  async function verifyCurrentDraft() {
+    // Existing owner-scoped backend readiness must recheck source/job and
+    // document revision immediately before each local browser action.
+    // The helper's 15-minute packet is NOT enough to detect another tab edit.
+    const readiness = await getBrowserHandoffReadiness(props.expectedWorkspaceId);
+    if (readiness.ready !== true ||
+        readiness.document_revision !== props.expectedRevision) {
+      throw new Error("This job or reviewed CV/letter changed. Stop the local browser, " +
+        "save and prepare a fresh application packet.");
+    }
+  }
+
   async function guarded(action: () => Promise<void>) {
     if (!props.enabled || !mounted.current || inFlight.current) return;
     inFlight.current = true;
     setBusy(true); setError(""); setFeedback("");
     try {
+      await verifyAccount();
+      if (!mounted.current) return;
+      await verifyCurrentDraft();
       await verifyAccount();
       if (!mounted.current) return;
       await action();
@@ -87,8 +104,10 @@ export default function LocalPlaywrightAssist(props: {
       let packet: unknown;
       try { packet = JSON.parse(props.packetText); }
       catch { throw new Error("The reviewed application packet is invalid. Copy a fresh one."); }
-      if (!packet || typeof packet !== "object") {
-        throw new Error("The reviewed application packet is missing.");
+      if (!packet || typeof packet !== "object" ||
+          (packet as { workspace_id?: unknown }).workspace_id !== props.expectedWorkspaceId ||
+          (packet as { revision?: unknown }).revision !== props.expectedRevision) {
+        throw new Error("The reviewed packet does not match this exact current job. Copy a fresh one.");
       }
       const response = await callLocalPlaywrightBridge<LocalBridgeOpened>(
         "prepare", { pairing_code: code.trim(), packet }, { expectedStage: "opened" },
@@ -131,7 +150,7 @@ export default function LocalPlaywrightAssist(props: {
 
   function fillLocalBrowser() {
     if (phase !== "inspected" || !sessionToken.current ||
-        !planId || !fields.length) return;
+        !planId || !fields.length || !props.enabled || inFlight.current) return;
     if (!window.confirm(
       "Fill these " + fields.length + " reviewed, ordinary fields ONCE in the " +
       "visible employer form? The employer page may transmit each value " +
