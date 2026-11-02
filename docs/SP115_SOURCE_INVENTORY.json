@@ -100,7 +100,7 @@
     },
     {
       "path": "web/src/ApplicationStudio.tsx",
-      "git_blob_sha1": "ad818131eeef7ccf02616196ca9e4ac2feeac374"
+      "git_blob_sha1": "9df3d029bc7958054e91758df8750d3feb353b22"
     },
     {
       "path": "web/src/AuthorizedAutoApplyBatch.tsx",
