@@ -50,6 +50,15 @@ MANDATORY = frozenset({
     "tests/test_application_question_memory.py",
     "tests/test_application_question_memory_oidc.py",
     "docs/SP116_PERSISTENT_APPLICATION_PROFILE.md",
+    # SP117 original Chrome classifier and OIDC-only companion sync.
+    "browser-companion/popup.html",
+    "browser-companion/manifest.json",
+    "browser-companion/question-sync.mjs",
+    "browser-companion/page-question-sync.mjs",
+    "browser-companion/tests/question-sync.test.mjs",
+    "browser-companion/tests/page-question-sync.test.mjs",
+    "web/scripts/package_companion.py",
+    "docs/SP117_CHROME_QUESTION_SYNC.md",
 })
 
 
