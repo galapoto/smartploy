@@ -168,6 +168,12 @@ jobs:
             process.exitCode = 1;
           });
           NODE
+      - name: SP110 real Python Playwright Chromium — synthetic only
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check "playwright==1.55.0" "pytest>=8,<9"
+          python -m playwright install chromium
+          python -m pytest -q tests/test_playwright_assistant.py tests/test_playwright_assistant_chromium.py
       - name: Build exact production web assets
         working-directory: web
         run: npm run build
