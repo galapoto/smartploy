@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { getBrowserHandoffReadiness, getSession } from "./api";
+import { getBrowserHandoffReadiness, getEmployerAttemptStatus, getSession } from "./api";
 import LocalPlaywrightAssist from "./LocalPlaywrightAssist";
 import { localBridgeOriginAllowed } from "./localPlaywrightBridge";
 
@@ -12,6 +12,7 @@ vi.mock("./api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./api")>()),
   getSession: vi.fn(),
   getBrowserHandoffReadiness: vi.fn(),
+  getEmployerAttemptStatus: vi.fn(),
 }));
 
 const pairing = "synthetic-review-only-pairing-code";
@@ -65,6 +66,12 @@ const component = (enabled = true) => render(<LocalPlaywrightAssist
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(getSession).mockResolvedValue(session);
+  vi.mocked(getEmployerAttemptStatus).mockResolvedValue({
+    previous_attempt_reserved: false, state: "not_reserved",
+    requires_human_reconciliation: false,
+    automatic_employer_submit_authorized: false,
+    external_confirmation_verified: false, cross_device_server_claim_required: true,
+  });
   vi.mocked(getBrowserHandoffReadiness).mockResolvedValue({
     ready: true, document_revision: 2, blockers: [],
     contact_fields_ready: true, employer_submission_performed: false,
@@ -171,6 +178,24 @@ describe("SP111 paired browser review-first UI", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+
+  it("SP112 blocks paired browser before transferring a CV on a reserved employer attempt", async () => {
+    vi.mocked(getEmployerAttemptStatus).mockResolvedValue({
+      previous_attempt_reserved: true, state: "uncertain",
+      requires_human_reconciliation: true,
+      automatic_employer_submit_authorized: false,
+      external_confirmation_verified: false, cross_device_server_claim_required: true,
+    });
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts.some(a => a.textContent?.includes("reserved or uncertain"))).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(getEmployerAttemptStatus).toHaveBeenCalledWith("workspace-A");
+  });
 
   it("rejects stale application revisions before sending to the helper", async () => {
     vi.mocked(getBrowserHandoffReadiness).mockResolvedValue({
