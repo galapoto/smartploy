@@ -8,8 +8,10 @@ First-party reuse/adaptation (not a new general browser agent):
   employer hosts, ordinary-contact field matching and sensitive-field denial.
 
 The browser runs on the applicant's own computer. Only exact approved hosted
-Lever/Ashby/Greenhouse forms are supported. No file upload, submit/click,
-CAPTCHA bypass, credential collection, hidden browser or background actions.
+Lever/Ashby/Greenhouse forms are supported. The legacy CLI never
+uploads, and the paired SP112 bridge attaches ONLY the exact reviewed
+CV PDF after separate user approval. No submit/click, CAPTCHA bypass,
+credential collection, hidden browser or background employer actions.
 """
 from __future__ import annotations
 
