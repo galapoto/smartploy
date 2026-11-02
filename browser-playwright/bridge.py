@@ -99,6 +99,26 @@ class ChromiumActor:
             page, packet, rows, file_field, raw_pdf, expected_url,
         )
 
+    def questions(self, packet: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+        """Original Chrome question planner in the same ObumAI Chromium tab."""
+        page, _rows, _contact_plan = self.inspect(packet)
+        original = Path(__file__).with_name("questions-review.js").read_text(
+            encoding="utf-8",
+        )
+        reviewed = assistant.inspect_reviewed_questions(page, packet, original)
+        return page, reviewed
+
+    def fill_questions(
+        self, page: Any, packet: dict[str, Any],
+        reviewed: dict[str, Any], answers: list[str],
+    ) -> dict[str, Any]:
+        original = Path(__file__).with_name("questions-review.js").read_text(
+            encoding="utf-8",
+        )
+        return assistant.fill_reviewed_questions(
+            page, packet, original, reviewed, answers,
+        )
+
     def observe(self, packet: dict[str, Any]) -> dict:
         """Read-only: run the original SP47 receipt observer in local Chromium."""
         if self.context is None:
@@ -166,6 +186,10 @@ class BridgeState:
         self.attach_claimed = False
         self.inspected_url = ""
         self.receipt_observed = False
+        self.question_page: Any | None = None
+        self.question_plan: dict[str, Any] | None = None
+        self.question_plan_id = ""
+        self.question_fill_claimed = False
 
     def prepare(self, pairing_code: Any, raw_packet: Any) -> dict:
         if self.pairing_used or self.actor is not None:
@@ -328,6 +352,73 @@ class BridgeState:
             "uploaded": True,
         }
 
+    def questions(self) -> dict:
+        packet = self._current_packet()
+        if self.question_fill_claimed or self.actor is None:
+            raise BridgeError(
+                "Question review already used or browser unavailable. Finish manually.", 409
+            )
+        # A new read-only review supersedes all older plans.
+        self.question_page = None
+        self.question_plan = None
+        self.question_plan_id = ""
+        try:
+            page, inspected = self.actor.questions(packet)
+        except (assistant.PacketError, BridgeError) as exc:
+            raise BridgeError(
+                "Open the reviewed employer form and complete security checks manually.", 409
+            ) from exc
+        except Exception as exc:
+            raise BridgeError("Cannot safely inspect employer questions.", 409) from exc
+        self.question_page = page
+        self.question_plan = inspected
+        self.question_plan_id = secrets.token_urlsafe(16)
+        return {
+            "ok": True, "stage": "questions_inspected",
+            "plan_id": self.question_plan_id,
+            "questions": inspected["questions"],
+            "human_only": inspected["human_only"],
+            "submitted": False, "uploaded": False,
+        }
+
+    def fill_questions(self, plan_id: Any, confirmation: Any, answers: Any) -> dict:
+        packet = self._current_packet()
+        if (self.question_fill_claimed or self.question_page is None
+                or self.question_plan is None or not self.question_plan_id):
+            raise BridgeError(
+                "No approved question plan. Do not retry uncertain employer answers.", 409
+            )
+        if (not isinstance(plan_id, str) or
+                not hmac.compare_digest(plan_id, self.question_plan_id) or
+                confirmation != "FILL REVIEWED ANSWERS"):
+            raise BridgeError("Fresh exact question review and approval required.", 403)
+        if (not isinstance(answers, list)
+                or len(answers) != len(self.question_plan["questions"])
+                or len(answers) > 12
+                or not all(
+                    isinstance(value, str) and len(value) <= 1500
+                    for value in answers
+                )):
+            raise BridgeError("Invalid reviewed applicant answers.", 422)
+        # Burn before any DOM mutation. No network or browser retry.
+        self.question_fill_claimed = True
+        assert self.actor is not None
+        try:
+            result = self.actor.fill_questions(
+                self.question_page, packet, self.question_plan, answers,
+            )
+        except Exception as exc:
+            raise BridgeError(
+                "Employer question outcome uncertain. Inspect manually; never retry.", 409
+            ) from exc
+        return {
+            "ok": True, "stage": "answers_filled",
+            "status": result["status"],
+            "filled": result["filled"],
+            "planned": result["planned"],
+            "submitted": False, "uploaded": False,
+        }
+
     def observe(self, confirmation: Any) -> dict:
         # A browser confirmation is an UNVERIFIED user observation.
         # This read-only endpoint never asks for or permits a Submit click.
@@ -387,6 +478,10 @@ class BridgeState:
         self.attach_claimed = True
         self.fill_claimed = True
         self.receipt_observed = True
+        self.question_page = None
+        self.question_plan = None
+        self.question_plan_id = ""
+        self.question_fill_claimed = True
         if actor is not None:
             try:
                 actor.close()
@@ -452,7 +547,7 @@ def make_handler(state: BridgeState) -> type[BaseHTTPRequestHandler]:
         def do_OPTIONS(self) -> None:
             origin = self._origin()
             allowed = (origin is not None and self.path in {
-                "/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/attach", "/v1/observe", "/v1/stop",
+                "/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/attach", "/v1/questions", "/v1/fill-questions", "/v1/observe", "/v1/stop",
             } and self.headers.get("Access-Control-Request-Method") == "POST")
             self._headers(origin if allowed else None,
                           204 if allowed else 403, 0, preflight=allowed)
@@ -466,7 +561,7 @@ def make_handler(state: BridgeState) -> type[BaseHTTPRequestHandler]:
                 self._reply(403, {"ok": False, "error": "Untrusted site or host."}, None)
                 return
             try:
-                if self.path not in {"/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/attach", "/v1/observe", "/v1/stop"}:
+                if self.path not in {"/v1/prepare", "/v1/inspect", "/v1/fill", "/v1/attach", "/v1/questions", "/v1/fill-questions", "/v1/observe", "/v1/stop"}:
                     raise BridgeError("Unsupported local action.", 404)
                 if self.path == "/v1/attach":
                     state.authenticate(self.headers.get("Authorization"))
@@ -514,6 +609,13 @@ def make_handler(state: BridgeState) -> type[BaseHTTPRequestHandler]:
                         result = state.inspect()
                     elif self.path == "/v1/fill":
                         result = state.fill(body.get("plan_id"), body.get("confirmation"))
+                    elif self.path == "/v1/questions":
+                        result = state.questions()
+                    elif self.path == "/v1/fill-questions":
+                        result = state.fill_questions(
+                            body.get("plan_id"), body.get("confirmation"),
+                            body.get("answers"),
+                        )
                     elif self.path == "/v1/observe":
                         result = state.observe(body.get("confirmation"))
                     else:
