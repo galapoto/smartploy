@@ -56,6 +56,9 @@ export async function callLocalPlaywrightBridge<T extends BridgeResult>(
   try {
     response = await fetch(BRIDGE_ORIGIN + "/v1/" + route, {
       method: "POST",
+      // Chromium Local Network Access: loopback identity, mixed-content
+      // exemption and user permission prompt. Older browsers ignore this.
+      targetAddressSpace: "loopback",
       mode: "cors",
       credentials: "omit",
       redirect: "error",
