@@ -18,11 +18,16 @@ export type LocalBridgeOpened = {
 export type LocalBridgeInspected = {
   ok: true; stage: "inspected"; plan_id: string;
   total_controls: number; approved_fields: LocalBridgeField[];
+  cv_attachment: { available: boolean; label: string; attach_id: string };
   submitted: false; uploaded: false;
 };
 export type LocalBridgeFilled = {
   ok: true; stage: "filled"; filled: number; planned: number;
   stopped_on_change: boolean; submitted: false; uploaded: false;
+};
+export type LocalBridgeAttached = {
+  ok: true; stage: "attached"; attached_locally: true;
+  employer_upload_confirmed: false; submitted: false; uploaded: true;
 };
 export type LocalBridgeStopped = {
   ok: true; stage: "stopped"; submitted: false; uploaded: false;
@@ -101,6 +106,17 @@ export async function callLocalPlaywrightBridge<T extends BridgeResult>(
     typeof body.plan_id !== "string" ||
     !/^[A-Za-z0-9_-]{16,100}$/.test(body.plan_id) ||
     !Array.isArray(body.approved_fields) || body.approved_fields.length > 250 ||
+    !body.cv_attachment || typeof body.cv_attachment !== "object" ||
+    (body.cv_attachment as Record<string, unknown>).available !== true &&
+      (body.cv_attachment as Record<string, unknown>).available !== false ||
+    typeof (body.cv_attachment as Record<string, unknown>).label !== "string" ||
+    ((body.cv_attachment as Record<string, unknown>).label as string).length > 100 ||
+    typeof (body.cv_attachment as Record<string, unknown>).attach_id !== "string" ||
+    ((body.cv_attachment as Record<string, unknown>).available === true &&
+      !/^[A-Za-z0-9_-]{16,100}$/.test(
+        (body.cv_attachment as Record<string, unknown>).attach_id as string)) ||
+    ((body.cv_attachment as Record<string, unknown>).available === false &&
+      (body.cv_attachment as Record<string, unknown>).attach_id !== "") ||
     body.approved_fields.some((field) => (
       !field || typeof field.key !== "string" ||
       !/^[a-z_]{2,40}$/.test(field.key) ||
@@ -115,4 +131,107 @@ export async function callLocalPlaywrightBridge<T extends BridgeResult>(
     body.stopped_on_change !== ((body.filled as number) !== (body.planned as number))
   )) throw new Error("Local form-fill result could not be verified.");
   return body as T;
+}
+
+
+/** Reuse SmartPloy's server-side revision-locked CV PDF output and the
+ * Chrome companion's exact SHA/size checks. The CV remains in applicant
+ * browser memory and is never sent to a SmartPloy browser-proxy service.
+ */
+export async function fetchExactReviewedCvPdf(
+  path: string, reviewed: { cv_pdf_sha256: string; cv_pdf_size: number }
+): Promise<ArrayBuffer> {
+  if (!localBridgeOriginAllowed(window.location.origin) ||
+      !/^[a-f0-9]{64}$/.test(reviewed.cv_pdf_sha256) ||
+      !Number.isSafeInteger(reviewed.cv_pdf_size) ||
+      reviewed.cv_pdf_size < 12 || reviewed.cv_pdf_size > 2 * 1024 * 1024) {
+    throw new Error("Invalid reviewed PDF identity.");
+  }
+  const url = new URL(path, window.location.origin);
+  if (url.origin !== window.location.origin ||
+      !url.pathname.includes("/application-workspaces/") ||
+      !url.pathname.endsWith("/download/cv/pdf")) {
+    throw new Error("Only the current SmartPloy saved CV PDF can be attached.");
+  }
+  const response = await fetch(url.pathname + url.search, {
+    method: "GET", mode: "same-origin", credentials: "same-origin",
+    redirect: "error", cache: "no-store", referrerPolicy: "no-referrer",
+  });
+  if (!response.ok) throw new Error("Could not fetch the current saved CV PDF.");
+  const contentLength = response.headers.get("content-length");
+  if (contentLength && Number(contentLength) > 2 * 1024 * 1024) {
+    throw new Error("CV PDF exceeds the approved size limit.");
+  }
+  const data = await response.arrayBuffer();
+  if (data.byteLength !== reviewed.cv_pdf_size ||
+      data.byteLength < 12 || data.byteLength > 2 * 1024 * 1024) {
+    throw new Error("Saved CV PDF size changed; review and export it again.");
+  }
+  const bytes = new Uint8Array(data);
+  if (String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") {
+    throw new Error("Saved document is not a valid PDF.");
+  }
+  const tail = bytes.subarray(Math.max(0, bytes.length - 2048));
+  let trailer = "";
+  for (const item of tail) trailer += String.fromCharCode(item);
+  if (!trailer.includes("%%EOF")) throw new Error("The saved CV PDF is incomplete.");
+  if (!window.crypto?.subtle) throw new Error("Secure SHA-256 verification is unavailable.");
+  const digest = Array.from(new Uint8Array(await window.crypto.subtle.digest(
+    "SHA-256", data,
+  ))).map(byte => byte.toString(16).padStart(2, "0")).join("");
+  if (digest !== reviewed.cv_pdf_sha256) {
+    throw new Error("Saved CV PDF digest changed; upload blocked.");
+  }
+  return data;
+}
+
+/** The ONLY direct PDF upload path: one explicit applicant gesture,
+ * one exact locally reviewed input, no employer Submit or background retry.
+ * Server validates packet SHA again and burns the attempt before Playwright
+ * sets the employer file input (which may auto-upload immediately).
+ */
+export async function attachExactReviewedCvLocally(
+  pdf: ArrayBuffer, token: string, attachId: string
+): Promise<LocalBridgeAttached> {
+  if (!localBridgeOriginAllowed(window.location.origin) ||
+      !/^[A-Za-z0-9_-]{40,100}$/.test(token) ||
+      !/^[A-Za-z0-9_-]{16,100}$/.test(attachId) ||
+      pdf.byteLength < 12 || pdf.byteLength > 2 * 1024 * 1024) {
+    throw new Error("Invalid reviewed local CV attachment request.");
+  }
+  let response: Response;
+  try {
+    const requestInit: RequestInit & { targetAddressSpace: "loopback" } = {
+      method: "POST", mode: "cors", targetAddressSpace: "loopback",
+      credentials: "omit", redirect: "error", cache: "no-store",
+      referrerPolicy: "no-referrer",
+      headers: {
+        "Content-Type": "application/pdf",
+        "Authorization": "Bearer " + token,
+        "X-Smartploy-Attach-Id": attachId,
+        "X-Smartploy-Attach-Confirmation": "ATTACH REVIEWED CV",
+      },
+      body: pdf,
+    };
+    response = await fetch(BRIDGE_ORIGIN + "/v1/attach", requestInit);
+  } catch {
+    throw new Error("Local PDF transfer uncertain. Inspect the employer browser; never retry blindly.");
+  }
+  let data: unknown;
+  try { data = await response.json(); }
+  catch { throw new Error("Uncertain CV attachment response. Inspect the employer browser manually."); }
+  if (!data || typeof data !== "object") {
+    throw new Error("Unknown local attachment result; inspect employer browser.");
+  }
+  const body = data as Record<string, unknown>;
+  if (!response.ok) {
+    throw new Error(typeof body.error === "string" && body.error.length <= 300
+      ? body.error : "The local helper refused the reviewed PDF.");
+  }
+  if (body.ok !== true || body.stage !== "attached" ||
+      body.attached_locally !== true || body.uploaded !== true ||
+      body.submitted !== false || body.employer_upload_confirmed !== false) {
+    throw new Error("Unexpected attachment response. Inspect employer browser; do not retry.");
+  }
+  return body as LocalBridgeAttached;
 }
