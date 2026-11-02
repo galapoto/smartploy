@@ -51,6 +51,7 @@ class FakeActor:
         self.closed = False
         self.attachments = []
         self.receipt_finding = {"confirmed": False}
+        self.reviewed_answers = []
         self.instances.append(self)
 
     def inspect(self, p):
@@ -69,6 +70,34 @@ class FakeActor:
         self.attachments.append((file_field["name"], sha256(raw_pdf).hexdigest()))
         return {"attached_locally": True, "employer_upload_confirmed": False,
                 "submitted": False}
+
+    def questions(self, p):
+        assert p is self.packet
+        return self.page, {
+            "questions": [
+                {
+                    "index": 7, "label": "Describe a project you led",
+                    "type": "textarea", "expected_id": "project",
+                    "expected_name": "project_example",
+                    "expected_placeholder": "", "expected_max_length": -1,
+                    "max_answer_length": 1500,
+                },
+            ],
+            "human_only": [
+                "Visa sponsorship", "Salary expectation", "GDPR consent",
+            ],
+            "inspected_url": self.page.url,
+        }
+
+    def fill_questions(self, page, p, plan, answers):
+        assert page is self.page and p is self.packet
+        assert plan["questions"][0]["label"] == "Describe a project you led"
+        assert len(answers) == 1 and answers[0].strip()
+        self.reviewed_answers.append(answers[0])
+        return {
+            "status": "filled_for_review",
+            "filled": 1, "planned": 1, "submitted": False, "uploaded": False,
+        }
 
     def observe(self, p):
         assert p is self.packet
@@ -550,4 +579,144 @@ def test_sp113_receipt_http_origin_token_and_user_confirmation():
         assert again == 409
         assert FakeActor.instances[0].attachments == []
         assert FakeActor.instances[0].page.filled == []
+        current.stop()
+
+
+
+def test_sp114_questions_inspection_and_single_approved_answer_fill():
+    current = state()
+    current.prepare(PAIR_CODE, packet())
+    inspected = current.questions()
+    assert inspected["stage"] == "questions_inspected"
+    assert len(inspected["questions"]) == 1
+    assert inspected["human_only"] == [
+        "Visa sponsorship", "Salary expectation", "GDPR consent",
+    ]
+    assert "value" not in str(inspected)
+    with pytest.raises(bridge.BridgeError) as wrong_id:
+        current.fill_questions("wrong", "FILL REVIEWED ANSWERS", ["Truthful work"])
+    assert wrong_id.value.status == 403
+    with pytest.raises(bridge.BridgeError) as wrong_approval:
+        current.fill_questions(inspected["plan_id"], "SUBMIT", ["Truthful work"])
+    assert wrong_approval.value.status == 403
+    with pytest.raises(bridge.BridgeError) as wrong_list:
+        current.fill_questions(inspected["plan_id"], "FILL REVIEWED ANSWERS", [])
+    assert wrong_list.value.status == 422
+    result = current.fill_questions(
+        inspected["plan_id"], "FILL REVIEWED ANSWERS",
+        ["Led a documented project in Python"],
+    )
+    assert result == {
+        "ok": True, "stage": "answers_filled",
+        "status": "filled_for_review", "filled": 1, "planned": 1,
+        "submitted": False, "uploaded": False,
+    }
+    assert FakeActor.instances[0].reviewed_answers == [
+        "Led a documented project in Python",
+    ]
+    assert "Led a documented project" not in str(result)
+    with pytest.raises(bridge.BridgeError) as replay:
+        current.fill_questions(
+            inspected["plan_id"], "FILL REVIEWED ANSWERS",
+            ["Do not retry"],
+        )
+    assert replay.value.status == 409
+    with pytest.raises(bridge.BridgeError):
+        current.questions()
+    current.stop()
+
+
+def test_sp114_uncertain_answer_fill_cannot_be_replayed():
+    class UncertainAnswers(FakeActor):
+        def fill_questions(self, *_args):
+            raise RuntimeError("Employer might have received one change event")
+    current = bridge.BridgeState(
+        pairing_code=PAIR_CODE, actor_factory=UncertainAnswers,
+    )
+    current.prepare(PAIR_CODE, packet())
+    reviewed = current.questions()
+    with pytest.raises(bridge.BridgeError) as first:
+        current.fill_questions(
+            reviewed["plan_id"], "FILL REVIEWED ANSWERS", ["Truthful"],
+        )
+    assert first.value.status == 409
+    with pytest.raises(bridge.BridgeError) as retry:
+        current.fill_questions(
+            reviewed["plan_id"], "FILL REVIEWED ANSWERS", ["Truthful"],
+        )
+    assert retry.value.status == 409
+    current.stop()
+
+
+def test_sp114_expired_packet_blocks_question_fill_before_employer_input():
+    current = state()
+    current.prepare(PAIR_CODE, packet())
+    reviewed = current.questions()
+    current.packet["expires_at"] = "2000-01-01T00:00:00+00:00"
+    with pytest.raises(bridge.BridgeError) as stale:
+        current.fill_questions(
+            reviewed["plan_id"], "FILL REVIEWED ANSWERS", ["Truthful"],
+        )
+    assert stale.value.status == 410
+    assert FakeActor.instances[0].reviewed_answers == []
+    current.stop()
+
+
+def test_sp114_http_question_review_origin_token_and_one_time_answers():
+    current = state()
+    with fake_local_http_server(current) as port:
+        status, _, opening = http_request(
+            port, "/v1/prepare",
+            {"pairing_code": PAIR_CODE, "packet": packet()},
+        )
+        assert status == 200
+        token = opening["token"]
+        auth = {"Authorization": "Bearer " + token}
+        bad, hdr, _ = http_request(
+            port, "/v1/questions", origin="https://evil.invalid",
+            headers=auth,
+        )
+        assert bad == 403
+        assert "Access-Control-Allow-Origin" not in hdr
+        denied, _, _ = http_request(port, "/v1/questions")
+        assert denied == 403
+        status, _, review = http_request(
+            port, "/v1/questions", headers=auth,
+        )
+        assert status == 200
+        assert review["stage"] == "questions_inspected"
+        assert "Visa sponsorship" in review["human_only"]
+        denied, _, _ = http_request(
+            port, "/v1/fill-questions",
+            {
+                "plan_id": review["plan_id"], "confirmation": "SUBMIT",
+                "answers": ["Truthful"],
+            }, headers=auth,
+        )
+        assert denied == 403
+        successful, _, answer = http_request(
+            port, "/v1/fill-questions",
+            {
+                "plan_id": review["plan_id"],
+                "confirmation": "FILL REVIEWED ANSWERS",
+                "answers": ["Truthful project work"],
+            }, headers=auth,
+        )
+        assert successful == 200
+        assert answer["status"] == "filled_for_review"
+        assert answer["submitted"] is False
+        assert "Truthful project work" not in str(answer)
+        denied, _, _ = http_request(
+            port, "/v1/fill-questions",
+            {
+                "plan_id": review["plan_id"],
+                "confirmation": "FILL REVIEWED ANSWERS",
+                "answers": ["Truthful project work"],
+            }, headers=auth,
+        )
+        assert denied == 409
+        assert FakeActor.instances[0].reviewed_answers == [
+            "Truthful project work",
+        ]
+        assert FakeActor.instances[0].attachments == []
         current.stop()
