@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, Clock3,
   Download, FileCheck2, FileText, LockKeyhole, RefreshCw, Save, ShieldCheck,
-  Trash2, AlertCircle, Sparkles, WandSparkles, ClipboardCopy, ExternalLink
+  Trash2, AlertCircle, Sparkles, WandSparkles, ClipboardCopy, ExternalLink, Monitor
 } from "lucide-react";
 import {
   applicationDownloadUrl, applicationPackageDownloadUrl, applicationPdfPreviewUrl, deleteApplicationWorkspace, editApplicationWorkspace,
@@ -840,16 +840,20 @@ export default function ApplicationStudio(props: {
       "then save deliberately. Undo is available until you type or save.");
   }
 
-  async function copyBrowserPacket() {
+  async function copyBrowserPacket(localOnly = false) {
     if (!selected || dirty || !handoff?.ready || selected.status !== "draft" || browserReceipt ||
         employerAttempt?.previous_attempt_reserved) return;
     let origin = "the employer website";
     try { origin = new URL(selected.application_url).origin; } catch { /* disabled by API validation */ }
-    if (!window.confirm(
-      "Prepare a short-lived job-application packet for " + origin + "? " +
-      "This copies your approved name and contact fields, and reviewed cover letter, " +
-      "to your computer clipboard. Keep it private; you will paste it into the " +
-      "optional SmartPloy browser companion. No form is filled or submitted by this action."
+    if (!window.confirm(localOnly
+      ? "Prepare a short-lived, reviewed application packet for " + origin +
+        " in this SmartPloy browser tab ONLY? It will NOT be copied to your clipboard " +
+        "or sent to an employer. A separate local pairing action is required " +
+        "before sharing approved fields with your own Playwright helper."
+      : "Prepare a short-lived job-application packet for " + origin + "? " +
+        "This copies your approved name and contact fields, and reviewed cover letter, " +
+        "to your computer clipboard. Keep it private; you will paste it into the " +
+        "optional SmartPloy browser companion. No form is filled or submitted by this action."
     )) return;
     const ticket = captureDraft(selected);
     setHandoffBusy(true); setError(""); setMessage("");
@@ -860,6 +864,18 @@ export default function ApplicationStudio(props: {
       );
       if (!isCurrentDraft(ticket)) return;
       const json = JSON.stringify(response.packet);
+      if (localOnly) {
+        // Reuse the owner-verified, revision-locked API without copying
+        // private fields to a global clipboard. Only explicit loopback
+        // pairing can transfer the packet to the applicant's helper.
+        await verifyAccount();
+        if (!isCurrentDraft(ticket)) return;
+        setHandoffPacketText(json);
+        setMessage("Private Playwright packet prepared only in this tab. " +
+          "Pair your local browser below to inspect the exact employer form. " +
+          "No document was uploaded or application submitted.");
+        return;
+      }
       if (navigator.clipboard?.writeText) {
         let copied = false;
         try {
@@ -1876,6 +1892,12 @@ export default function ApplicationStudio(props: {
                 employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void copyBrowserPacket()}>
               <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" : "Copy approved autofill packet"}
+            </button>
+            <button type="button" className="secondary-btn"
+              disabled={!handoff?.ready || dirty || busy || handoffBusy ||
+                !!browserReceipt || employerAttempt?.previous_attempt_reserved === true}
+              onClick={() => void copyBrowserPacket(true)}>
+              <Monitor size={16}/> {handoffBusy ? "Preparing…" : "Prepare Playwright handoff (no clipboard)"}
             </button>
             <a className="outline-btn" href="/smartploy-apply-companion.zip"
               download="smartploy-apply-companion.zip"
