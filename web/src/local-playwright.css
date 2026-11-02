@@ -92,3 +92,34 @@ html[data-smartploy-theme="dark"] .local-playwright-error { color: #ffabb3; }
   .local-playwright-panel { padding: 14px 12px; }
   .local-playwright-panel button { width: 100%; }
 }
+
+
+/* SP113 read-only receipt: visually distinct evidence, never a success badge
+   for employer acknowledgement. Contrast checked for dark/light theme. */
+.local-playwright-receipt {
+  display: grid;
+  gap: 9px;
+  width: 100%;
+  padding: 14px 15px;
+  border: 1px solid #a9c5de;
+  border-radius: 11px;
+  background: #eaf5ff;
+  color: #193b5f;
+}
+.local-playwright-receipt p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.local-playwright-receipt p:last-of-type {
+  color: #4c617c;
+}
+html[data-smartploy-theme="dark"] .local-playwright-receipt {
+  border-color: #6486a8;
+  background: #213e5d;
+  color: #f0f8ff;
+}
+html[data-smartploy-theme="dark"] .local-playwright-receipt p:last-of-type {
+  color: #bfd6e8;
+}
