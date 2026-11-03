@@ -923,12 +923,12 @@ test("saved private jobs do not enter ATS discovery and vanish after account swi
   await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your saved opportunities" })).toBeVisible();
   await page.getByRole("button", { name: "Save job" }).first().click();
-  const modal = page.getByRole("dialog", { name: "Save an opportunity" });
+  const modal = page.getByRole("dialog", { name: "Add a job and start applying" });
   await modal.getByPlaceholder("e.g. Junior Data Analyst").fill("PRIVATE-BOOKMARK-A");
   await modal.getByPlaceholder("Employer name").fill("Fictional Private Company");
   await modal.getByPlaceholder("Paste the responsibilities and key requirements here.")
     .fill("User-saved reference, not a verified posting");
-  await modal.getByRole("button", { name: "Save job" }).click();
+  await modal.getByRole("button", { name: "Save job only" }).click();
 
   await expect(page.getByText("PRIVATE-BOOKMARK-A")).toBeVisible();
   expect(state.privateSavedJobs["synthetic-user-a"]).toHaveLength(1);

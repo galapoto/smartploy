@@ -72,6 +72,7 @@ MANDATORY = frozenset({
     "smartploy/private_saved_jobs.py", "smartploy/application_workspace.py",
     "tests/test_private_saved_jobs.py", "tests/test_sp120_private_assisted.py",
     "tests/test_sp115_integrated_source.py",
+    "web/src/ApplicationStudio.test.tsx",
     "web/src/ApplicationJourney.test.tsx", "web/src/main.tsx",
     "web/src/sp120-assisted-flow.css",
     "docs/SP120_PRIVATE_ASSISTED_PLAYWRIGHT.md",

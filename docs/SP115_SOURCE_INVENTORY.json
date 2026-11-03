@@ -180,7 +180,7 @@
     },
     {
       "path": "tests/test_browser_handoff.py",
-      "git_blob_sha1": "f1fb3dcb075287aa08f3af4b015b0c607ca12391"
+      "git_blob_sha1": "c94a40f4f645daaa4dec47528538169a450c3b76"
     },
     {
       "path": "tests/test_playwright_assistant_chromium.py",
@@ -196,15 +196,15 @@
     },
     {
       "path": "tests/test_sp115_integrated_source.py",
-      "git_blob_sha1": "e2d8b3916b8f0395e600e7412b4e0bb7eae0daa8"
+      "git_blob_sha1": "55108d9ffb95b7dac5983e2e8ca1252a6d0f30be"
     },
     {
       "path": "tests/test_sp120_private_assisted.py",
-      "git_blob_sha1": "7fed6ee0617577cb5bdb07eae0e41773352395f5"
+      "git_blob_sha1": "3ab240f8380a2ca4b47cb224894a658e65db3e1a"
     },
     {
       "path": "web/browser-tests/onboarding.e2e.ts",
-      "git_blob_sha1": "64d6c19da807cae3d0b110f54acce6fb46f73b3e"
+      "git_blob_sha1": "55c658f1d73a09f2cacc58403957bf5aeeec53ac"
     },
     {
       "path": "web/scripts/package_companion.py",
@@ -245,6 +245,10 @@
     {
       "path": "web/src/ApplicationProfilePanel.tsx",
       "git_blob_sha1": "eb4c018a623343603a99bc4cba52294196df09db"
+    },
+    {
+      "path": "web/src/ApplicationStudio.test.tsx",
+      "git_blob_sha1": "39eca927cd2f6794a9c08f98fd1780e592d4d3a5"
     },
     {
       "path": "web/src/ApplicationStudio.tsx",
@@ -369,6 +373,7 @@
     "automatic_final_submission_allowed": false,
     "paired_local_playwright_required": true,
     "live_applicant_acceptance_verified": false,
-    "production_deployed": false
+    "production_deployed": false,
+    "retested_after_failure": false
   }
 }

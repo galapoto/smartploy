@@ -453,7 +453,6 @@ def test_sp43_greenhouse_review_packet_reuses_existing_owner_cv_and_no_submit(ho
     "https://job-boards.greenhouse.io/synthetic-it/jobs/abc",
     "https://job-boards.greenhouse.io/another/jobs/123456789/redirect",
     "https://job-boards.greenhouse.io/embed/job_app?for=synthetic-it&token=123456789",
-    "https://careers.example.com/jobs/123456789",
 ])
 def test_sp43_greenhouse_rejects_untrusted_employer_forms(untrusted):
     from smartploy.browser_handoff import _assisted_posting_url

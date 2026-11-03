@@ -10,11 +10,12 @@ from dataclasses import replace
 import pytest
 
 from smartploy.application_workspace import WorkspaceError, new_workspace
-from smartploy.browser_handoff import _assisted_posting_url, review_handoff
+from smartploy.browser_handoff import _assisted_posting_url, make_browser_packet, review_handoff
 from smartploy.private_saved_jobs import (
     MemoryPrivateSavedJobRepository, PrivateSavedJobError, private_candidate,
 )
 from test_private_saved_jobs import DATA, headers, private_api
+from smartploy.profile import CandidateProfile, ProfileFact
 
 
 EMPLOYER = "https://careers.example.org/jobs/junior-analyst"
@@ -105,11 +106,14 @@ def test_sp120_saved_bookmark_can_become_private_assisted_draft_without_shared_i
     assert api.get("/api/v1/jobs", headers=a).json()["count"] == 0
     assert api.get("/api/v1/jobs", headers=b).json()["count"] == 0
 
-    # An independent partner or browser final-submit permission is NEVER granted.
-    assert api.get(
+    # Production fail-closed: no durable employer attempt ledger in this
+    # isolated in-memory fixture, therefore no live browser grant.
+    unavailable = api.get(
         f"/api/v1/application-workspaces/{kit['workspace_id']}/handoff-readiness",
         headers=a,
-    ).json()["ready"] is False
+    )
+    assert unavailable.status_code == 503
+    assert "attempt ledger" in unavailable.text
 
 
 def test_sp120_unlisted_employer_uses_same_owned_reviewed_browser_packet(monkeypatch):
@@ -136,9 +140,7 @@ def test_sp120_unlisted_employer_uses_same_owned_reviewed_browser_packet(monkeyp
     wid = kit["workspace_id"]
 
     before = api.get(f"/api/v1/application-workspaces/{wid}/handoff-readiness", headers=a)
-    assert before.status_code == 200, before.text
-    assert before.json()["ready"] is False
-    assert before.json()["unverified_private_employer"] is True
+    assert before.status_code == 503  # Durable action ledger not configured.
 
     updated = api.put(f"/api/v1/application-workspaces/{wid}", headers=a, json={
         "expected_revision": kit["revision"],
@@ -151,31 +153,41 @@ def test_sp120_unlisted_employer_uses_same_owned_reviewed_browser_packet(monkeyp
     })
     assert updated.status_code == 200, updated.text
     reviewed = updated.json()["workspace"]
-    readiness = api.get(
-        f"/api/v1/application-workspaces/{wid}/handoff-readiness", headers=a,
+    # The identical underlying workspace reviewer can produce the
+    # owner-approved, non-submission packet without a durable action ledger.
+    saved = api.app.state.private_saved_jobs.get(pid, item["saved_job_id"])
+    assert saved is not None
+    candidate = private_candidate(saved)
+    stored = api.app.state.workspace_repository.get(pid, wid)
+    assert stored is not None
+    profile = CandidateProfile(
+        profile_id=pid,
+        facts=tuple(ProfileFact(
+            fact_type=kind, value=value, source="user-confirmed",
+            approved=True,
+        ).normalized() for kind, value in (
+            ("identity", "Fictional Applicant"),
+            ("email", "fictional.applicant@example.org"),
+        )),
     )
-    assert readiness.status_code == 200, readiness.text
-    assert readiness.json()["ready"] is True, readiness.text
-    assert readiness.json()["unverified_private_employer"] is True
-    denied = api.post(
-        f"/api/v1/application-workspaces/{wid}/browser-packet",
-        headers=a, json={"expected_revision": reviewed["revision"],
-                         "confirm_private_data_transfer": False},
-    )
-    assert denied.status_code == 422
-    allowed = api.post(
-        f"/api/v1/application-workspaces/{wid}/browser-packet",
-        headers=a, json={"expected_revision": reviewed["revision"],
-                         "confirm_private_data_transfer": True},
-    )
-    assert allowed.status_code == 200, allowed.text
-    packet = allowed.json()["packet"]
+    state = review_handoff(stored, candidate, profile)
+    assert state["ready"] is True
+    assert state["unverified_private_employer"] is True
+    packet = make_browser_packet(stored, candidate, profile)
     assert packet["application_url"] == EMPLOYER
     assert packet["privacy"]["employer_submit_allowed_without_new_approval"] is False
     assert packet["fields"]["full_name"] == "Fictional Applicant"
     assert packet["fields"]["email"] == "fictional.applicant@example.org"
     assert "cv_pdf_sha256" in packet
     assert "original_cv" not in packet
+    # In the isolated production fixture, the route still fails closed instead
+    # of issuing a cross-browser grant without a durable employer-action ledger.
+    denied = api.post(
+        f"/api/v1/application-workspaces/{wid}/browser-packet",
+        headers=a, json={"expected_revision": reviewed["revision"],
+                         "confirm_private_data_transfer": True},
+    )
+    assert denied.status_code == 503
     assert api.get("/api/v1/jobs", headers=a).json()["count"] == 0
 
 
