@@ -200,7 +200,7 @@
     },
     {
       "path": "tests/test_sp120_private_assisted.py",
-      "git_blob_sha1": "3ab240f8380a2ca4b47cb224894a658e65db3e1a"
+      "git_blob_sha1": "2e3d8f7ddbadd5c6458d2a161c40496daf89c810"
     },
     {
       "path": "web/browser-tests/onboarding.e2e.ts",

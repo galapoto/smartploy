@@ -5,14 +5,11 @@ No employer network, submission, AI forwarding or authenticated production use.
 """
 from __future__ import annotations
 
-from dataclasses import replace
-
 import pytest
 
-from smartploy.application_workspace import WorkspaceError, new_workspace
 from smartploy.browser_handoff import _assisted_posting_url, make_browser_packet, review_handoff
 from smartploy.private_saved_jobs import (
-    MemoryPrivateSavedJobRepository, PrivateSavedJobError, private_candidate,
+    MemoryPrivateSavedJobRepository, private_candidate,
 )
 from test_private_saved_jobs import DATA, headers, private_api
 from smartploy.profile import CandidateProfile, ProfileFact
