@@ -1446,9 +1446,10 @@ export default function ApplicationStudio(props: {
         {props.mode === "assisted" && selected.status === "draft" ? (
           <section className="studio-assisted-guide" aria-label="Assisted application walkthrough">
             <h4>Assisted application · finish this exact job</h4>
-            <p>SmartPloy can help fill a supported Lever, Ashby or hosted Greenhouse form.
-              Your CV and cover letter remain editable; the applicant makes the final
-              submission unless a separately authorized employer API is available.</p>
+            <p>SmartPloy can help on a publicly reachable HTTPS employer form, even when
+              this job is missing from the imported database. Review your CV and
+              letter; Playwright fills approved ordinary fields in the visible browser.
+              Final submission remains yours.</p>
             <div className="studio-assisted-steps">
               <a href="#smartploy-cv-review">1 · Review CV</a>
               <a href="#smartploy-letter-review">2 · Review cover letter</a>
@@ -1845,7 +1846,7 @@ export default function ApplicationStudio(props: {
           aria-label="Browser application assistant">
           <div className="studio-handoff-header">
             <div><p className="section-kicker">EMPLOYER APPLICATION</p><h4>Fill the employer's form</h4>
-              <p>Use the optional SmartPloy companion for reviewed contact details, ordinary answers and PDF assistance on supported Lever, Ashby, hosted Greenhouse and exact TalentAdore forms. TalentAdore requires you to open the form visibly and submit personally; no unattended final click is available. Ashby partner APIs require separate rights and approval.</p></div>
+              <p>Start a visible Playwright application on any reviewed public HTTPS employer site, including TalentAdore. SmartPloy checks your private documents, opens the employer form in your paired local browser, fills only the fields you approve and attaches your reviewed CV after separate approval. You complete sensitive questions and final submission yourself.</p></div>
             <ExternalLink size={18} />
           </div>
           {employerAttempt?.previous_attempt_reserved ? (
@@ -1887,17 +1888,17 @@ export default function ApplicationStudio(props: {
             <ul>{handoff.blockers.map((item) => <li key={item}>{item}</li>)}</ul>
           </div> : null}
           <div className="studio-handoff-actions">
-            <button type="button" className="navy-btn"
+            <button type="button" className="navy-btn sp120-playwright-start"
               disabled={!handoff?.ready || dirty || busy || handoffBusy || !!browserReceipt ||
                 employerAttempt?.previous_attempt_reserved === true}
-              onClick={() => void copyBrowserPacket()}>
-              <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" : "Copy approved autofill packet"}
+              onClick={() => void copyBrowserPacket(true)}>
+              <Monitor size={17}/> {handoffBusy ? "Preparing browser…" : "Start application with Playwright"}
             </button>
             <button type="button" className="secondary-btn"
               disabled={!handoff?.ready || dirty || busy || handoffBusy ||
                 !!browserReceipt || employerAttempt?.previous_attempt_reserved === true}
-              onClick={() => void copyBrowserPacket(true)}>
-              <Monitor size={16}/> {handoffBusy ? "Preparing…" : "Prepare Playwright handoff (no clipboard)"}
+              onClick={() => void copyBrowserPacket()}>
+              <ClipboardCopy size={16}/> Copy packet for Chrome companion
             </button>
             <a className="outline-btn" href="/smartploy-apply-companion.zip"
               download="smartploy-apply-companion.zip"
@@ -1929,8 +1930,8 @@ export default function ApplicationStudio(props: {
             Prefer a visible Playwright session on your own desktop? Download the local
             Playwright assistant ZIP, read its INSTALL.txt and run it with Python 3.11+
             and Playwright 1.55.0. It reuses the same short-lived reviewed packet
-            and fills only unique, ordinary contact/cover-letter fields on supported
-            Lever, Ashby, hosted Greenhouse and TalentAdore pages after your explicit approval.
+            and fills unique, ordinary contact/cover-letter fields on any reviewed
+            public HTTPS employer form after your explicit approval.
             It can attach the exact saved CV PDF only after a SECOND explicit approval
             and digest verification. On TalentAdore, first click "Hae tähän työpaikkaan" in the visible employer tab and inspect the opened form. The local browser can also reuse the Chrome
             companion question rules to show required employer questions and fill

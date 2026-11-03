@@ -331,6 +331,29 @@ export function addManualJob(job: ManualJobPayload, expectedUserId: string): Pro
   }, expectedUserId);
 }
 
+/** One clicked, private unverified vacancy -> real Assisted application kit. */
+export function startPrivateSavedApplication(
+  savedJobId: string, expectedUserId: string
+): Promise<WorkspaceStartResponse & {
+  source: "private_saved_unverified";
+  employer_verified: false;
+  final_submit_authorized: false;
+  next_step: string;
+  external_actions_performed: 0;
+}> {
+  return request<WorkspaceStartResponse & {
+    source: "private_saved_unverified";
+    employer_verified: false;
+    final_submit_authorized: false;
+    next_step: string;
+    external_actions_performed: 0;
+  }>(
+    "/api/v1/private-jobs/" + encodeURIComponent(savedJobId) + "/application-workspace",
+    { method: "POST", body: JSON.stringify({ acknowledge_unverified_employer: true }) },
+    expectedUserId
+  );
+}
+
 export function getPrivateSavedJobs(): Promise<PrivateSavedJobsResponse> {
   return request<PrivateSavedJobsResponse>("/api/v1/private-jobs");
 }

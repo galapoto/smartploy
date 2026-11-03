@@ -9,7 +9,7 @@ import {
 import {
   addManualJob, approveFact, createFact, deleteCV, deleteFact, deletePrivateSavedJob, getApplications,
   getCV, getDashboard, getHealth, getJobs, getPrivateSavedJobs, getProfileFacts, getSession,
-  startApplicationWorkspace, uploadCV, saveCVEditor, restoreCVEditor, getJobAIConsents, getJobAIConsentEvents,
+  startApplicationWorkspace, startPrivateSavedApplication, uploadCV, saveCVEditor, restoreCVEditor, getJobAIConsents, getJobAIConsentEvents,
   grantJobAIConsent, revokeJobAIConsent,
   getSearchPreferences, updateSearchPreferences, getSearchResults, getLocalAIStatus,
   prepareMyMatchingDrafts, type AutoDraftResult
@@ -209,6 +209,7 @@ export default function App() {
   const [confirmFact, setConfirmFact] = useState(false);
   const [manualBusy, setManualBusy] = useState(false);
   const [removingPrivateJob, setRemovingPrivateJob] = useState("");
+  const [startingPrivateJob, setStartingPrivateJob] = useState("");
   const [jobForm, setJobForm] = useState<ManualJobPayload>({
     company: "", role_title: "", location: "", description: "", application_url: ""
   });
@@ -877,8 +878,55 @@ export default function App() {
     }
   }
 
+  async function onStartPrivateSavedJob(item: PrivateSavedJob) {
+    if (startingPrivateJob) return;
+    if (!cv.present || cvReadState !== "available" || busyCV || cvWriteInFlight.current ||
+        unsavedDocumentRef.current.masterCV) {
+      setNotice("Save or upload your CV first, then start the employer application.");
+      return;
+    }
+    if (!item.application_url) {
+      setNotice("This saved job has no employer application link. Add the exact employer URL.");
+      return;
+    }
+    let host = "";
+    try { host = new URL(item.application_url).hostname; }
+    catch { setNotice("Add a valid public HTTPS employer URL to start."); return; }
+    if (!window.confirm(
+      "Start a private Assisted application for " + item.role_title + " at " +
+      item.company + " (" + host + ")? This user-added employer is NOT verified. " +
+      "SmartPloy will prepare your private CV/letter, then guide you to a visible " +
+      "Playwright browser. Nothing is sent or submitted by this step."
+    )) return;
+    const actionIdentity = lastSessionIdentity.current;
+    const cvAtStart = activeCVSelection.current;
+    setStartingPrivateJob(item.saved_job_id);
+    try {
+      const result = await runPrivateMutation((userId) =>
+        startPrivateSavedApplication(item.saved_job_id, userId)
+      );
+      if (lastSessionIdentity.current !== actionIdentity ||
+          activeCVSelection.current !== cvAtStart) return;
+      setFlowMode("assisted");
+      setSelectedWorkspaceId(result.workspace.workspace_id);
+      navigate("applications");
+      setNotice("Application opened. Next: review and save your job-specific CV and letter. " +
+        "Then click Start application with Playwright to open the employer form.");
+    } catch (exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged) &&
+          lastSessionIdentity.current === actionIdentity &&
+          activeCVSelection.current === cvAtStart) {
+        setNotice(exc instanceof Error ? exc.message : "The employer application could not start.");
+      }
+    } finally {
+      if (lastSessionIdentity.current === actionIdentity) setStartingPrivateJob("");
+    }
+  }
+
   async function onManualJob(event: FormEvent) {
     event.preventDefault();
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const startAfterSave = submitter?.value === "start-assisted";
     const payload = { ...jobForm };
     if (!payload.company.trim() || !payload.role_title.trim() || !payload.description.trim()) return;
     if (payload.application_url.trim()) {
@@ -894,10 +942,12 @@ export default function App() {
       if (result.status !== "saved_private") throw new Error("The saved job was not accepted: " + result.status);
       setJobDialog(false);
       setJobForm({ company: "", role_title: "", location: "", description: "", application_url: "" });
+      if (startAfterSave) {
+        await onStartPrivateSavedJob(result.job);
+        return;
+      }
       navigate("jobs");
-      // Publish the notice before refreshing. If the account changes during
-      // that refresh, clearPrivateWorkspace() can safely discard it.
-      setNotice("Job saved privately to your account. Employer availability is unverified; it is not a ranked ATS listing.");
+      setNotice("Job saved privately. Select Start application on the saved job to prepare CV and form assistance.");
       await load(true);
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged)) {
@@ -1317,6 +1367,12 @@ export default function App() {
         <div><strong>{item.role_title}</strong>
           <small>{item.company} · {item.location || "Location unknown"} · Employer availability unverified</small>
         </div>
+        <button className="primary-btn compact" type="button"
+          disabled={!!startingPrivateJob || !cv.present || cvReadState !== "available"}
+          onClick={() => void onStartPrivateSavedJob(item)}>
+          <ArrowRight size={15} /> {startingPrivateJob === item.saved_job_id
+            ? "Opening application…" : "Start application"}
+        </button>
         {safeExternalJobUrl(item.application_url) ?
           <a className="text-link" href={safeExternalJobUrl(item.application_url)}
             target="_blank" rel="noopener noreferrer" title="Check the original employer posting">
@@ -1481,6 +1537,29 @@ export default function App() {
               expectedUserId={session?.user_id || ""} facts={facts}
               cvPresent={cv.present} compact
               onOpenProfile={() => navigate("profile")}/> : null}
+          {page === "apply" && cvReadState === "available" && cv.present &&
+            flowMode === "assisted" ? <section className="panel sp120-private-quickstart"
+              aria-label="Apply to a job missing from search results">
+              <div>
+                <p className="section-kicker">JOB MISSING FROM SEARCH?</p>
+                <h2>Apply using any reviewed public employer link</h2>
+                <p>Search results only contain imported jobs. Add your employer vacancy
+                  and start a private application without waiting for the source feed.</p>
+              </div>
+              <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}>
+                <Plus size={17} /> Add employer job & start Assisted
+              </button>
+              {privateSavedJobs.length ? <div className="sp120-private-quicklist">
+                {privateSavedJobs.map((item) => <button key={item.saved_job_id}
+                  type="button" className="outline-btn compact"
+                  disabled={!!startingPrivateJob || !item.application_url}
+                  onClick={() => void onStartPrivateSavedJob(item)}>
+                  {startingPrivateJob === item.saved_job_id ? "Opening…" :
+                    "Start application · " + item.role_title + " · " + item.company}
+                  <ArrowRight size={14}/>
+                </button>)}
+              </div> : null}
+            </section> : null}
           {page === "apply" && cvReadState === "available" ? <ApplicationJourney
             key={accountViewKey} userId={session?.user_id || ""}
             cv={cv} mode={flowMode} selectedJobKey={flowSelectedJob}
@@ -1493,6 +1572,7 @@ export default function App() {
               navigate("applications");
             }}
             onPrepare={onPrepare} onPrepareSelected={onPrepareSelectedJobs}
+             onAddPrivateJob={() => setJobDialog(true)}
           /> : null}
           {page === "jobs" ? <div className="stacked"><div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>{privateSavedJobsPanel}</div> : null}
           {page === "training" ? <TrainingProgramsPanel /> : null}
@@ -1584,14 +1664,25 @@ export default function App() {
     </div>
     {jobDialog ? <div className="modal-backdrop" role="presentation" onClick={() => setJobDialog(false)}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="add-job-title" onClick={(event) => event.stopPropagation()}>
-        <div className="dialog-heading"><div><p className="section-kicker">PRIVATE BOOKMARK</p><h2 id="add-job-title">Save an opportunity</h2><p>Only you can see this saved job. It is not added to the public feed, ranked, verified or submitted anywhere.</p></div><button className="icon-btn" type="button" onClick={() => setJobDialog(false)} aria-label="Close"><X size={21} /></button></div>
+        <div className="dialog-heading"><div><p className="section-kicker">PRIVATE BOOKMARK</p><h2 id="add-job-title">Add a job and start applying</h2><p>Paste the employer application link and requirements. This is a private, unverified listing. Save & start Assisted takes you directly to a CV/cover-letter application workspace; nothing is submitted yet.</p></div><button className="icon-btn" type="button" onClick={() => setJobDialog(false)} aria-label="Close"><X size={21} /></button></div>
         <form className="dialog-form" onSubmit={(event) => void onManualJob(event)}>
           <label>Job title<input required maxLength={160} value={jobForm.role_title} onChange={(event) => setJobForm({ ...jobForm, role_title: event.target.value })} placeholder="e.g. Junior Data Analyst" /></label>
           <label>Company<input required maxLength={160} value={jobForm.company} onChange={(event) => setJobForm({ ...jobForm, company: event.target.value })} placeholder="Employer name" /></label>
           <label>Location<input maxLength={160} value={jobForm.location} onChange={(event) => setJobForm({ ...jobForm, location: event.target.value })} placeholder="e.g. Helsinki / Remote" /></label>
           <label>Job posting URL<input type="url" value={jobForm.application_url} onChange={(event) => setJobForm({ ...jobForm, application_url: event.target.value })} placeholder="https://..." /></label>
           <label>Description or key requirements<textarea required rows={5} maxLength={12000} value={jobForm.description} onChange={(event) => setJobForm({ ...jobForm, description: event.target.value })} placeholder="Paste the responsibilities and key requirements here." /></label>
-          <button className="primary-btn" type="submit" disabled={manualBusy}><Plus size={17} /> {manualBusy ? "Saving…" : "Save job"}</button>
+          <div className="row-actions">
+            <button className="primary-btn" type="submit" name="next-step"
+              value="start-assisted"
+              disabled={manualBusy || !cv.present || cvReadState !== "available"}>
+              <ArrowRight size={17} /> {manualBusy ? "Preparing…" : "Save & start Assisted"}
+            </button>
+            <button className="outline-btn" type="submit" name="next-step"
+              value="save-only" disabled={manualBusy}>
+              <Plus size={17} /> {manualBusy ? "Saving…" : "Save job only"}
+            </button>
+          </div>
+          {!cv.present ? <p className="muted">Upload a CV to unlock direct application preparation.</p> : null}
         </form>
       </div>
     </div> : null}

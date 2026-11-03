@@ -826,7 +826,7 @@ describe("Application Studio private-read account boundary", () => {
       studio("assisted");
       expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
       const prepare = screen.getByRole("button", {
-        name: "Prepare Playwright handoff (no clipboard)",
+        name: "Start application with Playwright",
       });
       await waitFor(() => expect((prepare as HTMLButtonElement).disabled).toBe(false));
       fireEvent.click(prepare);
@@ -870,7 +870,7 @@ describe("Application Studio private-read account boundary", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", {name:"A private role"})).toBeTruthy();
-    const button=screen.getByRole("button",{name:/Copy approved autofill packet/});
+    const button=screen.getByRole("button",{name:/Copy packet for Chrome companion/});
     await waitFor(()=>expect((button as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(button);
     const record=await screen.findByRole("button",{name:/Record exact CV and job review/});
@@ -924,7 +924,7 @@ describe("Application Studio private-read account boundary", () => {
     });
     studio();
     expect(await screen.findByRole("heading",{name:"A private role"})).toBeTruthy();
-    const copy=screen.getByRole("button",{name:/Copy approved autofill packet/});
+    const copy=screen.getByRole("button",{name:/Copy packet for Chrome companion/});
     await waitFor(()=>expect((copy as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(copy);
     const record=await screen.findByRole("button",{name:/Record exact CV and job review/});
@@ -945,7 +945,7 @@ describe("Application Studio private-read account boundary", () => {
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByText(/An attempt for this employer job is already reserved across devices/)).toBeTruthy();
-    expect((screen.getByRole("button", { name: /Copy approved autofill packet/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /Copy packet for Chrome companion/ }) as HTMLButtonElement).disabled).toBe(true);
     expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
   });
 
@@ -979,7 +979,7 @@ describe("Application Studio private-read account boundary", () => {
     expect(panel.textContent).toContain("import its observed receipt");
     expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).readOnly).toBe(true);
     expect((screen.getByRole("textbox", { name: "Editable cover letter text" }) as HTMLTextAreaElement).readOnly).toBe(true);
-    expect((screen.getByRole("button", { name: /Copy approved autofill packet/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /Copy packet for Chrome companion/ }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: /Save changes/ }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: /Confirm outcome of previous attempt/ }) as HTMLButtonElement).disabled).toBe(true);
 
@@ -1369,7 +1369,7 @@ describe("Application Studio delayed mutation and private clipboard safeguards",
     vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
-    const button = screen.getByRole("button", { name: /Copy approved autofill packet/ });
+    const button = screen.getByRole("button", { name: /Copy packet for Chrome companion/ });
     await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
     fireEvent.click(button);
     await waitFor(() => expect(api.createBrowserHandoffPacket).toHaveBeenCalledWith("workspace-A", 1, "usr-a"));
@@ -1400,7 +1400,7 @@ describe("Application Studio delayed mutation and private clipboard safeguards",
     vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
-    const button = screen.getByRole("button", { name: /Copy approved autofill packet/ });
+    const button = screen.getByRole("button", { name: /Copy packet for Chrome companion/ });
     await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
     fireEvent.click(button);
     await waitFor(() => expect(copy).toHaveBeenCalledTimes(1));
@@ -1740,7 +1740,7 @@ describe("Application Studio per-draft result isolation", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
-    const copyButton = screen.getByRole("button", { name: /Copy approved autofill packet/ });
+    const copyButton = screen.getByRole("button", { name: /Copy packet for Chrome companion/ });
     await waitFor(() => expect(copyButton.hasAttribute("disabled")).toBe(false));
     fireEvent.click(copyButton);
     await waitFor(() => expect(api.createBrowserHandoffPacket).toHaveBeenCalledTimes(1));

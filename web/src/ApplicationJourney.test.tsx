@@ -849,3 +849,19 @@ describe("SP103 no stale matches during CV mutation", () => {
     expect(api.getCVJobMatches).not.toHaveBeenCalled();
   });
 });
+
+
+describe("SP120: search missing a private employer no longer dead-ends the applicant", () => {
+  it("offers the exact add-and-start escape hatch on empty Assisted CV results", async () => {
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, recommended: [], other_jobs: [], current_jobs_count: 0, recommended_count: 0,
+    });
+    const onAddPrivateJob = vi.fn();
+    render(<ApplicationJourney {...props()} mode="assisted" onAddPrivateJob={onAddPrivateJob}/>);
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    expect(screen.getByText(/Can't find the employer's job in these results/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Add employer link & start Assisted/i }));
+    expect(onAddPrivateJob).toHaveBeenCalledOnce();
+    expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
+  });
+});

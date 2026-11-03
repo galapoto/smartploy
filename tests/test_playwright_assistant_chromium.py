@@ -536,3 +536,37 @@ def test_sp118_talentadore_dynamic_question_change_stops_autofill_without_submit
             assert page.evaluate("window.submits") == 0
         finally:
             browser.close()
+
+
+def test_sp120_real_chromium_generic_employer_form_fills_reviewed_fields_only():
+    """Actual Playwright/Chromium DOM with every network response synthetic."""
+    p = packet("https://careers.example.org/jobs/junior-analyst")
+    form_url = "https://careers.example.org/jobs/junior-analyst/apply"
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=SAFE_HTML,
+            ))
+            page.goto(form_url, wait_until="domcontentloaded")
+            assert assistant.same_reviewed_form(p["application_url"], page.url)
+            rows = assistant.inspect_page(page)
+            plan = assistant.plan_fields(rows, p)
+            assert [item["key"] for item in plan] == ["full_name", "email", "cover_letter"]
+            result = assistant.fill_reviewed_page(page, p, plan, rows)
+            assert result["filled"] == 3
+            assert result["submitted"] is False
+            assert result["uploaded"] is False
+            assert page.locator("#full").input_value() == "Applicant Example"
+            assert page.locator("#email").input_value() == "person@example.invalid"
+            assert page.locator("#salary").input_value() == ""
+            assert page.locator("#consent").is_checked() is False
+            assert page.evaluate("window.submissionCount") == 0
+            # Even with identical field IDs, a cross-origin redirect cannot fill.
+            page.goto("https://other-career.example.org/job", wait_until="domcontentloaded")
+            assert assistant.same_reviewed_form(p["application_url"], page.url) is False
+            with pytest.raises(assistant.PacketError):
+                assistant.fill_reviewed_page(page, p, plan, rows)
+        finally:
+            browser.close()

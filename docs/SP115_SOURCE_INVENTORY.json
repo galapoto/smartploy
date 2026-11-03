@@ -1,6 +1,6 @@
 {
   "schema": "smartploy.integrated_release_candidate.sp115.v1",
-  "purpose": "Reviewed CV-first SmartPloy SP115–SP118 dependency chain: optional private profile, Chrome sync and exact TalentAdore-assisted form demonstration; SOURCE REVIEW ONLY.",
+  "purpose": "Reviewed cumulative CV-first source from SP115–SP120: persistent private profile, question sync, reviewed TalentAdore/generic Playwright, and owner-saved vacancy to Assisted application; SOURCE REVIEW ONLY.",
   "base_main_sha": "804747bd9f01f999f9e806dcf96459bb215bb8f1",
   "source_head_sha": "d98881296081007c8e70447982cce67e847dcb94",
   "source_dependency_prs": [
@@ -92,7 +92,7 @@
     },
     {
       "path": "browser-playwright/assistant.py",
-      "git_blob_sha1": "e865d1148e75b2ee7cccfcb958fd06b5f11234ad"
+      "git_blob_sha1": "25a4f821e322eeceaa951df938485a238bc1b73a"
     },
     {
       "path": "browser-playwright/bridge.py",
@@ -127,6 +127,10 @@
       "git_blob_sha1": "426e9bd8d6ac12a75771dccc3f4eb2de45d848ef"
     },
     {
+      "path": "docs/SP120_PRIVATE_ASSISTED_PLAYWRIGHT.md",
+      "git_blob_sha1": "13d7ae23bbf6b4282426c65bd984bcc99e11d3ed"
+    },
+    {
       "path": "migrations/030_application_profile_questions.sql",
       "git_blob_sha1": "992659d60133ac8c4fa0ac824e7dacb2341f114b"
     },
@@ -136,15 +140,23 @@
     },
     {
       "path": "smartploy/api.py",
-      "git_blob_sha1": "8bb4ad6c0026e7b3b64e17855278c3b09833d3a8"
+      "git_blob_sha1": "ea2ff08233213a47af235c32e55fa4d4740842ac"
     },
     {
       "path": "smartploy/application_question_memory.py",
       "git_blob_sha1": "97d9ee54bd161a6eb1ba5cd16c77b52f82405e1d"
     },
     {
+      "path": "smartploy/application_workspace.py",
+      "git_blob_sha1": "62a7f945e5c78a8d17a98db9f1e296ce2b25896c"
+    },
+    {
       "path": "smartploy/browser_handoff.py",
-      "git_blob_sha1": "fb3c34723f1e11b8b55eec91ed1836f1ff7272e2"
+      "git_blob_sha1": "fb86bddb671c4936d393dfcd2f16335b848684c9"
+    },
+    {
+      "path": "smartploy/private_saved_jobs.py",
+      "git_blob_sha1": "efe4d7a38b41778ad68e6854c4be590e7d62d57c"
     },
     {
       "path": "smartploy/profile_cv_suggestions.py",
@@ -168,19 +180,31 @@
     },
     {
       "path": "tests/test_browser_handoff.py",
-      "git_blob_sha1": "f1fb3dcb075287aa08f3af4b015b0c607ca12391"
+      "git_blob_sha1": "c94a40f4f645daaa4dec47528538169a450c3b76"
     },
     {
       "path": "tests/test_playwright_assistant_chromium.py",
-      "git_blob_sha1": "4ff8f177c1eb4d3cb9f1c7bbc777f0c983f60128"
+      "git_blob_sha1": "a8f2e5be082f47eb7975131e4f633b003551ccb0"
     },
     {
       "path": "tests/test_playwright_assistant.py",
-      "git_blob_sha1": "baf3858b683c685311344f9d66ac5763f27bc974"
+      "git_blob_sha1": "67667b028732d843b6495e2f2bcdc80b6d7ae51f"
+    },
+    {
+      "path": "tests/test_private_saved_jobs.py",
+      "git_blob_sha1": "fe194246033a9a32c00552f1141ab88d6d465250"
+    },
+    {
+      "path": "tests/test_sp115_integrated_source.py",
+      "git_blob_sha1": "55108d9ffb95b7dac5983e2e8ca1252a6d0f30be"
+    },
+    {
+      "path": "tests/test_sp120_private_assisted.py",
+      "git_blob_sha1": "2e3d8f7ddbadd5c6458d2a161c40496daf89c810"
     },
     {
       "path": "web/browser-tests/onboarding.e2e.ts",
-      "git_blob_sha1": "64d6c19da807cae3d0b110f54acce6fb46f73b3e"
+      "git_blob_sha1": "55c658f1d73a09f2cacc58403957bf5aeeec53ac"
     },
     {
       "path": "web/scripts/package_companion.py",
@@ -192,23 +216,27 @@
     },
     {
       "path": "web/src/api.ts",
-      "git_blob_sha1": "af8ad3cce52c4d05cb459e2a64cea5d741507f30"
+      "git_blob_sha1": "cf64ef290643d0d861229c14424544fc98b1872e"
     },
     {
       "path": "web/src/App.test.tsx",
-      "git_blob_sha1": "a8e05e50c0f2f153e059e3a305118e375d2a8241"
+      "git_blob_sha1": "69ab1e9f3b393dc86e22b5d20d62abaaa03c5caf"
     },
     {
       "path": "web/src/App.tsx",
-      "git_blob_sha1": "1404c9f80dbcc982151bab4be492ad1fc252158e"
+      "git_blob_sha1": "258f26b53573e2af444a32970325c5689681835a"
     },
     {
       "path": "web/src/application-profile.css",
       "git_blob_sha1": "bff4f24a59422eee6528a50854fcd2374ae39ffd"
     },
     {
+      "path": "web/src/ApplicationJourney.test.tsx",
+      "git_blob_sha1": "bc7ea89a77de09f7c54ace95c054845c349e660f"
+    },
+    {
       "path": "web/src/ApplicationJourney.tsx",
-      "git_blob_sha1": "02c388fe3d6609e83ccb202a725040ec2c225878"
+      "git_blob_sha1": "8007cc2186993e254834835a6e6520730e40c13a"
     },
     {
       "path": "web/src/ApplicationProfilePanel.test.tsx",
@@ -219,8 +247,12 @@
       "git_blob_sha1": "eb4c018a623343603a99bc4cba52294196df09db"
     },
     {
+      "path": "web/src/ApplicationStudio.test.tsx",
+      "git_blob_sha1": "39eca927cd2f6794a9c08f98fd1780e592d4d3a5"
+    },
+    {
       "path": "web/src/ApplicationStudio.tsx",
-      "git_blob_sha1": "586fdc70f67c441fccb59bcf18d3195aec307cc0"
+      "git_blob_sha1": "5a91f12eaf184d04a188af77682377c44d037455"
     },
     {
       "path": "web/src/AuthorizedAutoApplyBatch.tsx",
@@ -237,6 +269,14 @@
     {
       "path": "web/src/localPlaywrightBridge.ts",
       "git_blob_sha1": "1ec7aa4fe52465608f38c646aa3f7d218e583d84"
+    },
+    {
+      "path": "web/src/main.tsx",
+      "git_blob_sha1": "f2f81b3469d613dadcd14c7b6a9d16abf0804f97"
+    },
+    {
+      "path": "web/src/sp120-assisted-flow.css",
+      "git_blob_sha1": "ae9a03b15379469a5d5291c4dbed24e8f0380ab3"
     },
     {
       "path": "web/src/StartChoices.tsx",
@@ -326,5 +366,14 @@
     "production_deployed": false,
     "independent_approval_received": false,
     "review_status": "SOURCE_REVIEW_HOLD"
+  },
+  "sp120": {
+    "user_added_employer_application": "SOURCE_CANDIDATE",
+    "public_catalog_unchanged": true,
+    "automatic_final_submission_allowed": false,
+    "paired_local_playwright_required": true,
+    "live_applicant_acceptance_verified": false,
+    "production_deployed": false,
+    "retested_after_failure": false
   }
 }

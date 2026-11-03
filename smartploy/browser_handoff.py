@@ -94,52 +94,65 @@ def _posting_url(raw: str) -> str:
 
 
 def _assisted_posting_url(raw: str) -> str:
-    """Accept exact hosted Lever, Ashby, Greenhouse or TalentAdore for reviewed form HELP.
+    """Any applicant-reviewed PUBLIC HTTPS job URL can use visible form help.
 
-    The original `_posting_url` remains Lever-only and is used by independent
-    final-submit rights. Greenhouse and Ashby never acquire submit authority.
-    Non-hosted/embedded/custom Greenhouse pages remain manual.
+    This is not a source-approval bypass for automated submission. Known ATS
+    platforms still require their exact verified URL shapes. Unknown employers
+    must meet a conservative public-host gate; browser filling remains
+    one-use, local and user-approved. No server fetch happens here.
     """
     try:
         return _posting_url(raw)
     except HandoffError:
         pass
     try:
+        if not isinstance(raw, str) or len(raw) > 1500 or "\\" in raw:
+            raise ValueError
+        if any(ord(ch) < 32 or ord(ch) == 127 for ch in raw):
+            raise ValueError
         parsed = urlsplit(raw)
+        host = (parsed.hostname or "").lower()
         if (
-            not isinstance(raw, str) or len(raw) > 1500
-            or parsed.scheme != "https"
-            or parsed.username or parsed.password
-            or parsed.port not in (None, 443)
-            or parsed.query or parsed.fragment
-            or not (
-                (
-                    parsed.hostname == "jobs.ashbyhq.com"
-                    and re.fullmatch(
-                        r"/[A-Za-z0-9_-]{1,100}/[A-Za-z0-9_-]{1,160}(?:/application/?)?",
-                        parsed.path,
-                    )
-                )
-                or (
-                    parsed.hostname == "ats.talentadore.com"
-                    and re.fullmatch(
-                        r"/apply/[A-Za-z0-9_-]{1,120}/[A-Za-z0-9_-]{5,30}/?",
-                        parsed.path,
-                    )
-                )
-                or (
-                    parsed.hostname in {"job-boards.greenhouse.io", "boards.greenhouse.io"}
-                    and re.fullmatch(
-                        r"/[A-Za-z0-9_-]{1,100}/jobs/[0-9]{1,20}/?",
-                        parsed.path,
-                    )
-                )
+            parsed.scheme != "https" or parsed.username or parsed.password
+            or parsed.port not in (None, 443) or parsed.fragment
+            or not host or (not parsed.path.strip("/") and not parsed.query)
+        ):
+            raise ValueError
+        if host in {"jobs.ashbyhq.com", "ats.talentadore.com",
+                    "boards.greenhouse.io", "job-boards.greenhouse.io"}:
+            patterns = {
+                "jobs.ashbyhq.com": r"/[A-Za-z0-9_-]{1,100}/[A-Za-z0-9_-]{1,160}(?:/application/?)?",
+                "ats.talentadore.com": r"/apply/[A-Za-z0-9_-]{1,120}/[A-Za-z0-9_-]{5,30}/?",
+                "boards.greenhouse.io": r"/[A-Za-z0-9_-]{1,100}/jobs/[0-9]{1,20}/?",
+                "job-boards.greenhouse.io": r"/[A-Za-z0-9_-]{1,100}/jobs/[0-9]{1,20}/?",
+            }
+            if parsed.query or re.fullmatch(patterns[host], parsed.path) is None:
+                raise ValueError
+            return raw
+        if host in {"jobs.lever.co", "jobs.eu.lever.co"}:
+            # Preserve the original strict Lever policy, not a generic fallback.
+            raise ValueError
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            raise ValueError("Literal IP addresses cannot be employer job hosts")
+        if (
+            not re.fullmatch(
+                r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}",
+                host,
             )
+            or host.endswith((".local", ".localhost", ".internal", ".test",
+                              ".invalid", ".example", ".onion"))
+            or parsed.port not in (None, 443)
+            or len(parsed.query) > 800
         ):
             raise ValueError
     except (ValueError, TypeError) as exc:
         raise HandoffError(
-            "An exact hosted Lever, Ashby, Greenhouse or TalentAdore HTTPS job URL is required"
+            "Use an applicant-reviewed public HTTPS job link without credentials, "
+            "private-network addresses or unsafe ports"
         ) from exc
     return raw
 
@@ -153,7 +166,12 @@ def review_handoff(
         raise HandoffError("Application workspace is not owned by this profile")
     if workspace.status != "draft":
         blockers.append("This application was already marked applied")
-    if candidate is None or not candidate.source_current:
+    private_user_review = bool(
+        candidate is not None and candidate.source_current is False
+        and candidate.metadata.get("private_saved_job") is True
+        and candidate.metadata.get("owner_profile_id") == workspace.profile_id
+    )
+    if candidate is None or (not candidate.source_current and not private_user_review):
         blockers.append("The employer posting is no longer current")
     elif (
         candidate.canonical_key != workspace.canonical_key
@@ -190,6 +208,7 @@ def review_handoff(
         "contact_fields_ready": bool(approved["full_name"] and approved["email"]),
         "employer_submission_performed": False,
         "will_require_manual_review": True,
+        "unverified_private_employer": private_user_review,
         "files_attached": False,
     }
 

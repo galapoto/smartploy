@@ -1,4 +1,4 @@
-"""SP115 read-only integrated SmartPloy source inventory gate.
+"""SP115 read-only integrated SmartPloy source inventory gate (SP115 through SP120).
 
 No GitHub access, credentials, applicant CVs, network calls, file writes,
 production commands, browser sessions, or employer actions. This verifies
@@ -68,6 +68,14 @@ MANDATORY = frozenset({
     "tests/test_playwright_assistant.py",
     "tests/test_playwright_assistant_chromium.py",
     "docs/SP118_TALENTADORE_ASSISTED_DEMO.md",
+    # SP120: private bookmarked job -> owner-scoped workspace -> local Playwright.
+    "smartploy/private_saved_jobs.py", "smartploy/application_workspace.py",
+    "tests/test_private_saved_jobs.py", "tests/test_sp120_private_assisted.py",
+    "tests/test_sp115_integrated_source.py",
+    "web/src/ApplicationStudio.test.tsx",
+    "web/src/ApplicationJourney.test.tsx", "web/src/main.tsx",
+    "web/src/sp120-assisted-flow.css",
+    "docs/SP120_PRIVATE_ASSISTED_PLAYWRIGHT.md",
 })
 
 
