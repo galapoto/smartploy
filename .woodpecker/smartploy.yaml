@@ -5,6 +5,13 @@ labels:
 
 when:
   - event: manual
+  # FEATURE-FIRST-001: source-only native PR checks on the main integration
+  # route. The product pipeline has no secrets/deploy rights; forked PRs
+  # require operator approval at the Woodpecker project-settings boundary.
+  # A native green result is CI_QUALIFIED at most, never production GO.
+  - event: pull_request
+    repo: galapoto/smartploy
+    branch: main
   - event: push
     # Opt in the reviewed SP15j application train, never all draft branches.
     branch: [main, feature/sp15j-auto-it-discovery-private-drafts-20261020-v1]
