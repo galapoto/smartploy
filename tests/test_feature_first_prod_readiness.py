@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
 
 from scripts import feature_first_prod_readiness as diag
 
