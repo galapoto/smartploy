@@ -1187,3 +1187,61 @@ test("SP127 new network navigation is private until an explicit opted-in save", 
   await expect(page.getByText(/A conversation becomes available after/)).toBeVisible();
   expect(attemptedExternal).toBe(0);
 });
+
+
+test("SP128 real inbox offers recipient-only abuse report with confirmed identity", async ({ page }) => {
+  await installSyntheticApi(page);
+  const own = {handle:"example_jobs",display_name:"Example Professional",discoverable:true};
+  const peer = {handle:"colleague_1",display_name:"Fictional Colleague",
+    discoverable:true,mutual:true};
+  const messageId = "msg-" + "a".repeat(32);
+  let reportCount = 0;
+  await page.route("**/api/v1/social/me", route =>
+    route.fulfill({status:200,contentType:"application/json",
+      body:JSON.stringify({profile:own,opted_in:true})}));
+  await page.route("**/api/v1/social/connections", route =>
+    route.fulfill({status:200,contentType:"application/json",
+      body:JSON.stringify({following:[peer],followers:[peer],blocked:[],private:true})}));
+  await page.route("**/api/v1/social/reports/me", route =>
+    route.fulfill({status:200,contentType:"application/json",
+      body:JSON.stringify({reports:reportCount ? [{
+        report_id:"report-" + "b".repeat(32),message_id:messageId,
+        reason:"scam",state:"open",created_at:"2026-11-04T19:00:00Z",
+      }] : [],private:true})}));
+  await page.route("**/api/v1/social/moderation/capabilities", route =>
+    route.fulfill({status:200,contentType:"application/json",
+      body:JSON.stringify({operator:false,review_actions:[]})}));
+  await page.route("**/api/v1/social/messages/colleague_1", route =>
+    route.fulfill({status:200,contentType:"application/json",
+      body:JSON.stringify({messages:[{
+        message_id:messageId,body:"Fictional recruitment fee request",
+        mine:false,created_at:"2026-11-04T18:00:00Z",
+      }],handle:"colleague_1",private:true})}));
+  await page.route("**/api/v1/social/reports/messages/**", async route => {
+    reportCount += 1;
+    const request = route.request();
+    expect(request.method()).toBe("POST");
+    expect(request.headers()["x-smartploy-expected-user-id"]).toMatch(/^usr-/);
+    expect(request.postDataJSON()).toEqual({
+      reason:"scam",note:"Requested an application fee",
+    });
+    await route.fulfill({status:201,contentType:"application/json",
+      body:JSON.stringify({report:{report_id:"report-" + "b".repeat(32),
+        message_id:messageId,reason:"scam",state:"open",
+        created_at:"2026-11-04T19:00:00Z"},created:true})});
+  });
+  await page.goto("/");
+  await page.getByRole("button",{name:"Messages"}).click();
+  await page.getByRole("button",{name:/Fictional Colleague/}).click();
+  await expect(page.getByText("Fictional recruitment fee request")).toBeVisible();
+  expect(reportCount).toBe(0);
+  await page.getByRole("button",{name:"Report message from colleague_1"}).click();
+  await page.getByRole("combobox",{name:"Reason"}).selectOption("scam");
+  await page.getByRole("textbox",{name:"Additional information (optional)"})
+    .fill("Requested an application fee");
+  await page.getByRole("button",{name:"Submit report"}).click();
+  await expect(page.getByText(/Report recorded for designated SmartPloy moderators/))
+    .toBeVisible();
+  expect(reportCount).toBe(1);
+  await expect(page.getByText(/not end-to-end encrypted/)).toBeVisible();
+});
