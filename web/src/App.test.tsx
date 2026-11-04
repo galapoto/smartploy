@@ -27,6 +27,14 @@ vi.mock("./MasterCVEditor", () => ({
       }>Save synthetic created CV</button>
     </div>,
 }));
+vi.mock("./SocialHub", () => ({
+  default: ({ view, expectedUserId, onOpenMessages }: {
+    view: "network" | "messages"; expectedUserId: string;
+    onOpenMessages: (handle: string) => void;
+  }) => <div data-testid="social-hub" data-view={view} data-owner={expectedUserId}>
+    <button onClick={() => onOpenMessages("synthetic_peer")} type="button">Open synthetic message</button>
+  </div>
+}));
 vi.mock("./ApplicationStudio", () => ({
   default: ({ focusId }: { focusId: string }) =>
     <div data-testid="application-editor" data-workspace={focusId}>Application editor</div>,
@@ -1801,6 +1809,19 @@ describe("SP97: AI writing tools have an honest, working CV-first entry", () => 
 });
 
 
+describe("SP127 authenticated network route", () => {
+  it("opens Connections and Messages as real content and retains the selected peer", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", {name: "Start with your CV."})).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: "Connections"}));
+    const network = screen.getByTestId("social-hub");
+    expect(network.getAttribute("data-view")).toBe("network");
+    expect(network.getAttribute("data-owner")).toBe("usr-synthetic-1");
+    fireEvent.click(screen.getByRole("button", {name: "Open synthetic message"}));
+    expect(screen.getByTestId("social-hub").getAttribute("data-view")).toBe("messages");
+    expect(screen.getByRole("button", {name: "Messages"}).getAttribute("aria-current")).toBe("page");
+  });
+});
 describe("SP99: original Finland cover, complete in-page identity and persistent theme", () => {
   it("renders the panorama before the actionable CV-first journey, plus the complete logo", async () => {
     render(<App />);
