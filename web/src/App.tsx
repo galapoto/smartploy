@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import {
   Activity, ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, CheckCircle2,
   ChevronRight, Clock3, Database, Download, FileCheck2, FileText, Globe2,
-  LayoutDashboard, ListFilter, LockKeyhole, MapPin, Menu, Moon, Plus, RefreshCw, Sun,
+  LayoutDashboard, ListFilter, LockKeyhole, MapPin, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Sun,
   Search, Settings2, ShieldCheck, Sparkles, Target, Trash2, UploadCloud,
   WandSparkles, X, ChartNoAxesColumn, AlertCircle, type LucideIcon
 } from "lucide-react";
@@ -204,6 +204,22 @@ export default function App() {
   const [cvPreview, setCVPreview] = useState(false);
   const [jobDialog, setJobDialog] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
+  // This is layout preference only. Never store CV, profile or job details.
+  // On first use, a small/zoomed viewport starts with the space-saving rail.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = window.localStorage.getItem("smartploy.sidebar.v1");
+      if (saved === "collapsed") return true;
+      if (saved === "expanded") return false;
+      return window.matchMedia("(max-width: 1280px)").matches;
+    } catch { return false; }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("smartploy.sidebar.v1",
+        sidebarCollapsed ? "collapsed" : "expanded");
+    } catch { /* Private mode may disable storage; the in-session toggle still works. */ }
+  }, [sidebarCollapsed]);
   const [newFactType, setNewFactType] = useState("skill");
   const [newFactValue, setNewFactValue] = useState("");
   const [confirmFact, setConfirmFact] = useState(false);
@@ -1420,26 +1436,47 @@ export default function App() {
     </section>
   </aside>;
 
-  return <div className="smartploy-app">
+  return <div className="smartploy-app" data-sidebar-size={sidebarCollapsed ? "compact" : "expanded"}>
     <a className="skip-to-content" href="#smartploy-main">Skip to main content</a>
     <input ref={uploadRef} type="file" className="visually-hidden" aria-label="Select CV to upload" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => void onCVUpload(event)} />
     <button className={cx("sidebar-scrim", mobileNav && "visible")} type="button" onClick={() => setMobileNav(false)} aria-label="Close navigation" />
-    <aside className={cx("sidebar", mobileNav && "open")}>
+    <aside id="smartploy-sidebar" className={cx("sidebar", mobileNav && "open")}
+      aria-label="SmartPloy navigation">
+      {mobileNav ? <button type="button" className="sp124-mobile-close"
+        aria-label="Close menu" title="Close navigation menu"
+        aria-controls="smartploy-sidebar" aria-expanded={mobileNav}
+        onClick={() => setMobileNav(false)}>
+        <X size={20} aria-hidden="true" />
+      </button> : null}
+      <button type="button" className="sp124-sidebar-toggle"
+        aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-controls="smartploy-sidebar"
+        aria-expanded={!sidebarCollapsed}
+        title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        onClick={() => setSidebarCollapsed((current) => !current)}>
+        {sidebarCollapsed
+          ? <PanelLeftOpen size={19} aria-hidden="true"/>
+          : <PanelLeftClose size={19} aria-hidden="true"/>}
+      </button>
       <button className="site-brand" type="button" onClick={() => navigate("dashboard")} aria-label="SmartPloy dashboard">
         <BrandMark className="site-brand-mark" /><span><strong>SmartPloy</strong><small>Job intelligence for Finland</small></span>
       </button>
       <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-label">WORKSPACE</div>
-        {NAV.slice(0, 7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span className="nav-item-copy"><span>{item.label}</span>{item.id === "apply" ? <small aria-hidden="true" className="nav-item-hint">Manual · Assisted · Auto</small> : null}</span></button>; })}
+        {NAV.slice(0, 7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} title={sidebarCollapsed ? item.label : undefined} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span className="nav-item-copy"><span>{item.label}</span>{item.id === "apply" ? <small aria-hidden="true" className="nav-item-hint">Manual · Assisted · Auto</small> : null}</span></button>; })}
         <div className="nav-divider" />
         <div className="nav-label">MANAGE</div>
-        {NAV.slice(7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
+        {NAV.slice(7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} title={sidebarCollapsed ? item.label : undefined} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
       </nav>
       <div className="sidebar-bottom"><span className="country-chip"><span className="flag-finland" aria-hidden="true" /> Finland</span><span className="session-profile"><span className="avatar">{avatar}</span><span><strong>{session?.email ? session.email.split("@")[0] : "Your workspace"}</strong><small>{session?.authenticated ? "Signed in" : "Private workspace"}</small></span></span></div>
     </aside>
     <div className="main-column">
       <header className="site-header">
-        <button className="icon-btn menu-toggle" aria-label="Open menu" type="button" onClick={() => setMobileNav(!mobileNav)}><Menu size={21} /></button>
+        <button className="icon-btn menu-toggle" aria-label="Open menu"
+          type="button" aria-expanded={mobileNav} aria-controls="smartploy-sidebar"
+          onClick={() => setMobileNav(true)}>
+          <Menu size={21} aria-hidden="true"/>
+        </button>
         <div className="header-search"><Search size={19} /><input type="search" value={search} onChange={(event) => {
           const next = event.target.value;
           if (next && page !== "jobs" && !navigate("jobs")) return;

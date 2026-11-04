@@ -104,6 +104,7 @@ let personalJobs: PrivateSavedJob[] = [];
 
 beforeEach(() => {
   window.localStorage.removeItem("smartploy-ui-theme-v1");
+  window.localStorage.removeItem("smartploy.sidebar.v1");
   document.documentElement.removeAttribute("data-smartploy-theme");
   vi.resetAllMocks();
   currentPrefs = { ...initial };
@@ -2314,5 +2315,52 @@ describe("SP120: no-results Assisted job -> a real private application workspace
       expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
       expect(screen.getByText(/Application opened. Next: review and save/)).toBeTruthy();
     } finally { confirm.mockRestore(); }
+  });
+});
+
+
+describe("SP124 Prismatic SmartPloy shell: reversible and persistent sidebar", () => {
+  it("collapses and expands without losing the active route or the user's account", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Start with your CV." });
+    const nav = screen.getByRole("navigation", { name: "Main navigation" });
+    const collapse = screen.getByRole("button", { name: "Collapse sidebar" });
+    expect(collapse.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(collapse);
+    const shell = document.querySelector(".smartploy-app");
+    expect(shell?.getAttribute("data-sidebar-size")).toBe("compact");
+    expect(window.localStorage.getItem("smartploy.sidebar.v1")).toBe("collapsed");
+    const expand = screen.getByRole("button", { name: "Expand sidebar" });
+    expect(expand.getAttribute("aria-expanded")).toBe("false");
+    expect(within(nav).getByRole("button", { name: "My applications" })
+      .getAttribute("title")).toBe("My applications");
+    fireEvent.click(expand);
+    expect(shell?.getAttribute("data-sidebar-size")).toBe("expanded");
+    expect(window.localStorage.getItem("smartploy.sidebar.v1")).toBe("expanded");
+    expect(screen.getByRole("button", { name: "Apply for jobs" })).toBeTruthy();
+  });
+
+  it("restores a collapsed rail on reload without storing applicant content", async () => {
+    window.localStorage.setItem("smartploy.sidebar.v1", "collapsed");
+    render(<App />);
+    await screen.findByRole("heading", { name: "Start with your CV." });
+    expect(document.querySelector(".smartploy-app")?.getAttribute("data-sidebar-size"))
+      .toBe("compact");
+    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
+    expect(window.localStorage.getItem("smartploy.sidebar.v1")).toBe("collapsed");
+  });
+
+  it("has a labelled and reversible mobile drawer control", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Start with your CV." });
+    const open = screen.getByRole("button", { name: "Open menu" });
+    expect(open.getAttribute("aria-controls")).toBe("smartploy-sidebar");
+    fireEvent.click(open);
+    expect(document.getElementById("smartploy-sidebar")?.classList.contains("open")).toBe(true);
+    const close = screen.getByRole("button", { name: "Close menu" });
+    expect(close.closest("#smartploy-sidebar")).toBeTruthy();
+    expect(close.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(close);
+    expect(document.getElementById("smartploy-sidebar")?.classList.contains("open")).toBe(false);
   });
 });

@@ -7,6 +7,7 @@ import "./document-coach.css";
 import "./document-comparison.css";
 import "./finland-shell.css";
 import "./sp120-assisted-flow.css";
+import "./sp124-prismatic-shell.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

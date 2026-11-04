@@ -84,6 +84,10 @@ MANDATORY = frozenset({
     "scripts/verify_sp115_integrated_source.py",
     "tests/test_browser_pdf_attachment_contract.py",
     "docs/SP122_COMPANION_DISTRIBUTION.md",
+    # SP124 Prismatic source and dark/zoom shell tests, not a deployment claim.
+    "web/src/sp124-prismatic-shell.css",
+    "web/src/sp124-prismatic-shell.test.ts",
+    "docs/SP124_PRISMATIC_SMARTPLOY_RELEASE.md",
 })
 
 

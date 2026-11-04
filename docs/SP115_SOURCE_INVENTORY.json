@@ -1,6 +1,6 @@
 {
   "schema": "smartploy.integrated_release_candidate.sp115.v1",
-  "purpose": "Reviewed cumulative SP115–SP121 CV-first source: private saved vacancy to Assisted, applicant-reviewed Playwright and Chrome custom public HTTPS employer forms; SOURCE REVIEW ONLY.",
+  "purpose": "SP115-SP124 cumulative first-party CV → Assisted Playwright release review, Prismatic SmartPloy responsive shell, user-specific drafts. Source-only; independent GO/deployment required.",
   "base_main_sha": "804747bd9f01f999f9e806dcf96459bb215bb8f1",
   "source_head_sha": "d98881296081007c8e70447982cce67e847dcb94",
   "source_dependency_prs": [
@@ -143,12 +143,16 @@
       "git_blob_sha1": "102952d28d509233dc50aa932b2f3f5edc7ee502"
     },
     {
+      "path": "docs/SP124_PRISMATIC_SMARTPLOY_RELEASE.md",
+      "git_blob_sha1": "e65ad9ddf7fe77c12fec56ca08e4bac35badf1b9"
+    },
+    {
       "path": "migrations/030_application_profile_questions.sql",
       "git_blob_sha1": "992659d60133ac8c4fa0ac824e7dacb2341f114b"
     },
     {
       "path": "scripts/verify_sp115_integrated_source.py",
-      "git_blob_sha1": "ed29c12907ad363c2489dda8d9401e355ee5601f"
+      "git_blob_sha1": "4560ce2cf3905a71882ca507aa4f3773142301f6"
     },
     {
       "path": "smartploy/account_erasure.py",
@@ -216,7 +220,7 @@
     },
     {
       "path": "tests/test_sp115_integrated_source.py",
-      "git_blob_sha1": "9037ca01c7c0d0c42f4505df602b0ac41d0d68c0"
+      "git_blob_sha1": "77b2ec51f357cc5b0e9eba05fa7aac51460885bc"
     },
     {
       "path": "tests/test_sp120_private_assisted.py",
@@ -228,7 +232,7 @@
     },
     {
       "path": "web/browser-tests/onboarding.e2e.ts",
-      "git_blob_sha1": "55c658f1d73a09f2cacc58403957bf5aeeec53ac"
+      "git_blob_sha1": "26d0f456597f451e792924faab83fe6b49e068a3"
     },
     {
       "path": "web/scripts/package_companion.py",
@@ -244,11 +248,11 @@
     },
     {
       "path": "web/src/App.test.tsx",
-      "git_blob_sha1": "69ab1e9f3b393dc86e22b5d20d62abaaa03c5caf"
+      "git_blob_sha1": "649ff4c90e9e29265fd50b845a7f21f83f206e92"
     },
     {
       "path": "web/src/App.tsx",
-      "git_blob_sha1": "258f26b53573e2af444a32970325c5689681835a"
+      "git_blob_sha1": "6e9dad29a09f8c0be5672e6b3c55d844591ad515"
     },
     {
       "path": "web/src/application-profile.css",
@@ -272,11 +276,11 @@
     },
     {
       "path": "web/src/ApplicationStudio.test.tsx",
-      "git_blob_sha1": "39eca927cd2f6794a9c08f98fd1780e592d4d3a5"
+      "git_blob_sha1": "ad0563537a9e67d79bb837d5314501d66b074f47"
     },
     {
       "path": "web/src/ApplicationStudio.tsx",
-      "git_blob_sha1": "e14108179774736f1d23b77e80531c270cff65e3"
+      "git_blob_sha1": "b3b97a16ceb438db20b620630db1a0d01418e512"
     },
     {
       "path": "web/src/AuthorizedAutoApplyBatch.tsx",
@@ -288,7 +292,7 @@
     },
     {
       "path": "web/src/LocalPlaywrightAssist.tsx",
-      "git_blob_sha1": "df0e4850e64ab17e4978cbc68c92ef9ae91e91c9"
+      "git_blob_sha1": "d6f3365f6bc66e8ca4aa62da64372624b0bc48af"
     },
     {
       "path": "web/src/localPlaywrightBridge.ts",
@@ -296,11 +300,19 @@
     },
     {
       "path": "web/src/main.tsx",
-      "git_blob_sha1": "f2f81b3469d613dadcd14c7b6a9d16abf0804f97"
+      "git_blob_sha1": "e156dd440d64b74c878813ff260b99253966e503"
     },
     {
       "path": "web/src/sp120-assisted-flow.css",
       "git_blob_sha1": "ae9a03b15379469a5d5291c4dbed24e8f0380ab3"
+    },
+    {
+      "path": "web/src/sp124-prismatic-shell.css",
+      "git_blob_sha1": "c3cef6ee3ca23aca32db14dfd3ff2557c4347788"
+    },
+    {
+      "path": "web/src/sp124-prismatic-shell.test.ts",
+      "git_blob_sha1": "423ace803768eb637bd3e0117746a8be90c4b384"
     },
     {
       "path": "web/src/StartChoices.tsx",
@@ -407,6 +419,14 @@
     "final_employer_auto_submit": false,
     "live_employer_fill_verified": false,
     "real_signed_in_extension_acceptance_verified": false,
+    "production_deployed": false
+  },
+  "sp124": {
+    "design_reference": "Prismatic_Complete_Design_Kit(1).zip; SP124_PRISMATIC_SMARTPLOY_RELEASE.md",
+    "theme_contrast_runtime_checked": false,
+    "sidebar_expand_collapse_source": true,
+    "zoom_equivalent_chromium_pending": true,
+    "public_https_playwright_assisted_only": true,
     "production_deployed": false
   }
 }

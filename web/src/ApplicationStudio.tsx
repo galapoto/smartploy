@@ -1464,19 +1464,32 @@ export default function ApplicationStudio(props: {
                 <Save size={16}/>{busy ? "Saving…" :
                   !dirty && selected.revision === 1 ? "Confirm documents reviewed" : "Save reviewed documents"}
               </button>
-              <button className="outline-btn" type="button"
+              <button className="navy-btn" type="button"
+                aria-label="Start reviewed Playwright form filling"
                 disabled={!handoff?.ready || dirty || handoffBusy || busy ||
                   !!browserReceipt || employerAttempt?.previous_attempt_reserved === true}
-                onClick={() => void copyBrowserPacket()}>
-                <ClipboardCopy size={16}/>{handoffBusy ? "Preparing…" : "Copy form-fill packet"}
+                onClick={() => void copyBrowserPacket(true)}>
+                <Monitor size={16}/>{handoffBusy ? "Preparing local browser…" : "Start Playwright form filling"}
               </button>
               {safePostingLink(selected.application_url) ? <a className="outline-btn"
                 href={safePostingLink(selected.application_url)} target="_blank"
                 rel="noopener noreferrer">Open exact employer posting <ArrowUpRight size={15}/></a> : null}
             </div>
+            {handoffPacketText && !browserReceipt && !partnerReceipt ? (
+              <div className="sp124-pairing-next" role="status">
+                <CheckCircle2 size={19} aria-hidden="true" />
+                <span>Reviewed packet prepared in this signed-in tab.{" "}
+                  <a href="#smartploy-local-playwright-pairing">Continue to local Playwright pairing</a>
+                  {" "}to open the visible employer browser. Nothing has been submitted.
+                </span>
+              </div>
+            ) : null}
             <p className="muted">Install the Chrome companion from the Employer Application section
-              to fill approved fields and attach the exact CV PDF. Inspect required questions,
-              consent and CAPTCHA personally. An autofill does not mean the employer received an application.</p>
+              or pair the local Playwright helper. It can inspect ordinary fields on a
+              user-reviewed public HTTPS employer page, including employers not in SmartPloy's
+              job feed. You approve fills and PDF attachment; complete login, CAPTCHA,
+              sensitive questions and the final Submit personally. Not every custom form or
+              cross-origin iframe can be filled.</p>
           </section>
         ) : null}
         <div className="studio-info">
