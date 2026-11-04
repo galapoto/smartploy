@@ -984,3 +984,46 @@ export function sendSocialMessage(
     method: "POST", body: JSON.stringify({ body })
   }, expectedUserId);
 }
+
+/** SP128: report only a received message. Not automatic moderation or E2EE. */
+export type SocialReportReason = "spam" | "harassment" | "scam" | "impersonation" | "other";
+export interface SocialReport {
+  report_id: string;
+  message_id: string;
+  reason: SocialReportReason;
+  state: "open" | "reviewed";
+  created_at: string;
+}
+export interface SocialModeratorReport extends SocialReport {
+  note: string;
+  reported_handle: string;
+  reporter_handle: string;
+  message_preview: string;
+  reviewed_at: string | null;
+}
+export function submitSocialMessageReport(
+  messageId: string, reason: SocialReportReason, note: string, expectedUserId: string
+): Promise<{ report: SocialReport; created: boolean }> {
+  return request("/api/v1/social/reports/messages/" + encodeURIComponent(messageId), {
+    method: "POST", body: JSON.stringify({ reason, note })
+  }, expectedUserId);
+}
+export function getMySocialReports(): Promise<{ reports: SocialReport[]; private: true }> {
+  return request("/api/v1/social/reports/me");
+}
+export function getSocialModeratorCapabilities(): Promise<{
+  operator: boolean; review_actions: string[];
+}> {
+  return request("/api/v1/social/moderation/capabilities");
+}
+export function getSocialModerationQueue(): Promise<{
+  reports: SocialModeratorReport[]; operator_only: true;
+}> {
+  return request("/api/v1/social/moderation/reports");
+}
+export function markSocialReportReviewed(reportId: string, expectedUserId: string): Promise<{
+  report_id: string; state: "reviewed"; reviewed_at: string;
+}> {
+  return request("/api/v1/social/moderation/reports/" +
+    encodeURIComponent(reportId) + "/review", { method: "POST" }, expectedUserId);
+}
