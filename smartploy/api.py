@@ -104,6 +104,10 @@ from .social_network import (
     MemorySocialRepository, PostgresSocialRepository,
     SocialConflict, SocialError, SocialNotFound, SocialRateLimited,
 )
+from .social_reports import (
+    MemorySocialReportRepository, PostgresSocialReportRepository,
+    ReportError, ReportNotFound, ReportRateLimited,
+)
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
 from .preparations import (
     PREPARATION_ACTION, PreparationNotEligible,
@@ -219,6 +223,12 @@ class SocialProfilePayload(BaseModel):
 class SocialMessagePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     body: str = Field(min_length=1, max_length=2000)
+
+
+class SocialReportPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: Literal["spam", "harassment", "scam", "impersonation", "other"]
+    note: str = Field(default="", max_length=500)
 
 
 class PrivateSavedJobPayload(BaseModel):
@@ -665,6 +675,10 @@ def create_app(
     # Social identity is explicitly opt-in, separate from CV and employer records.
     # The memory backend is only a non-durable local/test fallback.
     app.state.social = PostgresSocialRepository(dsn) if dsn else MemorySocialRepository()
+    app.state.social_reports = (
+        PostgresSocialReportRepository(dsn) if dsn
+        else MemorySocialReportRepository(app.state.social)
+    )
     app.state.processing_consents = processing_consent_repository or (
         PostgresJobAIConsentRepository(dsn) if dsn
         else MemoryJobAIConsentRepository()
@@ -1474,6 +1488,76 @@ def create_app(
         except SocialError as exc:
             raise social_failure(exc) from exc
         return social_response({"message": result, "private": True}, 201)
+
+
+    # SP128: reporting remains available after a mutual relationship is
+    # revoked/blocked. The database verifies the reporter RECEIVED that exact
+    # message. Operator status comes exclusively from a server user-id allowlist.
+    def report_failure(error: ReportError) -> HTTPException:
+        if isinstance(error, ReportNotFound):
+            status = 404
+        elif isinstance(error, ReportRateLimited):
+            status = 429
+        else:
+            status = 422
+        return HTTPException(status_code=status, detail=str(error),
+                             headers={"Cache-Control": "no-store"})
+
+    def social_moderator(request: Request) -> str:
+        owner = social_owner(request)
+        _, binding = tenant_context(request)
+        if not app.state.operator_access.allows(binding):
+            raise HTTPException(status_code=403,
+                                detail="Social moderation access is restricted",
+                                headers={"Cache-Control": "no-store"})
+        return owner
+
+    @app.post("/api/v1/social/reports/messages/{message_id}")
+    def social_report_message(request: Request, message_id: str,
+                              payload: SocialReportPayload) -> JSONResponse:
+        owner = social_owner(request)
+        try:
+            result = app.state.social_reports.submit(
+                owner, message_id, payload.reason, payload.note
+            )
+        except ReportError as exc:
+            raise report_failure(exc) from exc
+        return social_response(result, 201 if result["created"] else 200)
+
+    @app.get("/api/v1/social/reports/me")
+    def social_my_reports(request: Request, limit: int = 50) -> JSONResponse:
+        owner = social_owner(request)
+        try:
+            return social_response(app.state.social_reports.my_reports(owner, limit))
+        except ReportError as exc:
+            raise report_failure(exc) from exc
+
+    @app.get("/api/v1/social/moderation/capabilities")
+    def social_moderator_capabilities(request: Request) -> JSONResponse:
+        social_owner(request)
+        _, binding = tenant_context(request)
+        return social_response({
+            "operator": app.state.operator_access.allows(binding),
+            "review_actions": ["mark_reviewed"] if app.state.operator_access.allows(binding) else [],
+        })
+
+    @app.get("/api/v1/social/moderation/reports")
+    def social_moderation_queue(request: Request, limit: int = 50) -> JSONResponse:
+        social_moderator(request)
+        try:
+            return social_response(app.state.social_reports.moderator_queue(limit))
+        except ReportError as exc:
+            raise report_failure(exc) from exc
+
+    @app.post("/api/v1/social/moderation/reports/{report_id}/review")
+    def social_moderation_review(request: Request, report_id: str) -> JSONResponse:
+        operator = social_moderator(request)
+        try:
+            return social_response(
+                app.state.social_reports.mark_reviewed(operator, report_id)
+            )
+        except ReportError as exc:
+            raise report_failure(exc) from exc
 
     # This is a permission ledger, not an automatic AI scheduler or a consent
     # inferred from configuring ObumAI. All operations need verified identity.
