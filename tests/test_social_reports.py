@@ -221,6 +221,16 @@ def test_postgres_report_persists_and_operator_review_is_private():
         assert operator_view["note"] == "Asked for a fee"
         assert again.mark_reviewed(moderator, report_id)["state"] == "reviewed"
         assert reports.my_reports(b)["reports"][0]["state"] == "reviewed"
+        # GDPR/operator offboarding cannot be blocked by a reviewed FK.
+        with connect(dsn) as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM smartploy_users WHERE user_id=%s",
+                        (moderator,))
+            cur.execute(
+                "SELECT state, reviewed_by FROM smartploy_social_reports "
+                "WHERE report_id=%s", (report_id,),
+            )
+            assert cur.fetchone() == ("reviewed", None)
+        assert reports.my_reports(b)["reports"][0]["state"] == "reviewed"
     finally:
         with connect(dsn) as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM smartploy_users WHERE user_id = ANY(%s)",
