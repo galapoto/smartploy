@@ -7,6 +7,7 @@ import "./document-coach.css";
 import "./document-comparison.css";
 import "./finland-shell.css";
 import "./sp127-social.css";
+import "./sp128-social-safety.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
