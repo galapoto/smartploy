@@ -157,6 +157,23 @@ def test_rate_limit_and_no_employer_or_ai_side_effect(monkeypatch):
     assert api.get("/api/v1/jobs", headers=h("a")).json()["count"] == 0
 
 
+def test_opt_out_revokes_mutual_connections_and_requires_new_consent():
+    repo = MemorySocialRepository()
+    repo.save_profile("usr-a", "alice_job", "Fictional Alice", True)
+    repo.save_profile("usr-b", "bob_job", "Fictional Bob", True)
+    repo.follow("usr-a", "bob_job")
+    repo.follow("usr-b", "alice_job")
+    assert repo.send("usr-a", "bob_job", "Before hiding")
+    repo.save_profile("usr-a", "alice_job", "Fictional Alice", False)
+    assert repo.connections("usr-a")["following"] == []
+    assert repo.connections("usr-b")["following"] == []
+    with pytest.raises(SocialNotFound):
+        repo.messages("usr-b", "alice_job")
+    repo.save_profile("usr-a", "alice_job", "Fictional Alice", True)
+    with pytest.raises(SocialNotFound):
+        repo.send("usr-a", "bob_job", "No silent reconnection")
+
+
 def test_memory_repo_handles_hidden_profiles_without_disclosure():
     repo = MemorySocialRepository()
     repo.save_profile("usr-a", "privatealice", "Private Alice", False)
@@ -197,6 +214,16 @@ def test_postgres_social_is_durable_and_message_history_is_owner_scoped():
         again.block(b, ah)
         with pytest.raises(SocialNotFound):
             repo.send(a, bh, "Denied")
+        # Hiding the account must revoke mutual follow rather than leave a
+        # latent relationship that reactivates when discoverability returns.
+        again.block(b, ah, False)
+        again.follow(a, bh)
+        again.follow(b, ah)
+        again.save_profile(b, bh, "Fictional User", False)
+        assert again.connections(a)["following"] == []
+        again.save_profile(b, bh, "Fictional User", True)
+        with pytest.raises(SocialNotFound):
+            repo.send(a, bh, "Not reauthorized")
         assert again.connections(a)["following"] == []
     finally:
         with connect(dsn) as conn, conn.cursor() as cur:
