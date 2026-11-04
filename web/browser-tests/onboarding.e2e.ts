@@ -1165,6 +1165,13 @@ test("SP127 new network navigation is private until an explicit opted-in save", 
     await route.fulfill({status:200,contentType:"application/json",
       body:JSON.stringify({following:[],followers:[],blocked:[],private:true})});
   });
+  // SP128 extends the real SocialHub load contract with own-report history.
+  await page.route("**/api/v1/social/reports/me", route =>
+    route.fulfill({status:200,contentType:"application/json",
+      body:JSON.stringify({reports:[],private:true})}));
+  await page.route("**/api/v1/social/moderation/capabilities", route =>
+    route.fulfill({status:200,contentType:"application/json",
+      body:JSON.stringify({operator:false,review_actions:[]})}));
   await page.route("**/api/v1/social/messages/**", async route => {
     attemptedExternal += 1;
     await route.fulfill({status:404,contentType:"application/json",
@@ -1221,7 +1228,7 @@ test("SP128 real inbox offers recipient-only abuse report with confirmed identit
     reportCount += 1;
     const request = route.request();
     expect(request.method()).toBe("POST");
-    expect(request.headers()["x-smartploy-expected-user-id"]).toMatch(/^usr-/);
+    expect(request.headers()["x-smartploy-expected-user-id"]).toBe("synthetic-user-a");
     expect(request.postDataJSON()).toEqual({
       reason:"scam",note:"Requested an application fee",
     });
