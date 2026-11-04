@@ -1409,3 +1409,86 @@ test("SP107: exact saved PDFs are previewable without employer submission or sta
   expect(state.privateWorkspaces[state.userId][0].revision).toBe(2);
   expect(state.privateWorkspaces[state.userId][0].status).toBe("draft");
 });
+
+
+test("SP124 Prismatic: desktop rail collapses to 76px, survives reload, expands without losing navigation", async ({page}) => {
+  await page.setViewportSize({width:1540,height:900});
+  await page.emulateMedia({colorScheme:"light"});
+  await installSyntheticApi(page);
+  await page.goto("/");
+  const shell = page.locator(".smartploy-app");
+  await expect(page.getByRole("button", {name:"Collapse sidebar"})).toBeVisible();
+  await expect(shell).toHaveAttribute("data-sidebar-size","expanded");
+  const expandedWidth = await page.locator(".sidebar").evaluate(el => el.getBoundingClientRect().width);
+  await page.getByRole("button", {name:"Collapse sidebar"}).click();
+  await expect(shell).toHaveAttribute("data-sidebar-size","compact");
+  await expect(page.getByRole("button", {name:"Expand sidebar"})).toBeVisible();
+  const compactWidth = await page.locator(".sidebar").evaluate(el => el.getBoundingClientRect().width);
+  expect(expandedWidth).toBeGreaterThan(200);
+  expect(compactWidth).toBeGreaterThanOrEqual(72);
+  expect(compactWidth).toBeLessThanOrEqual(80);
+  const link = page.getByRole("navigation", {name:"Main navigation"})
+    .getByRole("button", {name:"My applications"});
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("title", "My applications");
+  await page.reload();
+  await expect(shell).toHaveAttribute("data-sidebar-size","compact");
+  await page.getByRole("button", {name:"Expand sidebar"}).click();
+  await expect(shell).toHaveAttribute("data-sidebar-size","expanded");
+});
+
+test("SP124 Prismatic: zoom-equivalent CSS width uses mobile drawer with no sideways overflow", async ({page}) => {
+  await page.setViewportSize({width:850,height:870});
+  await page.emulateMedia({colorScheme:"dark"});
+  await installSyntheticApi(page);
+  await page.goto("/");
+  const drawer = page.locator("#smartploy-sidebar");
+  await expect(page.getByRole("button", {name:"Open menu"})).toBeVisible();
+  await page.getByRole("button", {name:"Open menu"}).click();
+  await expect(drawer).toHaveClass(/open/);
+  await expect(page.getByRole("navigation", {name:"Main navigation"})
+    .getByRole("button", {name:"Apply for jobs"})).toBeVisible();
+  await page.getByRole("button", {name:"Close menu"}).click();
+  await expect(drawer).not.toHaveClass(/open/);
+  const overflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+});
+
+test("SP124 Prismatic: real dark application next-action and quality cards have legible text", async ({page}) => {
+  await page.setViewportSize({width:1366,height:880});
+  await page.emulateMedia({colorScheme:"light"});
+  await installSyntheticApi(page,{cvFilename:"Synthetic-Approved-CV.docx"});
+  await page.goto("/");
+  await page.locator('.flow-start-card[data-flow-mode="manual"]').click();
+  await expect(page.getByRole("heading",{name:"Jobs from your CV"})).toBeVisible();
+  await page.getByRole("button",{name:"Choose this job"}).first().click();
+  await page.getByRole("button",{name:"Save application draft"}).click();
+  await expect(page.locator(".studio-next-action")).toBeVisible();
+  await page.getByRole("button", {name:"Switch to dark mode"}).click();
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme","dark");
+  const pairs = await page.evaluate(() => {
+    const ratio = (a:string,b:string) => {
+      const value = (v:string) => {
+        const c = v.match(/\d+(?:\.\d+)?/g)?.slice(0,3).map(Number) || [0,0,0];
+        const light = (x:number) => {const n=x/255;return n<=0.04045?n/12.92:((n+0.055)/1.055)**2.4};
+        return .2126*light(c[0])+.7152*light(c[1])+.0722*light(c[2]);
+      };
+      const x=value(a),y=value(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);
+    };
+    const next = document.querySelector(".studio-next-action");
+    const label = next?.querySelector(".studio-next-action-copy strong");
+    const card = document.querySelector(".document-coach-checks li");
+    const cardText = card?.querySelector("strong");
+    return {
+      nextBackground:next ? getComputedStyle(next).backgroundColor : "",
+      nextContrast:next&&label ? ratio(getComputedStyle(next).backgroundColor,getComputedStyle(label).color):0,
+      checklistBackground:card ? getComputedStyle(card).backgroundColor : "",
+      checklistContrast:card&&cardText ? ratio(getComputedStyle(card).backgroundColor,getComputedStyle(cardText).color):0,
+    };
+  });
+  expect(pairs.nextBackground).not.toBe("rgb(255, 255, 255)");
+  expect(pairs.checklistBackground).not.toBe("rgb(255, 255, 255)");
+  expect(pairs.nextContrast).toBeGreaterThanOrEqual(4.5);
+  expect(pairs.checklistContrast).toBeGreaterThanOrEqual(4.5);
+});

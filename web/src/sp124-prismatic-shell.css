@@ -1,0 +1,155 @@
+/* SP124 Prismatic SmartPloy: steps, Onest body + Plus Jakarta Sans headings.
+   Source: user-supplied Prismatic kit SmartPloy profile and foundation tokens.
+   Last-loaded semantics fix legacy white-card/pale-text bugs across themes. */
+@import url('https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+:root {
+ --sp124-canvas:#edf2fc;--sp124-surface:#fff;--sp124-subtle:#f2f6fc;
+ --sp124-ink:#172d55;--sp124-muted:#445f80;--sp124-line:#d6e2f0;
+ --sp124-accent:#234f9e;--sp124-focus:#2682c9;
+ --sp124-shadow:0 14px 34px -24px rgba(14,40,83,.32);
+}
+html[data-smartploy-theme="dark"] {
+ --sp124-canvas:#0e192a;--sp124-surface:#192b40;--sp124-subtle:#21364e;
+ --sp124-ink:#f4f8ff;--sp124-muted:#c2d5e8;--sp124-line:#36516e;
+ --sp124-accent:#85d9ef;--sp124-focus:#a0ebff;
+ --sp124-shadow:0 16px 35px -25px rgba(0,0,0,.7);color-scheme:dark;
+}
+.smartploy-app {font:1rem/1.55 'Onest','DM Sans',system-ui,sans-serif;
+ grid-template-columns:246px minmax(0,1fr);min-width:0;background:var(--sp124-canvas)}
+.smartploy-app[data-sidebar-size="compact"] {grid-template-columns:76px minmax(0,1fr)}
+.smartploy-app :is(h1,h2,h3,h4,.sp99-identity-text strong) {
+ font-family:'Plus Jakarta Sans','Onest',system-ui,sans-serif;letter-spacing:-.027em}
+.smartploy-app :is(.main-column,.content,.application-studio,.application-flow,.studio-editor,.studio-layout){min-width:0}
+.smartploy-app .content {width:100%;max-width:none;margin:0;padding:clamp(16px,2.1vw,36px)}
+.smartploy-app :is(.application-flow,.flow-start,.application-studio,.search-setup.embedded){
+ width:100%;max-width:none}
+.smartploy-app .site-header{padding-inline:clamp(14px,2vw,34px);gap:14px}
+.smartploy-app .header-search{min-width:110px;width:clamp(170px,32vw,680px);flex-shrink:1}
+.smartploy-app .header-search input{min-width:0}
+.smartploy-app .header-tools{gap:clamp(5px,.8vw,13px);flex-shrink:0}
+.smartploy-app .sidebar{overflow-x:hidden;padding:17px 11px 18px;border-right-color:var(--sp124-line)}
+.smartploy-app .sp124-sidebar-toggle {
+ display:grid;place-items:center;align-self:flex-end;flex:none;width:38px;height:38px;
+ margin:0 4px 8px 0;border:1px solid #365872;border-radius:12px;
+ background:#203d56;color:#e4f5ff;box-shadow:0 6px 20px -12px #030e1e;
+ transition:background .15s ease,transform .15s ease}
+.smartploy-app .sp124-sidebar-toggle:hover{background:#346184;transform:translateY(-1px)}
+.smartploy-app :is(button,a,input,textarea,select):focus-visible{
+ outline:3px solid var(--sp124-focus);outline-offset:3px}
+.smartploy-app[data-sidebar-size="compact"] .sidebar{padding-inline:10px}
+.smartploy-app[data-sidebar-size="compact"] .sp124-sidebar-toggle{margin:0 auto 14px}
+.smartploy-app[data-sidebar-size="compact"] .site-brand{justify-content:center;padding:3px 0 17px}
+.smartploy-app[data-sidebar-size="compact"] .site-brand .site-brand-mark {
+ width:40px;height:46px;flex:none}
+.smartploy-app[data-sidebar-size="compact"] .site-brand > span,
+.smartploy-app[data-sidebar-size="compact"] .sidebar :is(.nav-label,.nav-divider),
+.smartploy-app[data-sidebar-size="compact"] .sidebar .nav-item > span,
+.smartploy-app[data-sidebar-size="compact"] .sidebar .session-profile > span:last-child,
+.smartploy-app[data-sidebar-size="compact"] .sidebar .country-chip{display:none}
+.smartploy-app[data-sidebar-size="compact"] .sidebar .nav-item{
+ display:flex;justify-content:center;align-items:center;width:52px;height:52px;
+ padding:0;margin:1px auto;border-radius:15px}
+.smartploy-app[data-sidebar-size="compact"] .sidebar .nav-item svg{flex:0 0 auto}
+.smartploy-app[data-sidebar-size="compact"] .sidebar-bottom{align-items:center;padding:15px 0 0}
+.smartploy-app[data-sidebar-size="compact"] .session-profile{justify-content:center}
+/* No false empty columns: the workspace grid grows until its actual parent ends. */
+.smartploy-app .studio-layout {
+ display:grid;grid-template-columns:clamp(208px,21vw,270px) minmax(0,1fr);
+ width:100%;border:0;border-radius:20px;overflow:clip;
+ background:var(--sp124-surface);box-shadow:var(--sp124-shadow)}
+.smartploy-app .studio-review-queue{padding:18px clamp(18px,2vw,28px);border-bottom:0}
+.smartploy-app .studio-list{padding:14px 10px;gap:6px}
+.smartploy-app .studio-list-item{border:0;padding:14px 12px;border-radius:13px;min-width:0}
+.smartploy-app .studio-list-item.selected {border:0;box-shadow:inset 4px 0 0 var(--sp124-accent)}
+.smartploy-app .studio-list-copy strong{font-size:.94rem;line-height:1.4}
+.smartploy-app .studio-list-copy small{font-size:.82rem}
+.smartploy-app .studio-list-copy em{font-size:.78rem}
+.smartploy-app .studio-editor{min-width:0;padding:clamp(17px,2.2vw,32px)}
+.smartploy-app .studio-journey{border:0;box-shadow:none}
+.smartploy-app .studio-journey ol{gap:9px}
+.smartploy-app .studio-journey li{min-width:0;border:0;box-shadow:none}
+.smartploy-app .studio-document{
+ border:0;border-radius:17px;margin-top:20px;
+ padding:clamp(16px,2vw,25px);box-shadow:var(--sp124-shadow)}
+.smartploy-app .studio-document textarea{font-size:1rem;line-height:1.7;min-height:17rem;padding:16px 18px}
+.smartploy-app .studio-review-queue-filters{gap:7px}
+.smartploy-app :is(.studio-review-queue-filters button,.studio-journey-links a){
+ min-height:36px;border-radius:999px}
+.smartploy-app .studio-next-action {
+ border-radius:15px;border-width:0 0 0 4px;box-shadow:var(--sp124-shadow)}
+.smartploy-app :is(.panel,.studio-resume-methods,.studio-journey,.studio-ai-card,
+ .studio-handoff,.document-coach,.studio-application-package,.studio-attempt-audit,.agent-inbox){
+ border-radius:19px}
+.smartploy-app .document-coach-checks li{border:0;border-radius:12px}
+.smartploy-app .document-coach-checks li :is(strong,small){overflow-wrap:anywhere}
+.smartploy-app .panel{box-shadow:var(--sp124-shadow)}
+.smartploy-app :is(.studio-review-queue-heading,.studio-editor-head){flex-wrap:wrap}
+.smartploy-app :is(.primary-btn,.navy-btn){min-height:44px;border-radius:11px}
+.smartploy-app :is(.outline-btn,.secondary-btn){min-height:39px}
+/* Dark: force matching cards and text. Previous CSS painted text white but
+   retained white background on review queue, checklist and action-required. */
+html[data-smartploy-theme="dark"] .smartploy-app :is(.studio-review-queue,.studio-journey,.studio-application-package,.studio-application-preview,.studio-next-action,.studio-journey ol li,.studio-assisted-guide,.studio-attempt-audit,.studio-receipt,.studio-document,.studio-ai-card,.studio-ai-preview,.studio-handoff,.studio-packet-fallback,.studio-list-icon,.studio-list-item,.document-coach,.agent-inbox,.agent-inbox-row,.flow-primary-next,.studio-ai-proof,.studio-ai-cv-comparison,.studio-letter-proposal,.flow-job-instruction,.flow-next,.flow-job-next,.flow-queue,.master-cv-editor,.master-cv-toolbar,.master-cv-preview,.master-cv-paper) { background:var(--sp124-surface);border-color:var(--sp124-line);color:var(--sp124-ink);box-shadow:none }
+html[data-smartploy-theme="dark"] .smartploy-app :is(.studio-next-action.state-attention,.studio-review-queue-filters button,.document-coach-checks li,.studio-list-item.selected,.studio-journey-links a,.studio-assisted-steps a,.studio-review-queue-filters button[aria-pressed="true"],.studio-journey-header,.studio-handoff-blockers,.studio-attempt-reserved,.studio-ai-risks,.studio-info,.studio-review-queue-note,.studio-application-package-note,.flow-start-locked,.flow-start-method-status,.flow-mode,.flow-start-card,.document-coach-progress) { background:var(--sp124-subtle);border-color:var(--sp124-line);color:var(--sp124-ink) }
+html[data-smartploy-theme="dark"] .smartploy-app :is(.studio-next-action-copy > strong,.studio-review-queue-heading h3,.studio-list-copy strong,.studio-journey-header strong,.studio-next-action.state-attention .studio-next-action-copy > strong,.studio-next-action.state-confirmed .studio-next-action-copy > strong,.document-coach-checks li strong,.document-coach-title strong,.studio-attempt-heading h3,.studio-journey ol li strong,.studio-document-head strong,.studio-list-heading strong,.studio-handoff-header h4,.studio-ai-heading strong,.agent-inbox-heading h3,.agent-inbox-copy strong) { color:var(--sp124-ink) }
+html[data-smartploy-theme="dark"] .smartploy-app :is(.studio-next-action-copy p,.studio-next-action-state,.studio-review-queue-heading p,.studio-review-queue-note,.studio-review-queue-filters button span,.studio-list-copy small,.studio-list-copy em,.studio-editor-head p,.studio-journey p,.studio-journey small,.studio-journey-boundary,.document-coach-checks li small,.document-coach-summary,.document-coach-disclosure,.document-coach-title span,.studio-application-package p,.studio-handoff-header p,.studio-ai-privacy,.studio-attempt-heading p,.agent-inbox-row small,.studio-document small,.studio-receipt > p,.studio-handoff-disclaimer) { color:var(--sp124-muted) }
+html[data-smartploy-theme="dark"] .smartploy-app :is(.studio-journey-links a,.studio-review-queue-filters button,.studio-assisted-steps a,.studio-list-icon,.document-coach-progress) { color:#e1f4ff }
+html[data-smartploy-theme="dark"] .smartploy-app :is(.studio-document textarea,.studio-receipt-import textarea,.studio-packet-fallback textarea,.master-cv-edit textarea,.studio-ai-preview pre,.master-cv-paper pre) { background:#101f30;color:#f2f7ff;border-color:#536c85 }
+
+html[data-smartploy-theme="dark"] .smartploy-app .studio-next-action{border-left:4px solid #8ad7f1}
+html[data-smartploy-theme="dark"] .smartploy-app .studio-next-action.state-attention{border-left-color:#f3ba70}
+html[data-smartploy-theme="dark"] .smartploy-app .studio-list-item.selected{
+ background:#294963;box-shadow:inset 4px 0 0 #91ddf3}
+html[data-smartploy-theme="dark"] .smartploy-app .studio-list-item:hover{background:#254258}
+html[data-smartploy-theme="dark"] .smartploy-app .panel{background:var(--sp124-surface)}
+html[data-smartploy-theme="dark"] .smartploy-app .studio-review-queue-filters button[aria-pressed="true"]{background:#31577a;color:#fff}
+.smartploy-app .application-studio{container-type:inline-size}
+@container (max-width:880px){
+ .smartploy-app .studio-layout{grid-template-columns:minmax(0,1fr)}
+ .smartploy-app .studio-list{display:flex;flex-wrap:nowrap;overflow-x:auto;border-right:0;padding:8px 10px;gap:7px}
+ .smartploy-app .studio-list-heading{flex:0 0 auto}
+ .smartploy-app .studio-list-item{flex:0 0 185px}
+ .smartploy-app .studio-new{flex:0 0 160px;margin:0}
+ .smartploy-app .studio-editor{padding:clamp(12px,3vw,24px)}
+}
+@media(max-width:1240px){
+ .smartploy-app .site-header{gap:9px}
+ .smartploy-app .header-country{display:none}
+}
+@media(max-width:1000px){
+ .smartploy-app,.smartploy-app[data-sidebar-size="compact"]{display:block}
+ .smartploy-app .sidebar,.smartploy-app[data-sidebar-size="compact"] .sidebar {
+  position:fixed;inset:0 auto 0 0;z-index:30;width:min(300px,85vw);
+  height:100dvh;min-height:0;transform:translateX(-102%);
+  box-shadow:16px 0 46px rgba(0,0,0,.36)
+ }
+ .smartploy-app .sidebar.open,.smartploy-app[data-sidebar-size="compact"] .sidebar.open{transform:translateX(0)}
+ .smartploy-app .sidebar-scrim.visible{display:block;position:fixed;inset:0;z-index:25;background:rgba(5,14,26,.63);border:0}
+ .smartploy-app .sp124-sidebar-toggle{display:none}
+ .smartploy-app[data-sidebar-size="compact"] .site-brand,
+ .smartploy-app[data-sidebar-size="compact"] .sidebar .nav-item{justify-content:flex-start}
+ .smartploy-app[data-sidebar-size="compact"] .site-brand > span,
+ .smartploy-app[data-sidebar-size="compact"] .sidebar .nav-label,
+ .smartploy-app[data-sidebar-size="compact"] .sidebar .nav-divider,
+ .smartploy-app[data-sidebar-size="compact"] .sidebar .nav-item > span,
+ .smartploy-app[data-sidebar-size="compact"] .sidebar .session-profile > span:last-child,
+ .smartploy-app[data-sidebar-size="compact"] .sidebar .country-chip{display:revert}
+ .smartploy-app[data-sidebar-size="compact"] .sidebar .nav-item{width:100%;height:auto;margin:0;padding:13px 15px}
+ .smartploy-app[data-sidebar-size="compact"] .site-brand{padding:0 7px 22px}
+ .smartploy-app[data-sidebar-size="compact"] .sidebar-bottom{align-items:stretch}
+ .smartploy-app .menu-toggle{display:inline-flex}
+ .smartploy-app .site-header{height:64px}
+ .smartploy-app .content{padding:16px}
+}
+@media(max-width:680px){
+ .smartploy-app .content{padding:12px}
+ .smartploy-app .site-header{padding-inline:10px}
+ .smartploy-app .header-search{flex:1 1 auto;width:auto;min-width:95px}
+ .smartploy-app .header-tools .obumai-brand,.smartploy-app .connection-status{display:none}
+ .smartploy-app .header-tools{margin-left:0}
+ .smartploy-app .studio-review-queue{padding:14px}
+ .smartploy-app .studio-review-queue-filters button{flex:1 1 auto}
+ .smartploy-app .studio-journey ol,.smartploy-app .document-coach-checks{grid-template-columns:1fr}
+ .smartploy-app .studio-next-action{grid-template-columns:1fr}
+ .smartploy-app .studio-next-action > button,.smartploy-app .studio-next-action > a{width:100%;max-width:none}
+}
+@media(prefers-reduced-motion:reduce){.smartploy-app .sp124-sidebar-toggle,.smartploy-app .sidebar{transition:none}}
