@@ -264,6 +264,9 @@ EXPECTED_OWNER_TABLES = frozenset({
     "smartploy_employer_final_approvals",
     "smartploy_partner_application_receipts",
     "smartploy_account_erasure_requests",
+    # SP127 social profile has user_id; linked social tables have separate
+    # sender/follower/blocker columns and are inventoried by explicit queries.
+    "smartploy_social_profiles",
 })
 
 
@@ -329,6 +332,22 @@ def inspect_quarantined_account(
         "private_saved_jobs": (
             "SELECT count(*) FROM smartploy_private_saved_jobs WHERE profile_id=%s",
             (profile_id,),
+        ),
+        "social_profiles": (
+            "SELECT count(*) FROM smartploy_social_profiles WHERE user_id=%s",
+            (user_id,),
+        ),
+        "social_follows": (
+            "SELECT count(*) FROM smartploy_social_follows WHERE follower_id=%s OR followed_id=%s",
+            (user_id, user_id),
+        ),
+        "social_blocks": (
+            "SELECT count(*) FROM smartploy_social_blocks WHERE blocker_id=%s OR blocked_id=%s",
+            (user_id, user_id),
+        ),
+        "social_messages": (
+            "SELECT count(*) FROM smartploy_social_messages WHERE sender_id=%s OR recipient_id=%s",
+            (user_id, user_id),
         ),
         "application_workspaces": (
             "SELECT count(*) FROM smartploy_application_workspaces WHERE profile_id=%s",
