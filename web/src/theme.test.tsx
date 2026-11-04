@@ -62,7 +62,7 @@ describe("SP99 persistent light/dark preference", () => {
     meta.name = "theme-color";
     document.head.appendChild(meta);
     applySmartployTheme("dark");
-    expect(meta.content).toBe("#101b2b");
+    expect(meta.content).toBe("#080f1b");
     applySmartployTheme("light");
     expect(meta.content).toBe("#f4f7fb");
     render(<ThemeProbe />);

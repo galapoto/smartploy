@@ -25,7 +25,7 @@ export function applySmartployTheme(theme: SmartployTheme): void {
   document.documentElement.setAttribute("data-smartploy-theme", theme);
   document.documentElement.style.colorScheme = theme;
   document.querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", theme === "dark" ? "#101b2b" : "#f4f7fb");
+    ?.setAttribute("content", theme === "dark" ? "#080f1b" : "#f4f7fb");
 }
 
 /** One explicit user preference for the entire app, not tied to applicant data. */

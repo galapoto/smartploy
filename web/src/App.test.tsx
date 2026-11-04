@@ -1801,17 +1801,19 @@ describe("SP97: AI writing tools have an honest, working CV-first entry", () => 
 });
 
 
-describe("SP99: original Finland cover, complete in-page identity and persistent theme", () => {
-  it("renders the panorama before the actionable CV-first journey, plus the complete logo", async () => {
+describe("SP125: work-focused career banner, full logo and persistent theme", () => {
+  it("renders a real work-related banner before the actionable CV-first journey", async () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
-    const cover = screen.getByRole("region", { name: "Finland winter archipelago cover" });
+    const cover = screen.getByRole("region", { name: "Career search and applications banner" });
     const image = within(cover).getByRole("img", {
-      name: /Original artwork: rose-gold winter light/,
+      name: /CV beside a laptop showing job opportunities/,
     }) as HTMLImageElement;
-    expect(image.getAttribute("src")).toBe("/finland-archipelago-winter.svg");
-    expect(cover.querySelector('source[type="image/avif"]')?.getAttribute("srcset"))
-      .toBe("/finland-archipelago-winter.avif");
+    expect(image.getAttribute("src")).toBe("/smartploy-career-workflow-banner.svg");
+    expect(within(cover).getByRole("heading", {
+      name: "Find your next role. Apply with confidence.",
+    })).toBeTruthy();
+    expect(within(cover).getAllByRole("listitem")).toHaveLength(3);
     const fullLogo = screen.getByRole("group", { name: "SmartPloy complete page logo" });
     expect(within(fullLogo).getByRole("img", {
       name: "SmartPloy turquoise and navy mark",

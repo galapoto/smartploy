@@ -6,6 +6,7 @@ import "./career-atlas.css";
 import "./document-coach.css";
 import "./document-comparison.css";
 import "./finland-shell.css";
+import "./sp125-workspace-theme.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

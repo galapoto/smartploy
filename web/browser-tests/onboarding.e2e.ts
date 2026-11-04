@@ -1062,12 +1062,12 @@ test("SP98: real inference is an explicit synthetic-only action inside a saved A
 });
 
 
-test("SP99 original Finnish panorama and complete logo restore the earlier page without hiding CV flow", async ({ page }) => {
+test("SP125 career banner and complete logo preserve the actionable CV flow", async ({ page }) => {
   await installSyntheticApi(page);
   await page.goto("/");
-  const panorama = page.getByRole("region", { name: "Finland winter archipelago cover" });
+  const panorama = page.getByRole("region", { name: "Career search and applications banner" });
   await expect(panorama).toBeVisible();
-  const image = panorama.getByRole("img", { name: /Original artwork: rose-gold winter light/ });
+  const image = panorama.getByRole("img", { name: /CV beside a laptop showing job opportunities/ });
   await expect(image).toBeVisible();
   const loaded = await image.evaluate((node) => {
     const picture = node as HTMLImageElement;
@@ -1075,12 +1075,12 @@ test("SP99 original Finnish panorama and complete logo restore the earlier page 
   });
   expect(loaded.complete).toBe(true);
   expect(loaded.naturalWidth).toBeGreaterThan(100);
-  const avif = await page.request.get("/finland-archipelago-winter.avif");
-  expect(avif.ok()).toBe(true);
-  expect((await avif.body()).byteLength).toBeGreaterThan(2000);
-  const svg = await page.request.get("/finland-archipelago-winter.svg");
+  const svg = await page.request.get("/smartploy-career-workflow-banner.svg");
   expect(svg.ok()).toBe(true);
-  expect(await svg.text()).toContain("Original Finland winter archipelago");
+  expect(await svg.text()).toContain("Opportunities for you");
+  await expect(panorama.getByRole("heading", {
+    name: "Find your next role. Apply with confidence.",
+  })).toBeVisible();
   const fullLogo = page.getByRole("group", { name: "SmartPloy complete page logo" });
   await expect(fullLogo).toBeVisible();
   const brandMark = fullLogo.locator(".sp99-identity-mark");
@@ -1093,7 +1093,7 @@ test("SP99 original Finnish panorama and complete logo restore the earlier page 
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
   await expect(page.locator('.flow-start-card[data-flow-mode="assisted"]')).toBeDisabled();
-  await evidence(page, "sp99-finland-cover-full-logo-cv-first-light.png");
+  await evidence(page, "sp125-work-hero-cv-first-light.png");
 });
 
 test("SP99 dark/light mode is usable, persists after reload, and does not remove the sidebar", async ({ page }) => {
@@ -1110,7 +1110,7 @@ test("SP99 dark/light mode is usable, persists after reload, and does not remove
   expect(darkSurface).not.toBe(lightSurface);
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
   await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeVisible();
-  await evidence(page, "sp99-finland-cover-full-logo-dark.png");
+  await evidence(page, "sp125-work-hero-cv-first-dark.png");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
   await expect(page.getByRole("button", { name: "Switch to light mode" })).toBeVisible();
@@ -1120,11 +1120,63 @@ test("SP99 dark/light mode is usable, persists after reload, and does not remove
   expect(restored).toBe(lightSurface);
 });
 
+
+// SP125: the real screenshot regression — no pale text on white action bars.
+// Inspect computed CSS in Chromium, not just theme token strings.
+test("SP125 dark canvas, action rows and application descriptions remain legible", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installSyntheticApi(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  const readings = await page.evaluate(() => {
+    const color = (selector: string, property: "color" | "backgroundColor") => {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error("Missing " + selector);
+      return getComputedStyle(element)[property];
+    };
+    const rgb = (value: string) => {
+      const numbers = value.match(/[\\d.]+/g)?.slice(0, 3).map(Number);
+      if (!numbers || numbers.length !== 3) throw new Error("Non-solid color: " + value);
+      return numbers.map(n => {
+        const component = n / 255;
+        return component <= .04045 ? component / 12.92 : ((component + .055) / 1.055) ** 2.4;
+      });
+    };
+    const luminosity = (value: string) => {
+      const values = rgb(value);
+      return values[0] * .2126 + values[1] * .7152 + values[2] * .0722;
+    };
+    const contrast = (foreground: string, background: string) => {
+      const f = luminosity(foreground), b = luminosity(background);
+      return (Math.max(f,b)+.05)/(Math.min(f,b)+.05);
+    };
+    return {
+      canvas: color(".smartploy-app", "backgroundColor"),
+      browse: contrast(
+        color(".flow-start-browse-button strong", "color"),
+        color(".flow-start-browse-button", "backgroundColor")),
+      details: contrast(
+        color('.flow-start-card[data-flow-mode="assisted"] > span:not(.flow-start-index):not(.flow-card-cta)', "color"),
+        color('.flow-start-card[data-flow-mode="assisted"]', "backgroundColor")),
+      card: contrast(
+        color(".flow-start-heading h1", "color"),
+        color(".flow-start", "backgroundColor")),
+      renderedWidth: document.querySelector(".flow-start")!.getBoundingClientRect().width,
+      availableWidth: document.querySelector(".content")!.getBoundingClientRect().width,
+    };
+  });
+  expect(readings.canvas).toBe("rgb(8, 15, 27)");
+  expect(readings.browse).toBeGreaterThanOrEqual(4.5);
+  expect(readings.details).toBeGreaterThanOrEqual(4.5);
+  expect(readings.card).toBeGreaterThanOrEqual(4.5);
+  expect(readings.renderedWidth / readings.availableWidth).toBeGreaterThan(.8);
+});
+
 test("SP99 mobile has visible whole logo and an operable theme toggle without losing navigation", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installSyntheticApi(page);
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "Finland winter archipelago cover" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Career search and applications banner" })).toBeVisible();
   await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Switch to dark mode" })).toBeVisible();
   await page.getByRole("button", { name: "Switch to dark mode" }).click();
@@ -1137,5 +1189,5 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   const horizontalOverflow = await page.evaluate(() =>
     document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(horizontalOverflow).toBe(false);
-  await evidence(page, "sp99-finland-mobile-dark-logo.png");
+  await evidence(page, "sp125-work-hero-mobile-dark-logo.png");
 });

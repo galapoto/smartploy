@@ -1,0 +1,403 @@
+/* SP125 — applicant-first workspace clarity, independent of SP115–SP124.
+   Derived from the owner's actual signed-in dark screenshot (4 Nov 2026).
+   Supports existing public production routes without requiring the browser
+   automation rollout. No privacy, employer or application logic changed. */
+@import url("https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap");
+
+.smartploy-app {
+  font-family: "Onest", "DM Sans", system-ui, sans-serif;
+  min-width: 0;
+  grid-template-columns: 248px minmax(0,1fr);
+}
+.smartploy-app :is(h1,h2,h3,h4,.sp99-identity-text strong) {
+  font-family: "Plus Jakarta Sans", "Onest", system-ui, sans-serif;
+  letter-spacing: -.028em;
+}
+.smartploy-app :is(.main-column,.content,.flow-first-use,.flow-start,
+  .application-flow,.studio-layout,.studio-editor,.dashboard-grid,.secondary-grid) {
+  min-width: 0;
+}
+.smartploy-app .content {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: clamp(16px,2vw,32px);
+}
+/* The 890/950/1090px caps produced huge useless gutters in the owner screenshot. */
+.smartploy-app .flow-start,
+.smartploy-app .flow-first-use .flow-start,
+.smartploy-app .application-flow,
+.smartploy-app .flow-advanced-setup {
+  width: 100%;
+  max-width: none;
+}
+.smartploy-app .flow-start {
+  padding: clamp(19px,2.3vw,35px);
+}
+.smartploy-app .flow-start-grid.flow-start-grid-methods {
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,242px),1fr));
+  gap: clamp(11px,1.15vw,18px);
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card {
+  min-width: 0;
+  min-height: 210px;
+  border-radius: 16px;
+  padding: clamp(17px,1.6vw,23px);
+  text-align: left;
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card strong {
+  font-size: clamp(15px,1vw,18px);
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card span:not(.flow-start-index) {
+  font-size: clamp(12px,.82vw,14px);
+  line-height: 1.55;
+}
+.smartploy-app .flow-start-grid-methods .flow-start-card .flow-card-cta {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 800;
+  min-height: 27px;
+}
+.smartploy-app .flow-start-browse-button {
+  min-height: 69px;
+  border-radius: 13px;
+  padding: clamp(12px,1.2vw,17px);
+}
+.smartploy-app .flow-start-browse-button strong { font-size: 15px; }
+.smartploy-app .flow-start-browse-button small { font-size: 12px; }
+.smartploy-app .dashboard-grid { min-width: 0; }
+.smartploy-app :is(.stat-card,.job-item,.tool-tile,.panel) { min-width: 0; }
+
+/* A genuine career-workflow visual: CV + real job opportunities + next action.
+   Text is live HTML for translation, selectable text and screen readers. */
+.smartploy-app .sp125-career-cover {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: 100%;
+  min-height: clamp(190px,16.8vw,238px);
+  display: flex;
+  align-items: center;
+  border: 1px solid #36587c;
+  border-radius: 19px;
+  background: #10253d;
+  box-shadow: 0 16px 38px -26px rgba(2,12,25,.46);
+  margin: 0 0 13px;
+}
+.smartploy-app .sp125-career-art {
+  display: block;
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+.smartploy-app .sp125-career-cover::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(90deg,rgba(8,17,34,.95) 0%,
+      rgba(9,23,42,.9) 31%,rgba(11,32,53,.66) 51%,rgba(8,27,43,0) 77%);
+}
+.smartploy-app .sp125-career-copy {
+  padding: clamp(23px,2.4vw,36px);
+  max-width: min(58%,755px);
+  color: #eff9ff;
+}
+.smartploy-app .sp125-career-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 11px;
+  color: #a3e8f0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.smartploy-app .sp125-career-eyebrow::before {
+  content: "";
+  display: block;
+  width: 21px;
+  height: 3px;
+  border-radius: 10px;
+  background: #68d9e9;
+}
+.smartploy-app .sp125-career-copy h2 {
+  color: #f9fcff;
+  font-size: clamp(22px,2.55vw,37px);
+  font-weight: 800;
+  letter-spacing: -.04em;
+  line-height: 1.13;
+  margin: 0 0 11px;
+  max-width: 19ch;
+  text-wrap: balance;
+}
+.smartploy-app .sp125-career-copy > p {
+  color: #cfdfef;
+  font-size: clamp(12px,.9vw,15px);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 53ch;
+}
+.smartploy-app .sp125-career-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 16px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.smartploy-app .sp125-career-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #d9eef8;
+  font-size: 11px;
+  font-weight: 700;
+}
+.smartploy-app .sp125-career-steps svg {
+  color: #79e1de;
+  flex: none;
+}
+/* Keep the banner meaningful even with media blocked or reduced motion. */
+.smartploy-app .sp125-career-cover :is(a,button):focus-visible {
+  outline: 3px solid #8ff3fa;
+  outline-offset: 3px;
+}
+
+/* Dark mode: low-luminance canvas, a readable raised plane, restrained chrome.
+   Explicitly pair text with backgrounds; never make text pale over white. */
+html[data-smartploy-theme="dark"] {
+  --sp125-bg: #080f1b;
+  --sp125-rail: #0b1422;
+  --sp125-card: #142235;
+  --sp125-raised: #1b2d44;
+  --sp125-border: #30445e;
+  --sp125-ink: #f2f7ff;
+  --sp125-muted: #b9cee2;
+  --sp125-accent: #86dfea;
+  --sp-paper: var(--sp125-bg);
+  --canvas: var(--sp125-bg);
+  --sp-ink: var(--sp125-ink);
+  --sp-ink-muted: var(--sp125-muted);
+  --sp-line: var(--sp125-border);
+  background: var(--sp125-bg);
+  color-scheme: dark;
+}
+html[data-smartploy-theme="dark"] body,
+html[data-smartploy-theme="dark"] .smartploy-app {
+  background: var(--sp125-bg);
+  color: var(--sp125-ink);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sidebar {
+  background: var(--sp125-rail);
+  border-color: #1c2f47;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .site-header {
+  background: rgba(12,22,36,.97);
+  border-color: #20344a;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.active {
+  background: #1e3651;
+  border-color: #38658a;
+  color: #f3faff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .header-search,
+html[data-smartploy-theme="dark"] .smartploy-app :is(.icon-btn,.sp99-theme-toggle) {
+  background: #17263a;
+  border-color: #3b526c;
+  color: var(--sp125-ink);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-cover {
+  border-color: #314f68;
+  box-shadow: 0 17px 34px -25px rgba(0,0,0,.65);
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .flow-start,.application-flow,.panel,.stat-card,.tool-tile,.job-item,
+  .studio-layout,.studio-editor,.studio-document,.studio-handoff,
+  .master-cv-editor,.master-cv-paper,.document-coach,.settings-panel,
+  .profile-document,.agent-inbox-row,.studio-journey
+) {
+  background: var(--sp125-card);
+  border-color: var(--sp125-border);
+  color: var(--sp125-ink);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start {
+  box-shadow: 0 15px 36px -28px rgba(0,0,0,.65);
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .flow-start-masthead,.flow-start-progress li,.flow-start-locked,
+  .flow-start-how,.flow-advanced-setup,.flow-start-method-status,
+  .flow-start-ready,.flow-queue,.flow-job-next,.studio-journey-header,
+  .studio-review-queue,.studio-journey ol li
+) {
+  background: var(--sp125-raised);
+  color: var(--sp125-ink);
+  border-color: var(--sp125-border);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li {
+  color: var(--sp125-muted);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li.current {
+  background: #24425c;
+  border-color: #5fb5da;
+  color: #f4fbff;
+  box-shadow: inset 0 -3px #56d7e2;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li.done {
+  background: #16382f;
+  border-color: #356b5d;
+  color: #b7f4d9;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-ready {
+  background: #12352e;
+  color: #def9ee;
+  border-color: #357b69;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-ready :is(span,strong) {
+  color: #dffcef;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-method-status.ready {
+  background: #173f36;
+  border-color: #397961;
+  color: #d7f8e6;
+}
+/* The most obvious screenshot defect: white save/browse bars with pale text. */
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .flow-start-browse-button,.flow-start-browse-button:enabled,
+  .flow-advanced-setup > summary,.release-status,
+  .flow-start-grid-methods .flow-start-card
+) {
+  background: var(--sp125-raised);
+  color: var(--sp125-ink);
+  border-color: var(--sp125-border);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-browse-button {
+  box-shadow: 0 7px 20px -17px #010815;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-browse-button:hover {
+  background: #27415d;
+  border-color: #6d9cbd;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-browse-button :is(strong,small,svg) {
+  color: #eef6ff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-browse-button small {
+  color: var(--sp125-muted);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .release-status :is(strong,p,small,svg) {
+  color: var(--sp125-muted);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .release-status strong {
+  color: var(--sp125-ink);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods .flow-start-card {
+  background: #192b41;
+  border-width: 1px;
+  border-top: 3px solid var(--flow-tone,#75d5e8);
+  box-shadow: 0 7px 20px -19px #020912;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
+  .flow-start-card[data-flow-mode="manual"] { --flow-tone:#75d5e8; }
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
+  .flow-start-card[data-flow-mode="assisted"] { --flow-tone:#bdabff; }
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
+  .flow-start-card[data-flow-mode="automatic"] { --flow-tone:#f3ba86; }
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
+  .flow-start-card:hover:enabled {
+  background: #223c54;
+  border-color: var(--flow-tone);
+  box-shadow: 0 13px 28px -21px rgba(65,181,215,.5);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
+  .flow-start-card > span:not(.flow-start-index):not(.flow-card-cta) {
+  color: var(--sp125-muted);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
+  .flow-start-card > strong {
+  color: var(--sp125-ink);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
+  .flow-start-card > small {
+  color: #d6eafa;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
+  .flow-start-card .flow-card-cta {
+  width: fit-content;
+  color: #f7fbff;
+  border: 1px solid #456681;
+  border-radius: 9px;
+  background: #27415b;
+  padding: 8px 11px;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
+  .flow-start-card > svg:first-child { background: #2a4661; color: var(--flow-tone); }
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
+  .flow-start-card > svg:last-child { color: var(--flow-tone); }
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
+  .flow-start-card .flow-start-index {
+  color: #b4c9de !important;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .flow-start-heading p,.flow-start-method-heading p,
+  .flow-start-privacy,.flow-start-grid-methods .flow-start-card > span,
+  .stat-copy p,.stat-copy small,.studio-editor-head p,
+  .job-byline,.job-meta,.panel-heading p,.muted
+) { color: var(--sp125-muted); }
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .flow-start-heading h1,.flow-start-method-heading h2,
+  .panel-heading h2,.stat-copy strong,.job-title
+) { color: var(--sp125-ink); }
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  input,select,textarea,.flow-filter label,.header-search input
+) {
+  background: #0f1e30;
+  border-color: #405b76;
+  color: #f2f8ff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .primary-btn,.navy-btn,.release-status-action
+) {
+  background: #137b9a;
+  border-color: #27a9c1;
+  color: #fff;
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(
+  .primary-btn:hover,.navy-btn:hover,.release-status-action:hover
+) { background: #1591b3; }
+/* Focus remains visible, including on a keyboard at 200–400% browser zoom. */
+html[data-smartploy-theme="dark"] .smartploy-app
+  :is(button,a,input,select,textarea,summary):focus-visible {
+  outline: 3px solid #a1e9fa;
+  outline-offset: 3px;
+}
+@media(max-width:1100px) {
+  .smartploy-app .content { padding: clamp(14px,1.8vw,24px); }
+  .smartploy-app .sp125-career-copy { max-width: 65%; }
+}
+@media(max-width:720px) {
+  .smartploy-app .flow-start-grid.flow-start-grid-methods {
+    grid-template-columns: 1fr;
+  }
+  .smartploy-app .sp125-career-cover { min-height: 228px; }
+  .smartploy-app .sp125-career-art { object-position: 62% 50%; opacity: .56; }
+  .smartploy-app .sp125-career-cover::after {
+    background: linear-gradient(90deg,rgba(7,17,33,.97),rgba(9,28,46,.78));
+  }
+  .smartploy-app .sp125-career-copy { max-width: 100%; padding: 22px; }
+  .smartploy-app .sp125-career-copy h2 { max-width: 18ch; font-size: clamp(22px,6vw,29px); }
+  .smartploy-app .sp125-career-steps { gap: 6px 12px; }
+  .smartploy-app .sp125-career-steps li { font-size: 10px; }
+  .smartploy-app .flow-start-grid-methods .flow-start-card { min-height: 0; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .smartploy-app .flow-start-grid-methods .flow-start-card { transition: none; }
+  .smartploy-app .flow-start-grid-methods .flow-start-card:hover { transform: none; }
+}

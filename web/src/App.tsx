@@ -1220,14 +1220,22 @@ export default function App() {
         {notice ? <div className="toast-notice" role="status"><Activity size={16} /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X size={17} /></button></div> : null}
         {error ? <div className="toast-notice error" role="alert"><AlertCircle size={16} /><span>{error}</span><button type="button" onClick={() => void load()} aria-label="Retry"><RefreshCw size={17} /></button></div> : null}
         {page === "dashboard" ? <>
-          <section className="sp99-finland-cover" aria-label="Finland winter archipelago cover">
-            <picture>
-              <source srcSet="/finland-archipelago-winter.avif" type="image/avif" />
-              <img src="/finland-archipelago-winter.svg" width={1200} height={164}
-                loading="eager" decoding="async"
-                alt="Original artwork: rose-gold winter light over Finland's rocky, ice-edged archipelago" />
-            </picture>
-            <span className="sp99-cover-credit">Original artwork · Finland's winter archipelago</span>
+          <section className="sp125-career-cover" aria-label="Career search and applications banner">
+            <img className="sp125-career-art"
+              src="/smartploy-career-workflow-banner.svg" width={1600} height={320}
+              loading="eager" decoding="async"
+              alt="CV beside a laptop showing job opportunities and reviewed application steps" />
+            <div className="sp125-career-copy">
+              <p className="sp125-career-eyebrow">Your career workspace</p>
+              <h2>Find your next role. Apply with confidence.</h2>
+              <p>From your CV to matching jobs and complete applications,
+                choose how much support you want at every step.</p>
+              <ul className="sp125-career-steps" aria-label="Your application journey">
+                <li><Search size={15} aria-hidden="true"/> Find work</li>
+                <li><FileText size={15} aria-hidden="true"/> Prepare documents</li>
+                <li><CheckCircle2 size={15} aria-hidden="true"/> Review and apply</li>
+              </ul>
+            </div>
           </section>
           <FinlandPageIdentity />
           {/* Keep CV -> Manual/Assisted/Auto directly after the compact cover.
