@@ -1222,3 +1222,55 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   expect(horizontalOverflow).toBe(false);
   await evidence(page, "sp125-work-hero-mobile-dark-logo.png");
 });
+
+
+test("SP129 mobile navigation traps keyboard focus, closes with Escape and restores focus", async ({ page }) => {
+  // Narrow CSS viewport also exercises 200–400% browser zoom layouts.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installSyntheticApi(page);
+  await page.goto("/");
+  const trigger = page.getByRole("button", { name: "Open menu" });
+  await expect(trigger).toBeVisible();
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const drawer = page.getByRole("dialog", { name: "SmartPloy sidebar" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Close menu" })).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+
+  const first = drawer.getByRole("button", { name: "SmartPloy dashboard" });
+  const last = drawer.getByRole("button", { name: "Advanced settings" });
+  await first.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(last).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(first).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+
+  await trigger.click();
+  await expect(drawer.getByRole("button", { name: "Close menu" })).toBeFocused();
+  await drawer.getByRole("button", { name: "Find jobs" }).click();
+  await expect(page.locator("#smartploy-main")).toBeFocused();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  const overflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(overflow).toBe(false);
+});
+
+test("SP129 viewport resize exits mobile dialog without trapping invisible focus", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 670 });
+  await installSyntheticApi(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(page.getByRole("dialog", { name: "SmartPloy sidebar" })).toBeVisible();
+  await page.setViewportSize({ width: 1100, height: 740 });
+  await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
+  await expect(page.locator("#smartploy-sidebar")).not.toHaveAttribute("aria-modal", "true");
+  await expect(page.locator("#smartploy-main")).toBeFocused();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+});

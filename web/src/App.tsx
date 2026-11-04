@@ -195,6 +195,10 @@ export default function App() {
   const [cvPreview, setCVPreview] = useState(false);
   const [jobDialog, setJobDialog] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuPanelRef = useRef<HTMLElement>(null);
+  const mobileMenuFocusMainRef = useRef(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return window.localStorage.getItem("smartploy-sidebar-compact-v1") === "true"; }
     catch { return false; }
@@ -205,6 +209,67 @@ export default function App() {
     catch { /* Browsers with disabled storage can still collapse this session. */ }
     return next;
   });
+
+  // SP129: a mobile/400%-zoom drawer must be usable without a pointer.
+  // Keep focus inside it, close with Escape, prevent background scrolling and
+  // return focus to the menu trigger (or the destination after navigation).
+  useEffect(() => {
+    if (!mobileNav || window.innerWidth > 850) return;
+    const panel = mobileMenuPanelRef.current;
+    const priorOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    mobileMenuCloseRef.current?.focus();
+
+    const focusable = () => Array.from(
+      panel?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+      ) ?? []
+    ).filter(element => element.getClientRects().length > 0 &&
+      getComputedStyle(element).visibility !== "hidden");
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileNav(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = items[0], last = items[items.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !panel?.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !panel?.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    const onResize = () => {
+      if (window.innerWidth > 850) {
+        mobileMenuFocusMainRef.current = true;
+        setMobileNav(false);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onResize);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onResize);
+      document.body.style.overflow = priorOverflow;
+      if (mobileMenuFocusMainRef.current) {
+        mobileMenuFocusMainRef.current = false;
+        document.getElementById("smartploy-main")?.focus();
+      } else {
+        mobileMenuTriggerRef.current?.focus();
+      }
+    };
+  }, [mobileNav]);
+
   const [newFactType, setNewFactType] = useState("skill");
   const [newFactValue, setNewFactValue] = useState("");
   const [confirmFact, setConfirmFact] = useState(false);
@@ -406,7 +471,10 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [load]);
 
-  const navigate = (target: Page) => { setPage(target); setMobileNav(false); setNotice(""); };
+  const navigate = (target: Page) => {
+    if (mobileNav) mobileMenuFocusMainRef.current = true;
+    setPage(target); setMobileNav(false); setNotice("");
+  };
 
   function startApplyFlow(chosen: ApplicationFlowMode, jobKey = "") {
     // A job-card shortcut never skips the CV-first gate. Creating a draft
@@ -1192,7 +1260,10 @@ export default function App() {
     <a className="skip-to-content" href="#smartploy-main">Skip to main content</a>
     <input ref={uploadRef} type="file" className="visually-hidden" aria-label="Select CV to upload" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => void onCVUpload(event)} />
     <button className={cx("sidebar-scrim", mobileNav && "visible")} type="button" onClick={() => setMobileNav(false)} aria-label="Close navigation" />
-    <aside id="smartploy-sidebar" aria-label="SmartPloy sidebar" className={cx("sidebar", mobileNav && "open")}>
+    <aside ref={mobileMenuPanelRef} id="smartploy-sidebar"
+      aria-label="SmartPloy sidebar" role={mobileNav ? "dialog" : undefined}
+      aria-modal={mobileNav ? "true" : undefined}
+      className={cx("sidebar", mobileNav && "open")}>
       <button className="site-brand" type="button" onClick={() => navigate("dashboard")} aria-label="SmartPloy dashboard">
         <BrandMark className="site-brand-mark" /><span><strong>SmartPloy</strong><small>Job intelligence for Finland</small></span>
       </button>
@@ -1203,7 +1274,7 @@ export default function App() {
         {sidebarCollapsed ? <PanelLeftOpen size={19} aria-hidden="true"/> :
           <PanelLeftClose size={19} aria-hidden="true"/>}
       </button>
-      <button type="button" className="sp126-mobile-close" onClick={() => setMobileNav(false)}
+      <button ref={mobileMenuCloseRef} type="button" className="sp126-mobile-close" onClick={() => setMobileNav(false)}
         aria-label="Close menu" aria-controls="smartploy-sidebar" aria-expanded={mobileNav}>
         <X size={19} aria-hidden="true"/>
       </button>
@@ -1218,7 +1289,7 @@ export default function App() {
     </aside>
     <div className="main-column">
       <header className="site-header">
-        <button className="icon-btn menu-toggle" aria-label="Open menu" aria-controls="smartploy-sidebar" aria-expanded={mobileNav} type="button" onClick={() => setMobileNav(true)}><Menu size={21} /></button>
+        <button ref={mobileMenuTriggerRef} className="icon-btn menu-toggle" aria-label="Open menu" aria-controls="smartploy-sidebar" aria-expanded={mobileNav} type="button" onClick={() => setMobileNav(true)}><Menu size={21} /></button>
         <div className="header-search"><Search size={19} /><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); if (event.target.value) setPage("jobs"); }} placeholder="Search jobs, companies or locations…" aria-label="Search jobs" /></div>
         <span className="header-country"><MapPin size={16} /> Finland</span>
         <div className="header-tools">
