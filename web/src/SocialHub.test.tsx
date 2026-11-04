@@ -4,13 +4,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 import SocialHub from "./SocialHub";
 import * as api from "./api";
-import type { SocialMe, SocialConnections } from "./api";
+import type { SocialMe, SocialConnections, SocialReport } from "./api";
 
 vi.mock("./api", () => ({
   getSession: vi.fn(), getSocialMe: vi.fn(), getSocialConnections: vi.fn(),
   lookupSocialPerson: vi.fn(), saveSocialProfile: vi.fn(),
   followSocialPerson: vi.fn(), blockSocialPerson: vi.fn(),
   getSocialMessages: vi.fn(), sendSocialMessage: vi.fn(),
+  getMySocialReports: vi.fn(), submitSocialMessageReport: vi.fn(),
+  getSocialModeratorCapabilities: vi.fn(), getSocialModerationQueue: vi.fn(),
+  markSocialReportReviewed: vi.fn(),
 }));
 
 const blank: SocialMe = {profile: null, opted_in: false};
@@ -19,17 +22,43 @@ const empty: SocialConnections = {
 };
 let mine: SocialMe;
 let network: SocialConnections;
+let ownReports: SocialReport[] = [];
 let current = "usr-a";
 
 beforeEach(() => {
   vi.resetAllMocks();
   current = "usr-a"; mine = structuredClone(blank); network = structuredClone(empty);
+  ownReports = [];
   vi.mocked(api.getSession).mockImplementation(async () => ({
     authenticated: true, user_id: current, profile_id: "profile-" + current,
     auth_source: "oidc", email: "same@example.invalid",
   }));
   vi.mocked(api.getSocialMe).mockImplementation(async () => mine);
   vi.mocked(api.getSocialConnections).mockImplementation(async () => network);
+  vi.mocked(api.getMySocialReports).mockImplementation(async () => ({
+    reports: [...ownReports], private: true
+  }));
+  vi.mocked(api.submitSocialMessageReport).mockImplementation(
+    async (messageId, reason) => {
+      const record: SocialReport = {
+        report_id: "report-" + "a".repeat(32),
+        message_id: messageId, reason, state: "open",
+        created_at: "2026-11-04T19:00:00Z"
+      };
+      ownReports.push(record);
+      return {report: record, created: true};
+    }
+  );
+  vi.mocked(api.getSocialModeratorCapabilities).mockResolvedValue({
+    operator: false, review_actions: []
+  });
+  vi.mocked(api.getSocialModerationQueue).mockResolvedValue({
+    reports: [], operator_only: true
+  });
+  vi.mocked(api.markSocialReportReviewed).mockResolvedValue({
+    report_id: "report-" + "b".repeat(32), state: "reviewed",
+    reviewed_at: "2026-11-04T19:30:00Z"
+  });
   vi.mocked(api.saveSocialProfile).mockImplementation(async payload => {
     mine = {profile: payload, opted_in: payload.discoverable};
     return mine;
@@ -126,5 +155,78 @@ describe("SP127 real network UI and owner identity", () => {
     expect(await screen.findByRole("heading", {name:"Sign-in verification required"})).toBeTruthy();
     expect(screen.queryByText("PRIVATE ACCOUNT A")).toBeNull();
     expect(api.saveSocialProfile).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP128 report received messages and restrict the moderator inbox", () => {
+  it("requires an explicit report submission and never reports a sent message", async () => {
+    mine = {profile: {handle:"mine123",display_name:"Own Person",discoverable:true},
+      opted_in:true};
+    network = {...empty, following: [{
+      handle:"colleague_1",display_name:"Synthetic Colleague",
+      discoverable:true,mutual:true,
+    }]};
+    const receivedId = "msg-" + "a".repeat(32);
+    vi.mocked(api.getSocialMessages).mockResolvedValue({
+      handle:"colleague_1",private:true,messages:[
+        {message_id:receivedId,body:"Suspicious fictional job fee",
+         mine:false,created_at:"2026-11-04T18:00:00Z"},
+        {message_id:"msg-" + "b".repeat(32),body:"My response",
+         mine:true,created_at:"2026-11-04T18:10:00Z"},
+      ]
+    });
+    render(<SocialHub expectedUserId="usr-a" view="messages"
+      initialPeer="colleague_1" onOpenMessages={vi.fn()}/>);
+    const trigger = await screen.findByRole("button", {
+      name:"Report message from colleague_1"
+    });
+    expect(screen.getAllByText("Suspicious fictional job fee")).toHaveLength(1);
+    expect(api.submitSocialMessageReport).not.toHaveBeenCalled();
+    fireEvent.click(trigger);
+    fireEvent.change(screen.getByRole("combobox",{name:"Reason"}),{
+      target:{value:"scam"}
+    });
+    fireEvent.change(screen.getByRole("textbox",{
+      name:"Additional information (optional)"
+    }),{target:{value:"I was asked to pay a fee"}});
+    fireEvent.click(screen.getByRole("button",{name:"Submit report"}));
+    await waitFor(() => expect(api.submitSocialMessageReport).toHaveBeenCalledWith(
+      receivedId,"scam","I was asked to pay a fee","usr-a"
+    ));
+    expect(screen.getByText(/not end-to-end encrypted/)).toBeTruthy();
+    expect(api.blockSocialPerson).not.toHaveBeenCalled();
+  });
+
+  it("never exposes operator reports to a regular signed-in user", async () => {
+    render(<SocialHub expectedUserId="usr-a" view="network"
+      onOpenMessages={vi.fn()}/>);
+    await waitFor(() => expect(api.getSocialModeratorCapabilities).toHaveBeenCalled());
+    expect(screen.queryByRole("region", {name:"Social safety moderation"})).toBeNull();
+    expect(api.getSocialModerationQueue).not.toHaveBeenCalled();
+  });
+
+  it("shows the restricted moderator review queue only to server-approved operators", async () => {
+    vi.mocked(api.getSocialModeratorCapabilities).mockResolvedValue({
+      operator:true,review_actions:["mark_reviewed"]
+    });
+    vi.mocked(api.getSocialModerationQueue).mockResolvedValue({
+      operator_only:true,reports:[{
+        report_id:"report-" + "b".repeat(32),message_id:"msg-" + "c".repeat(32),
+        reason:"harassment",state:"open",created_at:"2026-11-04T19:00:00Z",
+        note:"Unwanted threats",reported_handle:"synthetic_sender",
+        reporter_handle:"synthetic_recipient",
+        message_preview:"Private fictional message",reviewed_at:null,
+      }]
+    });
+    render(<SocialHub expectedUserId="usr-a" view="network"
+      onOpenMessages={vi.fn()}/>);
+    const safety = await screen.findByRole("region",{name:"Social safety moderation"});
+    expect(safety.textContent).toContain("Private fictional message");
+    expect(safety.textContent).toContain("Unwanted threats");
+    fireEvent.click(screen.getByRole("button",{name:"Mark reviewed"}));
+    await waitFor(() => expect(api.markSocialReportReviewed).toHaveBeenCalledWith(
+      "report-" + "b".repeat(32), "usr-a"
+    ));
   });
 });
