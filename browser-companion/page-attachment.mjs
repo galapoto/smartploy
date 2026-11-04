@@ -29,12 +29,32 @@ export async function attachReviewedPdf(payload) {
     /^\/[A-Za-z0-9_-]{1,100}\/jobs\/[0-9]{1,20}\/?$/.test(approved.pathname) &&
     page.pathname.replace(/\/+$/, "") === approved.pathname.replace(/\/+$/, "") &&
     !page.search && !approved.search && !page.hash && !approved.hash;
+  const talentAdore = page.hostname === "ats.talentadore.com" &&
+    approved.hostname === "ats.talentadore.com" &&
+    /^\/apply\/[A-Za-z0-9_-]{1,120}\/[A-Za-z0-9_-]{5,30}\/?$/.test(approved.pathname) &&
+    page.pathname.replace(/\/+$/, "") === approved.pathname.replace(/\/+$/, "") &&
+    !page.search && !approved.search && !page.hash && !approved.hash;
+  // The injected function is standalone. Mirror the pure URL rule in upload.mjs:
+  // private, loopback, credential, other-host and unreviewed ATS paths are denied.
+  const strict = ["jobs.lever.co", "jobs.eu.lever.co", "jobs.ashbyhq.com",
+    ...ghHosts, "ats.talentadore.com"];
+  const approvedHost = approved.hostname;
+  const generic = !strict.includes(approvedHost) &&
+    page.origin === approved.origin && page.hostname === approvedHost &&
+    typeof payload.application_url === "string" && payload.application_url.length <= 1500 &&
+    !/[\\\u0000-\u0020\u007f]/u.test(payload.application_url) &&
+    !/[\\\u0000-\u0020\u007f]/u.test(location.href) &&
+    /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$/i.test(approvedHost) &&
+    !/(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion|lan|home|intranet)$/i.test(approvedHost) &&
+    (approved.pathname !== "/" || approved.search.length > 0) &&
+    page.search.length <= 800 && approved.search.length <= 800 &&
+    !page.hash && !approved.hash;
   if (
     page.protocol !== "https:" || approved.protocol !== "https:" ||
     (page.origin !== approved.origin && !greenhouse) ||
     page.username || page.password ||
     approved.username || approved.password || page.port || approved.port ||
-    !(lever || ashby || greenhouse) || location.href !== payload.inspected_url ||
+    !(lever || ashby || greenhouse || talentAdore || generic) || location.href !== payload.inspected_url ||
     (typeof window !== "undefined" && window.top !== window.self)
   ) return stop("The employer job/form changed; reinspect before attaching.");
   if (

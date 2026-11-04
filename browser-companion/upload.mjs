@@ -46,13 +46,43 @@ export function exactGreenhouseForm(activeUrl, packetUrl) {
   }
 }
 
+/* SP121: a user-chosen, reviewed public employer origin is eligible for
+   form assistance, NOT final-click rights or independently approved ATS status.
+   This permits custom HTTPS careers sites in the same browser tab after explicit
+   signed-in SmartPloy review. Any cross-host redirect needs a new job/packet. */
+export function reviewedPublicEmployerForm(activeUrl, packetUrl) {
+  const strict = new Set([
+    "jobs.lever.co", "jobs.eu.lever.co", "jobs.ashbyhq.com",
+    "boards.greenhouse.io", "job-boards.greenhouse.io",
+    "ats.talentadore.com"
+  ]);
+  const valid = (raw) => {
+    if (typeof raw !== "string" || raw.length > 1500 ||
+        /[\\\u0000-\u0020\u007f]/u.test(raw)) return null;
+    try {
+      const url = new URL(raw);
+      const host = url.hostname;
+      if (url.protocol !== "https:" || url.username || url.password ||
+          url.port || url.hash || url.search.length > 800 ||
+          !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$/i.test(host) ||
+          /(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion|lan|home|intranet)$/i.test(host)) return null;
+      return url;
+    } catch { return null; }
+  };
+  const actual = valid(activeUrl), approved = valid(packetUrl);
+  return Boolean(actual && approved && !strict.has(approved.hostname) &&
+    (approved.pathname !== "/" || approved.search.length > 0) &&
+    actual.origin === approved.origin);
+}
+
 /* SP41: reuse the same reviewed PDF + original-user confirmation path on an
    exact Ashby /application route. Pure URL validation; no upload or submit.
    The existing Lever-only final-click adapter stays unchanged. */
 export function exactAssistedForm(activeUrl, packetUrl) {
   if (exactLeverForm(activeUrl, packetUrl) ||
       exactGreenhouseForm(activeUrl, packetUrl) ||
-      exactTalentAdoreForm(activeUrl, packetUrl)) return true;
+      exactTalentAdoreForm(activeUrl, packetUrl) ||
+      reviewedPublicEmployerForm(activeUrl, packetUrl)) return true;
   try {
     const current = new URL(activeUrl);
     const intended = new URL(packetUrl);

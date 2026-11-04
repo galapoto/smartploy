@@ -143,31 +143,53 @@ function fillPlanned(actions, exactUrl) {
     return /(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|citizen|nationality|gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|immigrat|taxid|nationalid|gdpr|henkilötunnus|sukupuol|kansalaisuu|oleskelulup|työlup|palkka|arbetstillstånd|medborgarskap|personnummer|samtycke)/i.test(identifiers);
   }
   function sameJob(a, b) {
+    // This callback is serialized by chrome.scripting: no module imports.
+    // Keep known ATS exact-job checks and custom public-origin protections
+    // aligned with logic.mjs / upload.mjs.
     try {
+      if (typeof a !== "string" || typeof b !== "string" ||
+          a.length > 1500 || b.length > 1500 ||
+          /[\\\u0000-\u0020\u007f]/u.test(a) || /[\\\u0000-\u0020\u007f]/u.test(b)) return false;
       const x = new URL(a), y = new URL(b);
       const prefix = y.pathname.replace(/\/+$/, "");
-      // Executed inside the employer tab via chrome.scripting: standalone,
-      // no imports or popup closure. Reuse the same exact hosted-job policy.
       const ghHosts = ["boards.greenhouse.io", "job-boards.greenhouse.io"];
-      if (x.protocol === "https:" && y.protocol === "https:" &&
-          ghHosts.includes(x.hostname) && ghHosts.includes(y.hostname) &&
+      const strict = [
+        "jobs.lever.co", "jobs.eu.lever.co", "jobs.ashbyhq.com",
+        ...ghHosts, "ats.talentadore.com"
+      ];
+      if (x.protocol !== "https:" || y.protocol !== "https:" ||
+          x.username || x.password || y.username || y.password ||
+          x.port || y.port || x.hash || y.hash) return false;
+      if (ghHosts.includes(y.hostname)) {
+        return ghHosts.includes(x.hostname) &&
+          !x.search && !y.search &&
           /^\/[A-Za-z0-9_-]{1,100}\/jobs\/[0-9]{1,20}\/?$/.test(y.pathname) &&
-          x.pathname.replace(/\/+$/, "") === y.pathname.replace(/\/+$/, "") &&
-          !x.search && !y.search && !x.hash && !y.hash &&
-          !x.username && !x.password && !y.username && !y.password &&
-          !x.port && !y.port) return true;
-      if (x.origin !== y.origin || x.protocol !== "https:" ||
-          x.username || x.password || y.username || y.password) return false;
-      // Ashby forms are accepted ONLY for the exact reviewed job's
-      // /application route; never a sibling or arbitrary job subpath.
+          x.pathname.replace(/\/+$/, "") === prefix;
+      }
+      if (x.origin !== y.origin) return false;
       if (y.hostname === "jobs.ashbyhq.com") {
         const posting = prefix.replace(/\/application$/, "");
-        return !x.search && !y.search && !x.hash && !y.hash &&
+        return !x.search && !y.search &&
           /^\/[A-Za-z0-9_-]{1,100}\/[A-Za-z0-9_-]{1,160}$/.test(posting) &&
           [posting + "/application", posting + "/application/"].includes(x.pathname);
       }
-      return x.pathname === prefix || x.pathname === prefix + "/" ||
-        x.pathname.startsWith(prefix + "/");
+      if (y.hostname === "ats.talentadore.com") {
+        return !x.search && !y.search &&
+          /^\/apply\/[A-Za-z0-9_-]{1,120}\/[A-Za-z0-9_-]{5,30}\/?$/.test(y.pathname) &&
+          x.pathname.replace(/\/+$/, "") === prefix;
+      }
+      if (["jobs.lever.co", "jobs.eu.lever.co"].includes(y.hostname)) {
+        const posting = prefix.replace(/\/apply$/, "");
+        return !x.search && !y.search &&
+          /^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(posting) &&
+          [posting + "/apply", posting + "/apply/"].includes(x.pathname);
+      }
+      const host = y.hostname;
+      return !strict.includes(host) &&
+        x.hostname === host && x.search.length <= 800 && y.search.length <= 800 &&
+        (y.pathname !== "/" || y.search.length > 0) &&
+        /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$/i.test(host) &&
+        !/(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion|lan|home|intranet)$/i.test(host);
     } catch { return false; }
   }
   if (!sameJob(location.href, exactUrl)) {
@@ -525,7 +547,7 @@ async function onInspect() {
     const pkt = validatePacket(packetText, tab.url);
     await requireVerifiedReview(chrome.storage?.session, pkt);
     if (!exactAssistedForm(tab.url, pkt.application_url)) {
-      throw new PacketError("Open the exact approved employer application form, not its job description.");
+      throw new PacketError("Open the reviewed employer application form in the selected public HTTPS browser tab.");
     }
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
@@ -572,15 +594,20 @@ async function onInspect() {
     $("approve").disabled = !leverSubmit;
     const providerHost = new URL(pkt.application_url).hostname;
     const talentAdore = providerHost === "ats.talentadore.com";
+    const knownReceiptHosts = ["jobs.lever.co", "jobs.eu.lever.co",
+      "jobs.ashbyhq.com", "boards.greenhouse.io", "job-boards.greenhouse.io"];
+    const unknownReceipt = talentAdore || !knownReceiptHosts.includes(providerHost);
     const providerName = talentAdore ? "TalentAdore" :
-      providerHost === "jobs.ashbyhq.com" ? "Ashby" : "Greenhouse";
-    $("resume").disabled = talentAdore;
-    $("receipt").disabled = talentAdore;
+      providerHost === "jobs.ashbyhq.com" ? "Ashby" :
+      ["boards.greenhouse.io", "job-boards.greenhouse.io"].includes(providerHost)
+        ? "Greenhouse" : "Reviewed employer site";
+    $("resume").disabled = unknownReceipt;
+    $("receipt").disabled = unknownReceipt;
     $("finalClaimInfo").textContent = leverSubmit ? "" :
       providerName + ": reviewed contacts, ordinary questions and CV PDF assistance only. " +
       "Submit personally on the employer website; no automatic final click. " +
-      (talentAdore
-        ? "Receipt inspection has not been verified for TalentAdore. Keep the employer's confirmation email and track manually."
+      (unknownReceipt
+        ? "Automatic receipt inspection is not verified for this site. Keep the employer confirmation and record your result manually."
         : "You may import a reference-bearing manual confirmation or track your own report.");
     $("uploadInfo").textContent = "";
     $("cvFile").value = "";

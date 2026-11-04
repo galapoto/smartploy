@@ -1919,7 +1919,10 @@ export default function ApplicationStudio(props: {
             chrome://extensions, enable Developer mode and choose Load unpacked.
             Select the extracted folder containing manifest.json. The companion
             runs only when you click it; it does not submit jobs in the background.
-            It is not a Chrome Web Store install and does not update automatically.
+            The companion supports reviewed public HTTPS employer forms, including
+            custom careers sites. Cross-origin embedded forms, login challenges and
+            sensitive questions still need your own browser action. It is not a
+            Chrome Web Store install and does not update automatically.
             To keep ordinary unanswered employer questions for later applications,
             review them in the companion, return to your signed-in SmartPloy tab
             and select Sync eligible questions within five minutes. Only question

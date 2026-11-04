@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  UploadError, MAX_PDF_BYTES, chooseResumeField, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactAshbyReceiptPage, exactTalentAdoreForm, isLeverFinalProvider,
+  UploadError, MAX_PDF_BYTES, chooseResumeField, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactAshbyReceiptPage, exactTalentAdoreForm, reviewedPublicEmployerForm, isLeverFinalProvider,
   encodePdfBase64, validatePdf
 } from "../upload.mjs";
 
@@ -179,4 +179,35 @@ test("SP118 TalentAdore exact posting supports review-only attachment, never fin
     posting + "/submit",
   ]) assert.equal(exactAssistedForm(denied, posting), false, denied);
   assert.equal(isLeverFinalProvider(posting), false);
+});
+
+
+test("SP121 public custom employer origin is reviewed-fill-only, never a final submit", () => {
+  const source = "https://careers.example.org/jobs/junior-analyst";
+  for (const active of [
+    source, "https://careers.example.org/apply?job=junior-analyst",
+    "https://careers.example.org/applicant/details",
+  ]) {
+    assert.equal(reviewedPublicEmployerForm(active,source),true,active);
+    assert.equal(exactAssistedForm(active,source),true,active);
+    assert.equal(isLeverFinalProvider(source),false);
+  }
+  for (const bad of [
+    "https://careers.other-example.org/apply",
+    "https://careers.example.org.evil.com/apply",
+    "http://careers.example.org/apply",
+    "https://127.0.0.1/apply",
+    "https://careers.example.org:8080/apply",
+    "https://user:pw@careers.example.org/apply",
+    "https://careers.example.org/apply#secret",
+    "https://careers.example.org\\@evil.com/jobs/apply",
+  ]) assert.equal(exactAssistedForm(bad,source),false,bad);
+  for (const bad of [
+    "https://localhost/jobs/analyst",
+    "https://192.168.0.12/jobs/analyst",
+    "https://careers.example.invalid/jobs/analyst",
+    "https://careers.example.org:444/jobs/analyst",
+    "https://ats.talentadore.com/other/job",
+    "https://jobs.lever.co/not/valid/extra",
+  ]) assert.equal(exactAssistedForm(bad,bad),false,bad);
 });

@@ -16,7 +16,7 @@ Preferred: connect once, fill from SmartPloy (applicant-local pairing)
    Leave this terminal running until you complete one application.
 3. In signed-in SmartPloy, prepare/review and save the exact CV and letter.
    Under My applications > Fill the employer's form, click
-   "Prepare Playwright handoff (no clipboard)" to create the expiring
+   "Start application with Playwright" to create the expiring
    private packet in this browser tab without a clipboard copy.
    Then find "Connect my local Playwright browser", enter the code shown in
    the terminal and click "Open reviewed employer form". Check the consent
@@ -144,7 +144,7 @@ jobs.ashbyhq.com /application, and standard boards.greenhouse.io /
 job-boards.greenhouse.io /{board}/jobs/{numeric-id}, and
 ats.talentadore.com/apply/{slug}/{job-id} without tracking parameters.
 Embedded/custom ATS,
-iframe-only forms, arbitrary sites and unsupported fields remain manual.
+Cross-origin forms, iframe-only controls, CAPTCHA and unsupported fields remain manual. Generic same-host public employers can receive reviewed form filling, but no automatic submit rights.
 
 The existing Chrome extension remains the supported fallback for an already
 signed-in Chrome session. This new helper is an optional standalone local

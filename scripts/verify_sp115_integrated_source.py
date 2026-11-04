@@ -76,6 +76,11 @@ MANDATORY = frozenset({
     "web/src/ApplicationJourney.test.tsx", "web/src/main.tsx",
     "web/src/sp120-assisted-flow.css",
     "docs/SP120_PRIVATE_ASSISTED_PLAYWRIGHT.md",
+    # SP121: Chrome works on reviewed public custom employer hosts;
+    # the actual standalone page upload/question callback files are pinned.
+    "browser-companion/page-attachment.mjs",
+    "web/browser-tests/generic-extension.e2e.ts",
+    "docs/SP121_CHROME_GENERIC_ASSISTED.md",
 })
 
 

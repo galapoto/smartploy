@@ -1,6 +1,6 @@
 {
   "schema": "smartploy.integrated_release_candidate.sp115.v1",
-  "purpose": "Reviewed cumulative CV-first source from SP115–SP120: persistent private profile, question sync, reviewed TalentAdore/generic Playwright, and owner-saved vacancy to Assisted application; SOURCE REVIEW ONLY.",
+  "purpose": "Reviewed cumulative SP115–SP121 CV-first source: private saved vacancy to Assisted, applicant-reviewed Playwright and Chrome custom public HTTPS employer forms; SOURCE REVIEW ONLY.",
   "base_main_sha": "804747bd9f01f999f9e806dcf96459bb215bb8f1",
   "source_head_sha": "d98881296081007c8e70447982cce67e847dcb94",
   "source_dependency_prs": [
@@ -40,11 +40,15 @@
     },
     {
       "path": "browser-companion/logic.mjs",
-      "git_blob_sha1": "e6f9c40478da733792f2d5aaf275a5ab3eaae1ee"
+      "git_blob_sha1": "703f054214f9e918bf9b6e91181ed0bcc468e9a6"
     },
     {
       "path": "browser-companion/manifest.json",
-      "git_blob_sha1": "a076506420cd37e5ba94e2699303e28c0edc4a25"
+      "git_blob_sha1": "53996fdbdb897b358a5c9b80806197960858b4c4"
+    },
+    {
+      "path": "browser-companion/page-attachment.mjs",
+      "git_blob_sha1": "1e0206bcbea4c74fb6463045527134f3eb2dc732"
     },
     {
       "path": "browser-companion/page-question-sync.mjs",
@@ -52,15 +56,15 @@
     },
     {
       "path": "browser-companion/page-questions.mjs",
-      "git_blob_sha1": "cc0ffb78957c98abdb263789e3d2aa8195fd4249"
+      "git_blob_sha1": "b48e5cdfc9f006e6d5fadad6dc2e246140b279c6"
     },
     {
       "path": "browser-companion/popup.html",
-      "git_blob_sha1": "3afb77e314baf72d319de879f668b113fda7c03b"
+      "git_blob_sha1": "ae252b461c7b2620aab63b0e2889d09e3f9e7a22"
     },
     {
       "path": "browser-companion/popup.mjs",
-      "git_blob_sha1": "b1825f096dcd520176a3b7ff47c9994a32a7e858"
+      "git_blob_sha1": "f5a29df10f0efb446f79854bf7ebdf0637d39181"
     },
     {
       "path": "browser-companion/question-sync.mjs",
@@ -72,7 +76,7 @@
     },
     {
       "path": "browser-companion/tests/logic.test.mjs",
-      "git_blob_sha1": "c2c6e63a40bf1c1fe6279fe5f8d72f9803b95754"
+      "git_blob_sha1": "2c8d34b42db4af8de1b0d4bf710d7b34788e400a"
     },
     {
       "path": "browser-companion/tests/page-question-sync.test.mjs",
@@ -84,11 +88,11 @@
     },
     {
       "path": "browser-companion/tests/upload.test.mjs",
-      "git_blob_sha1": "41c56327f1473d212d0d04b9ce724ea8a28a7cde"
+      "git_blob_sha1": "fc15113b4b73a7392476c429f35d457bc489827a"
     },
     {
       "path": "browser-companion/upload.mjs",
-      "git_blob_sha1": "142050bf7649289aae857151b38f61d0af9e333d"
+      "git_blob_sha1": "64504fbc2775cc722ed7c21fb4a58a0025e5d361"
     },
     {
       "path": "browser-playwright/assistant.py",
@@ -100,7 +104,7 @@
     },
     {
       "path": "browser-playwright/INSTALL.txt",
-      "git_blob_sha1": "9d1c2adb6b80c7670505beedf0945045fd875821"
+      "git_blob_sha1": "359a63098b86f7892b5f75350cd32b8a98e8c4ad"
     },
     {
       "path": "deploy/personal/scripts/deploy.sh",
@@ -131,8 +135,16 @@
       "git_blob_sha1": "13d7ae23bbf6b4282426c65bd984bcc99e11d3ed"
     },
     {
+      "path": "docs/SP121_CHROME_GENERIC_ASSISTED.md",
+      "git_blob_sha1": "561f574a856ca3f5d997bb9698b2f44869adb94b"
+    },
+    {
       "path": "migrations/030_application_profile_questions.sql",
       "git_blob_sha1": "992659d60133ac8c4fa0ac824e7dacb2341f114b"
+    },
+    {
+      "path": "scripts/verify_sp115_integrated_source.py",
+      "git_blob_sha1": "f1d37fb8c0c33b2576fba3a086a455aa4a0c01c6"
     },
     {
       "path": "smartploy/account_erasure.py",
@@ -196,11 +208,15 @@
     },
     {
       "path": "tests/test_sp115_integrated_source.py",
-      "git_blob_sha1": "55108d9ffb95b7dac5983e2e8ca1252a6d0f30be"
+      "git_blob_sha1": "0e084fcc481e60c515e2285bcf6a1b9634d8fbc9"
     },
     {
       "path": "tests/test_sp120_private_assisted.py",
       "git_blob_sha1": "2e3d8f7ddbadd5c6458d2a161c40496daf89c810"
+    },
+    {
+      "path": "web/browser-tests/generic-extension.e2e.ts",
+      "git_blob_sha1": "57f9f2b006520b52cab51d7a77093b112f669f93"
     },
     {
       "path": "web/browser-tests/onboarding.e2e.ts",
@@ -252,7 +268,7 @@
     },
     {
       "path": "web/src/ApplicationStudio.tsx",
-      "git_blob_sha1": "5a91f12eaf184d04a188af77682377c44d037455"
+      "git_blob_sha1": "e14108179774736f1d23b77e80531c270cff65e3"
     },
     {
       "path": "web/src/AuthorizedAutoApplyBatch.tsx",
@@ -375,5 +391,14 @@
     "live_applicant_acceptance_verified": false,
     "production_deployed": false,
     "retested_after_failure": false
+  },
+  "sp121": {
+    "chrome_companion_version": "0.7.0",
+    "source_candidate_only": true,
+    "host_scope": "applicant-reviewed-public-https-same-host",
+    "final_employer_auto_submit": false,
+    "live_employer_fill_verified": false,
+    "real_signed_in_extension_acceptance_verified": false,
+    "production_deployed": false
   }
 }

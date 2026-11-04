@@ -1,4 +1,5 @@
 /* Pure, testable rules for SmartPloy's local-only browser companion. */
+import { reviewedPublicEmployerForm } from "./upload.mjs";
 export const SCHEMA = "smartploy.browser_handoff.v2";
 
 export class PacketError extends Error {}
@@ -86,12 +87,13 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
     /^\/apply\/[A-Za-z0-9_-]{1,120}\/[A-Za-z0-9_-]{5,30}\/?$/.test(target.pathname) &&
     current.pathname.replace(/\/+$/, "") === target.pathname.replace(/\/+$/, "") &&
     !target.search && !current.search && !target.hash && !current.hash;
+  const genericPublicEmployer = reviewedPublicEmployerForm(activeTabUrl, packet.application_url);
   if (target.protocol !== "https:" || current.protocol !== "https:" ||
       target.username || target.password || current.username || current.password ||
       target.port !== "" || current.port !== "" ||
       (current.origin !== target.origin && !greenhouse) ||
-      !(lever || ashby || greenhouse || talentAdore)) {
-    throw new PacketError("Open the exact supported employer job/application page linked from SmartPloy");
+      !(lever || ashby || greenhouse || talentAdore || genericPublicEmployer)) {
+    throw new PacketError("Open the reviewed employer job or form in a public HTTPS tab. Reapprove if the employer origin changes.");
   }
   const f = packet.fields;
   if (!f || typeof f !== "object") {
