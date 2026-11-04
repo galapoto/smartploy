@@ -6,6 +6,15 @@ on:
   workflow_run:
     workflows: ["Smartploy CI"]
     types: [completed]
+  # Safe retry after initial commissioning or a transient infrastructure HOLD.
+  # The input is NOT an approval. Revalidate the historical five-job main CI,
+  # native Woodpecker and protected environment before any production action.
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: "Exact 40-character SHA already qualified by main-push CI"
+        type: string
+        required: true
 
 permissions:
   actions: read
@@ -15,10 +24,13 @@ jobs:
   qualify:
     name: Exact main-push CI admission
     if: >-
-      ${{ github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_branch == 'main' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.head_repository.full_name == github.repository }}
+      ${{ (github.event_name == 'workflow_run' &&
+           github.event.workflow_run.event == 'push' &&
+           github.event.workflow_run.head_branch == 'main' &&
+           github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.head_repository.full_name == github.repository) ||
+          (github.event_name == 'workflow_dispatch' &&
+           github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -26,20 +38,39 @@ jobs:
       ci_run_id: ${{ steps.verify.outputs.ci_run_id }}
       qualified: ${{ steps.verify.outputs.qualified }}
     steps:
+      - name: Validate source SHA before checkout
+        id: source
+        env:
+          EVENT_KIND: ${{ github.event_name }}
+          MANUAL_SHA: ${{ inputs.release_sha }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$EVENT_KIND" == "workflow_dispatch" ]]; then
+            SHA="$MANUAL_SHA"
+          else
+            SHA="$CI_SHA"
+          fi
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "FEATURE_FIRST_DENIED: invalid immutable SHA" >&2
+            exit 43
+          }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
       - name: Check out exact immutable main commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ steps.source.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Verify exact successful push-to-main jobs
         id: verify
         env:
           GH_TOKEN: ${{ github.token }}
+          SMARTPLOY_REQUESTED_SHA: ${{ steps.source.outputs.sha }}
         run: |
           set -Eeuo pipefail
           python3 -B scripts/feature_first_ci_attestation.py
-          SHA="${{ github.event.workflow_run.head_sha }}"
+          SHA="${{ steps.source.outputs.sha }}"
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
           # fetch-depth: 0 already brought the origin/main history. Do not
           # issue an unauthenticated second fetch in this private repository:
