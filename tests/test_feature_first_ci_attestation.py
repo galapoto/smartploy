@@ -133,8 +133,12 @@ def test_manual_retry_never_reuses_pr_fork_or_dispatch_ci_runs():
 def test_manual_retry_fetches_only_exact_sha_main_push_history(monkeypatch):
     observed: list[str] = []
     class FakeResponse:
-        def __enter__(self): return self
-        def __exit__(self, *args): return None
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
         def read(self, _limit):
             return json.dumps({
                 "workflow_runs": [WORKFLOW_RUN],
