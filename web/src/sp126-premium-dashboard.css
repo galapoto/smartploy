@@ -63,7 +63,7 @@
   padding:2px 2px 7px;margin:0 0 8px;min-height:0
 }
 .smartploy-app .sp99-identity:not(.compact) .sp99-identity-mark {
-  width:39px;height:39px;flex-basis:39px
+  width:49px;height:49px;flex-basis:49px
 }
 .smartploy-app .sp99-identity:not(.compact) .sp99-identity-text strong{
   font-size:19px
@@ -111,7 +111,8 @@ html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-sta
 }
 html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
   .flow-start-card[data-flow-mode="assisted"]{
-  background:linear-gradient(150deg,#2a2054,#171d3b);
+  background-color:#171d3b;
+  background-image:linear-gradient(150deg,#2a2054,#171d3b);
   border:1px solid #a981ef;--flow-tone:#c4a6ff;
   box-shadow:0 10px 25px -20px #a45ff9
 }
