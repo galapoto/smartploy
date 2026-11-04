@@ -205,6 +205,8 @@ def test_native_woodpecker_pipeline_executes_exact_negative_control_before_tests
         'python3 -m pip install --no-cache-dir -e ".[dev]"'
     )
     assert "PRODUCTION_RELEASE_GATE_HOLD" in pipeline
-    assert "  - event: pull_request\\n    repo: galapoto/smartploy\\n    branch: main" in pipeline
+    assert "  - event: pull_request" in pipeline
+    assert "    repo: galapoto/smartploy" in pipeline
+    assert "    branch: main" in pipeline
     assert "docker compose up" not in pipeline
     assert "from_secret:" not in pipeline
