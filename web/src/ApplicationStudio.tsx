@@ -1475,6 +1475,15 @@ export default function ApplicationStudio(props: {
                 href={safePostingLink(selected.application_url)} target="_blank"
                 rel="noopener noreferrer">Open exact employer posting <ArrowUpRight size={15}/></a> : null}
             </div>
+            {handoffPacketText && !browserReceipt && !partnerReceipt ? (
+              <div className="sp124-pairing-next" role="status">
+                <CheckCircle2 size={19} aria-hidden="true" />
+                <span>Reviewed packet prepared in this signed-in tab.{" "}
+                  <a href="#smartploy-local-playwright-pairing">Continue to local Playwright pairing</a>
+                  {" "}to open the visible employer browser. Nothing has been submitted.
+                </span>
+              </div>
+            ) : null}
             <p className="muted">Install the Chrome companion from the Employer Application section
               or pair the local Playwright helper. It can inspect ordinary fields on a
               user-reviewed public HTTPS employer page, including employers not in SmartPloy's

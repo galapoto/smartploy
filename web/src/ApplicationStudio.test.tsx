@@ -2605,4 +2605,28 @@ describe("SP108: standalone CV and letter documents and ZIP are bound to saved r
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
     expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
   });
+  it("SP124: assisted packet links directly to the real paired Playwright browser", async () => {
+    vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({
+      packet: {
+        schema: "smartploy.browser_handoff.v2",
+        workspace_id: "workspace-A", revision: 1,
+      },
+    } as never);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    studio("assisted");
+    expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+    const start = screen.getByRole("button", { name: "Start reviewed Playwright form filling" });
+    await waitFor(() => expect((start as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(start);
+    const link = await screen.findByRole("link", { name: "Continue to local Playwright pairing" });
+    expect(link.getAttribute("href")).toBe("#smartploy-local-playwright-pairing");
+    const target = document.getElementById("smartploy-local-playwright-pairing");
+    expect(target).toBeTruthy();
+    expect(target?.getAttribute("aria-label")).toBe("Paired local Playwright browser");
+    expect(screen.getByText(/Nothing has been submitted/)).toBeTruthy();
+    expect(api.createBrowserHandoffPacket).toHaveBeenCalledWith("workspace-A", 1, "usr-a");
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+  });
+
 });

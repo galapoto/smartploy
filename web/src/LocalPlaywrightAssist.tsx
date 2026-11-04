@@ -548,7 +548,8 @@ export default function LocalPlaywrightAssist(props: {
 
   const trustedPage = localBridgeOriginAllowed(window.location.origin);
 
-  return <section className="local-playwright-panel" aria-label="Paired local Playwright browser">
+  return <section id="smartploy-local-playwright-pairing"
+    className="local-playwright-panel" aria-label="Paired local Playwright browser">
     <div className="local-playwright-heading">
       <Monitor size={20} aria-hidden="true" />
       <div>

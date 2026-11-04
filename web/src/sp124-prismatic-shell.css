@@ -34,6 +34,18 @@ html[data-smartploy-theme="dark"] {
  background:#203d56;color:#e4f5ff;box-shadow:0 6px 20px -12px #030e1e;
  transition:background .15s ease,transform .15s ease}
 .smartploy-app .sp124-sidebar-toggle:hover{background:#346184;transform:translateY(-1px)}
+/* The top Assisted CTA must lead to the real, existing local pairing component.
+   This is navigation, not a claim that a browser has already opened. */
+.smartploy-app .sp124-pairing-next{
+ display:flex;align-items:flex-start;gap:10px;margin:14px 0 0;
+ padding:13px 15px;border-radius:13px;background:var(--sp124-subtle);
+ color:var(--sp124-ink);line-height:1.55
+}
+.smartploy-app .sp124-pairing-next svg{flex:none;margin-top:2px;color:var(--sp124-accent)}
+.smartploy-app .sp124-pairing-next a{
+ color:var(--sp124-accent);text-decoration:underline;font-weight:750
+}
+.smartploy-app #smartploy-local-playwright-pairing{scroll-margin-top:100px}
 /* In the mobile drawer, Close belongs to the drawer's own stacking context,
    instead of the header underneath the scrim. */
 .smartploy-app .sp124-mobile-close{display:none}
