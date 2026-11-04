@@ -1,0 +1,72 @@
+/* SP128: safety controls match first-party SmartPloy message surfaces.
+   Report forms are explicit actions, never triggered by selecting a message. */
+.sp128-message-reported,.sp128-report-open {
+  display:inline-flex;align-items:center;gap:6px;font-size:11px;
+  color:#4a6480;padding:5px 0;margin-top:6px
+}
+.sp128-report-open{background:transparent;border:0;cursor:pointer;text-decoration:underline}
+.sp128-report-open:hover{color:#1d67a1}
+.sp128-report-form{display:grid;gap:9px;margin-top:9px;padding:12px;
+  background:#f5f9ff;border:1px solid #cbdff4;border-radius:12px}
+.sp128-report-form label{font-size:12px;font-weight:750;color:#355b78}
+.sp128-report-form select,.sp128-report-form textarea {
+  width:100%;box-sizing:border-box;background:#fff;color:#1b3855;
+  border:1px solid #bfd4e9;border-radius:9px;padding:9px;
+  font-family:inherit;font-size:13px
+}
+.sp128-report-form textarea{resize:vertical;min-height:65px}
+.sp128-report-form-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sp128-report-form-actions button{min-height:36px}
+.sp128-conversation-safety{display:flex;justify-content:flex-start}
+.sp128-conversation-safety button{font-size:11px}
+.sp128-report-status{display:flex;align-items:center;gap:7px;padding:9px 0;
+ border-top:1px solid #dbe6f1;color:#45617d;font-size:12px;text-transform:capitalize}
+.sp128-moderation{display:grid;gap:12px}
+.sp128-moderation .sp127-card-heading h3{display:flex;align-items:center;gap:8px}
+.sp128-report-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}
+.sp128-report-entry{padding:14px;border:1px solid #d7e4ef;border-radius:12px;
+ background:#f7fafe;display:grid;gap:8px;min-width:0;align-content:start}
+.sp128-report-entry .sp127-muted{margin:0}
+.sp128-report-top{display:flex;justify-content:space-between;align-items:center;
+ gap:10px;flex-wrap:wrap;font-size:13px;overflow-wrap:anywhere}
+.sp128-review-state{padding:5px 8px;border-radius:999px;font-weight:800;
+ font-size:10px;white-space:nowrap}
+.sp128-review-state.open{background:#fff0da;color:#995600}
+.sp128-review-state.reviewed{background:#e0f5eb;color:#216b4f}
+.sp128-preview{margin:0;padding:11px 12px;border-radius:9px;
+ border-inline-start:3px solid #648bd1;background:#edf4ff;
+ white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6}
+.sp128-review-note{font-size:12px;line-height:1.55;overflow-wrap:anywhere;color:#39536c}
+.sp128-report-entry button{justify-self:start}
+html[data-smartploy-theme="dark"] .sp128-message-reported,
+html[data-smartploy-theme="dark"] .sp128-report-open,
+html[data-smartploy-theme="dark"] .sp128-report-status{color:#bad3ec}
+html[data-smartploy-theme="dark"] .sp128-report-form {
+ background:#15273f;border-color:#526c88
+}
+html[data-smartploy-theme="dark"] .sp128-report-form label{color:#d3e8fc}
+html[data-smartploy-theme="dark"] .sp128-report-form :is(select,textarea) {
+ background:#0c1c31;color:#f3f7ff;border-color:#456482
+}
+html[data-smartploy-theme="dark"] .sp128-report-entry{
+ background:#102039;border-color:#46617c
+}
+html[data-smartploy-theme="dark"] .sp128-report-top{color:#f3f9ff}
+html[data-smartploy-theme="dark"] .sp128-preview{
+ background:#1d3554;color:#e7f3ff;border-color:#9fa5fb
+}
+html[data-smartploy-theme="dark"] .sp128-review-note{color:#cee0f1}
+html[data-smartploy-theme="dark"] .sp128-report-status{border-color:#39516d}
+html[data-smartploy-theme="dark"] .sp128-review-state.open {
+ background:#493b28;color:#ffe3a7
+}
+html[data-smartploy-theme="dark"] .sp128-review-state.reviewed {
+ background:#193f38;color:#baf3db
+}
+@media(max-width:620px){
+ .sp128-report-form-actions .primary-btn{flex:1}
+ .sp128-report-list{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){
+ .sp128-report-open{transition:none}
+}

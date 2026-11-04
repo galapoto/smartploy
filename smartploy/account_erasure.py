@@ -349,6 +349,11 @@ def inspect_quarantined_account(
             "SELECT count(*) FROM smartploy_social_messages WHERE sender_id=%s OR recipient_id=%s",
             (user_id, user_id),
         ),
+        "social_reports": (
+            """SELECT count(*) FROM smartploy_social_reports
+               WHERE reporter_id=%s OR reported_user_id=%s OR reviewed_by=%s""",
+            (user_id, user_id, user_id),
+        ),
         "application_workspaces": (
             "SELECT count(*) FROM smartploy_application_workspaces WHERE profile_id=%s",
             (profile_id,),

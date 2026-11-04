@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
-  AtSign, ArrowRight, CheckCircle2, LockKeyhole, MessageCircle,
+  AtSign, ArrowRight, CheckCircle2, Flag, LockKeyhole, MessageCircle,
   RefreshCw, Search, Send, ShieldCheck, UserPlus, UsersRound, X
 } from "lucide-react";
 import {
   blockSocialPerson, followSocialPerson, getSession, getSocialConnections,
-  getSocialMe, getSocialMessages, lookupSocialPerson, saveSocialProfile,
-  sendSocialMessage,
+  getSocialMe, getSocialMessages, getMySocialReports,
+  lookupSocialPerson, saveSocialProfile, sendSocialMessage,
+  submitSocialMessageReport,
   type SocialConnection, type SocialConnections, type SocialLookup,
-  type SocialMe, type SocialMessage,
+  type SocialMe, type SocialMessage, type SocialReport, type SocialReportReason,
 } from "./api";
+import SocialSafetyInbox from "./SocialSafetyInbox";
 
 /** Human-to-human messaging only. No network directory scraping, shared CV or
  * unattended employer contact. Never label it WhatsApp or E2EE. */
@@ -28,6 +30,10 @@ export default function SocialHub(props: {
   const [found, setFound] = useState<SocialLookup | null>(null);
   const [peer, setPeer] = useState(props.initialPeer || "");
   const [thread, setThread] = useState<SocialMessage[]>([]);
+  const [myReports, setMyReports] = useState<SocialReport[]>([]);
+  const [reportingId, setReportingId] = useState("");
+  const [reportReason, setReportReason] = useState<SocialReportReason>("spam");
+  const [reportNote, setReportNote] = useState("");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -41,6 +47,7 @@ export default function SocialHub(props: {
 
   const denySwitchedAccount = useCallback((): never => {
     setBlocked(true); setMe(null); setConnections(null); setThread([]);
+    setMyReports([]); setReportingId(""); setReportNote("");
     setFound(null); setPeer(""); setDraft("");
     throw new Error("Your signed-in SmartPloy account changed. Reload before continuing.");
   }, []);
@@ -57,10 +64,13 @@ export default function SocialHub(props: {
     if (!props.expectedUserId) { setBlocked(true); setLoading(false); return; }
     const epoch = ++viewEpoch.current;
     try {
-      const [mine, network] = await Promise.all([getSocialMe(), getSocialConnections()]);
+      const [mine, network, reports] = await Promise.all([
+        getSocialMe(), getSocialConnections(), getMySocialReports(),
+      ]);
       await verifyAccount();
       if (!mounted.current || epoch !== viewEpoch.current) return;
-      setMe(mine); setConnections(network); setError("");
+      setMe(mine); setConnections(network);
+      setMyReports(reports.reports); setError("");
       if (mine.profile && !touchedProfile.current) {
         setHandle(mine.profile.handle);
         setDisplayName(mine.profile.display_name);
@@ -179,6 +189,18 @@ export default function SocialHub(props: {
     }, 15000);
     return () => { active = false; window.clearInterval(id); };
   }, [props.view, peer, blocked, verifyAccount]);
+
+  const reportMessage = (event: FormEvent, messageId: string) => {
+    event.preventDefault();
+    if (!reportingId || reportingId !== messageId) return;
+    void run(async () => {
+      await submitSocialMessageReport(
+        messageId, reportReason, reportNote, props.expectedUserId
+      );
+      setReportingId("");
+      setReportNote("");
+    }, "Report recorded for designated SmartPloy moderators. No automatic account restriction was applied.");
+  };
 
   const send = (event: FormEvent) => {
     event.preventDefault();
@@ -315,6 +337,16 @@ export default function SocialHub(props: {
             </div>
           ) : <p className="sp127-muted">No followers yet. Share your handle personally.</p>}
         </section>
+        {myReports.length ? <section className="sp127-card" aria-label="My message safety reports">
+          <div className="sp127-card-heading"><h3>My safety reports</h3>
+            <span className="sp127-count">{myReports.length}</span></div>
+          <p className="sp127-muted">These reports are visible to you and authorized moderators.</p>
+          {myReports.map(item => <div className="sp128-report-status" key={item.report_id}>
+            <Flag size={15} aria-hidden="true"/>
+            <span>{item.reason.replaceAll("_", " ")} · {item.state === "open" ?
+              "Awaiting review" : "Reviewed"}</span>
+          </div>)}
+        </section> : null}
         {connections?.blocked.length ? <section className="sp127-card">
           <h3>Blocked members</h3>
           {connections.blocked.map(person => <div className="sp127-connection"
@@ -356,6 +388,43 @@ export default function SocialHub(props: {
                 <p>{item.body}</p>
                 <time dateTime={item.created_at}>
                   {new Date(item.created_at).toLocaleString()}</time>
+                {!item.mine ? <>
+                  {myReports.some(report => report.message_id === item.message_id) ?
+                    <span className="sp128-message-reported"><Flag size={12}
+                      aria-hidden="true"/> Report submitted</span> :
+                    <button type="button" className="sp128-report-open" disabled={busy}
+                      aria-label={"Report message from " + peer}
+                      onClick={() => {
+                        setReportingId(current => current === item.message_id ? "" : item.message_id);
+                        setReportNote(""); setReportReason("spam");
+                      }}><Flag size={13} aria-hidden="true"/> Report</button>}
+                  {reportingId === item.message_id ? <form className="sp128-report-form"
+                    onSubmit={event => reportMessage(event, item.message_id)}>
+                    <label htmlFor={"sp128-reason-" + item.message_id}>Reason</label>
+                    <select id={"sp128-reason-" + item.message_id}
+                      value={reportReason} disabled={busy}
+                      onChange={event => setReportReason(event.target.value as SocialReportReason)}>
+                      <option value="spam">Spam</option>
+                      <option value="harassment">Harassment</option>
+                      <option value="scam">Scam or fraud</option>
+                      <option value="impersonation">Impersonation</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <label htmlFor={"sp128-note-" + item.message_id}>
+                      Additional information (optional)</label>
+                    <textarea id={"sp128-note-" + item.message_id} rows={2}
+                      maxLength={500} disabled={busy} value={reportNote}
+                      onChange={event => setReportNote(event.target.value)}/>
+                    <div className="sp128-report-form-actions">
+                      <button type="submit" className="primary-btn" disabled={busy}>
+                        {busy ? "Submitting…" : "Submit report"}</button>
+                      <button type="button" className="sp127-quiet" disabled={busy}
+                        onClick={() => setReportingId("")}>Cancel</button>
+                    </div>
+                    <p className="sp127-muted">Your report is available to designated
+                      moderators. Submission does not automatically block this member.</p>
+                  </form> : null}
+                </> : null}
               </article>
             ) : <p className="sp127-muted">No messages here yet. Say hello to start.</p>}
           </div>
@@ -367,6 +436,12 @@ export default function SocialHub(props: {
             <button className="primary-btn" type="submit" disabled={busy || !draft.trim()}>
               <Send size={17} aria-hidden="true"/>{busy ? "Sending…" : "Send"}</button>
           </form>
+          <div className="sp128-conversation-safety">
+            <button type="button" className="sp127-quiet" disabled={busy}
+              onClick={() => block({handle: peer}, true)}>
+              <ShieldCheck size={15} aria-hidden="true"/> Block @{peer}
+            </button>
+          </div>
           <p className="sp127-muted sp127-security"><LockKeyhole size={14} aria-hidden="true"/>
             Messages are private to the two SmartPloy accounts, but are not
             end-to-end encrypted. Do not share passwords or sensitive documents.</p>
@@ -377,6 +452,7 @@ export default function SocialHub(props: {
         </div>}
       </section>
     </div>}
+    {props.view === "network" ? <SocialSafetyInbox expectedUserId={props.expectedUserId}/> : null}
     <p className="sp127-legal"><ShieldCheck size={15} aria-hidden="true"/>
       This feature does not send job applications, expose your CV,
       connect to Facebook, WhatsApp or LinkedIn, or message employers automatically.</p>
