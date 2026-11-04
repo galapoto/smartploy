@@ -232,7 +232,7 @@
     },
     {
       "path": "web/browser-tests/onboarding.e2e.ts",
-      "git_blob_sha1": "c6bc0397fbf089a960a0db45ca7f3e8b60a0e7fc"
+      "git_blob_sha1": "26d0f456597f451e792924faab83fe6b49e068a3"
     },
     {
       "path": "web/scripts/package_companion.py",
@@ -248,11 +248,11 @@
     },
     {
       "path": "web/src/App.test.tsx",
-      "git_blob_sha1": "8fb676deda24299a16fd7b511dec6d4bd3c6f130"
+      "git_blob_sha1": "649ff4c90e9e29265fd50b845a7f21f83f206e92"
     },
     {
       "path": "web/src/App.tsx",
-      "git_blob_sha1": "823e47450d2b01cc0b3756e92055645ce19a08cf"
+      "git_blob_sha1": "6e9dad29a09f8c0be5672e6b3c55d844591ad515"
     },
     {
       "path": "web/src/application-profile.css",
@@ -308,7 +308,7 @@
     },
     {
       "path": "web/src/sp124-prismatic-shell.css",
-      "git_blob_sha1": "0c6f715cb0e354c9c294b51110cc8703ee431c77"
+      "git_blob_sha1": "e4cca8ef78432a63bbb91d4cb3b9c4df713d161b"
     },
     {
       "path": "web/src/sp124-prismatic-shell.test.ts",
