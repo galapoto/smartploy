@@ -32,7 +32,7 @@
   "source_artifacts": [
     {
       "path": ".github/workflows/ci.yml",
-      "git_blob_sha1": "b4db3fd6d10bf8304503950124e0ce62b8bf02d6"
+      "git_blob_sha1": "c0ec319ad2ebaaf921169d31c8d523ff0939034f"
     },
     {
       "path": "AGENTS.md",
@@ -139,12 +139,16 @@
       "git_blob_sha1": "561f574a856ca3f5d997bb9698b2f44869adb94b"
     },
     {
+      "path": "docs/SP122_COMPANION_DISTRIBUTION.md",
+      "git_blob_sha1": "102952d28d509233dc50aa932b2f3f5edc7ee502"
+    },
+    {
       "path": "migrations/030_application_profile_questions.sql",
       "git_blob_sha1": "992659d60133ac8c4fa0ac824e7dacb2341f114b"
     },
     {
       "path": "scripts/verify_sp115_integrated_source.py",
-      "git_blob_sha1": "cc6217188ee39966efe5a8f61bf9d8816c0479cb"
+      "git_blob_sha1": "ed29c12907ad363c2489dda8d9401e355ee5601f"
     },
     {
       "path": "smartploy/account_erasure.py",
@@ -212,7 +216,7 @@
     },
     {
       "path": "tests/test_sp115_integrated_source.py",
-      "git_blob_sha1": "58984cd5bdb5bbe43c4a6cf025116513398feb9a"
+      "git_blob_sha1": "9037ca01c7c0d0c42f4505df602b0ac41d0d68c0"
     },
     {
       "path": "tests/test_sp120_private_assisted.py",

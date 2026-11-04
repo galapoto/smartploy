@@ -83,6 +83,7 @@ MANDATORY = frozenset({
     "docs/SP121_CHROME_GENERIC_ASSISTED.md",
     "scripts/verify_sp115_integrated_source.py",
     "tests/test_browser_pdf_attachment_contract.py",
+    "docs/SP122_COMPANION_DISTRIBUTION.md",
 })
 
 
