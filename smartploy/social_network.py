@@ -130,6 +130,12 @@ class MemorySocialRepository:
                 self._handles.pop(previous.handle, None)
             self._profiles[owner] = SocialPerson(owner, handle, name, discoverable)
             self._handles[handle] = owner
+            if not discoverable:
+                # Revocation is not a visual toggle. Former mutual followers
+                # must explicitly reconnect after a future opt-in.
+                self._follows = {
+                    pair for pair in self._follows if owner not in pair
+                }
             return {"profile": self._profiles[owner].public(), "opted_in": discoverable}
 
     def _person(self, owner: str, handle: str) -> SocialPerson:
@@ -310,6 +316,12 @@ class PostgresSocialRepository:
                     (owner, handle, name, discoverable),
                 )
                 row = cur.fetchone()
+                if not discoverable:
+                    cur.execute(
+                        """DELETE FROM smartploy_social_follows
+                           WHERE follower_id=%s OR followed_id=%s""",
+                        (owner, owner),
+                    )
         except errors.UniqueViolation as exc:
             raise SocialConflict("This handle is unavailable") from exc
         return {"profile": {"handle": row[0], "display_name": row[1],
