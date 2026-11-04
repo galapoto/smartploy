@@ -183,8 +183,14 @@ class MemorySocialRepository:
                     following.append(entry)
                 if dst == owner:
                     followers.append(entry)
+            blocked = []
+            for blocker, target in sorted(self._blocks):
+                person = self._profiles.get(target)
+                if blocker == owner and person is not None:
+                    blocked.append({"handle": person.handle,
+                                    "display_name": person.display_name})
             return {"following": following[:100], "followers": followers[:100],
-                    "private": True}
+                    "blocked": blocked[:100], "private": True}
 
     def block(self, owner: str, handle: str, value: bool = True) -> dict[str, object]:
         with self._lock:
@@ -361,7 +367,7 @@ class PostgresSocialRepository:
 
     def connections(self, owner: str) -> dict[str, object]:
         result: dict[str, object] = {"following": [], "followers": [],
-                                     "private": True}
+                                     "blocked": [], "private": True}
         with connect(self.dsn) as conn, conn.cursor() as cur:
             for direction, field in [("follower_id", "following"),
                                      ("followed_id", "followers")]:
@@ -384,6 +390,16 @@ class PostgresSocialRepository:
                 )
                 result[field] = [{"handle": r[0], "display_name": r[1],
                                   "discoverable": True, "mutual": r[2]}
+                                 for r in cur.fetchall()]
+            cur.execute(
+                """SELECT p.handle,p.display_name
+                   FROM smartploy_social_blocks b
+                   JOIN smartploy_social_profiles p ON p.user_id=b.blocked_id
+                   WHERE b.blocker_id=%s
+                   ORDER BY b.created_at DESC LIMIT 100""",
+                (owner,),
+            )
+            result["blocked"] = [{"handle": r[0], "display_name": r[1]}
                                  for r in cur.fetchall()]
         return result
 
