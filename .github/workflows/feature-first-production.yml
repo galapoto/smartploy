@@ -1,0 +1,121 @@
+name: SmartPloy Feature-First Production
+
+# A qualifying merge triggers immediate production promotion, not a batch
+# application release. Never run production secrets on PR or forked code.
+on:
+  workflow_run:
+    workflows: ["Smartploy CI"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  qualify:
+    name: Exact main-push CI admission
+    if: >-
+      ${{ github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.verify.outputs.sha }}
+      ci_run_id: ${{ steps.verify.outputs.ci_run_id }}
+      qualified: ${{ steps.verify.outputs.qualified }}
+    steps:
+      - name: Check out exact immutable main commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact successful push-to-main jobs
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 -B scripts/feature_first_ci_attestation.py
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$SHA" origin/main
+          test "$(git rev-parse HEAD)" = "$SHA"
+          echo "FEATURE_FIRST_EXACT_MAIN_CI_VERIFIED=true"
+
+  promote:
+    name: Native-gated automatic per-feature production promotion
+    # The deploy opt-in is an administrator-set *repository* variable, never
+    # supplied by PR content. No runner/SSH secrets are used while disabled.
+    needs: [qualify]
+    if: >-
+      ${{ needs.qualify.outputs.qualified == 'true' &&
+          vars.SMARTPLOY_FEATURE_FIRST_AUTO_DEPLOY == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: smartploy-production
+      url: https://smartploy.komplyint.fi/
+    steps:
+      - name: Fetch approved immutable production script
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.qualify.outputs.sha }}
+          persist-credentials: false
+      - name: Guarded SSH handoff to existing SmartPloy deployment
+        shell: bash
+        env:
+          SHA: ${{ needs.qualify.outputs.sha }}
+          SSH_HOST: ${{ vars.SMARTPLOY_PRODUCTION_HOST }}
+          SSH_USER: ${{ vars.SMARTPLOY_PRODUCTION_SSH_USER }}
+          SSH_PORT: ${{ vars.SMARTPLOY_PRODUCTION_SSH_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.SMARTPLOY_PRODUCTION_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SMARTPLOY_PRODUCTION_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || exit 41
+          [[ "$SSH_HOST" =~ ^[a-zA-Z0-9.:-]+$ && -n "$SSH_HOST" ]] || {
+            echo "FEATURE_FIRST_HOLD: production SSH host not configured" >&2
+            exit 41
+          }
+          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || {
+            echo "FEATURE_FIRST_HOLD: production SSH user not configured" >&2
+            exit 41
+          }
+          [[ "$SSH_PORT" =~ ^[0-9]{1,5}$ ]] || {
+            echo "FEATURE_FIRST_HOLD: production SSH port not configured" >&2
+            exit 41
+          }
+          (( SSH_PORT >= 1 && SSH_PORT <= 65535 )) || exit 41
+          [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]] || {
+            echo "FEATURE_FIRST_HOLD: pinned SSH identity/host key missing" >&2
+            exit 41
+          }
+
+          tmp="$(mktemp -d)"
+          trap 'rm -rf -- "$tmp"' EXIT
+          chmod 700 "$tmp"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$tmp/key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$tmp/known_hosts"
+          chmod 600 "$tmp/key" "$tmp/known_hosts"
+          ssh -F /dev/null \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$tmp/known_hosts" \
+            -o ConnectTimeout=12 \
+            -i "$tmp/key" -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo -n bash -se -- '$SHA'" \
+            < deploy/personal/scripts/feature-first-remote-promotion.sh
+
+      - name: Record evidence boundary
+        run: |
+          echo "FEATURE_FIRST_DEPLOYMENT_SCRIPT_FINISHED=true"
+          echo "FEATURE_FIRST_RELEASE_SHA=${{ needs.qualify.outputs.sha }}"
+          echo "FEATURE_FIRST_GITHUB_CI_RUN=${{ needs.qualify.outputs.ci_run_id }}"
+          echo "FEATURE_FIRST_USER_VERIFIED=not_proven"
+          echo "Never mark SHIPPED until real signed-in feature acceptance is recorded."
