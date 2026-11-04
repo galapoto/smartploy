@@ -276,11 +276,11 @@
     },
     {
       "path": "web/src/ApplicationStudio.test.tsx",
-      "git_blob_sha1": "39eca927cd2f6794a9c08f98fd1780e592d4d3a5"
+      "git_blob_sha1": "ad0563537a9e67d79bb837d5314501d66b074f47"
     },
     {
       "path": "web/src/ApplicationStudio.tsx",
-      "git_blob_sha1": "140dfa27924eb0e94193c098c1c3454c84225ff6"
+      "git_blob_sha1": "b3b97a16ceb438db20b620630db1a0d01418e512"
     },
     {
       "path": "web/src/AuthorizedAutoApplyBatch.tsx",
@@ -292,7 +292,7 @@
     },
     {
       "path": "web/src/LocalPlaywrightAssist.tsx",
-      "git_blob_sha1": "df0e4850e64ab17e4978cbc68c92ef9ae91e91c9"
+      "git_blob_sha1": "d6f3365f6bc66e8ca4aa62da64372624b0bc48af"
     },
     {
       "path": "web/src/localPlaywrightBridge.ts",
@@ -308,7 +308,7 @@
     },
     {
       "path": "web/src/sp124-prismatic-shell.css",
-      "git_blob_sha1": "e4cca8ef78432a63bbb91d4cb3b9c4df713d161b"
+      "git_blob_sha1": "c3cef6ee3ca23aca32db14dfd3ff2557c4347788"
     },
     {
       "path": "web/src/sp124-prismatic-shell.test.ts",
