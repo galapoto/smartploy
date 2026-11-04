@@ -1175,7 +1175,7 @@ test("SP127 new network navigation is private until an explicit opted-in save", 
   await expect(page.getByRole("heading", {name:"Your professional handle"})).toBeVisible();
   await expect(page.getByText("Private", {exact:true})).toBeVisible();
   await expect(page.getByText(/It starts private/)).toBeVisible();
-  await page.getByPlaceholder("alex_jobs").fill("example_jobs");
+  await page.getByRole("textbox", {name:"Handle"}).fill("example_jobs");
   await page.getByPlaceholder("Your professional display name").fill("Example Professional");
   await page.getByRole("checkbox", {name:/Allow other signed-in members/}).check();
   await page.getByRole("button", {name:/Save networking preferences/}).click();
