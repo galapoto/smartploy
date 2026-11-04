@@ -3,7 +3,9 @@
 **Status: source candidate, not commissioned or live.** This PR does not grant
 production credentials or silently merge other PRs. It implements a
 least-privilege, **feature-by-feature** CI → production route *after* the
-required trust gates. The current live running SHA is unknown in this session.
+required trust gates. The current live running SHA is not independently attested through the host
+in this session. The public `/healthz` revision observed 2026-11-04 was
+`804747bd9f01`, a read-only report, not signed host/image proof.
 
 ## Trigger and product outcome
 
@@ -19,6 +21,16 @@ either `feature-first-auto-eligible-sha` (reviewed low-risk feature) or
 `feature-first-approved-sha` (explicit high-risk feature). The operator may
 choose stricter GitHub environment protection. No worker/pr build can write
 these receipts or run production code.
+
+**Safe replay after commissioning:** If a feature's verified main-push CI
+finished before the deployment connection became available, go to GitHub →
+Actions → SmartPloy Feature-First Production → Run workflow. Select `main`
+and enter the already-merged exact 40-character `release_sha`. This retries
+**deployment of that specific feature** without manufacturing a new commit.
+The workflow independently looks up an actual successful main-push `Smartploy
+CI` run for precisely that SHA, confirms all five real jobs, verifies main
+ancestry, then still demands native Woodpecker and independent release
+approval. It never accepts a successful manual-only CI run as release proof.
 
 After qualification, reuse the host's original
 `deploy/personal/scripts/deploy.sh` for preflight, clean immutable main
@@ -53,11 +65,18 @@ GitHub/ChatGPT.
    separate ED25519 deploy key. Its `authorized_keys` entry must use
    `restrict,command="/usr/local/libexec/smartploy-feature-first-ssh-gate"`.
    The forced command accepts only `feature-first-deploy <40 hex SHA>`.
-   Only the exact installed root dispatcher is permitted via sudo, using
-   a narrowly reviewed `/etc/sudoers.d/smartploy-feature-first` entry,
-   not `sudo bash`, `sudo -i`, arbitrary Git, arbitrary Docker, or wildcard
-   shell commands. Verify with `visudo -c` and a deliberate invalid SSH
-   command (expected RED).
+   Keep the service user's home, `.ssh`, and `authorized_keys` **root-owned
+   and non-writable by the service account**. Disable password login,
+   supplementary keys, user-controlled sshd environment and any writable
+   alternate AuthorizedKeysFile. Prefer sshd `Match User smartploy-cd`
+   with `ForceCommand` set to the same audited gate and disabled TTY,
+   agent/X11/TCP forwarding and interactive authentication. Run `sshd -t`
+   before any SSH daemon reload and preserve working admin access.
+   Only the exact installed root dispatcher is permitted via sudo via a
+   narrowly reviewed `/etc/sudoers.d/smartploy-feature-first` entry.
+   **Never grant** `sudo bash`, `sudo -i`, arbitrary Git, Docker socket or shell.
+   Verify with `visudo -c`, an invalid SHA and alternate-key login attempt
+   (expected RED), and a specifically approved test SHA (expected GREEN).
 4. GitHub Settings → Environments → `smartploy-production`: restrict to
    protected `main`, add any required independent approvers supported by
    the repository's GitHub plan, and store the **environment-specific** secrets
@@ -88,9 +107,10 @@ GitHub/ChatGPT.
 
 ## Trust, failure, and rollback
 
-- `workflow_run` is triggered from CI *completion*. Admission rejects PR,
-  fork, manual dispatch, skipped/failing jobs and wrong SHA. Do not count
-  PR-head CI as post-merge CI.
+- `workflow_run` triggers from successful main CI *completion*, while a
+  reviewed `workflow_dispatch` may retry an exact SHA with **independent
+  historic main-push CI lookup**. Admission rejects PR/fork/dispatch-only CI,
+  skipped/failing jobs and mismatching SHA. Never count PR-head CI as post-merge.
 - The secret-bearing job does **not** check out or execute repo scripts. It
   connects to the forced-command SSH identity, which has no arbitrary root
   shell, SSH forwarding, pty or agent-forwarding privileges.
