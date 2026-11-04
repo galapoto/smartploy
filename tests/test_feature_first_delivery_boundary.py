@@ -79,7 +79,10 @@ def test_manual_replay_is_exact_sha_and_does_not_grant_approval():
     assert "github.ref == 'refs/heads/main'" in workflow
     assert "id: source" in workflow
     assert "sha=$SHA" in workflow
-    assert "ref: ${{ steps.source.outputs.sha }}" in workflow
+    assert "ref: main" in workflow
+    assert "ref: ${{ steps.source.outputs.sha }}" not in workflow
+    assert "git merge-base --is-ancestor" in workflow
+    assert "never execute candidate code" in workflow
     assert "SMARTPLOY_REQUESTED_SHA: ${{ steps.source.outputs.sha }}" in workflow
     assert "github.event.workflow_run.conclusion == 'success'" in workflow
     assert "needs.qualify.outputs.qualified == 'true'" in workflow
