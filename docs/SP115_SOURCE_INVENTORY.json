@@ -144,7 +144,7 @@
     },
     {
       "path": "scripts/verify_sp115_integrated_source.py",
-      "git_blob_sha1": "f1d37fb8c0c33b2576fba3a086a455aa4a0c01c6"
+      "git_blob_sha1": "50193a3a370c43b0595bd5a8234df323ea0fc135"
     },
     {
       "path": "smartploy/account_erasure.py",
@@ -208,7 +208,7 @@
     },
     {
       "path": "tests/test_sp115_integrated_source.py",
-      "git_blob_sha1": "0e084fcc481e60c515e2285bcf6a1b9634d8fbc9"
+      "git_blob_sha1": "02cb46fe7b801c8b3c7252dc9690bff7a4b30abd"
     },
     {
       "path": "tests/test_sp120_private_assisted.py",
