@@ -4,7 +4,7 @@ import {
   ChevronRight, Clock3, Database, Download, FileCheck2, FileText, Globe2,
   LayoutDashboard, ListFilter, LockKeyhole, MapPin, Menu, Moon, Plus, RefreshCw, Sun,
   Search, Settings2, ShieldCheck, Sparkles, Target, Trash2, UploadCloud,
-  WandSparkles, X, ChartNoAxesColumn, AlertCircle, type LucideIcon
+  WandSparkles, X, PanelLeftClose, PanelLeftOpen, ChartNoAxesColumn, AlertCircle, type LucideIcon
 } from "lucide-react";
 import {
   addManualJob, approveFact, createFact, deleteCV, deleteFact, deletePrivateSavedJob, getApplications,
@@ -195,6 +195,16 @@ export default function App() {
   const [cvPreview, setCVPreview] = useState(false);
   const [jobDialog, setJobDialog] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return window.localStorage.getItem("smartploy-sidebar-compact-v1") === "true"; }
+    catch { return false; }
+  });
+  const toggleSidebar = () => setSidebarCollapsed(previous => {
+    const next = !previous;
+    try { window.localStorage.setItem("smartploy-sidebar-compact-v1", String(next)); }
+    catch { /* Browsers with disabled storage can still collapse this session. */ }
+    return next;
+  });
   const [newFactType, setNewFactType] = useState("skill");
   const [newFactValue, setNewFactValue] = useState("");
   const [confirmFact, setConfirmFact] = useState(false);
@@ -1178,26 +1188,37 @@ export default function App() {
     </section>
   </aside>;
 
-  return <div className="smartploy-app">
+  return <div className={cx("smartploy-app", sidebarCollapsed && "sp126-sidebar-collapsed")}>
     <a className="skip-to-content" href="#smartploy-main">Skip to main content</a>
     <input ref={uploadRef} type="file" className="visually-hidden" aria-label="Select CV to upload" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => void onCVUpload(event)} />
     <button className={cx("sidebar-scrim", mobileNav && "visible")} type="button" onClick={() => setMobileNav(false)} aria-label="Close navigation" />
-    <aside className={cx("sidebar", mobileNav && "open")}>
+    <aside id="smartploy-sidebar" aria-label="SmartPloy sidebar" className={cx("sidebar", mobileNav && "open")}>
       <button className="site-brand" type="button" onClick={() => navigate("dashboard")} aria-label="SmartPloy dashboard">
         <BrandMark className="site-brand-mark" /><span><strong>SmartPloy</strong><small>Job intelligence for Finland</small></span>
       </button>
+      <button type="button" className="sp126-desktop-collapse" onClick={toggleSidebar}
+        aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-controls="smartploy-sidebar" aria-expanded={!sidebarCollapsed}
+        title={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}>
+        {sidebarCollapsed ? <PanelLeftOpen size={19} aria-hidden="true"/> :
+          <PanelLeftClose size={19} aria-hidden="true"/>}
+      </button>
+      <button type="button" className="sp126-mobile-close" onClick={() => setMobileNav(false)}
+        aria-label="Close menu" aria-controls="smartploy-sidebar" aria-expanded={mobileNav}>
+        <X size={19} aria-hidden="true"/>
+      </button>
       <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-label">WORKSPACE</div>
-        {NAV.slice(0, 7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span className="nav-item-copy"><span>{item.label}</span>{item.id === "apply" ? <small aria-hidden="true" className="nav-item-hint">Manual · Assisted · Auto</small> : null}</span></button>; })}
+        {NAV.slice(0, 7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} title={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span className="nav-item-copy"><span>{item.label}</span>{item.id === "apply" ? <small aria-hidden="true" className="nav-item-hint">Manual · Assisted · Auto</small> : null}</span></button>; })}
         <div className="nav-divider" />
         <div className="nav-label">MANAGE</div>
-        {NAV.slice(7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
+        {NAV.slice(7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} title={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
       </nav>
       <div className="sidebar-bottom"><span className="country-chip"><span className="flag-finland" aria-hidden="true" /> Finland</span><span className="session-profile"><span className="avatar">{avatar}</span><span><strong>{session?.email ? session.email.split("@")[0] : "Your workspace"}</strong><small>{session?.authenticated ? "Signed in" : "Private workspace"}</small></span></span></div>
     </aside>
     <div className="main-column">
       <header className="site-header">
-        <button className="icon-btn menu-toggle" aria-label="Open menu" type="button" onClick={() => setMobileNav(!mobileNav)}><Menu size={21} /></button>
+        <button className="icon-btn menu-toggle" aria-label="Open menu" aria-controls="smartploy-sidebar" aria-expanded={mobileNav} type="button" onClick={() => setMobileNav(true)}><Menu size={21} /></button>
         <div className="header-search"><Search size={19} /><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); if (event.target.value) setPage("jobs"); }} placeholder="Search jobs, companies or locations…" aria-label="Search jobs" /></div>
         <span className="header-country"><MapPin size={16} /> Finland</span>
         <div className="header-tools">
@@ -1240,6 +1261,8 @@ export default function App() {
           <FinlandPageIdentity />
           {/* Keep CV -> Manual/Assisted/Auto directly after the compact cover.
               No lost actions, secondary landing page, or duplicate mode selector. */}
+          <div className="sp126-dashboard-layout">
+            <div className="sp126-dashboard-main">
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
             onOpenApplications={() => navigate("applications")}
@@ -1263,8 +1286,11 @@ export default function App() {
             <Stat label="Awaiting review" value={counts.awaiting_review} note="Drafts, not submitted" icon={Clock3} tone="violet" onClick={() => navigate("applications")} />
             <Stat label="Actually submitted" value={counts.actually_submitted} note="Evidence of submission" icon={CheckCircle2} tone="green" onClick={() => navigate("applications")} />
           </div>
-          <div className="dashboard-grid"><div>{jobsSection}</div>{sidePanel}</div>
-        </> : null}
+          <div className="sp126-job-results">{jobsSection}</div>
+            </div>
+            <div className="sp126-dashboard-aside">{sidePanel}</div>
+          </div>
+        </> : null>
         {page !== "dashboard" ? <>
           <FinlandPageIdentity compact />
           <ReleaseStatus apiRevision={health?.release_revision} />

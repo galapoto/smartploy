@@ -1,0 +1,197 @@
+/* SP126: screenshot-directed, original design vocabulary. No external copied assets.
+   Screenshot contract: premium dark, distinct mode actions, collapsible rail and
+   simultaneous CV/workflow + profile on widescreen. Light mode remains usable. */
+.smartploy-app {--sp126-violet:#7356e9;--sp126-teal:#22c7c2;--sp126-blue:#338af5}
+.smartploy-app .sp126-dashboard-layout {
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(276px,318px);
+  gap:clamp(13px,1.5vw,22px);align-items:start;min-width:0;
+}
+.smartploy-app .sp126-dashboard-main,.smartploy-app .sp126-dashboard-aside{min-width:0}
+.smartploy-app .sp126-dashboard-main{display:grid;gap:12px}
+.smartploy-app .sp126-dashboard-main > .flow-start {
+  width:100%;min-width:0;max-width:none;
+  padding:0;border:0;background:transparent;box-shadow:none;border-radius:0
+}
+.smartploy-app .sp126-dashboard-main > .flow-start::before {display:none}
+.smartploy-app .sp126-dashboard-main :is(.flow-start-heading,.flow-start-method-heading) {max-width:none}
+.smartploy-app .sp126-dashboard-main .flow-start-masthead{margin-bottom:14px}
+.smartploy-app .sp126-dashboard-main .flow-start-progress {margin-bottom:9px}
+.smartploy-app .sp126-dashboard-main .flow-start-ready {margin:9px 0}
+.smartploy-app .sp126-dashboard-main .flow-start-grid.flow-start-grid-methods {gap:12px}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card {
+ min-height:216px;display:grid;align-content:start;gap:8px;
+ border-radius:15px;padding:17px 15px 13px;
+}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card
+ .flow-card-cta{margin-top:auto;min-width:100%;font-size:12px}
+.smartploy-app .sp126-dashboard-main .flow-start-workspaces{margin-top:12px}
+.smartploy-app .sp126-dashboard-main .flow-start-browse{margin-top:10px}
+.smartploy-app .sp126-dashboard-main .stats-grid{margin:0;gap:10px}
+.smartploy-app .sp126-dashboard-main .stat-card{padding:14px 12px;border-radius:13px}
+.smartploy-app .sp126-dashboard-main .stat-copy strong {font-size:clamp(22px,1.7vw,29px)}
+.smartploy-app .sp126-dashboard-aside .dashboard-side{display:grid;gap:13px}
+.smartploy-app .sp126-dashboard-aside .panel{padding:17px;border-radius:17px}
+.smartploy-app .sp126-dashboard-aside .source-overview{margin-top:0}
+.smartploy-app .sp126-job-results {min-width:0}
+/* Menu stays discoverable at all widths. Desktop compact state persists per browser. */
+.smartploy-app .sp126-desktop-collapse,.smartploy-app .sp126-mobile-close {
+ display:grid;place-items:center;flex:none;align-self:flex-end;
+ width:39px;height:39px;padding:8px;background:transparent;
+ color:#52697e;border:1px solid #d1dce9;border-radius:11px;
+ cursor:pointer;transition:background .16s ease,border-color .16s ease
+}
+.smartploy-app .sp126-desktop-collapse{margin:-14px 4px 12px 0}
+.smartploy-app .sp126-mobile-close{display:none}
+.smartploy-app .sp126-desktop-collapse:hover{background:#e9f2fa}
+.smartploy-app.sp126-sidebar-collapsed{grid-template-columns:76px minmax(0,1fr)}
+.smartploy-app.sp126-sidebar-collapsed .sidebar{padding-inline:10px}
+.smartploy-app.sp126-sidebar-collapsed .sidebar .site-brand{padding:0 1px 12px;justify-content:center}
+.smartploy-app.sp126-sidebar-collapsed .sidebar .site-brand span,
+.smartploy-app.sp126-sidebar-collapsed .sidebar .nav-item span,
+.smartploy-app.sp126-sidebar-collapsed .sidebar .nav-label,
+.smartploy-app.sp126-sidebar-collapsed .sidebar .nav-divider,
+.smartploy-app.sp126-sidebar-collapsed .sidebar-bottom {display:none}
+.smartploy-app.sp126-sidebar-collapsed .sidebar .nav-item{justify-content:center;padding:12px}
+.smartploy-app.sp126-sidebar-collapsed .sidebar .site-brand-mark{width:42px;height:42px;flex-basis:42px}
+.smartploy-app.sp126-sidebar-collapsed .sp126-desktop-collapse{align-self:center;margin:0 0 17px}
+.smartploy-app :is(.sp126-desktop-collapse,.sp126-mobile-close):focus-visible{
+  outline:3px solid #89caff;outline-offset:3px
+}
+/* Keep complete identity for accessibility but treat the dashboard as the
+   real working environment, not an interstitial logo page. */
+.smartploy-app .sp99-identity:not(.compact) {
+  padding:2px 2px 7px;margin:0 0 8px;min-height:0
+}
+.smartploy-app .sp99-identity:not(.compact) .sp99-identity-mark {
+  width:39px;height:39px;flex-basis:39px
+}
+.smartploy-app .sp99-identity:not(.compact) .sp99-identity-text strong{
+  font-size:19px
+}
+.smartploy-app .sp99-identity:not(.compact) > p{font-size:11px}
+/* Genuine vivid action hierarchy, with gradients used only for current action
+   and selections rather than turning every surface into a button. */
+html[data-smartploy-theme="dark"] .smartploy-app {
+  --sp125-bg:#060b17;--sp125-rail:#080f20;
+  --sp125-card:#111e33;--sp125-raised:#172740;
+  --sp125-border:#33455f;--sp125-muted:#b8cbe3;
+  background:var(--sp125-bg)
+}
+html[data-smartploy-theme="dark"],html[data-smartploy-theme="dark"] body {
+  background:#060b17
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sidebar{
+  background:linear-gradient(155deg,#0a132a 0%,#0b172e 64%,#141337 100%);
+  border-color:#27344d
+}
+html[data-smartploy-theme="dark"] .smartploy-app .site-header{
+  background:rgba(8,15,31,.96);border-color:#20334b
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.active{
+  background:linear-gradient(105deg,#5037df,#1660db);
+  border-color:#7774f0;box-shadow:0 8px 18px -11px #7052e9;
+  color:#fff
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.active::before{background:#b9f5ff}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.sp126-desktop-collapse,.sp126-mobile-close){
+  border-color:#40516c;color:#dae9fc;background:#1a2b42
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.sp126-desktop-collapse,.sp126-mobile-close):hover{background:#264563}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-progress li.current{
+  background:linear-gradient(110deg,#4930bd,#8058f0);border-color:#b29bfb;color:#fff;
+  box-shadow:0 6px 19px -12px #6e50f0
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-method-heading h2{
+  color:#f8faff
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+  .flow-start-card[data-flow-mode="manual"]{
+  background:linear-gradient(150deg,#1b2c49,#112039);
+  border:1px solid #536988;--flow-tone:#68a9ff
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+  .flow-start-card[data-flow-mode="assisted"]{
+  background:linear-gradient(150deg,#2a2054,#171d3b);
+  border:1px solid #a981ef;--flow-tone:#c4a6ff;
+  box-shadow:0 10px 25px -20px #a45ff9
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+  .flow-start-card[data-flow-mode="automatic"]{
+  background:linear-gradient(150deg,#123946,#11263d);
+  border:1px solid #3eaea9;--flow-tone:#72e8d9
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+  .flow-start-card .flow-card-cta{justify-content:space-between;padding:9px 13px}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+  .flow-start-card[data-flow-mode="assisted"] .flow-card-cta{
+  background:linear-gradient(110deg,#4732df,#9055ee);border-color:#a38aff
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+  .flow-start-card[data-flow-mode="automatic"] .flow-card-cta{
+  background:#134f59;border-color:#3dbdbe
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+  .flow-start-card[data-flow-mode="assisted"] > svg:first-child{background:#453390}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+  .flow-start-card[data-flow-mode="automatic"] > svg:first-child{background:#19646a}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-browse-button{
+ background:linear-gradient(90deg,#d2e7ff,#e7f0ff);
+ border-color:#b9d3f8;color:#102240
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-browse-button :is(strong,small,svg){
+ color:#163052
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-browse-button:hover{
+ background:#ecf5ff;color:#132747
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-workspaces .flow-start-browse-button{
+ background:#1a2b45;border-color:#38557a;color:#e6f4ff
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-workspaces .flow-start-browse-button :is(strong,small,svg){
+ color:#e0edfb
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main :is(.stat-card,.panel),
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-aside .panel{
+ background:linear-gradient(150deg,#14233d,#0e1b2e);
+ border-color:#344864;box-shadow:0 9px 25px -23px #000
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-aside .small-heading h3{
+ color:#f2f8ff
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start {
+ color:#eaf4ff;background:transparent;border:0
+}
+@media(max-width:1399px){
+ .smartploy-app .sp126-dashboard-layout{grid-template-columns:minmax(0,1fr)}
+ .smartploy-app .sp126-dashboard-aside .dashboard-side{
+   display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px
+ }
+ .smartploy-app .sp126-dashboard-aside .source-overview{grid-column:1/-1}
+}
+@media(max-width:950px){
+ .smartploy-app .sp126-dashboard-main .stats-grid{
+   grid-template-columns:repeat(2,minmax(0,1fr))
+ }
+}
+@media(max-width:850px){
+ .smartploy-app.sp126-sidebar-collapsed{display:block}
+ .smartploy-app.sp126-sidebar-collapsed .sidebar{padding:18px 14px}
+ .smartploy-app.sp126-sidebar-collapsed .sidebar .site-brand{justify-content:flex-start}
+ .smartploy-app.sp126-sidebar-collapsed .sidebar .site-brand span,
+ .smartploy-app.sp126-sidebar-collapsed .sidebar .nav-item span,
+ .smartploy-app.sp126-sidebar-collapsed .sidebar .nav-label,
+ .smartploy-app.sp126-sidebar-collapsed .sidebar .nav-divider,
+ .smartploy-app.sp126-sidebar-collapsed .sidebar-bottom{display:initial}
+ .smartploy-app.sp126-sidebar-collapsed .sidebar .nav-item{justify-content:flex-start}
+ .smartploy-app .sp126-desktop-collapse{display:none}
+ .smartploy-app .sp126-mobile-close{display:grid;margin:0 0 12px}
+}
+@media(max-width:630px){
+ .smartploy-app .sp126-dashboard-aside .dashboard-side{grid-template-columns:1fr}
+ .smartploy-app .sp126-dashboard-main .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .smartploy-app .sp126-dashboard-main .flow-start-grid.flow-start-grid-methods{grid-template-columns:1fr}
+ .smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card{min-height:0}
+}
+@media(prefers-reduced-motion:reduce){
+ .smartploy-app .sp126-desktop-collapse{transition:none}
+}
