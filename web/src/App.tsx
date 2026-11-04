@@ -1442,6 +1442,11 @@ export default function App() {
     <button className={cx("sidebar-scrim", mobileNav && "visible")} type="button" onClick={() => setMobileNav(false)} aria-label="Close navigation" />
     <aside id="smartploy-sidebar" className={cx("sidebar", mobileNav && "open")}
       aria-label="SmartPloy navigation">
+      {mobileNav ? <button type="button" className="sp124-mobile-close"
+        aria-label="Close menu" title="Close navigation menu"
+        onClick={() => setMobileNav(false)}>
+        <X size={20} aria-hidden="true" />
+      </button> : null}
       <button type="button" className="sp124-sidebar-toggle"
         aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         aria-controls="smartploy-sidebar"
@@ -1466,10 +1471,10 @@ export default function App() {
     </aside>
     <div className="main-column">
       <header className="site-header">
-        <button className="icon-btn menu-toggle" aria-label={mobileNav ? "Close menu" : "Open menu"}
+        <button className="icon-btn menu-toggle" aria-label="Open menu"
           type="button" aria-expanded={mobileNav} aria-controls="smartploy-sidebar"
-          onClick={() => setMobileNav((value) => !value)}>
-          {mobileNav ? <X size={21} aria-hidden="true"/> : <Menu size={21} aria-hidden="true"/>}
+          onClick={() => setMobileNav(true)}>
+          <Menu size={21} aria-hidden="true"/>
         </button>
         <div className="header-search"><Search size={19} /><input type="search" value={search} onChange={(event) => {
           const next = event.target.value;

@@ -1448,7 +1448,10 @@ test("SP124 Prismatic: zoom-equivalent CSS width uses mobile drawer with no side
   await expect(drawer).toHaveClass(/open/);
   await expect(page.getByRole("navigation", {name:"Main navigation"})
     .getByRole("button", {name:"Apply for jobs"})).toBeVisible();
-  await page.getByRole("button", {name:"Close menu"}).click();
+  // Header controls are behind the drawer at 850px. Close must live in the drawer.
+  const closeInDrawer = drawer.getByRole("button", {name:"Close menu"});
+  await expect(closeInDrawer).toBeVisible();
+  await closeInDrawer.click();
   await expect(drawer).not.toHaveClass(/open/);
   const overflow = await page.evaluate(() =>
     document.documentElement.scrollWidth > window.innerWidth + 1);
