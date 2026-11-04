@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS smartploy_social_reports (
   reviewed_at TIMESTAMPTZ,
   reviewed_by TEXT REFERENCES smartploy_users(user_id) ON DELETE SET NULL,
   CHECK (reporter_id <> reported_user_id),
-  -- A reviewed moderation case survives operator account deletion;
+  -- A reviewed moderation case survives operator account deletion.
   -- reviewed_by is nullable after its FK ON DELETE SET NULL.
   CHECK ((state='open' AND reviewed_at IS NULL AND reviewed_by IS NULL)
      OR (state='reviewed' AND reviewed_at IS NOT NULL)),
