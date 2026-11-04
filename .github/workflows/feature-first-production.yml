@@ -41,8 +41,11 @@ jobs:
           python3 -B scripts/feature_first_ci_attestation.py
           SHA="${{ github.event.workflow_run.head_sha }}"
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$SHA" origin/main
+          # fetch-depth: 0 already brought the origin/main history. Do not
+          # issue an unauthenticated second fetch in this private repository:
+          # checkout intentionally erased persisted GitHub credentials.
+          git show-ref --verify --quiet refs/remotes/origin/main
+          git merge-base --is-ancestor "$SHA" refs/remotes/origin/main
           test "$(git rev-parse HEAD)" = "$SHA"
           echo "FEATURE_FIRST_EXACT_MAIN_CI_VERIFIED=true"
 
