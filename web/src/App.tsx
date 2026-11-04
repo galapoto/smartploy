@@ -1290,7 +1290,7 @@ export default function App() {
             </div>
             <div className="sp126-dashboard-aside">{sidePanel}</div>
           </div>
-        </> : null>
+        </> : null}
         {page !== "dashboard" ? <>
           <FinlandPageIdentity compact />
           <ReleaseStatus apiRevision={health?.release_revision} />
