@@ -18,7 +18,7 @@ def clean_db():
     PostgresJobRepository(DSN).migrate()
     with connect(DSN) as conn:
         with conn.cursor() as cur:
-            cur.execute("TRUNCATE smartploy_oidc_state, smartploy_sessions, smartploy_user_profiles, smartploy_user_identities, smartploy_users")
+            cur.execute("TRUNCATE smartploy_social_messages, smartploy_social_blocks, smartploy_social_follows, smartploy_social_profiles, smartploy_oidc_state, smartploy_sessions, smartploy_user_profiles, smartploy_user_identities, smartploy_users")
         conn.commit()
 
 

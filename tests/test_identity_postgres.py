@@ -31,7 +31,11 @@ def clean_db():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                TRUNCATE smartploy_oidc_state,
+                TRUNCATE smartploy_social_messages,
+                         smartploy_social_blocks,
+                         smartploy_social_follows,
+                         smartploy_social_profiles,
+                         smartploy_oidc_state,
                          smartploy_sessions,
                          smartploy_application_events,
                          smartploy_applications,

@@ -100,6 +100,10 @@ from .private_saved_jobs import (
     PostgresPrivateSavedJobRepository,
     PrivateSavedJobError,
 )
+from .social_network import (
+    MemorySocialRepository, PostgresSocialRepository,
+    SocialConflict, SocialError, SocialNotFound, SocialRateLimited,
+)
 from .preparation_storage import MemoryPreparationRepository, PostgresPreparationRepository
 from .preparations import (
     PREPARATION_ACTION, PreparationNotEligible,
@@ -203,6 +207,18 @@ class CVRestorePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     confirmed_restore: StrictBool
+
+
+class SocialProfilePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    handle: str = Field(min_length=3, max_length=24)
+    display_name: str = Field(min_length=2, max_length=60)
+    discoverable: StrictBool
+
+
+class SocialMessagePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    body: str = Field(min_length=1, max_length=2000)
 
 
 class PrivateSavedJobPayload(BaseModel):
@@ -646,6 +662,9 @@ def create_app(
         PostgresPrivateSavedJobRepository(dsn) if dsn
         else MemoryPrivateSavedJobRepository()
     )
+    # Social identity is explicitly opt-in, separate from CV and employer records.
+    # The memory backend is only a non-durable local/test fallback.
+    app.state.social = PostgresSocialRepository(dsn) if dsn else MemorySocialRepository()
     app.state.processing_consents = processing_consent_repository or (
         PostgresJobAIConsentRepository(dsn) if dsn
         else MemoryJobAIConsentRepository()
@@ -1346,6 +1365,115 @@ def create_app(
             content={"deleted": True},
             headers={"Cache-Control": "private, no-store"},
         )
+
+    # SP127: exact-handle opt-in profiles and mutual-follow private messages.
+    # Never expose or accept a caller-selected user ID, email, CV or recipient
+    # principal. Verified tenancy is the ONLY identity source.
+    def social_owner(request: Request) -> str:
+        _, binding = tenant_context(request)
+        if binding is None or _principal_from_request(request) is None:
+            raise HTTPException(status_code=401, detail="Sign in to use your network")
+        return binding.user_id
+
+    def social_failure(error: SocialError) -> HTTPException:
+        if isinstance(error, SocialNotFound):
+            status = 404
+        elif isinstance(error, SocialConflict):
+            status = 409
+        elif isinstance(error, SocialRateLimited):
+            status = 429
+        else:
+            status = 422
+        return HTTPException(status_code=status, detail=str(error))
+
+    def social_response(data: dict[str, object], status_code: int = 200) -> JSONResponse:
+        return JSONResponse(content=data, status_code=status_code,
+                            headers={"Cache-Control": "private, no-store",
+                                     "X-Content-Type-Options": "nosniff"})
+
+    @app.get("/api/v1/social/me")
+    def social_me(request: Request) -> JSONResponse:
+        return social_response(app.state.social.me(social_owner(request)))
+
+    @app.put("/api/v1/social/me")
+    def social_profile_update(payload: SocialProfilePayload,
+                              request: Request) -> JSONResponse:
+        owner = social_owner(request)
+        try:
+            result = app.state.social.save_profile(
+                owner, payload.handle, payload.display_name, payload.discoverable,
+            )
+        except SocialError as exc:
+            raise social_failure(exc) from exc
+        return social_response(result)
+
+    @app.get("/api/v1/social/people/{handle}")
+    def social_person(request: Request, handle: str) -> JSONResponse:
+        owner = social_owner(request)
+        try:
+            result = app.state.social.lookup(owner, handle)
+        except SocialError as exc:
+            raise social_failure(exc) from exc
+        return social_response(result)
+
+    @app.get("/api/v1/social/connections")
+    def social_connections(request: Request) -> JSONResponse:
+        return social_response(app.state.social.connections(social_owner(request)))
+
+    @app.post("/api/v1/social/people/{handle}/follow")
+    def social_follow(request: Request, handle: str) -> JSONResponse:
+        owner = social_owner(request)
+        try:
+            result = app.state.social.follow(owner, handle, True)
+        except SocialError as exc:
+            raise social_failure(exc) from exc
+        return social_response(result)
+
+    @app.delete("/api/v1/social/people/{handle}/follow")
+    def social_unfollow(request: Request, handle: str) -> JSONResponse:
+        owner = social_owner(request)
+        try:
+            result = app.state.social.follow(owner, handle, False)
+        except SocialError as exc:
+            raise social_failure(exc) from exc
+        return social_response(result)
+
+    @app.post("/api/v1/social/people/{handle}/block")
+    def social_block(request: Request, handle: str) -> JSONResponse:
+        owner = social_owner(request)
+        try:
+            result = app.state.social.block(owner, handle, True)
+        except SocialError as exc:
+            raise social_failure(exc) from exc
+        return social_response(result)
+
+    @app.delete("/api/v1/social/people/{handle}/block")
+    def social_unblock(request: Request, handle: str) -> JSONResponse:
+        owner = social_owner(request)
+        try:
+            result = app.state.social.block(owner, handle, False)
+        except SocialError as exc:
+            raise social_failure(exc) from exc
+        return social_response(result)
+
+    @app.get("/api/v1/social/messages/{handle}")
+    def social_messages(request: Request, handle: str, limit: int = 50) -> JSONResponse:
+        owner = social_owner(request)
+        try:
+            result = app.state.social.messages(owner, handle, limit)
+        except SocialError as exc:
+            raise social_failure(exc) from exc
+        return social_response(result)
+
+    @app.post("/api/v1/social/messages/{handle}", status_code=201)
+    def social_send_message(request: Request, handle: str,
+                            payload: SocialMessagePayload) -> JSONResponse:
+        owner = social_owner(request)
+        try:
+            result = app.state.social.send(owner, handle, payload.body)
+        except SocialError as exc:
+            raise social_failure(exc) from exc
+        return social_response({"message": result, "private": True}, 201)
 
     # This is a permission ledger, not an automatic AI scheduler or a consent
     # inferred from configuring ObumAI. All operations need verified identity.

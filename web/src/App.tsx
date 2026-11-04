@@ -4,7 +4,7 @@ import {
   ChevronRight, Clock3, Database, Download, FileCheck2, FileText, Globe2,
   LayoutDashboard, ListFilter, LockKeyhole, MapPin, Menu, Moon, Plus, RefreshCw, Sun,
   Search, Settings2, ShieldCheck, Sparkles, Target, Trash2, UploadCloud,
-  WandSparkles, X, ChartNoAxesColumn, AlertCircle, type LucideIcon
+  WandSparkles, X, UsersRound, MessageCircle, ChartNoAxesColumn, AlertCircle, type LucideIcon
 } from "lucide-react";
 import {
   addManualJob, approveFact, createFact, deleteCV, deleteFact, deletePrivateSavedJob, getApplications,
@@ -25,6 +25,7 @@ import { describeAutoApplyBatchIssue } from "./autoapply_batch_errors";
 import StartChoices from "./StartChoices";
 import ReleaseStatus from "./ReleaseStatus";
 import SearchSetup from "./SearchSetup";
+import SocialHub from "./SocialHub";
 import SearchResultsPanel from "./SearchResultsPanel";
 import TrainingProgramsPanel from "./TrainingProgramsPanel";
 import BrandMark from "./BrandMark";
@@ -38,7 +39,7 @@ import type {
   ApplicationFlowMode, AutoApplyBatchOutcome
 } from "./types";
 
-type Page = "dashboard" | "apply" | "jobs" | "training" | "applications" | "profile" | "tools" | "insights" | "sources" | "settings";
+type Page = "dashboard" | "apply" | "jobs" | "training" | "applications" | "profile" | "tools" | "network" | "messages" | "insights" | "sources" | "settings";
 type MatchView = "top" | "possible";
 
 const NAV: Array<{ id: Page; label: string; icon: LucideIcon }> = [
@@ -46,6 +47,8 @@ const NAV: Array<{ id: Page; label: string; icon: LucideIcon }> = [
   { id: "apply", label: "Apply for jobs", icon: FileCheck2 },
   { id: "jobs", label: "Find jobs", icon: Search },
   { id: "applications", label: "My applications", icon: FileText },
+  { id: "network", label: "Connections", icon: UsersRound },
+  { id: "messages", label: "Messages", icon: MessageCircle },
   { id: "profile", label: "My CV & documents", icon: FileCheck2 },
   { id: "training", label: "Training & traineeships", icon: BriefcaseBusiness },
   { id: "tools", label: "CV & AI tools", icon: Sparkles },
@@ -195,6 +198,7 @@ export default function App() {
   const [cvPreview, setCVPreview] = useState(false);
   const [jobDialog, setJobDialog] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
+  const [socialPeer, setSocialPeer] = useState("");
   const [newFactType, setNewFactType] = useState("skill");
   const [newFactValue, setNewFactValue] = useState("");
   const [confirmFact, setConfirmFact] = useState(false);
@@ -227,6 +231,7 @@ export default function App() {
     // A different account must not inherit an unsaved draft, editor, form,
     // selected job or cached navigation state belonging to its predecessor.
     setPage("dashboard"); setSearch(""); setExpandedJob("");
+    setSocialPeer("");
     setFlowMode(null); setFlowSelectedJob(""); setFlowQueueBusy(false);
     setStartSearchBusy(false); flowQueueInFlight.current = null;
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
@@ -1188,10 +1193,10 @@ export default function App() {
       </button>
       <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-label">WORKSPACE</div>
-        {NAV.slice(0, 7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span className="nav-item-copy"><span>{item.label}</span>{item.id === "apply" ? <small aria-hidden="true" className="nav-item-hint">Manual · Assisted · Auto</small> : null}</span></button>; })}
+        {NAV.slice(0, 9).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span className="nav-item-copy"><span>{item.label}</span>{item.id === "apply" ? <small aria-hidden="true" className="nav-item-hint">Manual · Assisted · Auto</small> : null}</span></button>; })}
         <div className="nav-divider" />
         <div className="nav-label">MANAGE</div>
-        {NAV.slice(7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
+        {NAV.slice(9).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
       </nav>
       <div className="sidebar-bottom"><span className="country-chip"><span className="flag-finland" aria-hidden="true" /> Finland</span><span className="session-profile"><span className="avatar">{avatar}</span><span><strong>{session?.email ? session.email.split("@")[0] : "Your workspace"}</strong><small>{session?.authenticated ? "Signed in" : "Private workspace"}</small></span></span></div>
     </aside>
@@ -1279,6 +1284,14 @@ export default function App() {
           /> : null}
           {page === "jobs" ? <div className="stacked"><div className="secondary-grid">{jobsSection}<aside>{sourcePanel}</aside></div>{privateSavedJobsPanel}</div> : null}
           {page === "training" ? <TrainingProgramsPanel /> : null}
+          {page === "network" || page === "messages" ?
+            <SocialHub key={accountViewKey + ":" + page}
+              expectedUserId={session?.user_id || ""}
+              view={page === "messages" ? "messages" : "network"}
+              initialPeer={socialPeer}
+              onOpenMessages={(handle) => {
+                setSocialPeer(handle); navigate("messages");
+              }} /> : null}
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">
             {cvBlock}
             <MasterCVEditor key={accountViewKey} expectedUserId={session?.user_id || ""}
