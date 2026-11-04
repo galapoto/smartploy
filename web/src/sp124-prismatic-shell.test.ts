@@ -1,3 +1,4 @@
+// @ts-expect-error Test-only Node filesystem import; browser tsc intentionally omits Node ambient types.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 // Vitest intentionally stubs CSS imports. Read the checked-out real file.
