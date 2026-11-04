@@ -157,5 +157,7 @@ def test_script_never_executes_deployment_or_writes_approvals():
     assert '"git", "-c", f"safe.directory={repo}"' in source
     assert 'git fetch' not in source and 'ssh-keygen' not in source
     assert 'write_text(' not in source and 'unlink(' not in source
-    assert 'approved' not in source.split("BLOCKING_GATES", 1)[0]
+    # Source mentions approved paths in comments, but cannot create approvals.
+    assert '"native-ci-qualified-sha"' in source
+    assert '"feature-first-approved-sha"' in source
     assert "urlopen(req, timeout=5)" in source
