@@ -44,6 +44,34 @@ user-role browser acceptance**, never automatically `USER_VERIFIED`/`SHIPPED`.
 Actual UI must be tested under the intended signed-in roles (desktop/mobile,
 light/dark, profile isolation, CV → Manual/Assisted/Automatic, etc.).
 
+## Diagnose the existing host before commissioning
+
+After this reviewed script reaches the trusted host, its operator can run:
+
+```bash
+cd /srv/obum/stacks/smartploy
+# SHA must be the *reviewed, merged* 40-hex target from main, not a PR head.
+sudo python3 scripts/feature_first_prod_readiness.py \
+  --candidate-sha "<REVIEWED_MERGED_MAIN_SHA>" --online
+```
+
+It produces a **read-only** JSON report with `PASS` / `HOLD` states
+for the trusted root-owned dispatcher, SSH forced command, service-user key,
+source match, clean checkout, main ancestry, native CI and independent
+release receipt. `--require-host-gates` returns 42 on a missing host gate,
+for an operator's own automated diagnostics. Do not change any `HOLD` to
+`PASS` by writing synthetic receipts. The tool **never** installs a key,
+runs a deployment, writes approval, reads private environment values or
+reveals a private SSH key. It only checks that the private env file exists.
+
+The report deliberately marks GitHub protected reviews, production-environment
+settings, actual native runner execution and signed-in user acceptance as
+**NOT_VERIFIED**, even if every host-side check passes. The public `/healthz`
+revision is health evidence only; a real release still requires the original
+image/digest assertions, privacy gates and user journey. No raw server
+credentials, database dumps, SSH key lines or access JWTs should be pasted
+into the issue tracker or chat.
+
 ## Initial one-time commissioning (authorized host operator only)
 
 The GitHub connector in this session can write code and test it but **cannot
