@@ -144,7 +144,7 @@
     },
     {
       "path": "scripts/verify_sp115_integrated_source.py",
-      "git_blob_sha1": "50193a3a370c43b0595bd5a8234df323ea0fc135"
+      "git_blob_sha1": "cc6217188ee39966efe5a8f61bf9d8816c0479cb"
     },
     {
       "path": "smartploy/account_erasure.py",
@@ -195,6 +195,10 @@
       "git_blob_sha1": "c94a40f4f645daaa4dec47528538169a450c3b76"
     },
     {
+      "path": "tests/test_browser_pdf_attachment_contract.py",
+      "git_blob_sha1": "f4a7813a06cdaffef9ad509e3880cd31b57a1cdc"
+    },
+    {
       "path": "tests/test_playwright_assistant_chromium.py",
       "git_blob_sha1": "a8f2e5be082f47eb7975131e4f633b003551ccb0"
     },
@@ -208,7 +212,7 @@
     },
     {
       "path": "tests/test_sp115_integrated_source.py",
-      "git_blob_sha1": "02cb46fe7b801c8b3c7252dc9690bff7a4b30abd"
+      "git_blob_sha1": "58984cd5bdb5bbe43c4a6cf025116513398feb9a"
     },
     {
       "path": "tests/test_sp120_private_assisted.py",
