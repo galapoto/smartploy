@@ -27,8 +27,25 @@ FACT_TYPES = {
     "project",
     "location",
     "work_authorization",
+    "availability",
+    "notice_period",
+    "salary_expectation",
+    "employment_type",
+    "relocation",
+    "portfolio",
+    "website",
+    "references",
     "preference",
 }
+
+
+# User-provided private context, NEVER forwarded as default approved AI
+# evidence or ordinary browser autofill; employer-specific legal decisions
+# still require an applicant's explicit manual confirmation.
+MANUAL_ONLY_FACT_TYPES = frozenset({
+    "work_authorization", "notice_period", "salary_expectation",
+    "references",
+})
 
 
 @dataclass(frozen=True)
@@ -131,6 +148,8 @@ class CandidateProfile:
     def approved_evidence(self) -> dict[str, Any]:
         grouped: dict[str, list[dict[str, Any]]] = {}
         for fact in self.approved_facts:
+            if fact.fact_type in MANUAL_ONLY_FACT_TYPES:
+                continue
             grouped.setdefault(fact.fact_type, []).append(
                 {
                     "fact_id": fact.fact_id,

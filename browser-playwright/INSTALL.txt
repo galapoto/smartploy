@@ -1,0 +1,155 @@
+SmartPloy local Playwright form assistant (SP114)
+================================================
+
+Preferred: connect once, fill from SmartPloy (applicant-local pairing)
+--------------------------------------------------------------------
+1. Extract SmartPloy's reviewed ZIP to your own computer. Verify checksum.
+   Requires desktop Python 3.11+ and Chromium; install once in a venv:
+      python -m pip install playwright==1.55.0
+      python -m playwright install chromium
+2. In that extracted directory, start the OPTIONAL local helper:
+      python bridge.py
+   The terminal displays a temporary pairing code. Keep it private.
+   The helper listens ONLY at http://127.0.0.1:48741 on your computer, not
+   on SmartPloy's server or the public Internet. It never stores applicant
+   passwords, uploaded CV files, cookies from Chrome or employer credentials.
+   Leave this terminal running until you complete one application.
+3. In signed-in SmartPloy, prepare/review and save the exact CV and letter.
+   Under My applications > Fill the employer's form, click
+   "Prepare Playwright handoff (no clipboard)" to create the expiring
+   private packet in this browser tab without a clipboard copy.
+   Then find "Connect my local Playwright browser", enter the code shown in
+   the terminal and click "Open reviewed employer form". Check the consent
+   prompt: the local helper receives only the approved packet.
+4. A visible, isolated Chromium browser opens on the exact employer posting.
+   Navigate to its application form. On TalentAdore, click
+   "Hae tähän työpaikkaan" in the visible employer tab and then inspect.
+   Complete login or MFA yourself.
+   Return to SmartPloy and click "Inspect current employer form".
+5. Review the suggested field names and click "Fill reviewed fields once".
+   SmartPloy asks you to confirm explicitly. The helper verifies the exact
+   job, expiry, form/field metadata and one-use review before each input.
+   A field input may transmit immediately to the employer's website.
+6. OPTIONAL reviewed CV attachment: if SmartPloy finds one unique
+   visible PDF-compatible résumé input, click "Attach exact saved CV PDF
+   once". Review the separate confirmation: the employer website may upload
+   the CV immediately on the file input's change event. SmartPloy retrieves
+   its saved current CV PDF and verifies the reviewed size and SHA-256,
+   then transfers it ONLY to your paired local Playwright helper. The
+   helper re-verifies the exact PDF and employer field before attaching it
+   ONCE. Do not retry an uncertain result; inspect the page manually.
+7. OPTIONAL reviewed employer questions: click
+   "Review unanswered employer questions" after filling contact details.
+   This runs the EXACT existing SmartPloy Chrome companion question rules
+   inside your visible Playwright form. Review eligible text questions,
+   type ONLY truthful personally checked answers, and click
+   "Fill my reviewed answers once (never submit)" if you agree.
+   Your answers may transmit immediately when the employer field changes.
+   Salary, immigration, legal consent, EEO and other sensitive questions
+   are listed for you to answer MANUALLY on the employer website.
+   Any uncertain result is one-use: do not retry the same inputs blindly.
+8. Review everything in the visible browser. TalentAdore form fields and
+   conditional questions vary by employer: unsupported/custom fields must be
+   completed manually; do not infer answers. TalentAdore receipt detection is
+   not yet verified. Keep the employer confirmation email and record your own
+   application outcome in SmartPloy. Confirm the employer actually
+   accepted the attached CV, or upload the CV manually if no eligible input
+   was found. Answer salary/visa/legal/consent questions PERSONALLY. If you
+   choose to apply, click the employer's Submit button PERSONALLY and save
+   any actual employer acknowledgement or receipt.
+9. OPTIONAL observation, ONLY AFTER personally clicking the employer's
+   Submit button: if the exact job's confirmation is still visible in the
+   paired Chromium browser, select "Observe employer confirmation (read-only)"
+   in SmartPloy and explicitly approve the read-only inspection.
+   This executes the SAME reference-bearing page observer from SmartPloy's
+   Chrome companion. It does not submit, retry, sign in, or click anything.
+   If no unique confirmation reference exists, do not retry the employer
+   Submit action. Check the employer portal yourself.
+10. If a matching reference is visible, select "Save unverified observation
+   to SmartPloy". Approve a SECOND confirmation. The existing private
+   SmartPloy owner-scoped receipt endpoint records it as
+   "browser_observed_unverified": this is NOT independent employer
+   acknowledgement and does not count as a verified application submission.
+   Do not repeat a save if a network outcome is uncertain; refresh My
+   Applications and inspect the existing record instead.
+11. Stop the local browser (or Ctrl+C in its terminal).
+12. For another application, start a new helper with a new pairing code.
+    If localhost access is blocked, use the Chrome companion instead.
+
+Security: the browser sends requests ONLY to 127.0.0.1:48741 with
+credentials: omit and no referrer. The local helper accepts requests only
+from the two authorized SmartPloy production origins, rejects DNS-rebinding Host headers and unknown origins,
+uses a time-limited one-use code and random in-memory session token, and
+allows at most one explicitly approved field-fill attempt. There is no
+remote server browser, background auto-submit or general-any-site control.
+No CAPTCHA/MFA bypass, hidden password/consent filling, unattended
+file attachment, retries after uncertain outcomes or final employer click.
+Optional exact CV attachment is a separate applicant-reviewed action.
+The employer-question assistant only INSPECTS unanswered required text
+questions and fills the applicant's own explicitly reviewed answers ONCE.
+The ORIGINAL browser-companion question policy refuses protected/sensitive
+answer types, ambiguous fields and changed form controls. It never composes
+employment claims, chooses legal consents, or submits a form.
+Read-only receipt observation is likewise separate: only an original
+reference-bearing confirmation for the SAME employer job may be saved
+as an UNVERIFIED observation. Never infer a provider-issued receipt,
+second submission authority or successful application from this scan. The bridge does
+not keep applicant packets on disk; its temporary Chromium profile is
+destroyed after the helper stops. Chrome/Chromium may require local-network
+permission; a browser that denies this permission must fail closed.
+
+Alternative: original terminal-only one-job workflow (SP110)
+-------------------------------------------------------------
+SmartPloy local Playwright form assistant (SP110)
+================================================
+
+First-party, applicant-controlled helper for supported hosted Lever, Ashby and
+Greenhouse and exact TalentAdore job application forms. This is NOT an unattended auto-submit agent.
+
+Requirements: desktop Linux, macOS or Windows, Python 3.11+, internet to
+install the official Playwright package and its pinned Chromium browser, and a
+graphical desktop session. Run the script ONLY on your own computer. The
+SmartPloy production server does not launch this browser.
+
+1. Extract the downloaded SmartPloy ZIP. Verify its sidecar .sha256 if desired.
+2. Inspect assistant.py. No employer secrets, CVs or signed-in sessions are
+   contained in this static download.
+3. In an isolated Python virtual environment install Playwright:
+      python -m pip install playwright==1.55.0
+      python -m playwright install chromium
+4. In SmartPloy, sign in, prepare a job-specific CV/letter and save after review.
+   Open My applications > Fill the employer's form, and click
+   "Copy approved autofill packet". The packet expires in 15 minutes.
+5. Open a terminal inside this extracted folder:
+      python assistant.py
+   Paste the current packet at the hidden-input prompt (do NOT save it to a
+   file or shell history). A new visible temporary Chromium profile opens.
+6. Navigate to the exact employer application form; sign in and solve any
+   login or MFA challenge personally. Return to the terminal, press Enter.
+7. Review the list of proposed ordinary contact/cover-letter fields. The list
+   does NOT print private values. Type "FILL REVIEWED FIELDS" only if you
+   accept that the employer website may transmit each field as it is entered.
+8. Inspect the completed fields, upload CV/PDF manually, answer sensitive
+   questions, agree to terms and click Submit manually if you choose to apply.
+   Press Enter after finishing to close the temporary browser session.
+
+If the approved form cannot be verified, a packet has expired, controls change
+or inputs are ambiguous, the runner stops. It never uploads a file, submits an
+application, retries a final employer action, reads browser cookies from your
+normal Chrome profile or connects to ObumAI server. It never bypasses employer
+terms, security checks, CAPTCHA, anti-bot measures or required consent.
+
+Support scope: exact jobs.lever.co / jobs.eu.lever.co /apply,
+jobs.ashbyhq.com /application, and standard boards.greenhouse.io /
+job-boards.greenhouse.io /{board}/jobs/{numeric-id}, and
+ats.talentadore.com/apply/{slug}/{job-id} without tracking parameters.
+Embedded/custom ATS,
+iframe-only forms, arbitrary sites and unsupported fields remain manual.
+
+The existing Chrome extension remains the supported fallback for an already
+signed-in Chrome session. This new helper is an optional standalone local
+Playwright runner; there is no browser extension auto-update or server-side
+installation. Tests against synthetic sites are NOT proof of a live employer
+submission. Do not share your SmartPloy packet or use an untrusted download.
+
+Source reuse: see docs/SP110_OBUMAI_PLAYWRIGHT_ASSIST.md in SmartPloy.

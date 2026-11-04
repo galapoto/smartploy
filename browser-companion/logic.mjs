@@ -79,11 +79,18 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
     /^\/[A-Za-z0-9_-]{1,100}\/jobs\/[0-9]{1,20}\/?$/.test(target.pathname) &&
     current.pathname.replace(/\/+$/, "") === target.pathname.replace(/\/+$/, "") &&
     !target.search && !current.search && !target.hash && !current.hash;
+  // SP118: TalentAdore hosted job and form use one exact posting path.
+  // Queries, fragments, other openings and alternate job ids fail closed.
+  const talentAdore = target.hostname === "ats.talentadore.com" &&
+    current.hostname === "ats.talentadore.com" &&
+    /^\/apply\/[A-Za-z0-9_-]{1,120}\/[A-Za-z0-9_-]{5,30}\/?$/.test(target.pathname) &&
+    current.pathname.replace(/\/+$/, "") === target.pathname.replace(/\/+$/, "") &&
+    !target.search && !current.search && !target.hash && !current.hash;
   if (target.protocol !== "https:" || current.protocol !== "https:" ||
       target.username || target.password || current.username || current.password ||
       target.port !== "" || current.port !== "" ||
       (current.origin !== target.origin && !greenhouse) ||
-      !(lever || ashby || greenhouse)) {
+      !(lever || ashby || greenhouse || talentAdore)) {
     throw new PacketError("Open the exact supported employer job/application page linked from SmartPloy");
   }
   const f = packet.fields;

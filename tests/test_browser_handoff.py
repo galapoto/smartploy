@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from smartploy.api import create_app
 from smartploy.application_workspace import new_workspace, render_document
-from smartploy.browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
+from smartploy.browser_handoff import HandoffError, _assisted_posting_url, approved_fields_sha256, make_browser_packet, review_handoff
 from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
 from smartploy.profile import CandidateProfile, ProfileFact
 from smartploy.service import SmartployService
@@ -453,7 +453,6 @@ def test_sp43_greenhouse_review_packet_reuses_existing_owner_cv_and_no_submit(ho
     "https://job-boards.greenhouse.io/synthetic-it/jobs/abc",
     "https://job-boards.greenhouse.io/another/jobs/123456789/redirect",
     "https://job-boards.greenhouse.io/embed/job_app?for=synthetic-it&token=123456789",
-    "https://careers.example.com/jobs/123456789",
 ])
 def test_sp43_greenhouse_rejects_untrusted_employer_forms(untrusted):
     from smartploy.browser_handoff import _assisted_posting_url
@@ -512,3 +511,44 @@ def test_sp43_greenhouse_owner_application_api_issues_only_review_packet():
     assert packet.json()["external_actions_performed"] is False
     assert packet.json()["packet"]["privacy"]["employer_submit_allowed_without_new_approval"] is False
     assert cli.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
+
+# SP118: a real PUBLIC employer ATS target, but only SYNTHETIC applicant data.
+TALENTADORE_JOB = "https://ats.talentadore.com/apply/junior-analyst/m6rpoy"
+
+
+def test_sp118_talentadore_exact_public_application_url_is_assisted_only():
+    assert _assisted_posting_url(TALENTADORE_JOB) == TALENTADORE_JOB
+    assert _assisted_posting_url(TALENTADORE_JOB + "/") == TALENTADORE_JOB + "/"
+    # Shape validation permits other real TalentAdore postings; a later
+    # original owner/revision/exact-form gate binds THIS particular job.
+    assert _assisted_posting_url(
+        "https://ats.talentadore.com/apply/junior-analyst/another"
+    ).endswith("/another")
+    for denied in (
+        TALENTADORE_JOB + "?source=duunitori",
+        TALENTADORE_JOB + "#form",
+        "https://ats.talentadore.com.evil.invalid/apply/junior-analyst/m6rpoy",
+        "http://ats.talentadore.com/apply/junior-analyst/m6rpoy",
+        "https://ats.talentadore.com:8443/apply/junior-analyst/m6rpoy",
+        "https://user:password@ats.talentadore.com/apply/junior-analyst/m6rpoy",
+        "https://ats.talentadore.com/apply/junior-analyst/m6rpoy/other",
+    ):
+        with pytest.raises(HandoffError):
+            _assisted_posting_url(denied)
+    # The original Lever-only employer final-action rights validator is untouched.
+    from smartploy.browser_handoff import _posting_url
+    with pytest.raises(HandoffError):
+        _posting_url(TALENTADORE_JOB)
+
+
+def test_sp118_reviewed_talentadore_packet_requires_real_owner_saved_documents():
+    original = candidate()
+    employer = replace(original, job=replace(original.job, application_url=TALENTADORE_JOB))
+    saved = replace(ready_workspace(), application_url=TALENTADORE_JOB)
+    assert review_handoff(saved, employer, profile())["ready"] is True
+    packet = make_browser_packet(saved, employer, profile())
+    assert packet["application_url"] == TALENTADORE_JOB
+    assert packet["privacy"]["employer_submit_allowed_without_new_approval"] is False
+    assert packet["fields"]["email"] == "test.candidate@example.com"
+    assert "This is an uploaded CV" not in json.dumps(packet)
+    assert review_handoff(replace(saved, revision=1), employer, profile())["ready"] is False

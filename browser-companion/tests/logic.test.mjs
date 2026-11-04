@@ -300,3 +300,21 @@ test("SP43 Greenhouse disallows cross-job, embed, redirect, custom host and trac
     "https://careers.example.com/synthetic-it/jobs/123456789",
   ]) assert.throws(()=>validatePacket(packet({application_url:bad}),bad,validNow),PacketError,bad);
 });
+
+test("SP118 TalentAdore exact job packet works only on its canonical hosted form", () => {
+  const jobUrl = "https://ats.talentadore.com/apply/junior-analyst/m6rpoy";
+  const approved = packet({ application_url: jobUrl });
+  const result = validatePacket(approved, jobUrl, validNow);
+  assert.equal(result.application_url, jobUrl);
+  assert.equal(result.fields.first_name, "Test");
+  assert.equal(approved.privacy.employer_submit_allowed_without_new_approval, false);
+  for (const bad of [
+    jobUrl + "?source=duunitori", jobUrl + "#form",
+    "https://ats.talentadore.com/apply/junior-analyst/another",
+    "https://ats.talentadore.com/apply/other/m6rpoy",
+    "https://ats.talentadore.com.evil.invalid/apply/junior-analyst/m6rpoy",
+    "http://ats.talentadore.com/apply/junior-analyst/m6rpoy",
+    "https://ats.talentadore.com/apply/junior-analyst/m6rpoy/finish",
+  ]) assert.throws(() => validatePacket(approved, bad, validNow), PacketError, bad);
+  assert.throws(() => validatePacket(packet({application_url: jobUrl+"?tracking=yes"}), jobUrl, validNow), PacketError);
+});
