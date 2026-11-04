@@ -1172,6 +1172,28 @@ test("SP125 dark canvas, action rows and application descriptions remain legible
   expect(readings.renderedWidth / readings.availableWidth).toBeGreaterThan(.8);
 });
 
+
+// Zoom-out and ultrawide should not create a narrow center column or crop the
+// working laptop illustration; matching remains a real CV-first action.
+test("SP125 zoom-out width preserves full-width work imagery and no sideways overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 2400, height: 950 });
+  await installSyntheticApi(page);
+  await page.goto("/");
+  const measurements = await page.evaluate(() => {
+    const main = document.querySelector(".content") as HTMLElement;
+    const flow = document.querySelector(".flow-start") as HTMLElement;
+    const hero = document.querySelector(".sp125-career-art") as HTMLImageElement;
+    return {
+      ratio: flow.getBoundingClientRect().width / main.getBoundingClientRect().width,
+      imageFit: getComputedStyle(hero).objectFit,
+      overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
+  expect(measurements.ratio).toBeGreaterThan(.86);
+  expect(measurements.imageFit).toBe("contain");
+  expect(measurements.overflow).toBe(false);
+});
+
 test("SP99 mobile has visible whole logo and an operable theme toggle without losing navigation", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installSyntheticApi(page);

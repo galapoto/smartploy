@@ -378,6 +378,24 @@ html[data-smartploy-theme="dark"] .smartploy-app
   outline: 3px solid #a1e9fa;
   outline-offset: 3px;
 }
+/* At very wide CSS viewports (including browser zoom-out), keep the entire
+   job-work illustration rather than cropping its laptop and CV vertically. */
+@media(min-width:1800px) {
+  .smartploy-app .sp125-career-cover {
+    background: linear-gradient(105deg,#101d38 0%,#153653 72%,#0a1d2a 100%);
+  }
+  .smartploy-app .sp125-career-art {
+    left: auto;
+    right: 0;
+    width: min(66%,1600px);
+    object-fit: contain;
+    object-position: right center;
+  }
+  .smartploy-app .sp125-career-cover::after {
+    background: linear-gradient(90deg,rgba(8,17,34,.94) 0%,
+      rgba(9,23,42,.84) 39%,rgba(11,32,53,.38) 70%,rgba(8,27,43,0) 98%);
+  }
+}
 @media(max-width:1100px) {
   .smartploy-app .content { padding: clamp(14px,1.8vw,24px); }
   .smartploy-app .sp125-career-copy { max-width: 65%; }
