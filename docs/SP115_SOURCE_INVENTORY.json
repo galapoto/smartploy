@@ -248,7 +248,7 @@
     },
     {
       "path": "web/src/App.test.tsx",
-      "git_blob_sha1": "448197efc46f056dc4f2f2cc9603c4b1789f6cd8"
+      "git_blob_sha1": "8fb676deda24299a16fd7b511dec6d4bd3c6f130"
     },
     {
       "path": "web/src/App.tsx",
@@ -312,7 +312,7 @@
     },
     {
       "path": "web/src/sp124-prismatic-shell.test.ts",
-      "git_blob_sha1": "24466bd08ed0a45832b7e3bbbd0ffae2a0c71899"
+      "git_blob_sha1": "95fc8aee4de85b021efa5033fc71dd05180f18d8"
     },
     {
       "path": "web/src/StartChoices.tsx",

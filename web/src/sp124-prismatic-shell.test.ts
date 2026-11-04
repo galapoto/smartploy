@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import css from "./sp124-prismatic-shell.css?raw";
+// Vitest intentionally stubs CSS imports. Read the checked-out real file.
+const css = readFileSync(new URL("./sp124-prismatic-shell.css", import.meta.url), "utf8");
 
 /** Static policy tests complement real Chromium computed-style tests. */
 function hexLuminance(hex: string): number {

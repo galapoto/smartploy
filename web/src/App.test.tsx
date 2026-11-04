@@ -2332,8 +2332,8 @@ describe("SP124 Prismatic SmartPloy shell: reversible and persistent sidebar", (
     expect(window.localStorage.getItem("smartploy.sidebar.v1")).toBe("collapsed");
     const expand = screen.getByRole("button", { name: "Expand sidebar" });
     expect(expand.getAttribute("aria-expanded")).toBe("false");
-    expect(within(nav).getByRole("button", { name: "My applications" }))
-      .toHaveAttribute("title", "My applications");
+    expect(within(nav).getByRole("button", { name: "My applications" })
+      .getAttribute("title")).toBe("My applications");
     fireEvent.click(expand);
     expect(shell?.getAttribute("data-sidebar-size")).toBe("expanded");
     expect(window.localStorage.getItem("smartploy.sidebar.v1")).toBe("expanded");
