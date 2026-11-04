@@ -909,3 +909,78 @@ export function revokeJobAIConsent(consentId: string, expectedUserId: string):
     method: "DELETE"
   }, expectedUserId);
 }
+
+/** SP127: only explicitly discoverable professional handles are visible.
+ * No public member directory, email address, CV, employer message or E2EE claim.
+ */
+export interface SocialPerson {
+  handle: string;
+  display_name: string;
+  discoverable: boolean;
+}
+export interface SocialLookup extends SocialPerson {
+  following: boolean;
+  follows_you: boolean;
+  self: boolean;
+}
+export interface SocialConnection extends SocialPerson {
+  mutual: boolean;
+}
+export interface SocialMessage {
+  message_id: string;
+  body: string;
+  mine: boolean;
+  created_at: string;
+}
+export interface SocialMe {
+  profile: SocialPerson | null;
+  opted_in: boolean;
+}
+export interface SocialConnections {
+  following: SocialConnection[];
+  followers: SocialConnection[];
+  blocked: Array<{ handle: string; display_name: string }>;
+  private: true;
+}
+export function getSocialMe(): Promise<SocialMe> {
+  return request("/api/v1/social/me");
+}
+export function saveSocialProfile(
+  data: SocialPerson, expectedUserId: string
+): Promise<SocialMe> {
+  return request("/api/v1/social/me", {
+    method: "PUT", body: JSON.stringify(data)
+  }, expectedUserId);
+}
+export function lookupSocialPerson(handle: string): Promise<SocialLookup> {
+  return request("/api/v1/social/people/" + encodeURIComponent(handle));
+}
+export function getSocialConnections(): Promise<SocialConnections> {
+  return request("/api/v1/social/connections");
+}
+export function followSocialPerson(
+  handle: string, value: boolean, expectedUserId: string
+): Promise<{ following: boolean; follows_you: boolean; handle: string }> {
+  return request("/api/v1/social/people/" + encodeURIComponent(handle) + "/follow", {
+    method: value ? "POST" : "DELETE"
+  }, expectedUserId);
+}
+export function blockSocialPerson(
+  handle: string, value: boolean, expectedUserId: string
+): Promise<{ blocked: boolean }> {
+  return request("/api/v1/social/people/" + encodeURIComponent(handle) + "/block", {
+    method: value ? "POST" : "DELETE"
+  }, expectedUserId);
+}
+export function getSocialMessages(
+  handle: string
+): Promise<{ messages: SocialMessage[]; handle: string; private: true }> {
+  return request("/api/v1/social/messages/" + encodeURIComponent(handle));
+}
+export function sendSocialMessage(
+  handle: string, body: string, expectedUserId: string
+): Promise<{ message: SocialMessage; private: true }> {
+  return request("/api/v1/social/messages/" + encodeURIComponent(handle), {
+    method: "POST", body: JSON.stringify({ body })
+  }, expectedUserId);
+}
