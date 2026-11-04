@@ -3,12 +3,18 @@
 # successful exact-main GitHub CI, independent native Woodpecker proof and
 # independently approved low-risk/explicit high-risk release classification.
 #
-# This script is sent via SSH stdin by the protected GitHub environment job.
-# It deliberately cannot create its own native CI/Director approval receipts.
-# The existing guarded deploy.sh retains backup, migration, provenance,
-# locking and rollback checks. No source/PR branch can deploy itself.
+# This script is installed ONCE as a root-owned, non-writable dispatcher by a
+# trusted host operator. The CI SSH key is forced to a different, non-root
+# command, which can only sudo this exact dispatcher with one reviewed SHA.
+# No arbitrary production root shell or remote upload is allowed.
+# This script cannot create its own native CI/Director approval receipts.
+# The guarded deploy.sh retains backup, migrations, image checks and rollback.
 set -Eeuo pipefail
 umask 077
+[[ "$EUID" -eq 0 ]] || {
+  echo "FEATURE_FIRST_DENIED: installed root dispatcher required" >&2
+  exit 41
+}
 
 SHA="${1:-}"
 if [[ "$#" -ne 1 || ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then

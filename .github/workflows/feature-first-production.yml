@@ -60,11 +60,9 @@ jobs:
       name: smartploy-production
       url: https://smartploy.komplyint.fi/
     steps:
-      - name: Fetch approved immutable production script
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.qualify.outputs.sha }}
-          persist-credentials: false
+      # Do NOT check out repository code in a job that receives production
+      # secrets. The host owns the immutable installed dispatcher and forced
+      # command; no source file or shell script crosses the SSH boundary.
       - name: Guarded SSH handoff to existing SmartPloy deployment
         shell: bash
         env:
@@ -109,8 +107,7 @@ jobs:
             -o ConnectTimeout=12 \
             -i "$tmp/key" -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
-            "sudo -n bash -se -- '$SHA'" \
-            < deploy/personal/scripts/feature-first-remote-promotion.sh
+            "feature-first-deploy $SHA"
 
       - name: Record evidence boundary
         run: |
