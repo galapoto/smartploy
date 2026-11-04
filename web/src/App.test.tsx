@@ -2358,6 +2358,7 @@ describe("SP124 Prismatic SmartPloy shell: reversible and persistent sidebar", (
     fireEvent.click(open);
     expect(document.getElementById("smartploy-sidebar")?.classList.contains("open")).toBe(true);
     const close = screen.getByRole("button", { name: "Close menu" });
+    expect(close.closest("#smartploy-sidebar")).toBeTruthy();
     expect(close.getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(close);
     expect(document.getElementById("smartploy-sidebar")?.classList.contains("open")).toBe(false);

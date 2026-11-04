@@ -1444,6 +1444,7 @@ export default function App() {
       aria-label="SmartPloy navigation">
       {mobileNav ? <button type="button" className="sp124-mobile-close"
         aria-label="Close menu" title="Close navigation menu"
+        aria-controls="smartploy-sidebar" aria-expanded={mobileNav}
         onClick={() => setMobileNav(false)}>
         <X size={20} aria-hidden="true" />
       </button> : null}
