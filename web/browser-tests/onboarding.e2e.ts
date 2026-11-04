@@ -1135,7 +1135,7 @@ test("SP125 dark canvas, action rows and application descriptions remain legible
       return getComputedStyle(element)[property];
     };
     const rgb = (value: string) => {
-      const numbers = value.match(/[\\d.]+/g)?.slice(0, 3).map(Number);
+      const numbers = value.match(/[0-9]+/g)?.slice(0, 3).map(Number);
       if (!numbers || numbers.length !== 3) throw new Error("Non-solid color: " + value);
       return numbers.map(n => {
         const component = n / 255;
