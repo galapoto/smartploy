@@ -119,13 +119,98 @@ def fetch_jobs(repository: str, run_id: int, token: str) -> list[dict[str, Any]]
     raise PromotionDenied("CI jobs pagination exceeded safe verification limit")
 
 
+
+def validate_manual_request(
+    event: dict[str, Any], repository: str, requested_sha: str,
+) -> str:
+    """A manual retry may only name a SHA on the protected main branch."""
+    if not isinstance(event, dict) or not isinstance(requested_sha, str):
+        raise PromotionDenied("Manual release request is malformed")
+    if not SHA40.fullmatch(requested_sha):
+        raise PromotionDenied("Manual release requires an exact 40-hex SHA")
+    repo = event.get("repository")
+    inputs = event.get("inputs")
+    if (not isinstance(repo, dict) or repo.get("full_name") != repository or
+            not isinstance(inputs, dict) or
+            inputs.get("release_sha") != requested_sha or
+            event.get("ref") != "refs/heads/main"):
+        raise PromotionDenied("Manual release must originate from this repository's main")
+    return requested_sha
+
+
+def select_qualified_main_run(
+    runs: list[dict[str, Any]], repository: str, sha: str,
+) -> int:
+    """Ignore all fork/PR/manual runs even if their name says Smartploy CI."""
+    if not isinstance(runs, list) or not SHA40.fullmatch(sha):
+        raise PromotionDenied("Invalid CI history for requested SHA")
+    matches: list[int] = []
+    for run in runs:
+        if not isinstance(run, dict):
+            raise PromotionDenied("Malformed run in GitHub Actions history")
+        head_repo = run.get("head_repository")
+        if (run.get("name") == "Smartploy CI" and
+                run.get("event") == "push" and
+                run.get("head_branch") == "main" and
+                run.get("head_sha") == sha and
+                run.get("status") == "completed" and
+                run.get("conclusion") == "success" and
+                isinstance(head_repo, dict) and
+                head_repo.get("full_name") == repository and
+                type(run.get("id")) is int and run["id"] > 0):
+            matches.append(run["id"])
+    if not matches:
+        raise PromotionDenied("No successful exact-SHA main-push CI run exists")
+    return max(matches)
+
+
+def fetch_qualified_main_run(repository: str, sha: str, token: str) -> int:
+    """Read source-bound historic CI evidence; never trust manual input alone."""
+    if not token or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        raise PromotionDenied("Trusted Actions read token and repository required")
+    if not SHA40.fullmatch(sha):
+        raise PromotionDenied("Invalid immutable source SHA")
+    for page in range(1, 4):
+        url = (
+            f"https://api.github.com/repos/{repository}/actions/runs"
+            f"?head_sha={sha}&branch=main&event=push&per_page=100&page={page}"
+        )
+        req = Request(url, headers={
+            "Authorization": "Bearer " + token,
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        })
+        try:
+            with urlopen(req, timeout=15) as response:
+                data = json.loads(response.read(2_000_000))
+            runs, total = data["workflow_runs"], data["total_count"]
+        except (HTTPError, URLError, TimeoutError, ValueError, KeyError, TypeError) as exc:
+            raise PromotionDenied("Unable to validate prior main-push CI") from exc
+        if not isinstance(runs, list) or type(total) is not int:
+            raise PromotionDenied("GitHub CI history response is malformed")
+        # A page may contain other workflows; select only verified CI runs.
+        try:
+            return select_qualified_main_run(runs, repository, sha)
+        except PromotionDenied:
+            if page * 100 >= total:
+                raise
+    raise PromotionDenied("CI history pagination exceeded safety bound")
+
+
 def main() -> int:
     try:
         path = os.environ.get("GITHUB_EVENT_PATH", "")
         repository = os.environ.get("GITHUB_REPOSITORY", "")
         event = json.loads(Path(path).read_text(encoding="utf-8"))
-        sha, run_id = validate_run(event, repository)
-        jobs = fetch_jobs(repository, run_id, os.environ.get("GH_TOKEN", ""))
+        token = os.environ.get("GH_TOKEN", "")
+        if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+            sha = validate_manual_request(
+                event, repository, os.environ.get("SMARTPLOY_REQUESTED_SHA", "")
+            )
+            run_id = fetch_qualified_main_run(repository, sha, token)
+        else:
+            sha, run_id = validate_run(event, repository)
+        jobs = fetch_jobs(repository, run_id, token)
         validate_jobs(jobs)
         output = os.environ.get("GITHUB_OUTPUT")
         if not output:
