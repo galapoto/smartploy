@@ -30,7 +30,9 @@ and enter the already-merged exact 40-character `release_sha`. This retries
 The workflow independently looks up an actual successful main-push `Smartploy
 CI` run for precisely that SHA, confirms all five real jobs, verifies main
 ancestry, then still demands native Woodpecker and independent release
-approval. It never accepts a successful manual-only CI run as release proof.
+approval. **Only the verifier from protected `main` is executed**, never
+code checked out from a manually nominated SHA. It never accepts a successful
+manual-only CI run as release proof.
 
 After qualification, reuse the host's original
 `deploy/personal/scripts/deploy.sh` for preflight, clean immutable main
