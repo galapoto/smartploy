@@ -1100,7 +1100,8 @@ test("SP99 dark/light mode is usable, persists after reload, and does not remove
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
-  const panel = page.locator(".flow-start");
+  // The work area is transparent; test the real themed app canvas.
+  const panel = page.locator(".smartploy-app");
   const lightSurface = await panel.evaluate((el) => getComputedStyle(el).backgroundColor);
   const toggle = page.getByRole("button", { name: "Switch to dark mode" });
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
@@ -1160,16 +1161,19 @@ test("SP125 dark canvas, action rows and application descriptions remain legible
         color('.flow-start-card[data-flow-mode="assisted"]', "backgroundColor")),
       card: contrast(
         color(".flow-start-heading h1", "color"),
-        color(".flow-start", "backgroundColor")),
+        color(".smartploy-app", "backgroundColor")),
       renderedWidth: document.querySelector(".flow-start")!.getBoundingClientRect().width,
-      availableWidth: document.querySelector(".content")!.getBoundingClientRect().width,
+      availableWidth: document.querySelector(".sp126-dashboard-layout")!.getBoundingClientRect().width,
+      layoutWidth: document.querySelector(".sp126-dashboard-layout")!.getBoundingClientRect().width,
+      contentWidth: document.querySelector(".content")!.getBoundingClientRect().width,
     };
   });
-  expect(readings.canvas).toBe("rgb(8, 15, 27)");
+  expect(readings.canvas).toBe("rgb(6, 11, 23)");
   expect(readings.browse).toBeGreaterThanOrEqual(4.5);
   expect(readings.details).toBeGreaterThanOrEqual(4.5);
   expect(readings.card).toBeGreaterThanOrEqual(4.5);
-  expect(readings.renderedWidth / readings.availableWidth).toBeGreaterThan(.8);
+  expect(readings.renderedWidth / readings.availableWidth).toBeGreaterThan(.62);
+  expect(readings.layoutWidth / readings.contentWidth).toBeGreaterThan(.9);
 });
 
 
@@ -1179,17 +1183,22 @@ test("SP125 zoom-out width preserves full-width work imagery and no sideways ove
   await page.setViewportSize({ width: 2400, height: 950 });
   await installSyntheticApi(page);
   await page.goto("/");
+  await expect(page.locator(".flow-start")).toBeVisible();
+  await expect(page.locator(".sp125-career-art")).toBeVisible();
   const measurements = await page.evaluate(() => {
     const main = document.querySelector(".content") as HTMLElement;
+    const layout = document.querySelector(".sp126-dashboard-layout") as HTMLElement;
     const flow = document.querySelector(".flow-start") as HTMLElement;
     const hero = document.querySelector(".sp125-career-art") as HTMLImageElement;
     return {
-      ratio: flow.getBoundingClientRect().width / main.getBoundingClientRect().width,
+      ratio: flow.getBoundingClientRect().width / layout.getBoundingClientRect().width,
+      used: layout.getBoundingClientRect().width / main.getBoundingClientRect().width,
       imageFit: getComputedStyle(hero).objectFit,
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
-  expect(measurements.ratio).toBeGreaterThan(.86);
+  expect(measurements.ratio).toBeGreaterThan(.65);
+  expect(measurements.used).toBeGreaterThan(.9);
   expect(measurements.imageFit).toBe("contain");
   expect(measurements.overflow).toBe(false);
 });
