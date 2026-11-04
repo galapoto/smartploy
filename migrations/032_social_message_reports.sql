@@ -1,6 +1,6 @@
 -- SP128: private evidence links for user-initiated moderation reports.
 -- A report is not a ban or a delivered notification. No CV/email or duplicated
--- message body is stored in this ledger; moderator access is server allowlisted.
+-- message body is stored in this ledger. Moderator access is server allowlisted.
 CREATE TABLE IF NOT EXISTS smartploy_social_reports (
   report_id TEXT PRIMARY KEY CHECK (report_id ~ '^report-[a-f0-9]{32}$'),
   reporter_id TEXT NOT NULL REFERENCES smartploy_users(user_id) ON DELETE CASCADE,
