@@ -70,3 +70,24 @@ def test_release_docs_do_not_claim_prod_is_commissioned():
     assert "not commissioned or live" in docs
     assert "SMARTPLOY_FEATURE_FIRST_AUTO_DEPLOY=true" in docs
     assert "rea" in docs.casefold()
+
+
+def test_manual_replay_is_exact_sha_and_does_not_grant_approval():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in workflow
+    assert "release_sha:" in workflow
+    assert "github.ref == 'refs/heads/main'" in workflow
+    assert "id: source" in workflow
+    assert "sha=$SHA" in workflow
+    assert "ref: ${{ steps.source.outputs.sha }}" in workflow
+    assert "SMARTPLOY_REQUESTED_SHA: ${{ steps.source.outputs.sha }}" in workflow
+    assert "github.event.workflow_run.conclusion == 'success'" in workflow
+    assert "needs.qualify.outputs.qualified == 'true'" in workflow
+    assert "SMARTPLOY_FEATURE_FIRST_AUTO_DEPLOY" in workflow
+    docs = (ROOT / "docs/SP130_FEATURE_FIRST_CONTINUOUS_PRODUCTION.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Safe replay after commissioning" in docs
+    assert "independently looks up an actual successful main-push" in docs
+    assert "authorized_keys" in docs and "root-owned" in docs
+    assert "independent release" in docs
