@@ -1139,3 +1139,51 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   expect(horizontalOverflow).toBe(false);
   await evidence(page, "sp99-finland-mobile-dark-logo.png");
 });
+
+test("SP127 new network navigation is private until an explicit opted-in save", async ({ page }) => {
+  await installSyntheticApi(page);
+  let social: { profile: {handle: string; display_name: string; discoverable: boolean} | null;
+    opted_in: boolean } = {profile: null, opted_in: false};
+  let attemptedExternal = 0;
+  await page.route("**/api/v1/social/me", async route => {
+    const req = route.request();
+    if (req.method() === "PUT") {
+      const saved = req.postDataJSON() as {
+        handle: string; display_name: string; discoverable: boolean;
+      };
+      const session = await page.evaluate(() =>
+        fetch("/api/v1/session").then(response => response.json())
+      ) as { user_id: string };
+      expect(req.headers()["x-smartploy-expected-user-id"]).toBe(session.user_id);
+      expect(Object.keys(saved).sort()).toEqual(["discoverable", "display_name", "handle"]);
+      social = {profile: saved, opted_in: saved.discoverable};
+    }
+    await route.fulfill({status:200,contentType:"application/json",
+      body:JSON.stringify(social)});
+  });
+  await page.route("**/api/v1/social/connections", async route => {
+    await route.fulfill({status:200,contentType:"application/json",
+      body:JSON.stringify({following:[],followers:[],blocked:[],private:true})});
+  });
+  await page.route("**/api/v1/social/messages/**", async route => {
+    attemptedExternal += 1;
+    await route.fulfill({status:404,contentType:"application/json",
+      body:JSON.stringify({detail:"Mutual following required"})});
+  });
+  await page.goto("/");
+  await page.getByRole("button", {name:"Connections"}).click();
+  await expect(page.getByRole("heading", {name:"Your professional handle"})).toBeVisible();
+  await expect(page.getByText("Private", {exact:true})).toBeVisible();
+  await expect(page.getByText(/It starts private/)).toBeVisible();
+  await page.getByPlaceholder("alex_jobs").fill("example_jobs");
+  await page.getByPlaceholder("Your professional display name").fill("Example Professional");
+  await page.getByRole("checkbox", {name:/Allow other signed-in members/}).check();
+  await page.getByRole("button", {name:/Save networking preferences/}).click();
+  await expect(page.getByText("Discoverable by handle")).toBeVisible();
+  await page.getByRole("button", {name:"Messages"}).click();
+  await expect(page.getByRole("heading", {
+    name:"Conversations with your connections.",
+  })).toBeVisible();
+  await expect(page.getByText(/A conversation becomes available after/)).toBeVisible();
+  expect(attemptedExternal).toBe(0);
+});
