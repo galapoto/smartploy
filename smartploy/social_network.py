@@ -387,8 +387,8 @@ class PostgresSocialRepository:
                 cur.execute(
                     f"""SELECT p.handle,p.display_name,
                          EXISTS(SELECT 1 FROM smartploy_social_follows rev
-                           WHERE rev.follower_id=f.{target_field}
-                             AND rev.followed_id=f.{direction})
+                           WHERE rev.follower_id=f.followed_id
+                             AND rev.followed_id=f.follower_id)
                        FROM smartploy_social_follows f
                        JOIN smartploy_social_profiles p ON p.user_id=f.{target_field}
                        JOIN smartploy_users u ON u.user_id=p.user_id

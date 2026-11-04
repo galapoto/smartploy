@@ -174,6 +174,18 @@ def test_opt_out_revokes_mutual_connections_and_requires_new_consent():
         repo.send("usr-a", "bob_job", "No silent reconnection")
 
 
+def test_memory_connections_do_not_mislabel_single_follow_as_mutual():
+    repo = MemorySocialRepository()
+    repo.save_profile("usr-a", "alice_job", "Fictional Alice", True)
+    repo.save_profile("usr-b", "bob_job", "Fictional Bob", True)
+    repo.follow("usr-a", "bob_job")
+    assert repo.connections("usr-b")["followers"][0]["mutual"] is False
+    assert repo.connections("usr-a")["following"][0]["mutual"] is False
+    repo.follow("usr-b", "alice_job")
+    assert repo.connections("usr-b")["followers"][0]["mutual"] is True
+    assert repo.connections("usr-a")["following"][0]["mutual"] is True
+
+
 def test_memory_repo_handles_hidden_profiles_without_disclosure():
     repo = MemorySocialRepository()
     repo.save_profile("usr-a", "privatealice", "Private Alice", False)
@@ -204,7 +216,17 @@ def test_postgres_social_is_durable_and_message_history_is_owner_scoped():
         for user, handle in [(a, ah), (b, bh), (c, ch)]:
             repo.save_profile(user, handle, "Fictional User", True)
         repo.follow(a, bh)
+        # A one-way follower is NOT a mutual connection. The followers SQL
+        # direction must check the reverse edge, never the same follow.
+        one_way = repo.connections(b)
+        assert one_way["followers"][0]["handle"] == ah
+        assert one_way["followers"][0]["mutual"] is False
+        assert repo.connections(a)["following"][0]["mutual"] is False
+        with pytest.raises(SocialNotFound):
+            repo.send(b, ah, "No reciprocal consent")
         repo.follow(b, ah)
+        assert repo.connections(b)["followers"][0]["mutual"] is True
+        assert repo.connections(a)["following"][0]["mutual"] is True
         sent = repo.send(a, bh, "Durable private message")
         assert sent["mine"] is True
         again = PostgresSocialRepository(dsn)
