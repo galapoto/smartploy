@@ -56,10 +56,13 @@ jobs:
             exit 43
           }
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-      - name: Check out exact immutable main commit
+      - name: Check out protected main verifier (never execute candidate code)
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.source.outputs.sha }}
+          # A manually supplied SHA could name unmerged, hostile code. Do
+          # NOT check out or execute it even in the read-only qualification
+          # job. Execute only the verifier from protected default main.
+          ref: main
           fetch-depth: 0
           persist-credentials: false
       - name: Verify exact successful push-to-main jobs
@@ -76,8 +79,9 @@ jobs:
           # issue an unauthenticated second fetch in this private repository:
           # checkout intentionally erased persisted GitHub credentials.
           git show-ref --verify --quiet refs/remotes/origin/main
+          git cat-file -e "$SHA^{commit}"
           git merge-base --is-ancestor "$SHA" refs/remotes/origin/main
-          test "$(git rev-parse HEAD)" = "$SHA"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/main)"
           echo "FEATURE_FIRST_EXACT_MAIN_CI_VERIFIED=true"
 
   promote:
