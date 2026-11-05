@@ -5,6 +5,9 @@ import { PacketError, planFields, validatePacket } from "./logic.mjs";
 import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactReceiptPage, isLeverFinalProvider, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
 import { attachReviewedPdf } from "./page-attachment.mjs";
 import { QuestionError, planReviewedQuestions, validateReviewedAnswers } from "./questions.mjs";
+import { buildPendingQuestionSync, clearPendingQuestions, getPendingQuestions,
+  queuePendingQuestions } from "./question-sync.mjs";
+import { rememberQuestionsOnSmartPloy } from "./page-question-sync.mjs";
 import { fillReviewedAnswers } from "./page-questions.mjs";
 import { AttemptError, oneAttemptKey, withSubmissionLock } from "./attempt-lock.mjs";
 import {
@@ -541,7 +544,11 @@ async function onInspect() {
     }
     const candidate = planFields(result.result.elements, pkt);
     if (!candidate.actions.length && !candidate.skippedUploads.length) {
-      throw new PacketError("No supported empty fields or file inputs were found. Fill this application manually.");
+      throw new PacketError(
+        new URL(pkt.application_url).hostname === "ats.talentadore.com"
+          ? "Click Hae tähän työpaikkaan on the visible TalentAdore page, then inspect the form again. Do not click the final Submit button."
+          : "No supported empty fields or file inputs were found. Fill this application manually."
+      );
     }
     targetTabId = tab.id;
     currentPacket = pkt;
@@ -563,15 +570,18 @@ async function onInspect() {
     $("reserveFinal").disabled = !leverSubmit;
     $("check").disabled = !leverSubmit;
     $("approve").disabled = !leverSubmit;
-    const providerName = new URL(pkt.application_url).hostname === "jobs.ashbyhq.com"
-      ? "Ashby" : "Greenhouse";
-    $("resume").disabled = false;
-    $("receipt").disabled = false;
+    const providerHost = new URL(pkt.application_url).hostname;
+    const talentAdore = providerHost === "ats.talentadore.com";
+    const providerName = talentAdore ? "TalentAdore" :
+      providerHost === "jobs.ashbyhq.com" ? "Ashby" : "Greenhouse";
+    $("resume").disabled = talentAdore;
+    $("receipt").disabled = talentAdore;
     $("finalClaimInfo").textContent = leverSubmit ? "" :
       providerName + ": reviewed contacts, ordinary questions and CV PDF assistance only. " +
       "Submit personally on the employer website; no automatic final click. " +
-      "You may import a same-job, reference-bearing manual confirmation. " +
-      "Otherwise use I applied on employer site to track your own report.";
+      (talentAdore
+        ? "Receipt inspection has not been verified for TalentAdore. Keep the employer's confirmation email and track manually."
+        : "You may import a reference-bearing manual confirmation or track your own report.");
     $("uploadInfo").textContent = "";
     $("cvFile").value = "";
     $("attach").disabled = false;
@@ -721,6 +731,75 @@ function currentPacketToJSON() {
 }
 
 
+/* The Chrome popup closes when the applicant switches tabs. Retain ONLY
+   eligible question prompts and exact review digests, for up to five minutes,
+   in Chrome's ephemeral SESSION storage. The applicant must return to the
+   signed-in first-party tab and explicitly click Sync. No background origin
+   permission, cookie access, CV/answer persistence, or employer action. */
+async function refreshPendingQuestionSync() {
+  const button = $("syncQuestions");
+  const info = $("questionSyncInfo");
+  button.disabled = true;
+  try {
+    const pending = await getPendingQuestions(chrome.storage?.session);
+    if (!pending) {
+      info.textContent = "No eligible employer questions waiting to be remembered.";
+      return;
+    }
+    button.disabled = false;
+    info.textContent = pending.questions.length +
+      " safe employer question(s) temporarily queued. Return to your signed-in " +
+      "SmartPloy tab and click Sync within five minutes; no answers are stored here.";
+  } catch {
+    info.textContent = "Temporary question memory unavailable. You may still fill the employer form manually.";
+  }
+}
+
+async function onSyncQuestions() {
+  $("syncQuestions").disabled = true;
+  try {
+    const pending = await getPendingQuestions(chrome.storage?.session);
+    if (!pending) {
+      throw new QuestionError("No recent reviewed question prompts remain. Reinspect the employer form.");
+    }
+    const tab = await activeTab();
+    if (!isSmartPloyTab(tab.url)) {
+      throw new QuestionError("Return to your signed-in SmartPloy tab, reopen the extension, and click Sync questions.");
+    }
+    const [reply] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id }, world: "ISOLATED",
+      func: rememberQuestionsOnSmartPloy, args: [pending],
+    });
+    const verdict = reply?.result;
+    if (reply?.frameId !== 0 || !verdict) {
+      throw new QuestionError("SmartPloy did not confirm profile question synchronization.");
+    }
+    if (verdict.reason === "cv_only") {
+      await clearPendingQuestions(chrome.storage?.session);
+      $("questionSyncInfo").textContent =
+        "Your CV-only choice was respected. No new employer questions were saved.";
+      status("CV-only profile is active; employer questions remain manual.", true);
+      return;
+    }
+    if (verdict.synced !== true || verdict.employer_actions_performed !== 0 ||
+        verdict.answers_inferred_from_cv !== 0) {
+      throw new QuestionError("Profile not confirmed (" +
+        String(verdict.reason || "unverified") + "). Sign in, check the exact CV review and retry before the queue expires.");
+    }
+    await clearPendingQuestions(chrome.storage?.session);
+    $("questionSyncInfo").textContent = verdict.remembered_count +
+      " eligible question(s) saved to your own SmartPloy profile. " +
+      "Open My CV & documents to review answers; " +
+      verdict.skipped + " ineligible or duplicate question(s) were skipped.";
+    status("Profile prompts saved. No employer answers were filled or submitted.", true);
+  } catch (error) {
+    status(normalizeError(error));
+    await refreshPendingQuestionSync();
+  } finally {
+    // A failure remains an explicit applicant retry, never background sync.
+  }
+}
+
 /* Review and fill required employer-specific TEXT questions only.
    This does not produce or infer answers: the applicant types or pastes a
    checked answer (including any reviewed ObumAI draft) and approves transfer.
@@ -754,6 +833,26 @@ async function onReviewQuestions() {
     }
     const plan = planReviewedQuestions(reply.result.elements);
     currentQuestionPlan = { ...plan, url: tab.url };
+    let syncQueued = false;
+    if (plan.questions.length) {
+      try {
+        const pending = buildPendingQuestionSync(currentPacket, plan.questions, {
+          fields: await approvedFieldsSha256(currentPacket.fields),
+          url: await sha256Text(currentPacket.application_url),
+        });
+        const sameTab = await activeTab();
+        if (sameTab.id === tab.id && sameTab.url === tab.url &&
+            targetTabId === tab.id && currentPacket &&
+            currentQuestionPlan.url === tab.url) {
+          await queuePendingQuestions(chrome.storage?.session, pending);
+          syncQueued = true;
+        }
+      } catch {
+        // Do not claim persistence on a failed session write. Form filling
+        // remains explicitly applicant-controlled and manually usable.
+      }
+    }
+    await refreshPendingQuestionSync();
     $("questionInfo").textContent =
       plan.questions.length + " eligible required text questions; " +
       plan.humanOnly.length + " require manual handling. " +
@@ -779,7 +878,9 @@ async function onReviewQuestions() {
     $("questionPanel").hidden = plan.questions.length === 0;
     $("fillQuestions").disabled = plan.questions.length === 0;
     status(plan.questions.length ?
-      "Review every proposed answer for accuracy, then approve a one-time fill. Sensitive questions remain manual." :
+      "Review every proposed answer for accuracy, then approve a one-time fill. Sensitive questions remain manual. " +
+      (syncQueued ? "Eligible prompts queued for private SmartPloy sync; switch to your signed-in SmartPloy tab to save them." :
+        "Prompt sync unavailable. Questions have NOT been saved to your profile.") :
       "No safely eligible unanswered text questions. Answer employer-specific requirements manually.", true);
   } catch (error) { status(normalizeError(error)); }
 }
@@ -1061,6 +1162,8 @@ async function onReceipt() {
   } catch (error) { status(normalizeError(error)); }
 }
 
+$("syncQuestions").addEventListener("click", () => void onSyncQuestions());
+void refreshPendingQuestionSync();
 $("verifyReview").addEventListener("click", () => void onVerifySmartPloyReview());
 $("reserveFinal").addEventListener("click", () => void onReserveFinalAttempt());
 $("inspect").addEventListener("click", () => void onInspect());

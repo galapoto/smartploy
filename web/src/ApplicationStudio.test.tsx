@@ -10,6 +10,7 @@ import type {
 
 vi.mock("./api", () => ({
   getSession: vi.fn(),
+  getCVEditor: vi.fn(),
   getApplicationWorkspaces: vi.fn(),
   getApplicationWorkspaceById: vi.fn(),
   getApplicationAgents: vi.fn(),
@@ -42,7 +43,16 @@ vi.mock("./api", () => ({
   proposeEvidenceLetter: vi.fn(),
   createBrowserHandoffPacket: vi.fn(),
   importBrowserReceipt: vi.fn(),
-  applicationDownloadUrl: vi.fn(() => "/synthetic-download"),
+  applicationDownloadUrl: vi.fn((id: string, kind: "cv" | "letter",
+    fmt: "pdf" | "docx", rev: number) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id)
+    + "/download/" + kind + "/" + fmt + "?expected_revision=" + rev),
+  applicationPackageDownloadUrl: vi.fn((id: string, rev: number) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id)
+    + "/download/package.zip?expected_revision=" + rev),
+  applicationPdfPreviewUrl: vi.fn((id: string, kind: "cv" | "letter", rev: number) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id) +
+    "/preview/" + kind + "/pdf?expected_revision=" + rev),
 }));
 
 function job(tag: string): ApplicationWorkspace {
@@ -106,6 +116,15 @@ const studio = (mode: ApplicationFlowMode | null = null) => render(<ApplicationS
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(api.applicationPackageDownloadUrl).mockImplementation((id, rev) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id)
+    + "/download/package.zip?expected_revision=" + rev);
+  vi.mocked(api.applicationDownloadUrl).mockImplementation((id, kind, fmt, rev) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id)
+    + "/download/" + kind + "/" + fmt + "?expected_revision=" + rev);
+  vi.mocked(api.applicationPdfPreviewUrl).mockImplementation((id, kind, rev) =>
+    "/api/v1/application-workspaces/" + encodeURIComponent(id) +
+    "/preview/" + kind + "/pdf?expected_revision=" + rev);
   activeUser = "usr-a";
   vi.mocked(api.getSession).mockImplementation(async () => session(activeUser));
   vi.mocked(api.getApplicationWorkspaces).mockResolvedValue(draft("A"));
@@ -777,6 +796,56 @@ describe("Application Studio private-read account boundary", () => {
   });
 
 
+  it("SP111 prepares owner-reviewed Playwright packet in tab memory without clipboard", async () => {
+    const clipboard = vi.fn(async (_value: string) => undefined);
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true, value: { writeText: clipboard },
+    });
+    try {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({
+        packet: {
+          schema: "smartploy.browser_handoff.v2",
+          issued_at: new Date().toISOString(), expires_at: "2099-01-01T00:10:00Z",
+          application_url: "https://jobs.lever.co/synthetic/role",
+          company: "Synthetic", role_title: "QA Engineer",
+          workspace_id: "workspace-A", revision: 1,
+          document_sha256: "a".repeat(64), cv_pdf_sha256: "b".repeat(64),
+          approved_fields_sha256: "c".repeat(64), cv_pdf_size: 1024,
+          fields: { full_name: "Private Applicant", first_name: "Private",
+            last_name: "Applicant", email: "private@example.invalid",
+            phone: "", location: "", linkedin: "", github: "",
+            cover_letter: "Private approved synthetic cover letter" },
+          privacy: { approved_contact_only: true, original_cv_included: false,
+            browser_form_fill_allowed_after_user_click: true,
+            employer_submit_allowed_without_new_approval: false },
+        },
+        external_actions_performed: false,
+      });
+      studio("assisted");
+      expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
+      const prepare = screen.getByRole("button", {
+        name: "Prepare Playwright handoff (no clipboard)",
+      });
+      await waitFor(() => expect((prepare as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(prepare);
+      await waitFor(() => expect(api.createBrowserHandoffPacket).toHaveBeenCalledWith(
+        "workspace-A", 1, "usr-a",
+      ));
+      expect(await screen.findByRole("region", {
+        name: "Paired local Playwright browser",
+      })).toBeTruthy();
+      expect(screen.getByText(/Private Playwright packet prepared only in this tab/)).toBeTruthy();
+      expect(clipboard).not.toHaveBeenCalled();
+      expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+      expect(api.submitAuthorizedAutoApplyBatch).not.toHaveBeenCalled();
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
+
   it("records the approved packet hashes for one job and can cancel, without a submit API", async () => {
     const packet = {
       schema: "smartploy.browser_handoff.v2" as const,
@@ -1066,6 +1135,7 @@ describe("Application Studio private-read account boundary", () => {
   });
 
   it("keeps normal same-account loading, edits and refresh available", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
     expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
@@ -1075,6 +1145,9 @@ describe("Application Studio private-read account boundary", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Refresh drafts" }));
     await waitFor(() => expect(api.getApplicationWorkspaces).toHaveBeenCalledTimes(2));
+    expect(confirm).toHaveBeenCalledWith(
+      "Discard unsaved application CV or cover-letter edits and refresh drafts?"
+    );
     expect(screen.queryByRole("heading", { name: "Account verification required" })).toBeNull();
     expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).value)
       .toBe("PRIVATE-CV-A plus unsaved draft");
@@ -2160,5 +2233,376 @@ describe("SP98: verified synthetic local generation and reviewable CV AI edits",
     fireEvent.click(screen.getByRole("button", { name: "Undo last generated edit" }));
     await waitFor(() => expect(cv.value).toBe("PRIVATE-CV-A"));
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP104 job-specific CV and cover letter unsaved reporting", () => {
+  it("warns before refreshing unsaved private drafts, and reports clean after saving", async () => {
+    const onUnsavedChange = vi.fn();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<ApplicationStudio focusId="" expectedUserId="usr-a"
+        expectedAuthSource="oidc" onFindJobs={vi.fn()}
+        onUnsavedChange={onUnsavedChange} />);
+      const letter = await screen.findByRole("textbox", {name: "Editable cover letter text"});
+      expect(onUnsavedChange).toHaveBeenLastCalledWith(false);
+      fireEvent.change(letter, {target: {value: "PRIVATE-LETTER-A with real applicant edits"}});
+      expect(onUnsavedChange).toHaveBeenLastCalledWith(true);
+      fireEvent.click(screen.getByRole("button", {name: "Refresh drafts"}));
+      // The owner check is asynchronous by design: assert after the
+      // preflight completes, before any private workspace GET is issued.
+      await waitFor(() => expect(confirm).toHaveBeenCalledWith(
+        "Discard unsaved application CV or cover-letter edits and refresh drafts?"
+      ));
+      expect(api.getApplicationWorkspaces).toHaveBeenCalledTimes(1);
+      expect((letter as HTMLTextAreaElement).value).toContain("real applicant edits");
+    } finally { confirm.mockRestore(); }
+  });
+});
+
+
+describe("SP104 private draft refresh identity preflight", () => {
+  it("clears a dirty prior-account editor before offering any discard prompt", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    studio();
+    const cv = await screen.findByRole("textbox", {name: "Editable CV text"});
+    fireEvent.change(cv, {target: {value: "PRIVATE A UNSAVED DATA"}});
+    activeUser = "usr-b"; // same email, different authenticated subject
+    fireEvent.click(screen.getByRole("button", {name: "Refresh drafts"}));
+    expect(await screen.findByRole("heading", {name: "Account verification required"})).toBeTruthy();
+    expect(screen.queryByText("PRIVATE A UNSAVED DATA")).toBeNull();
+    expect(screen.queryByRole("textbox", {name: "Editable CV text"})).toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP105 owner-private current master CV comparison and manual reconciliation", () => {
+  const previousSHA = "a".repeat(64);
+  const currentSHA = "b".repeat(64);
+  const currentFullText = "Complete current applicant CV with verified Python, SQL and cloud projects. Full job history.";
+  const masterCV = { present: true, sha256: currentSHA, filename: "Current-CV.docx" };
+  const currentMaster = () => ({
+    present: true, text: currentFullText, sha256: currentSHA,
+    filename: "Current-CV.docx", created_by_editor: false, history: [],
+    employer_actions_performed: 0 as const, approved_profile_facts_added: 0 as const,
+  });
+  function mount() {
+    return render(<ApplicationStudio focusId="workspace-A" expectedUserId="usr-a"
+      expectedAuthSource="oidc" onFindJobs={vi.fn()} masterCV={masterCV} />);
+  }
+  it("compares two complete private CVs and updates only a deliberately unsaved job draft", async () => {
+    vi.mocked(api.getCVEditor).mockResolvedValue(currentMaster());
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      mount();
+      await screen.findByRole("heading", {name: "A private role"});
+      const panel = screen.getByRole("region", {name: "CV version and comparison"});
+      expect(within(panel).getByText(/started from an earlier master CV/)).toBeTruthy();
+      const cv = screen.getByRole("textbox", {name: "Editable CV text"}) as HTMLTextAreaElement;
+      const letter = screen.getByRole("textbox", {name: "Editable cover letter text"}) as HTMLTextAreaElement;
+      expect(cv.value).toBe("PRIVATE-CV-A");
+      expect(letter.value).toBe("PRIVATE-LETTER-A");
+      expect(api.getCVEditor).not.toHaveBeenCalled();
+      fireEvent.click(within(panel).getByRole("button", {name: /Compare with current master CV/i}));
+      await waitFor(() => expect(api.getCVEditor).toHaveBeenCalledTimes(1));
+      const comparison = await screen.findByRole("region", {
+        name: "Job-specific CV versus current master CV",
+      });
+      expect(comparison.textContent).toContain("PRIVATE-CV-A");
+      expect(comparison.textContent).toContain(currentFullText);
+      expect(cv.value).toBe("PRIVATE-CV-A");
+      expect(letter.value).toBe("PRIVATE-LETTER-A");
+      expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+      const use = within(panel).getByRole("button", {name: /Use current master CV in this job draft/i});
+      fireEvent.click(use);
+      expect(cv.value).toBe("PRIVATE-CV-A");
+      expect(api.getCVEditor).toHaveBeenCalledTimes(1);
+      confirmation.mockReturnValue(true);
+      fireEvent.click(use);
+      await waitFor(() => expect(cv.value).toBe(currentFullText));
+      expect(letter.value).toBe("PRIVATE-LETTER-A");
+      expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+      expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+      expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+      expect(screen.getByText(/Review the full CV, save your changes/)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", {name: /^Save changes$/}));
+      await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+        "workspace-A", 1, currentFullText, "PRIVATE-LETTER-A", "usr-a",
+      ));
+      expect(within(panel).queryByRole("button", {name: /Use current master CV in this job draft/i})).toBeNull();
+      expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+      expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
+    } finally { confirmation.mockRestore(); }
+  });
+
+  it("fails closed when the private editor response no longer matches the active master digest", async () => {
+    vi.mocked(api.getCVEditor).mockResolvedValue({
+      ...currentMaster(), sha256: "c".repeat(64),
+    });
+    mount();
+    await screen.findByRole("heading", {name: "A private role"});
+    const panel = screen.getByRole("region", {name: "CV version and comparison"});
+    fireEvent.click(within(panel).getByRole("button", {name: /Compare with current master CV/i}));
+    expect(await within(panel).findByRole("alert")).toHaveProperty("textContent",
+      expect.stringContaining("cannot be safely compared"));
+    expect(screen.queryByRole("region", {name: "Job-specific CV versus current master CV"})).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("drops an old draft comparison response after the selected application changes", async () => {
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [job("A"), job("B")], count: 2,
+    });
+    const pending = deferred<Awaited<ReturnType<typeof api.getCVEditor>>>();
+    vi.mocked(api.getCVEditor).mockReturnValue(pending.promise);
+    mount();
+    await screen.findByRole("heading", {name: "A private role"});
+    fireEvent.click(screen.getByRole("button", {name: /Compare with current master CV/i}));
+    await waitFor(() => expect(api.getCVEditor).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", {name: "Next application"}));
+    await screen.findByRole("heading", {name: "B private role"});
+    await act(async () => { pending.resolve(currentMaster()); });
+    expect(screen.queryByRole("region", {name: "Job-specific CV versus current master CV"})).toBeNull();
+    expect((screen.getByRole("textbox", {name: "Editable CV text"}) as HTMLTextAreaElement).value)
+      .toBe("PRIVATE-CV-B");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("does not expose an old account's master CV after the same-email OIDC account switches", async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.getCVEditor>>>();
+    vi.mocked(api.getCVEditor).mockReturnValue(pending.promise);
+    mount();
+    await screen.findByRole("heading", {name: "A private role"});
+    fireEvent.click(screen.getByRole("button", {name: /Compare with current master CV/i}));
+    await waitFor(() => expect(api.getCVEditor).toHaveBeenCalledTimes(1));
+    activeUser = "usr-b";
+    await act(async () => { pending.resolve(currentMaster()); });
+    expect(await screen.findByRole("heading", {name: "Account verification required"})).toBeTruthy();
+    expect(screen.queryByText(currentFullText)).toBeNull();
+    expect(screen.queryByRole("textbox", {name: "Editable CV text"})).toBeNull();
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("never claims a master CV is current when the origin SHA is unavailable", async () => {
+    vi.mocked(api.getApplicationWorkspaces).mockResolvedValue({
+      workspaces: [{...job("A"),source_cv_sha256:""}],count:1,
+    });
+    mount();
+    await screen.findByRole("heading", {name: "A private role"});
+    const panel = screen.getByRole("region", {name: "CV version and comparison"});
+    expect(within(panel).getByText(/source CV version cannot be compared automatically/)).toBeTruthy();
+    expect(within(panel).queryByText("Master CV origin verified")).toBeNull();
+    expect(api.getCVEditor).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP105 undo current master CV before server save", () => {
+  it("restores the exact prior job CV without overwriting the letter or contacting an employer", async () => {
+    const master = {
+      present: true, sha256: "b".repeat(64), filename: "Latest-CV.docx",
+    };
+    vi.mocked(api.getCVEditor).mockResolvedValue({
+      present:true, text:"Updated full CV with verified personal work, SQL and Python history.",
+      sha256:master.sha256, filename:master.filename,
+      history:[], created_by_editor:false,
+      employer_actions_performed:0, approved_profile_facts_added:0,
+    });
+    const confirm=vi.spyOn(window,"confirm").mockReturnValue(true);
+    try {
+      render(<ApplicationStudio focusId="workspace-A" expectedUserId="usr-a"
+        expectedAuthSource="oidc" onFindJobs={vi.fn()} masterCV={master}/>);
+      await screen.findByRole("heading", {name: "A private role"});
+      const cv=screen.getByRole("textbox",{name:"Editable CV text"}) as HTMLTextAreaElement;
+      const letter=screen.getByRole("textbox",{name:"Editable cover letter text"}) as HTMLTextAreaElement;
+      fireEvent.change(cv,{target:{value:"PRIVATE-CV-A with applicant's unsaved corrections"}});
+      fireEvent.click(screen.getByRole("button",{name:/Compare with current master CV/i}));
+      await screen.findByRole("region",{name:"Job-specific CV versus current master CV"});
+      fireEvent.click(screen.getByRole("button",{name:/Use current master CV in this job draft/i}));
+      await waitFor(()=>expect(cv.value).toContain("Updated full CV with verified"));
+      expect(letter.value).toBe("PRIVATE-LETTER-A");
+      fireEvent.click(screen.getByRole("button",{name:"Undo master CV replacement"}));
+      await waitFor(()=>expect(cv.value).toBe("PRIVATE-CV-A with applicant's unsaved corrections"));
+      expect(letter.value).toBe("PRIVATE-LETTER-A");
+      expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+      expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    } finally {confirm.mockRestore();}
+  });
+});
+
+
+describe("SP106 complete application package controls", () => {
+  const name = "Download complete application ZIP with CV and cover letter PDF and DOCX";
+  it("uses the exact saved job's package and performs no employer action", async () => {
+    studio("assisted");
+    await screen.findByRole("heading", {name: "A private role"});
+    const section = screen.getByRole("region", {name: "Complete application file package"});
+    const link = within(section).getByRole("link", {name});
+    expect(link.getAttribute("href")).toBe(
+      "/api/v1/application-workspaces/workspace-A/download/package.zip?expected_revision=1"
+    );
+    expect(section.textContent).toContain("editable DOCX and printable PDF");
+    expect(section.textContent).toContain("no application has been submitted");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("does not offer an outdated saved file while CV or letter edits remain unsaved", async () => {
+    studio("manual");
+    await screen.findByRole("heading", {name: "A private role"});
+    const section = screen.getByRole("region", {name: "Complete application file package"});
+    expect(within(section).getByRole("link", {name}).getAttribute("href")).toContain("workspace-A");
+    fireEvent.change(screen.getByRole("textbox", {name: "Editable cover letter text"}), {
+      target: {value: "PRIVATE-LETTER-A with an applicant correction"},
+    });
+    const disabledLink = within(section).getByLabelText(name);
+    expect(disabledLink.getAttribute("href")).toBeNull();
+    expect(disabledLink.getAttribute("aria-disabled")).toBe("true");
+    expect(within(section).getByText(/Save your CV and cover-letter edits/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: /^Save changes$/}));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", 1, "PRIVATE-CV-A",
+      "PRIVATE-LETTER-A with an applicant correction", "usr-a",
+    ));
+    await waitFor(() => expect(
+      within(section).getByRole("link", {name}).getAttribute("href")
+    ).toContain("?expected_revision=2"));
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("removes a former owner's package link after a same-email account switch", async () => {
+    studio();
+    await screen.findByRole("heading", {name: "A private role"});
+    activeUser = "usr-b";
+    fireEvent.click(screen.getByRole("button", {name: "Refresh drafts"}));
+    expect(await screen.findByRole("heading", {name: "Account verification required"})).toBeTruthy();
+    expect(screen.queryByRole("region", {name: "Complete application file package"})).toBeNull();
+  });
+});
+
+
+describe("SP107 printable PDFs for exact saved, owner-private application revision", () => {
+  const cvLabel = "Preview saved CV PDF in a new tab";
+  const letterLabel = "Preview saved cover letter PDF in a new tab";
+
+  it("offers both printable PDFs with a pinned saved revision and safe new-tab boundary", async () => {
+    studio("assisted");
+    await screen.findByRole("heading", {name: "A private role"});
+    const panel = screen.getByRole("region", {name: "Complete application file package"});
+    const cv = within(panel).getByRole("link", {name: cvLabel});
+    const letter = within(panel).getByRole("link", {name: letterLabel});
+    expect(cv.getAttribute("href")).toBe(
+      "/api/v1/application-workspaces/workspace-A/preview/cv/pdf?expected_revision=1"
+    );
+    expect(letter.getAttribute("href")).toBe(
+      "/api/v1/application-workspaces/workspace-A/preview/letter/pdf?expected_revision=1"
+    );
+    for (const link of [cv, letter]) {
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+      expect(link.getAttribute("aria-disabled")).toBe("false");
+    }
+    expect(panel.textContent).toContain("Nothing is submitted to an employer");
+    expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("suppresses both PDFs until all current edits are saved and binds revised links to revision 2", async () => {
+    studio("manual");
+    await screen.findByRole("heading", {name: "A private role"});
+    const panel = screen.getByRole("region", {name: "Complete application file package"});
+    fireEvent.change(screen.getByRole("textbox", {name: "Editable CV text"}), {
+      target: {value: "PRIVATE-CV-A with a verified change"},
+    });
+    const cv = within(panel).getByLabelText(cvLabel);
+    const letter = within(panel).getByLabelText(letterLabel);
+    for (const link of [cv, letter]) {
+      expect(link.getAttribute("href")).toBeNull();
+      expect(link.getAttribute("aria-disabled")).toBe("true");
+      expect(link.getAttribute("tabindex")).toBe("-1");
+    }
+    expect(within(panel).getByText(/Save your CV and cover-letter edits before downloading or previewing/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: /^Save changes$/}));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", 1, "PRIVATE-CV-A with a verified change", "PRIVATE-LETTER-A", "usr-a"
+    ));
+    await waitFor(() => expect(
+      within(panel).getByRole("link", {name: cvLabel}).getAttribute("href")
+    ).toContain("expected_revision=2"));
+    expect(within(panel).getByRole("link", {name: letterLabel}).getAttribute("href"))
+      .toContain("expected_revision=2");
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("removes both private PDF preview links on same-email account takeover", async () => {
+    studio("automatic");
+    await screen.findByRole("heading", {name: "A private role"});
+    activeUser = "usr-b";
+    fireEvent.click(screen.getByRole("button", {name: "Refresh drafts"}));
+    expect(await screen.findByRole("heading", {name: "Account verification required"})).toBeTruthy();
+    expect(screen.queryByRole("link", {name: cvLabel})).toBeNull();
+    expect(screen.queryByRole("link", {name: letterLabel})).toBeNull();
+  });
+});
+
+describe("SP108: standalone CV and letter documents and ZIP are bound to saved revision", () => {
+  it("gives all standalone documents unambiguous, versioned links", async () => {
+    studio("assisted");
+    await screen.findByRole("heading", {name: "A private role"});
+    const names: Array<[string, string]> = [
+      ["Download CV · DOCX", "/download/cv/docx"],
+      ["Download saved CV PDF", "/download/cv/pdf"],
+      ["Download letter · DOCX", "/download/letter/docx"],
+      ["Download saved cover letter PDF", "/download/letter/pdf"],
+    ];
+    for (const [name, path] of names) {
+      const a = screen.getByRole("link", {name});
+      expect(a.getAttribute("href")).toBe(
+        "/api/v1/application-workspaces/workspace-A" + path + "?expected_revision=1"
+      );
+      expect(a.getAttribute("aria-disabled")).toBe("false");
+    }
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
+  });
+
+  it("disables all five download links while dirty and re-binds each after the revision-2 save", async () => {
+    studio("manual");
+    await screen.findByRole("heading", {name: "A private role"});
+    const names = [
+      "Download CV · DOCX", "Download saved CV PDF",
+      "Download letter · DOCX", "Download saved cover letter PDF",
+    ];
+    const links = names.map(name => screen.getByRole("link", {name}));
+    const panel = screen.getByRole("region", {name: "Complete application file package"});
+    const zip = within(panel).getByRole("link", {
+      name: "Download complete application ZIP with CV and cover letter PDF and DOCX"
+    });
+    fireEvent.change(screen.getByRole("textbox", {name: "Editable CV text"}), {
+      target: {value: "PRIVATE-CV-A updated based on verified work"},
+    });
+    for (const a of [...links, zip]) {
+      expect(a.getAttribute("href")).toBeNull();
+      expect(a.getAttribute("aria-disabled")).toBe("true");
+      expect(a.getAttribute("tabindex")).toBe("-1");
+    }
+    fireEvent.click(screen.getByRole("button", {name: /^Save changes$/}));
+    await waitFor(() => expect(api.editApplicationWorkspace).toHaveBeenCalledWith(
+      "workspace-A", 1, "PRIVATE-CV-A updated based on verified work", "PRIVATE-LETTER-A", "usr-a"
+    ));
+    await waitFor(() => expect(zip.getAttribute("href")).toContain("?expected_revision=2"));
+    for (const a of [...links, zip]) {
+      expect(a.getAttribute("href")).toContain("?expected_revision=2");
+      expect(a.getAttribute("aria-disabled")).toBe("false");
+    }
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.sendAshbyPartnerApplication).not.toHaveBeenCalled();
   });
 });

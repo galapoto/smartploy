@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  UploadError, MAX_PDF_BYTES, chooseResumeField, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactAshbyReceiptPage, isLeverFinalProvider,
+  UploadError, MAX_PDF_BYTES, chooseResumeField, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactAshbyReceiptPage, exactTalentAdoreForm, isLeverFinalProvider,
   encodePdfBase64, validatePdf
 } from "../upload.mjs";
 
@@ -164,4 +164,19 @@ test("SP43 exact reviewed Greenhouse form works on official hosted job and legac
   assert.equal(exactGreenhouseForm(
     greenhouseModern,greenhouseModern+"?gh_src=unknown"
   ),false);
+});
+
+test("SP118 TalentAdore exact posting supports review-only attachment, never final click", () => {
+  const posting = "https://ats.talentadore.com/apply/junior-analyst/m6rpoy";
+  assert.equal(exactTalentAdoreForm(posting, posting), true);
+  assert.equal(exactAssistedForm(posting + "/", posting), true);
+  for (const denied of [
+    posting + "?source=duunitori", posting + "#form",
+    "https://ats.talentadore.com/apply/other/m6rpoy",
+    "https://ats.talentadore.com/apply/junior-analyst/another",
+    "https://ats.talentadore.com.evil.invalid/apply/junior-analyst/m6rpoy",
+    "http://ats.talentadore.com/apply/junior-analyst/m6rpoy",
+    posting + "/submit",
+  ]) assert.equal(exactAssistedForm(denied, posting), false, denied);
+  assert.equal(isLeverFinalProvider(posting), false);
 });

@@ -32,7 +32,7 @@ from .training_directory import TrainingDirectoryError, load_training_programs
 from .application_storage import MemoryApplicationRepository, PostgresApplicationRepository
 from .application_workspace import (
     WorkspaceError, WorkspaceRevisionConflict,
-    new_workspace, render_document,
+    new_workspace, render_document, render_application_package,
 )
 from .complete_letter import compose_completed_letter
 from .application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
@@ -66,6 +66,7 @@ from .cv_job_matching import cv_job_matches
 from .cv_storage import CVArchiveNotFound, CVRevisionConflict, MemoryCVRepository, PostgresCVRepository
 from .cv_editor import render_editor_cv
 from .profile import FACT_TYPES, ProfileFact
+from .profile_cv_suggestions import cv_review_suggestions
 from .identity import (
     AuthenticatedPrincipal,
     IdentityRepository,
@@ -106,6 +107,10 @@ from .preparations import (
     approved_evidence_snapshot, preparation_job_snapshot,
 )
 from .profile_storage import MemoryProfileRepository, PostgresProfileRepository
+from .application_question_memory import (
+    QuestionMemoryError, MemoryApplicationQuestionRepository,
+    PostgresApplicationQuestionRepository,
+)
 from .search_preferences import SearchPreferenceConflict, SearchPreferenceError, search_jobs
 from .search_preference_storage import MemorySearchPreferenceRepository, PostgresSearchPreferenceRepository
 from .service import SmartployService
@@ -219,6 +224,39 @@ class ProfileFactPayload(BaseModel):
     fact_type: str = Field(min_length=1, max_length=40)
     value: str = Field(min_length=1, max_length=700)
     approved: bool = False
+
+
+class ApplicationQuestionDescriptor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: str = Field(min_length=3, max_length=150)
+    expected_id: str = Field(default="", max_length=150)
+    expected_name: str = Field(default="", max_length=150)
+    expected_placeholder: str = Field(default="", max_length=150)
+
+
+class ApplicationQuestionObservePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    workspace_id: str = Field(min_length=1, max_length=160)
+    expected_revision: int = Field(ge=1, le=2147483647)
+    questions: list[ApplicationQuestionDescriptor] = Field(min_length=1, max_length=12)
+
+
+class CVProfileSuggestionsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm_inspect_saved_cv: StrictBool
+
+
+class ApplicationProfileModePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["guided", "cv_only"]
+
+
+class ApplicationQuestionAnswerPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=1, le=2147483647)
+    answer: str = Field(min_length=2, max_length=1500)
+    approved_for_reuse: StrictBool
+    confirm_personally_reviewed: StrictBool
 
 
 class FactApprovalPayload(BaseModel):
@@ -642,6 +680,10 @@ def create_app(
     app.state.search_preferences = (
         PostgresSearchPreferenceRepository(dsn) if dsn else MemorySearchPreferenceRepository()
     )
+    app.state.application_question_memory = (
+        PostgresApplicationQuestionRepository(dsn) if dsn
+        else MemoryApplicationQuestionRepository()
+    )
     app.state.private_saved_jobs = (
         PostgresPrivateSavedJobRepository(dsn) if dsn
         else MemoryPrivateSavedJobRepository()
@@ -971,6 +1013,136 @@ def create_app(
             "auth_source": principal.auth_source or "external_identity",
         }
 
+    def _application_profile_mutation_owner(request: Request) -> tuple[SmartployService, UserProfileBinding | None]:
+        tenant, binding = tenant_context(request)
+        # Original account, CSRF/Origin and intended-user guards; a browser
+        # companion or third-party site can NEVER directly set profile memory.
+        if binding is None and authentication.mode != "disabled":
+            raise HTTPException(status_code=403, detail="Verified profile owner required")
+        if binding is not None and (
+            request.headers.get("X-Smartploy-Expected-User-Id", "") != binding.user_id
+            or request.headers.get("Origin", "") != public_origin
+            or request.headers.get("Sec-Fetch-Site", "").casefold()
+                not in {"", "same-origin", "none"}
+        ):
+            raise HTTPException(
+                status_code=403, detail="Verified same-origin profile change required"
+            )
+        return tenant, binding
+
+    @app.put("/api/v1/profile/application-mode")
+    def choose_application_profile_mode(
+        payload: ApplicationProfileModePayload, request: Request,
+    ) -> JSONResponse:
+        tenant, _ = _application_profile_mutation_owner(request)
+        try:
+            selected = app.state.application_question_memory.set_mode(
+                tenant.profile_repository.profile_id, payload.mode,
+            )
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Profile preference unavailable") from exc
+        return JSONResponse({
+            "mode": selected, "cv_only_allowed": True,
+            "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
+
+    @app.get("/api/v1/profile/application-questions")
+    def get_application_profile_questions(request: Request) -> JSONResponse:
+        tenant, _ = tenant_context(request)
+        profile_id = tenant.profile_repository.profile_id
+        records = app.state.application_question_memory.list(profile_id)
+        return JSONResponse({
+            "questions": [record.public() for record in records],
+            "count": len(records), "cv_only_allowed": True,
+            "mode": app.state.application_question_memory.mode(profile_id),
+            "approved_answers_auto_submitted": False,
+            "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
+
+    @app.post("/api/v1/profile/application-questions/observe")
+    def observe_application_profile_questions(
+        payload: ApplicationQuestionObservePayload, request: Request,
+    ) -> JSONResponse:
+        tenant, _ = _application_profile_mutation_owner(request)
+        profile_id = tenant.profile_repository.profile_id
+        workspace = app.state.workspace_repository.get(profile_id, payload.workspace_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="Owned application not found")
+        if workspace.revision != payload.expected_revision or workspace.status != "draft":
+            raise HTTPException(
+                status_code=409, detail="Application revision changed or is no longer a draft"
+            )
+        if app.state.application_question_memory.mode(profile_id) == "cv_only":
+            return JSONResponse({
+                "questions": [], "remembered_count": 0,
+                "skipped_sensitive_or_duplicate": len(payload.questions),
+                "profile_mode": "cv_only",
+                "answers_inferred_from_cv": 0, "employer_actions_performed": 0,
+            }, headers={"Cache-Control": "private, no-store"})
+        descriptors = payload.questions
+        # The applicant's existing paired-local Chrome question inspector
+        # performed read-only classification. Independently recheck every
+        # identifier and label here: do not trust external employer DOM text.
+        try:
+            seen, skipped = app.state.application_question_memory.observe(
+                profile_id,
+                [item.label for item in descriptors],
+                [tuple((item.expected_id, item.expected_name,
+                        item.expected_placeholder)) for item in descriptors],
+            )
+        except (QuestionMemoryError, PostgresError) as exc:
+            raise HTTPException(status_code=503, detail="Profile questions are temporarily unavailable") from exc
+        return JSONResponse({
+            "questions": [record.public() for record in seen],
+            "remembered_count": len(seen), "skipped_sensitive_or_duplicate": skipped,
+            "answers_inferred_from_cv": 0, "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
+
+    @app.put("/api/v1/profile/application-questions/{question_key}")
+    def save_application_profile_answer(
+        question_key: str, payload: ApplicationQuestionAnswerPayload,
+        request: Request,
+    ) -> JSONResponse:
+        tenant, _ = _application_profile_mutation_owner(request)
+        if not payload.confirm_personally_reviewed:
+            raise HTTPException(
+                status_code=422, detail="Confirm the exact reusable answer personally"
+            )
+        try:
+            saved = app.state.application_question_memory.save(
+                tenant.profile_repository.profile_id,
+                question_key, payload.answer, payload.expected_version,
+                payload.approved_for_reuse,
+            )
+        except QuestionMemoryError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Profile answer save unavailable") from exc
+        return JSONResponse({
+            "question": saved.public(), "employer_actions_performed": 0,
+            "automatic_employer_submission_authorized": False,
+        }, headers={"Cache-Control": "private, no-store"})
+
+    @app.delete("/api/v1/profile/application-questions/{question_key}")
+    def forget_application_profile_question(
+        question_key: str, request: Request,
+    ) -> JSONResponse:
+        tenant, _ = _application_profile_mutation_owner(request)
+        try:
+            removed = app.state.application_question_memory.delete(
+                tenant.profile_repository.profile_id, question_key,
+            )
+        except QuestionMemoryError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except PostgresError as exc:
+            raise HTTPException(status_code=503, detail="Profile question deletion unavailable") from exc
+        if not removed:
+            raise HTTPException(status_code=404, detail="Profile question not found")
+        return JSONResponse(
+            {"deleted": True, "employer_actions_performed": 0},
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     @app.get("/api/v1/profile/status")
     def profile_status(request: Request) -> dict[str, Any]:
         tenant, _ = tenant_context(request)
@@ -1017,6 +1189,47 @@ def create_app(
         if not tenant.profile_repository.delete_fact(fact_id):
             raise HTTPException(status_code=404, detail="Profile fact not found")
         return {"deleted": True}
+
+    @app.post("/api/v1/profile/cv/suggest-facts")
+    def suggest_missing_profile_facts_from_cv(
+        payload: CVProfileSuggestionsPayload, request: Request,
+    ) -> JSONResponse:
+        """Exact private CV evidence only. All suggestions stay UNAPPROVED."""
+        tenant, _ = _application_profile_mutation_owner(request)
+        if not payload.confirm_inspect_saved_cv:
+            raise HTTPException(
+                status_code=422, detail="Applicant must request private CV inspection"
+            )
+        profile_id = tenant.profile_repository.profile_id
+        if app.state.application_question_memory.mode(profile_id) == "cv_only":
+            raise HTTPException(
+                status_code=409,
+                detail="CV-only profile does not extract or retain profile suggestions",
+            )
+        stored = app.state.cv_repository.get(profile_id)
+        if stored is None or not stored.text.strip():
+            raise HTTPException(status_code=409, detail="A readable private CV is required")
+        candidates = cv_review_suggestions(stored.text)
+        prior = {
+            (fact.fact_type, fact.value.strip().casefold())
+            for fact in tenant.profile_repository.list_facts()
+        }
+        created = 0
+        for item in candidates:
+            identity = (item.fact_type, item.value.casefold())
+            if identity in prior:
+                continue
+            # Preserve old approvals across repeated scans and overlapping CV
+            # replacements; never revoke or upgrade an existing career fact.
+            tenant.profile_repository.upsert_fact(item)
+            prior.add(identity)
+            created += 1
+        return JSONResponse({
+            "created": created, "already_known": len(candidates) - created,
+            "suggestions_are_approved": False,
+            "external_ai_forwarding": False,
+            "employer_actions_performed": 0,
+        }, headers={"Cache-Control": "private, no-store"})
 
     @app.get("/api/v1/profile/cv")
     def get_cv(request: Request) -> dict[str, Any]:
@@ -3120,9 +3333,75 @@ def create_app(
         app.state.browser_receipts.delete(profile_id, workspace_id)
         return {"deleted": True}
 
+    def _require_current_document_revision(item: Any, expected_revision: int) -> None:
+        # Read-only export fence: never substitute a later, unreviewed save.
+        if item.revision != expected_revision:
+            raise HTTPException(
+                status_code=409,
+                detail="Saved application changed. Refresh and review the current documents.",
+            )
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/preview/{kind}/pdf")
+    def preview_application_pdf(
+        workspace_id: str, kind: str, request: Request,
+        expected_revision: int = Query(..., ge=1),
+    ) -> Response:
+        # Preview is a private, read-only view of the exact saved revision.
+        # Never infer applicant approval or employer submission from a GET.
+        tenant, _ = tenant_context(request)
+        item = app.state.workspace_repository.get(
+            tenant.profile_repository.profile_id, workspace_id,
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        if kind not in {"cv", "letter"}:
+            raise HTTPException(status_code=404, detail="Document kind not available")
+        _require_current_document_revision(item, expected_revision)
+        try:
+            content, mime, filename = render_document(
+                item, kind=kind, file_format="pdf",
+            )
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return Response(content=content, media_type=mime, headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+            "X-Frame-Options": "DENY",
+            "Cross-Origin-Resource-Policy": "same-origin",
+            "Referrer-Policy": "no-referrer",
+        })
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/download/package.zip")
+    def download_application_package(
+        workspace_id: str, request: Request,
+        expected_revision: int = Query(..., ge=1),
+    ) -> Response:
+        tenant, _ = tenant_context(request)
+        item = app.state.workspace_repository.get(
+            tenant.profile_repository.profile_id, workspace_id,
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        _require_current_document_revision(item, expected_revision)
+        try:
+            archive, filename = render_application_package(item)
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return Response(content=archive, media_type="application/zip", headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+        })
+
     @app.get("/api/v1/application-workspaces/{workspace_id}/download/{kind}/{file_format}")
     def download_application_document(
-        workspace_id: str, kind: str, file_format: str, request: Request
+        workspace_id: str, kind: str, file_format: str, request: Request,
+        expected_revision: int | None = Query(None, ge=1),
     ) -> Response:
         tenant, _ = tenant_context(request)
         item = app.state.workspace_repository.get(tenant.profile_repository.profile_id, workspace_id)
@@ -3130,6 +3409,10 @@ def create_app(
             raise HTTPException(status_code=404, detail="Application workspace not found")
         if kind not in {"cv", "letter"} or file_format not in {"pdf", "docx"}:
             raise HTTPException(status_code=404, detail="Document format not available")
+        # Backward-compatible with existing individual-file links. All new
+        # first-party UI downloads supply a version to guard cross-device edits.
+        if expected_revision is not None:
+            _require_current_document_revision(item, expected_revision)
         try:
             content, mime, filename = render_document(
                 item, kind=kind, file_format=file_format,

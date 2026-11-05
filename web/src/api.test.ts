@@ -225,3 +225,35 @@ describe("SP50 original HTTP client preserves private mutation failure status", 
     }
   });
 });
+
+
+describe("SP107 exact-revision PDF preview URL (pure GET, no data transfer)", () => {
+  it("percent-encodes the private workspace ID and binds to one document revision", () => {
+    const url = api.applicationPdfPreviewUrl("private/owner #1", "cv", 7);
+    expect(url).toContain(
+      "/api/v1/application-workspaces/private%2Fowner%20%231/preview/cv/pdf?expected_revision=7"
+    );
+    expect(api.applicationPdfPreviewUrl("job-one", "letter", 3)).toContain(
+      "/job-one/preview/letter/pdf?expected_revision=3"
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("SP108 revision-pinned private document export URL builders", () => {
+  it("encodes the owner workspace identifier and saved revision for each file and ZIP", () => {
+    const id = "owner/workspace with a #";
+    expect(api.applicationPackageDownloadUrl(id, 19)).toContain(
+      "/api/v1/application-workspaces/owner%2Fworkspace%20with%20a%20%23/download/package.zip?expected_revision=19"
+    );
+    for (const kind of ["cv", "letter"] as const) {
+      for (const fmt of ["pdf", "docx"] as const) {
+        expect(api.applicationDownloadUrl(id, kind, fmt, 19)).toContain(
+          "/api/v1/application-workspaces/owner%2Fworkspace%20with%20a%20%23/download/"
+          + kind + "/" + fmt + "?expected_revision=19"
+        );
+      }
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

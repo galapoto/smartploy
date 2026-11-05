@@ -14,6 +14,8 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
 COPY browser-companion/ /workspace/browser-companion/
+# SP110: source-reviewed local Playwright runner, archive created by npm prebuild.
+COPY browser-playwright/ /workspace/browser-playwright/
 RUN npm run build \
     && python3 scripts/package_release_manifest.py "${APP_VERSION}"
 

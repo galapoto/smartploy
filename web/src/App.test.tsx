@@ -12,7 +12,10 @@ vi.mock("./api", () => ({
   deleteCV: vi.fn(), deleteFact: vi.fn(), getApplications: vi.fn(),
   getCV: vi.fn(), getCVJobMatches: vi.fn(), getDashboard: vi.fn(), getHealth: vi.fn(),
   getJobs: vi.fn(), getProfileFacts: vi.fn(), getSession: vi.fn(),
+  getApplicationQuestionMemory: vi.fn(), setApplicationProfileMode: vi.fn(),
+  saveApplicationQuestionAnswer: vi.fn(), deleteApplicationQuestion: vi.fn(),
   startApplicationWorkspace: vi.fn(), uploadCV: vi.fn(),
+  saveCVEditor: vi.fn(), restoreCVEditor: vi.fn(),
   getSearchPreferences: vi.fn(), updateSearchPreferences: vi.fn(),
   getSearchResults: vi.fn(), getLocalAIStatus: vi.fn(),
   prepareMyMatchingDrafts: vi.fn(),
@@ -20,16 +23,46 @@ vi.mock("./api", () => ({
   grantJobAIConsent: vi.fn(), revokeJobAIConsent: vi.fn(),
 }));
 vi.mock("./MasterCVEditor", () => ({
-  default: ({ onSaved }: { onSaved: (saved: { present: boolean; filename: string; sha256: string }) => void }) =>
+  default: ({ onSaved, onSave, onWriteStarted, onWriteSettled, onUnsavedChange }: {
+    onSaved: (saved: { present: boolean; filename: string; sha256: string }) => void;
+    onSave: (text: string, digest: string) => Promise<{
+      cv: { present: boolean; filename: string; sha256: string };
+    }>;
+    onWriteStarted?: () => symbol | null;
+    onWriteSettled?: (token: symbol) => void;
+    onUnsavedChange?: (dirty: boolean) => void;
+  }) =>
     <div data-testid="master-cv-editor">Private CV editor
       <button type="button" onClick={() =>
         onSaved({ present: true, filename: "CreatedCV.pdf", sha256: "saved-created-cv" })
       }>Save synthetic created CV</button>
+      <button type="button" onClick={() => {
+        const token = onWriteStarted?.();
+        if (!token) return;
+        void onSave("Synthetic applicant with Python and SQL", "previous-cv").then(
+          response => onSaved(response.cv), () => {},
+        ).finally(() => onWriteSettled?.(token));
+      }}>Save synthetic pending CV</button>
+      <button type="button" onClick={() => onUnsavedChange?.(true)}>
+        Edit synthetic master CV
+      </button>
+      <button type="button" onClick={() => onUnsavedChange?.(false)}>
+        Mark synthetic master CV saved
+      </button>
     </div>,
 }));
 vi.mock("./ApplicationStudio", () => ({
-  default: ({ focusId }: { focusId: string }) =>
-    <div data-testid="application-editor" data-workspace={focusId}>Application editor</div>,
+  default: ({ focusId, onUnsavedChange }: {
+    focusId: string; onUnsavedChange?: (dirty: boolean) => void;
+  }) =>
+    <div data-testid="application-editor" data-workspace={focusId}>Application editor
+      <button type="button" onClick={() => onUnsavedChange?.(true)}>
+        Edit synthetic application documents
+      </button>
+      <button type="button" onClick={() => onUnsavedChange?.(false)}>
+        Mark synthetic application documents saved
+      </button>
+    </div>,
 }));
 
 const initial: SearchPreferences = {
@@ -95,6 +128,14 @@ beforeEach(() => {
   });
   vi.mocked(api.getHealth).mockResolvedValue({ obumai_configured: false } as never);
   vi.mocked(api.getCV).mockResolvedValue({ present: false });
+  vi.mocked(api.getApplicationQuestionMemory).mockResolvedValue({
+    questions: [], count: 0, mode: "guided",
+    cv_only_allowed: true, approved_answers_auto_submitted: false,
+    employer_actions_performed: 0,
+  });
+  vi.mocked(api.setApplicationProfileMode).mockImplementation(async mode => ({
+    mode, cv_only_allowed: true, employer_actions_performed: 0,
+  }));
   vi.mocked(api.getCVJobMatches).mockResolvedValue({
     cv_present: true, cv_filename: "synthetic-CV.pdf", match_mode: "cv_text_signals",
     detected_roles: ["Data Analyst"], detected_topics: ["Python"],
@@ -1845,5 +1886,341 @@ describe("SP99: original Finland cover, complete in-page identity and persistent
     expect(document.documentElement.getAttribute("data-smartploy-theme")).toBe("light");
     expect(window.localStorage.getItem("smartploy-ui-theme-v1")).toBe("light");
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP102: parent CV-write barrier against late private results", () => {
+  it("never navigates to an old Assisted draft after a replacement begins", async () => {
+    const initialCV = { present: true, filename: "Earlier.pdf", sha256: "earlier-cv" };
+    const nextCV = { present: true, filename: "Replacement.pdf", sha256: "replacement-cv" };
+    let serverCV = initialCV;
+    vi.mocked(api.getCV).mockImplementation(async () => serverCV);
+    let finishDraft!: (response: Awaited<ReturnType<typeof api.startApplicationWorkspace>>) => void;
+    let finishUpload!: (response: Awaited<ReturnType<typeof api.uploadCV>>) => void;
+    vi.mocked(api.startApplicationWorkspace).mockImplementationOnce(
+      () => new Promise(resolve => { finishDraft = resolve; })
+    );
+    vi.mocked(api.uploadCV).mockImplementationOnce(
+      () => new Promise(resolve => { finishUpload = resolve; })
+    );
+    render(<App/>);
+    expect(await screen.findByRole("heading", {
+      name: "CV connected. Choose how to apply.",
+    })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Assisted · Apply with AI/i }));
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    fireEvent.click((await screen.findAllByRole("button", { name: /Choose this job/i }))[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Prepare CV & application/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), {
+      target: { files: [new File(["new CV"], "Replacement.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      finishDraft({ workspace: { workspace_id: "stale-earlier-cv-kit" }, created: true } as never);
+    });
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(screen.getByText(/CV update in progress/i)).toBeTruthy();
+    expect(screen.queryByText(/Draft ready. Step 1/i)).toBeNull();
+
+    serverCV = nextCV;
+    await act(async () => { finishUpload(nextCV); });
+    expect(await screen.findByText(/CV connected. Step 2: choose Manual, Assisted or Automatic/i)).toBeTruthy();
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start the next AutoApply job if the CV write starts during the first", async () => {
+    const initialCV = { present: true, filename: "Earlier.pdf", sha256: "batch-cv" };
+    const nextCV = { present: true, filename: "New.pdf", sha256: "batch-next" };
+    let serverCV = initialCV;
+    vi.mocked(api.getCV).mockImplementation(async () => serverCV);
+    const candidates = ["first", "second"].map(key => ({
+      ...tailored.recommendations[0], canonical_key: "job-" + key,
+      job: { ...listing.job, role_title: "Junior Data Analyst " + key },
+    }));
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      cv_present: true, cv_filename: "Earlier.pdf", match_mode: "cv_text_signals",
+      detected_roles: ["Data Analyst"], detected_topics: [],
+      recommended: candidates, other_jobs: [], current_jobs_count: 2,
+      recommended_count: 2, other_jobs_count: 0,
+      matched_from: "local_cv_text_not_approved_evidence",
+      qualifications_verified: false, employer_actions_performed: false,
+    });
+    let finishDraft!: (response: Awaited<ReturnType<typeof api.startApplicationWorkspace>>) => void;
+    let finishUpload!: (response: Awaited<ReturnType<typeof api.uploadCV>>) => void;
+    vi.mocked(api.startApplicationWorkspace).mockImplementationOnce(
+      () => new Promise(resolve => { finishDraft = resolve; })
+    );
+    vi.mocked(api.uploadCV).mockImplementationOnce(
+      () => new Promise(resolve => { finishUpload = resolve; })
+    );
+    render(<App/>);
+    fireEvent.click(await screen.findByRole("button", { name: /Automatic.*AutoApply/i }));
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    const choices = screen.getAllByRole("checkbox", { name: /select for preparation/i });
+    choices.forEach(choice => fireEvent.click(choice));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), {
+      target: { files: [new File(["replacement"], "New.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(api.uploadCV).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      finishDraft({ workspace: { workspace_id: "old-batch-draft" }, created: true,
+        agent_tracking: { requested: true, state: "active", created: true,
+          external_actions_performed: 0, worker_wake_verified: false } } as never);
+    });
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+
+    serverCV = nextCV;
+    await act(async () => { finishUpload(nextCV); });
+    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+  });
+});
+
+// SP103: The master editor and upload share the same CV-update barrier.
+describe("SP103 editor handoff cannot prepare against the previous CV", () => {
+  it("locks method choices and holds matching requests until the editor save finishes", async () => {
+    vi.mocked(api.getCV).mockResolvedValue({
+      present: true, filename: "Earlier.pdf", sha256: "previous-cv",
+    });
+    let finishSave!: (value: unknown) => void;
+    vi.mocked(api.saveCVEditor).mockImplementationOnce(
+      () => new Promise(resolve => { finishSave = resolve; }) as never,
+    );
+    render(<App/>);
+    expect(await screen.findByRole("heading", {
+      name: "CV connected. Choose how to apply.",
+    })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save synthetic pending CV" }));
+    await waitFor(() => expect(api.saveCVEditor).toHaveBeenCalledWith(
+      "Synthetic applicant with Python and SQL", "previous-cv", "usr-synthetic-1",
+    ));
+    fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
+    expect(await screen.findByText(/Updating your CV. Current job matches will refresh/)).toBeTruthy();
+    for (const button of document.querySelectorAll("button.flow-mode[data-flow-mode]")) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(api.getCVJobMatches).not.toHaveBeenCalled();
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishSave({
+        cv: { present: true, filename: "Edited.pdf", sha256: "new-cv" },
+        history: [], employer_actions_performed: 0, approved_profile_facts_added: 0,
+      });
+    });
+    await waitFor(() => expect(screen.getByText(/Your CV is connected. Choose a method to continue/)).toBeTruthy());
+    await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(1));
+    for (const button of document.querySelectorAll("button.flow-mode[data-flow-mode]")) {
+      expect((button as HTMLButtonElement).disabled).toBe(false);
+    }
+    expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP104 account-scoped unsaved document navigation protection", () => {
+  it("keeps unsaved master CV edits when a sidebar navigation is cancelled", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<App/>);
+      fireEvent.click(await screen.findByRole("button", { name: "My CV & documents" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Edit synthetic master CV" }));
+      fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
+      expect(screen.getByTestId("master-cv-editor")).toBeTruthy();
+      expect(screen.queryByRole("heading", { name: "How do you want to apply?" })).toBeNull();
+      expect(confirmation).toHaveBeenCalledWith(
+        "You have unsaved changes to your master CV. Discard them and leave this page?"
+      );
+
+      const beforeUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(beforeUnload);
+      expect(beforeUnload.defaultPrevented).toBe(true);
+
+      confirmation.mockReturnValue(true);
+      fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
+      expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+      expect(screen.queryByTestId("master-cv-editor")).toBeNull();
+      const cleanUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(cleanUnload);
+      expect(cleanUnload.defaultPrevented).toBe(false);
+    } finally { confirmation.mockRestore(); }
+  });
+
+  it("protects unsaved application CV and letter from the header search", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<App/>);
+      fireEvent.click(await screen.findByRole("button", { name: "My applications" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Edit synthetic application documents" }));
+      const search = screen.getByRole("searchbox", { name: "Search jobs" }) as HTMLInputElement;
+      fireEvent.change(search, { target: { value: "data analyst" } });
+      expect(screen.getByTestId("application-editor")).toBeTruthy();
+      expect(search.value).toBe("");
+      expect(confirmation).toHaveBeenCalledWith(
+        "You have unsaved changes to your application CV or cover letter. Discard them and leave this page?"
+      );
+      const beforeUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(beforeUnload);
+      expect(beforeUnload.defaultPrevented).toBe(true);
+
+      confirmation.mockReturnValue(true);
+      fireEvent.change(search, { target: { value: "data analyst" } });
+      expect(search.value).toBe("data analyst");
+      expect(screen.queryByTestId("application-editor")).toBeNull();
+      expect(screen.getByRole("heading", { name: "Find jobs" })).toBeTruthy();
+    } finally { confirmation.mockRestore(); }
+  });
+
+  it("does not warn after an editor reports that its changes were saved", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<App/>);
+      fireEvent.click(await screen.findByRole("button", { name: "My CV & documents" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Edit synthetic master CV" }));
+      fireEvent.click(screen.getByRole("button", { name: "Mark synthetic master CV saved" }));
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
+      expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+      expect(confirmation).not.toHaveBeenCalled();
+    } finally { confirmation.mockRestore(); }
+  });
+
+  it("requires an explicit decision before replacing a CV with unsaved master edits", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<App/>);
+      fireEvent.click(await screen.findByRole("button", { name: "My CV & documents" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Edit synthetic master CV" }));
+      fireEvent.change(screen.getByLabelText("Select CV to upload"), { target: {
+        files: [new File(["private synthetic"], "Replacement.pdf", { type: "application/pdf" })],
+      } });
+      expect(api.uploadCV).not.toHaveBeenCalled();
+      expect(confirmation).toHaveBeenCalledWith(
+        "You have unsaved changes to your master CV. Discard them and replace your current CV?"
+      );
+      expect(screen.getByTestId("master-cv-editor")).toBeTruthy();
+    } finally { confirmation.mockRestore(); }
+  });
+});
+
+
+describe("SP104 secure refresh after account switch", () => {
+  it("clears the prior user's unsaved editor before any discard prompt when OIDC owner changes", async () => {
+    let switched = false;
+    const switchAccount = switchableSession();
+    vi.mocked(api.getCV).mockImplementation(async () => switched ? {present:false} :
+      {present:true,filename:"ACCOUNT-A-PRIVATE-CV.pdf",sha256:"a".repeat(64)});
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      render(<App/>);
+      expect(await screen.findByRole("heading", {
+        name:"CV connected. Choose how to apply.",
+      })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button",{name:"My CV & documents"}));
+      fireEvent.click(await screen.findByRole("button",{name:"Edit synthetic master CV"}));
+      switched=true;
+      switchAccount();
+      fireEvent.click(screen.getByRole("button",{name:"Refresh workspace"}));
+      expect(await screen.findByRole("heading",{name:"Start with your CV."})).toBeTruthy();
+      expect(screen.queryByTestId("master-cv-editor")).toBeNull();
+      expect(screen.queryByText("ACCOUNT-A-PRIVATE-CV.pdf")).toBeNull();
+      expect(confirmation).not.toHaveBeenCalled();
+    } finally { confirmation.mockRestore(); }
+  });
+});
+
+describe("SP109: verified CV status gates", () => {
+
+  it("keeps the chooser locked while the initial CV read is still pending", async () => {
+    let finishCV!: (value: Awaited<ReturnType<typeof api.getCV>>) => void;
+    const pending = new Promise<Awaited<ReturnType<typeof api.getCV>>>((resolve) => {
+      finishCV = resolve;
+    });
+    vi.mocked(api.getCV).mockReturnValue(pending);
+    render(<App/>);
+    expect(await screen.findByRole("heading", { name: "Checking your saved CV." })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Upload CV first" })).toBeNull();
+    const mode = screen.getByRole("button", { name: /Assisted.*Apply with AI/i }) as HTMLButtonElement;
+    expect(mode.disabled).toBe(true);
+    expect(mode.getAttribute("aria-describedby")).toBe("flow-start-cv-checking");
+    await act(async () => {
+      finishCV({ present: true, filename: "Previously saved CV.pdf", sha256: "a".repeat(64) });
+    });
+    expect(await screen.findByRole("heading", { name: "CV connected. Choose how to apply." })).toBeTruthy();
+    expect((screen.getByRole("button", { name: /Assisted.*Apply with AI/i }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("preserves unsaved editor text through a failed periodic CV read and recovery", async () => {
+    const storedCV = { present: true, filename: "Saved original.pdf", sha256: "a".repeat(64) };
+    vi.mocked(api.getCV).mockResolvedValue(storedCV);
+    // Capture the real App's 60-second background refresh, not the
+    // toolbar refresh that rightly asks before discarding unsaved edits.
+    const originalSetInterval = window.setInterval.bind(window);
+    let backgroundRefresh: (() => void) | undefined;
+    const timerSpy = vi.spyOn(window, "setInterval").mockImplementation(
+      (handler, timeout, ...args) => {
+        if (timeout === 60_000 && typeof handler === "function") {
+          backgroundRefresh = handler as () => void;
+          return 123456;
+        }
+        return originalSetInterval(handler, timeout, ...args);
+      },
+    );
+    try {
+      render(<App/>);
+      expect(await screen.findByRole("heading", { name: "CV connected. Choose how to apply." })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
+      fireEvent.click(screen.getByRole("button", { name: "Edit synthetic master CV" }));
+      vi.mocked(api.getCV).mockRejectedValueOnce(new Error("Synthetic timeout"));
+      expect(backgroundRefresh).toBeTypeOf("function");
+      await act(async () => { backgroundRefresh?.(); });
+      expect(await screen.findByRole("heading", { name: "CV check failed — your unsaved edits are preserved" })).toBeTruthy();
+      expect(screen.getByTestId("master-cv-editor")).toBeTruthy();
+      expect(screen.queryByText("No CV uploaded yet")).toBeNull();
+      expect(screen.getAllByRole("button", { name: "CV check required" }).length).toBeGreaterThan(0);
+      const beforeUnload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(beforeUnload);
+      expect(beforeUnload.defaultPrevented).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Retry CV check" }));
+      await waitFor(() => expect(api.getCV).toHaveBeenCalledTimes(3));
+      expect(await screen.findByRole("button", { name: "Edit synthetic master CV" })).toBeTruthy();
+      expect(screen.queryByRole("heading", { name: /CV check failed — your unsaved edits are preserved/i })).toBeNull();
+      const stillDirty = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(stillDirty);
+      expect(stillDirty.defaultPrevented).toBe(true);
+    } finally { timerSpy.mockRestore(); }
+  });
+  it("does not pretend a failed CV read means no file and recovers after a retry", async () => {
+    vi.mocked(api.getCV)
+      .mockRejectedValueOnce(new Error("Synthetic CV read unavailable"))
+      .mockResolvedValue({ present: true, filename: "My earlier CV.pdf", sha256: "a".repeat(64) });
+    render(<App/>);
+    expect(await screen.findByRole("heading", { name: "We couldn't verify your CV." })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Upload CV first" })).toBeNull();
+    expect((screen.getByRole("button", { name: /Apply manually/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/This is not proof that your CV was removed/i)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Select CV to upload"), { target: {
+      files: [new File(["fake"], "UnsafeReplacement.pdf", { type: "application/pdf" })],
+    } });
+    expect(api.uploadCV).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry CV check" }));
+    expect(await screen.findByRole("heading", { name: "CV connected. Choose how to apply." })).toBeTruthy();
+    expect((screen.getByRole("button", { name: /Apply manually/i }) as HTMLButtonElement).disabled).toBe(false);
+    expect(api.getCV).toHaveBeenCalledTimes(2);
+    expect(api.uploadCV).not.toHaveBeenCalled();
   });
 });
