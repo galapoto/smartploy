@@ -331,6 +331,66 @@ def download_filename(workspace: ApplicationWorkspace, kind: str, file_format: s
     return f"{_slug(workspace.company)}-{_slug(workspace.role_title)}-{kind}.{file_format}"
 
 
+# Presentation-only transformation of the reversible structured CV grammar.
+# Never alters the persisted CV, matching text, or approved evidence.
+_CV_SECTION_HEADINGS = frozenset({
+    "PROFILE", "EXPERIENCE", "EDUCATION", "PROJECTS", "SKILLS",
+    "CERTIFICATIONS", "LANGUAGES", "OTHER INFORMATION", "IMPORTED SOURCE TEXT",
+    "SUMMARY", "PROFESSIONAL EXPERIENCE", "WORK EXPERIENCE",
+})
+
+
+def _printable_document_lines(text: str, kind: str) -> list[tuple[str, str]]:
+    """Return safe semantic text blocks for PDF and DOCX rendering.
+
+    A structured CV uses the exact six-field header emitted by our editor.
+    Unknown or imported formats remain verbatim instead of losing content.
+    """
+    lines = text.split("\n")
+    structured = (
+        kind == "cv" and len(lines) >= 8
+        and all(lines[i].startswith(prefix) for i, prefix in enumerate((
+            "Full name: ", "Headline: ", "Email: ", "Phone: ",
+            "Location: ", "Links: ",
+        )))
+        and lines[6] == "" and lines[7] == "PROFILE"
+    )
+    blocks: list[tuple[str, str]] = []
+    if structured:
+        name, headline, email, phone, location, links = [
+            lines[i].split(": ", 1)[1].strip() for i in range(6)
+        ]
+        if name:
+            blocks.append(("name", name))
+        if headline:
+            blocks.append(("subtitle", headline))
+        contact = [value for value in (email, phone, location, links) if value]
+        if contact:
+            blocks.append(("contact", " | ".join(contact)))
+        lines = lines[7:]
+
+    for line in lines:
+        value = line.strip()
+        if not value:
+            if blocks and blocks[-1][0] != "spacer":
+                blocks.append(("spacer", ""))
+            continue
+        if kind == "cv" and value.upper() in _CV_SECTION_HEADINGS:
+            blocks.append(("section", value.upper()))
+        elif structured and line.startswith("Title: "):
+            if value[7:].strip():
+                blocks.append(("entry", value[7:].strip()))
+        elif structured and line.startswith(("Organization: ", "Period: ", "Location: ")):
+            detail = value.partition(": ")[2].strip()
+            if detail:
+                blocks.append(("meta", detail))
+        elif structured and value == "Details:":
+            continue
+        else:
+            blocks.append(("body", line[2:] if structured and line.startswith("  ") else line))
+    return blocks
+
+
 def render_document(
     workspace: ApplicationWorkspace,
     *, kind: Literal["cv", "letter"], file_format: Literal["pdf", "docx"],
@@ -343,43 +403,79 @@ def render_document(
         limit=MAX_CV_CHARACTERS if kind == "cv" else MAX_LETTER_CHARACTERS,
     )
     heading = "Curriculum Vitae" if kind == "cv" else f"Application — {workspace.role_title}"
+    blocks = _printable_document_lines(text, kind)
+    has_name = any(style == "name" for style, _ in blocks)
     output = BytesIO()
     if file_format == "docx":
         doc = Document()
         section = doc.sections[0]
-        section.top_margin = Inches(.8)
-        section.bottom_margin = Inches(.75)
-        section.left_margin = Inches(.9)
-        section.right_margin = Inches(.9)
+        section.top_margin = Inches(.72)
+        section.bottom_margin = Inches(.7)
+        section.left_margin = Inches(.84)
+        section.right_margin = Inches(.84)
         normal = doc.styles["Normal"]
-        normal.font.name = "Calibri"
-        normal.font.size = Pt(10.5)
+        normal.font.name = "Aptos"
+        normal.font.size = Pt(10.3)
         normal.font.color.rgb = RGBColor(31, 49, 75)
-        normal.paragraph_format.space_after = Pt(5)
-        doc.add_heading(heading, level=1)
-        for line in text.split("\n"):
-            doc.add_paragraph(line)
+        normal.paragraph_format.space_after = Pt(4)
+        if not has_name:
+            doc.add_heading(heading, level=1)
+        for style_name, value in blocks:
+            if style_name == "spacer":
+                continue
+            if style_name == "name":
+                doc.add_heading(value, level=1)
+            elif style_name == "section":
+                doc.add_heading(value, level=2)
+            elif style_name == "entry":
+                doc.add_heading(value, level=3)
+            else:
+                paragraph = doc.add_paragraph(value)
+                if style_name in {"subtitle", "contact", "meta"}:
+                    paragraph.paragraph_format.space_after = Pt(3)
+                    for run in paragraph.runs:
+                        run.font.size = Pt(9.5 if style_name != "subtitle" else 11)
+                        if style_name == "subtitle":
+                            run.bold = True
         doc.save(output)
         mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     else:
         style = ParagraphStyle(
             "Body", fontName="Helvetica", fontSize=10.2, leading=14.8,
             textColor=colors.HexColor("#20334A"), alignment=TA_LEFT,
-            spaceAfter=7, splitLongWords=1,
+            spaceAfter=6, splitLongWords=1,
         )
-        title_style = ParagraphStyle(
-            "Heading", parent=style, fontName="Helvetica-Bold", fontSize=15,
-            leading=20, spaceAfter=15, textColor=colors.HexColor("#0D3262"),
-        )
-        story = [Paragraph(escape(heading), title_style)]
-        for line in text.split("\n"):
-            if line.strip():
-                story.append(Paragraph(escape(line), style))
+        styles = {
+            "body": style,
+            "name": ParagraphStyle("CVName", parent=style, fontName="Helvetica-Bold",
+                fontSize=20, leading=24, spaceAfter=6, textColor=colors.HexColor("#0E3158")),
+            "subtitle": ParagraphStyle("CVSubtitle", parent=style, fontName="Helvetica-Bold",
+                fontSize=11, leading=15, spaceAfter=6),
+            "contact": ParagraphStyle("CVContact", parent=style, fontSize=9,
+                leading=13, spaceAfter=13),
+            "section": ParagraphStyle("CVSection", parent=style, fontName="Helvetica-Bold",
+                fontSize=12, leading=16, spaceBefore=13, spaceAfter=6,
+                textColor=colors.HexColor("#0E507C")),
+            "entry": ParagraphStyle("CVEntry", parent=style, fontName="Helvetica-Bold",
+                fontSize=10.8, leading=15, spaceBefore=7, spaceAfter=3),
+            "meta": ParagraphStyle("CVMeta", parent=style, fontSize=9.5,
+                leading=13, spaceAfter=2),
+        }
+        story = [] if has_name else [
+            Paragraph(escape(heading), ParagraphStyle(
+                "CVDefaultHeading", parent=style, fontName="Helvetica-Bold",
+                fontSize=15, leading=20, spaceAfter=14,
+                textColor=colors.HexColor("#0D3262"),
+            )),
+        ]
+        for style_name, value in blocks:
+            if style_name == "spacer":
+                story.append(Spacer(1, 4))
             else:
-                story.append(Spacer(1, 5))
+                story.append(Paragraph(escape(value), styles.get(style_name, style)))
         pdf = SimpleDocTemplate(
-            output, pagesize=A4, topMargin=21*mm, bottomMargin=21*mm,
-            leftMargin=23*mm, rightMargin=23*mm,
+            output, pagesize=A4, topMargin=19*mm, bottomMargin=19*mm,
+            leftMargin=21*mm, rightMargin=21*mm,
             title=heading, author="SmartPloy user-reviewed application", invariant=1,
         )
         pdf.build(story)
