@@ -30,9 +30,9 @@ const MODE_INFO: Record<ApplicationFlowMode, {
   },
   automatic: {
     title: "AutoApply",
-    summary: "Prepare multiple CV-matched applications, review them and send eligible authorized ATS batches.",
-    responsibility: "Employer submission requires a separately approved Lever/Ashby job and your final review.",
-    next: "Next: select jobs, prepare drafts and approve eligible submissions in My applications.",
+    summary: "Choose a job to open its visible browser-filling workflow, or prepare a batch for later review.",
+    responsibility: "You review each exact CV, letter and employer form. Ordinary fields can be filled in your paired browser; final Submit stays with you unless a separately authorized provider supports it.",
+    next: "Next: click AutoApply on one job, or shortlist several jobs for private preparation.",
   },
 };
 
@@ -468,6 +468,17 @@ export default function ApplicationJourney(props: {
               (!chosen && selected.length >= AUTOAPPLY_SELECTION_LIMIT)} />
           {chosen ? "Selected" : "Select for preparation"}
         </label> : null}
+        {props.mode === "automatic" && link && job.source_current ?
+          <button type="button" className="navy-btn compact"
+            aria-label={"AutoApply " + job.role_title + " at " + job.company}
+            disabled={props.uploading || !!props.preparing || props.queueBusy ||
+              !!queueInFlight.current || accessInterrupted || loading || paging ||
+              queryPending || !results || !props.cv.present}
+            onClick={() => void prepareOne(row.canonical_key)}>
+            {props.preparing === row.canonical_key
+              ? "Opening application…" : "AutoApply · open this job"}
+            <ArrowRight size={15} aria-hidden="true"/>
+          </button> : null}
         {props.mode && props.mode !== "automatic" ? <button type="button"
           className={focused ? "navy-btn compact" : "secondary-btn compact"}
           aria-pressed={focused} disabled={props.uploading || !job.source_current}
@@ -708,16 +719,16 @@ export default function ApplicationJourney(props: {
             (results?.other_jobs_count ?? results?.other_jobs.length ?? 0) + ")"}
         </button>
       </div> : null}
-      {props.cv.present && props.mode === "assisted" && props.onAddPrivateJob ?
+      {props.cv.present && (props.mode === "assisted" || props.mode === "automatic") && props.onAddPrivateJob ?
         <div className="sp120-search-escape" role="note">
           <div>
             <strong>Can't find the employer's job in these results?</strong>
             <p>Search covers imported vacancies only. Add the direct employer link
-              to open a real private Assisted application instead of a bookmark dead end.</p>
+              to open a real private application and its visible Playwright/Chrome form-filling tools instead of a bookmark dead end.</p>
           </div>
           <button type="button" className="primary-btn"
             onClick={props.onAddPrivateJob}>
-            Add employer link & start Assisted <ArrowRight size={16}/>
+            Add employer link & prepare application <ArrowRight size={16}/>
           </button>
         </div> : null}
       {!props.cv.present ? <div className="empty-state">
@@ -752,7 +763,7 @@ export default function ApplicationJourney(props: {
                 "Choose jobs for AutoApply preparation"
               : focusedJob ? "Selected: " + focusedJob.job.role_title + " at " +
                 focusedJob.job.company : "Choose one job to continue"}</strong>
-              <p>{props.mode === "automatic" ? "Tick up to 15 current vacancies, then select Prepare applications & start agents below. No employer is contacted." :
+              <p>{props.mode === "automatic" ? "Click AutoApply on one job to open its reviewed browser-filling workflow, or tick up to 15 vacancies for private batch preparation. No employer is contacted by preparing." :
                 focusedJob ? "Use the buttons inside the highlighted job to take the next step. Choosing a job did not create or send an application." :
                 "Click Choose this job on a vacancy. SmartPloy then shows the next action for your chosen method; choosing alone does not create a draft or submit."}</p>
             </div>
