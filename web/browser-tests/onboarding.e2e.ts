@@ -624,6 +624,33 @@ test("SP70: Manual, Assisted and AutoApply explain and preserve distinct job act
   await evidence(page, "sp70-autoapply-selection-before-preparation.png");
 });
 
+test("SP131: AutoApply for one matching job opens its exact private browser-ready workspace", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Fictional-IT-CV.pdf",
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  await page.getByRole("button", { name: /AutoApply/i }).click();
+  const job = page.locator(".flow-job").filter({ hasText: "Junior Data Analyst" });
+  await expect(job.getByRole("button", {
+    name: "AutoApply Junior Data Analyst at Example Oy",
+  })).toBeEnabled();
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+  await job.getByRole("button", {
+    name: "AutoApply Junior Data Analyst at Example Oy",
+  }).click();
+  await expect.poll(() => state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  await expect(page.getByRole("heading", { name: /My applications/i }).first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "Application review queue" }))
+    .toContainText("1 private draft to finish");
+  // Opening AutoApply must not call an employer, claim a sent receipt,
+  // or bypass the exact CV/letter review and local browser pairing.
+  await expect(page.getByRole("region", { name: "Application review queue" }))
+    .toContainText("0 employer-acknowledged");
+  await evidence(page, "sp131-one-job-autoapply-open-workspace.png");
+});
+
 test("SP75: one-click CV-matched AutoApply shortlist prepares only reviewed current job drafts", async ({ page }) => {
   const state = await installSyntheticApi(page, {
     initial: { completed: true, mode: "general", revision: 1 },
