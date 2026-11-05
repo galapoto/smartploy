@@ -207,7 +207,22 @@ export default function App() {
   // A run token prevents an old account's finally block unlocking a new batch.
   const flowQueueInFlight = useRef<symbol | null>(null);
   const activeCVSelection = useRef("");
-  activeCVSelection.current = JSON.stringify([cv.present, cv.sha256 || ""]);
+  const cvActionRevision = useRef(0);
+  // Ref-level barrier: invalidate the old CV *synchronously* when a write
+  // starts, before React can render a changed busy/sha state.
+  const cvWriteInFlight = useRef<symbol | null>(null);
+  // Never put CV/letter text in localStorage. Only ephemeral, account-scoped
+  // dirty flags are shared with the shell to guard navigation and reload.
+  const unsavedDocumentRef = useRef({ masterCV: false, application: false });
+  const reportMasterCVUnsaved = useCallback((dirty: boolean) => {
+    unsavedDocumentRef.current.masterCV = dirty;
+  }, []);
+  const reportApplicationUnsaved = useCallback((dirty: boolean) => {
+    unsavedDocumentRef.current.application = dirty;
+  }, []);
+  activeCVSelection.current = JSON.stringify([
+    cv.present, cv.sha256 || "", cvActionRevision.current,
+  ]);
 
   // Old in-flight requests must not repopulate another account's workspace.
   const loadGeneration = useRef(0);
@@ -229,6 +244,11 @@ export default function App() {
     setPage("dashboard"); setSearch(""); setExpandedJob("");
     setFlowMode(null); setFlowSelectedJob(""); setFlowQueueBusy(false);
     setStartSearchBusy(false); flowQueueInFlight.current = null;
+    // Account isolation overrides any old editor's unsaved navigation state.
+    unsavedDocumentRef.current = { masterCV: false, application: false };
+    cvWriteInFlight.current = null;
+    ++cvActionRevision.current;
+    activeCVSelection.current = "account-workspace-cleared:" + cvActionRevision.current;
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
     setBusyCV(false); setBusyFact(""); setPreparing(""); setManualBusy(false);
@@ -396,15 +416,103 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [load]);
 
-  const navigate = (target: Page) => { setPage(target); setMobileNav(false); setNotice(""); };
+  // Native browser refresh/tab close/external same-tab navigation.
+  // Browser wording is controlled by the browser; no CV/letter data is saved.
+  useEffect(() => {
+    const warnUnsaved = (event: BeforeUnloadEvent) => {
+      if (!unsavedDocumentRef.current.masterCV &&
+          !unsavedDocumentRef.current.application) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnUnsaved);
+    return () => window.removeEventListener("beforeunload", warnUnsaved);
+  }, []);
+
+  function confirmDiscardUnsaved(action: string): boolean {
+    const document = page === "profile" && unsavedDocumentRef.current.masterCV
+      ? "master CV" : page === "applications" && unsavedDocumentRef.current.application
+        ? "application CV or cover letter" : "";
+    return !document || window.confirm(
+      "You have unsaved changes to your " + document +
+      ". Discard them and " + action + "?"
+    );
+  }
+
+  function navigate(target: Page): boolean {
+    if (target !== page && !confirmDiscardUnsaved("leave this page")) return false;
+    if (target !== page) {
+      // Child unmount also reports false, but clear synchronously so another
+      // quick navigation cannot see the previous page's private draft state.
+      if (page === "profile") unsavedDocumentRef.current.masterCV = false;
+      if (page === "applications") unsavedDocumentRef.current.application = false;
+    }
+    setPage(target); setMobileNav(false); setNotice("");
+    return true;
+  }
+
+  async function refreshWorkspaceFromToolbar() {
+    const dirty = (page === "profile" && unsavedDocumentRef.current.masterCV) ||
+      (page === "applications" && unsavedDocumentRef.current.application);
+    if (dirty) {
+      // Before asking whether to discard edits, verify that this is STILL
+      // the same account. A stale owner-A editor must never keep displaying
+      // A's private CV after the browser cookie changes to account B.
+      const originatingIdentity = lastSessionIdentity.current;
+      let verifiedIdentity: string | null = null;
+      try { verifiedIdentity = sessionIdentity(await getSession()); } catch {
+        // A missing or unreachable session is a privacy failure, not an
+        // invitation to retain the previous account's editor on screen.
+      }
+      if (lastSessionIdentity.current !== originatingIdentity) return;
+      if (!originatingIdentity || verifiedIdentity !== originatingIdentity) {
+        lastSessionIdentity.current = null;
+        clearPrivateWorkspace();
+        await load(); // fail closed if the new identity cannot be loaded
+        return;
+      }
+      if (!confirmDiscardUnsaved("refresh this workspace")) return;
+    }
+    await load(true);
+  }
+
+  function invalidateCVSelection() {
+    ++cvActionRevision.current;
+    activeCVSelection.current = JSON.stringify([
+      cv.present, cv.sha256 || "", cvActionRevision.current,
+    ]);
+  }
+
+  // The master editor saves/restores the active CV through a second API
+  // route. Hold the SAME immediate write barrier as upload and deletion,
+  // including its post-save identity check and local document handoff.
+  function beginCVEditorWrite(): symbol | null {
+    if (cvWriteInFlight.current) return null;
+    const token = Symbol("account-scoped-cv-editor-write");
+    cvWriteInFlight.current = token;
+    invalidateCVSelection();
+    setFlowMode(null); setFlowSelectedJob("");
+    setBusyCV(true);
+    return token;
+  }
+
+  function finishCVEditorWrite(token: symbol) {
+    // A late completion from an old account or unmounted editor must never
+    // unlock a newer CV mutation.
+    if (cvWriteInFlight.current !== token) return;
+    cvWriteInFlight.current = null;
+    setBusyCV(false);
+  }
 
   function startApplyFlow(chosen: ApplicationFlowMode, jobKey = "") {
     // A job-card shortcut never skips the CV-first gate. Creating a draft
     // without a CV is impossible and must not visually select a method.
-    if (!cv.present) {
+    if (!cv.present || busyCV || !!cvWriteInFlight.current) {
       setFlowMode(null); setFlowSelectedJob("");
       navigate("apply");
-      setNotice("Step 1: upload or create your CV. Manual, Assisted and Automatic unlock after your CV is connected.");
+      setNotice(busyCV || !!cvWriteInFlight.current
+        ? "Your CV is being updated. Choose an application method after it finishes."
+        : "Step 1: upload or create your CV. Manual, Assisted and Automatic unlock after your CV is connected.");
       return;
     }
     setFlowMode(chosen);
@@ -615,8 +723,13 @@ export default function App() {
   async function onCVUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file) return;
+    if (!file || cvWriteInFlight.current ||
+        !confirmDiscardUnsaved("replace your current CV")) return;
+    const writeToken = Symbol("signed-in-cv-replacement");
+    cvWriteInFlight.current = writeToken;
     const actionIdentity = lastSessionIdentity.current;
+    invalidateCVSelection(); // stop old single-job and batch responses now
+    setFlowMode(null); setFlowSelectedJob("");
     setBusyCV(true); setNotice("");
     try {
       const uploaded = await runPrivateMutation((userId) => uploadCV(file, userId));
@@ -635,13 +748,25 @@ export default function App() {
       navigate("profile");
       setNotice(exc instanceof Error ? exc.message : "CV upload failed.");
     } finally {
-      if (lastSessionIdentity.current === actionIdentity) setBusyCV(false);
+      if (cvWriteInFlight.current === writeToken) {
+        cvWriteInFlight.current = null;
+        if (lastSessionIdentity.current === actionIdentity) setBusyCV(false);
+      }
     }
   }
 
   async function onDeleteCV() {
-    if (!window.confirm("Remove your uploaded CV? Approved profile facts will remain until you remove them separately.")) return;
+    if (cvWriteInFlight.current ||
+        !window.confirm(
+          (page === "profile" && unsavedDocumentRef.current.masterCV
+            ? "Unsaved master CV edits will be discarded. " : "") +
+          "Remove your uploaded CV? Approved profile facts will remain until you remove them separately."
+        )) return;
+    const writeToken = Symbol("signed-in-cv-deletion");
+    cvWriteInFlight.current = writeToken;
     const actionIdentity = lastSessionIdentity.current;
+    invalidateCVSelection();
+    setFlowMode(null); setFlowSelectedJob("");
     setBusyCV(true);
     try {
       await runPrivateMutation((userId) => deleteCV(userId));
@@ -653,7 +778,10 @@ export default function App() {
         setNotice(exc instanceof Error ? exc.message : "Unable to remove CV.");
       }
     } finally {
-      if (lastSessionIdentity.current === actionIdentity) setBusyCV(false);
+      if (cvWriteInFlight.current === writeToken) {
+        cvWriteInFlight.current = null;
+        if (lastSessionIdentity.current === actionIdentity) setBusyCV(false);
+      }
     }
   }
 
@@ -765,7 +893,9 @@ export default function App() {
 
   async function onPrepareMyAutoDrafts() {
     if (!preferences?.auto_draft_enabled || preferences.mode !== "personalized" ||
-        !preferences.roles.length || autoDraftBusy) return;
+        !preferences.roles.length || autoDraftBusy || busyCV ||
+        !!cvWriteInFlight.current) return;
+    const cvAtStart = activeCVSelection.current;
     const actionIdentity = lastSessionIdentity.current;
     if (!actionIdentity || autoDraftInFlight.current === actionIdentity) return;
     // Set the lock synchronously before the first await, including uploads,
@@ -776,7 +906,8 @@ export default function App() {
       const result = await runPrivateMutation((userId) => prepareMyMatchingDrafts(userId));
       // The existing account-verification helper checked the response
       // after the mutation. Never publish a cross-account success message.
-      if (lastSessionIdentity.current !== actionIdentity) return;
+      if (lastSessionIdentity.current !== actionIdentity ||
+          activeCVSelection.current !== cvAtStart) return;
       if (result.status === "needs_approved_profile") {
         navigate("profile");
         setNotice("Approve your career facts before SmartPloy prepares matched IT applications.");
@@ -807,7 +938,8 @@ export default function App() {
       }
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged) &&
-          lastSessionIdentity.current === actionIdentity) {
+          lastSessionIdentity.current === actionIdentity &&
+          activeCVSelection.current === cvAtStart) {
         setNotice(exc instanceof Error ? exc.message : "Automatic draft preparation is unavailable.");
       }
     } finally {
@@ -820,6 +952,9 @@ export default function App() {
     keys: string[], onProgress: (completed: number, total: number) => void,
     shouldStop: () => boolean = () => false, keepOnApply = false,
   ): Promise<AutoApplyBatchOutcome> {
+    if (cvWriteInFlight.current || busyCV) {
+      throw new Error("Your CV is being updated. Review the new CV before preparing jobs.");
+    }
     if (flowQueueInFlight.current) {
       throw new Error("An AutoApply preparation batch is already running.");
     }
@@ -971,17 +1106,28 @@ export default function App() {
   }
 
   async function onPrepare(canonicalKey: string) {
+    if (busyCV || cvWriteInFlight.current) {
+      setNotice("Your CV is being updated. Review it before preparing another application.");
+      return;
+    }
     const actionIdentity = lastSessionIdentity.current;
+    const cvAtStart = activeCVSelection.current;
     setPreparing(canonicalKey);
     try {
       const response = await runPrivateMutation((userId) => startApplicationWorkspace(canonicalKey, userId));
+      // The request may have created a private draft with the earlier CV.
+      // Preserve it server-side, but never open it over the new CV workflow.
+      if (lastSessionIdentity.current !== actionIdentity ||
+          activeCVSelection.current !== cvAtStart) return;
       setSelectedWorkspaceId(response.workspace.workspace_id);
       navigate("applications");
       setNotice(response.created
         ? "Draft ready. Step 1: review and save your CV and letter. Step 2: complete the employer form. Step 3: confirm the outcome."
         : "Opened your existing private application documents.");
     } catch (exc) {
-      if (!(exc instanceof PrivateActionIdentityChanged)) {
+      if (!(exc instanceof PrivateActionIdentityChanged) &&
+          lastSessionIdentity.current === actionIdentity &&
+          activeCVSelection.current === cvAtStart) {
         const detail = exc instanceof Error ? exc.message : "Unable to create application documents.";
         if (/Upload a CV|approve profile facts|uploaded CV/i.test(detail)) navigate("profile");
         setNotice(detail);
@@ -1198,7 +1344,11 @@ export default function App() {
     <div className="main-column">
       <header className="site-header">
         <button className="icon-btn menu-toggle" aria-label="Open menu" type="button" onClick={() => setMobileNav(!mobileNav)}><Menu size={21} /></button>
-        <div className="header-search"><Search size={19} /><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); if (event.target.value) setPage("jobs"); }} placeholder="Search jobs, companies or locations…" aria-label="Search jobs" /></div>
+        <div className="header-search"><Search size={19} /><input type="search" value={search} onChange={(event) => {
+          const next = event.target.value;
+          if (next && page !== "jobs" && !navigate("jobs")) return;
+          setSearch(next);
+        }} placeholder="Search jobs, companies or locations…" aria-label="Search jobs" /></div>
         <span className="header-country"><MapPin size={16} /> Finland</span>
         <div className="header-tools">
           <button className="sp99-theme-toggle" type="button"
@@ -1212,7 +1362,9 @@ export default function App() {
           </button>
           <a className="obumai-brand" href="https://app.obumai.com/" target="_self" title="Open ObumAI"><img src="/obumai-mark.svg" alt="" /> <strong>ObumAI</strong></a>
           <span className={cx("connection-status", obumReady ? "connected" : "disconnected")}><span />{localAI?.ready ? "Local AI ready" : health?.obumai_configured ? "ObumAI configured" : "AI optional"}</span>
-          <button className="icon-btn header-refresh" type="button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh workspace"><RefreshCw size={19} className={refreshing ? "rotate" : ""} /></button>
+          <button className="icon-btn header-refresh" type="button"
+            onClick={() => void refreshWorkspaceFromToolbar()}
+            disabled={refreshing} aria-label="Refresh workspace"><RefreshCw size={19} className={refreshing ? "rotate" : ""} /></button>
           <span className="avatar header-avatar" title={session?.email || "Your account"}>{avatar}</span>
         </div>
       </header>
@@ -1235,8 +1387,8 @@ export default function App() {
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
             onOpenApplications={() => navigate("applications")}
-            cvPresent={cv.present} onUpload={onUploadClick}
-            onCreateCV={() => navigate("profile")}/>
+            cvPresent={cv.present} cvFilename={cv.filename} busyCV={busyCV}
+            onUpload={onUploadClick} onCreateCV={() => navigate("profile")}/>
           {preferences && !preferences.completed ? <details className="flow-advanced-setup flow-dashboard-setup">
             <summary>Optional: set your job search preferences</summary>
             <SearchSetup key={accountViewKey} initial={preferences}
@@ -1282,14 +1434,20 @@ export default function App() {
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">
             {cvBlock}
             <MasterCVEditor key={accountViewKey} expectedUserId={session?.user_id || ""}
-              cv={cv}
+              cv={cv} onUnsavedChange={reportMasterCVUnsaved}
               onSave={(text, expectedSha256) => runPrivateMutation(
                 (userId) => saveCVEditor(text, expectedSha256, userId)
               )}
               onRestore={(digest, expectedSha256) => runPrivateMutation(
                 (userId) => restoreCVEditor(digest, expectedSha256, userId)
               )}
+              onWriteStarted={beginCVEditorWrite}
+              onWriteSettled={finishCVEditorWrite}
               onSaved={(saved) => {
+                // onSaved is called before React's dirty-state effect can run;
+                // treat a verified save as clean before CV-first navigation.
+                unsavedDocumentRef.current.masterCV = false;
+                invalidateCVSelection();
                 const firstCV = !cv.present && saved.present;
                 setCV(saved); setCVPreview(false);
                 setFlowMode(null); setFlowSelectedJob("");
@@ -1308,6 +1466,8 @@ export default function App() {
           {page === "applications" ? <div className="stacked">
             <ApplicationStudio key={accountViewKey} mode={flowMode} focusId={selectedWorkspaceId}
               expectedUserId={session?.user_id || ""} expectedAuthSource={session?.auth_source || ""}
+              masterCV={cv} onReviewMasterCV={() => navigate("profile")}
+              onUnsavedChange={reportApplicationUnsaved}
               onModeChange={setFlowMode}
               onFindJobs={() => navigate("apply")} />
             <section className="panel"><div className="panel-heading"><div><p className="section-kicker">APPLICATION TRACKER</p><h2>Your application pipeline</h2><p>A preparation draft is never counted as submitted.</p></div><span className="subtle-count">{applications.length} records</span></div>

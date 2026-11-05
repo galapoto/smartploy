@@ -9,11 +9,16 @@ identity provider is used.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
+from zipfile import ZipFile
 
+from docx import Document
+from pypdf import PdfReader
 import pytest
 from fastapi.testclient import TestClient
 
 from smartploy.access import AccessPrincipal, AccessVerificationError
+from smartploy.application_workspace import ApplicationWorkspace
 from smartploy.api import create_app
 from smartploy.identity import AuthenticatedPrincipal, MemoryIdentityRepository
 from smartploy.oidc import MemorySessionRepository, SESSION_COOKIE_NAME
@@ -236,3 +241,158 @@ def test_expected_account_header_does_not_authenticate_anonymous_requests(monkey
         )
         assert denied.status_code == 401, denied.text
         assert denied.headers["cache-control"] == "no-store"
+
+
+
+def test_integrated_rc_real_oidc_same_email_accounts_isolate_zip_and_exact_pdf(monkeypatch):
+    """SP101-SP107: actual FastAPI owner-scoped binary reads, not mocked UI.
+
+    Same email, different authenticated OIDC subjects; even an intentionally
+    colliding workspace ID must NEVER return the other subject's PDF/ZIP.
+    """
+    configure(monkeypatch, "oidc")
+    identities = MemoryIdentityRepository()
+    sessions = MemorySessionRepository()
+    session_tokens: dict[str, str] = {}
+    for label in ("a", "b"):
+        principal = AuthenticatedPrincipal(
+            issuer=OIDC_ISSUER,
+            subject="synthetic-document-owner-" + label,
+            email=SAME_EMAIL,
+            auth_source="oidc",
+        ).normalized()
+        binding = identities.resolve_or_create(principal)
+        session_tokens[label] = sessions.create(
+            user_id=binding.user_id,
+            principal=principal,
+            provider_session_id="synthetic-document-session-" + label,
+            ttl_seconds=3600,
+        ).token
+
+    app = create_app(
+        SmartployService(),
+        identity_repository=identities,
+        session_repository=sessions,
+        oidc_client=object(),
+    )
+    with TestClient(app, base_url=ORIGIN) as client:
+        def signed_in(label: str) -> dict:
+            client.cookies.set(SESSION_COOKIE_NAME, session_tokens[label])
+            response = client.get("/api/v1/session")
+            assert response.status_code == 200, response.text
+            assert response.json()["authenticated"] is True
+            assert response.json()["email"] == SAME_EMAIL
+            return response.json()
+
+        session_a = signed_in("a")
+        session_b = signed_in("b")
+        assert session_a["user_id"] != session_b["user_id"]
+        assert session_a["profile_id"] != session_b["profile_id"]
+
+        def workspace(label: str, profile_id: str, workspace_id: str, revision: int):
+            return ApplicationWorkspace(
+                workspace_id=workspace_id,
+                profile_id=profile_id,
+                canonical_key="synthetic-docs-" + label + "-" + workspace_id,
+                role_title="Synthetic Analyst",
+                company="Example Employer Oy",
+                application_url="https://jobs.example.invalid/analyst",
+                cv_text=f"SYNTHETIC OWNER {label.upper()} VERIFIED CV\nSQL and Python",
+                cover_letter_text=(
+                    f"SYNTHETIC OWNER {label.upper()} VERIFIED LETTER\n"
+                    "Dear Hiring Team, I apply for this synthetic role."
+                ),
+                source_cv_sha256="0" * 64,
+                approved_evidence_ids=(),
+                job_fingerprint="synthetic-fingerprint-" + label,
+                revision=revision,
+                status="draft",
+                created_at="2026-11-02T09:00:00+00:00",
+                updated_at="2026-11-02T09:00:00+00:00",
+            )
+
+        # The same opaque workspace identifier under different owners must
+        # never act like a globally authorized document URL.
+        shared_id = "kit-synthetic-identical-id"
+        a_only = "kit-synthetic-account-a-only"
+        b_only = "kit-synthetic-account-b-only"
+        for document in (
+            workspace("a", session_a["profile_id"], shared_id, 2),
+            workspace("a", session_a["profile_id"], a_only, 2),
+            workspace("b", session_b["profile_id"], shared_id, 3),
+            workspace("b", session_b["profile_id"], b_only, 3),
+        ):
+            assert app.state.workspace_repository.create_or_get(document)[1] is True
+
+        for label, revision, cannot_see in (
+            ("a", 2, b_only),
+            ("b", 3, a_only),
+        ):
+            identity = signed_in(label)
+            expected = f"SYNTHETIC OWNER {label.upper()}"
+            other = "SYNTHETIC OWNER B" if label == "a" else "SYNTHETIC OWNER A"
+            assert identity["user_id"] == (session_a if label == "a" else session_b)["user_id"]
+            for kind in ("cv", "letter"):
+                url = (
+                    f"/api/v1/application-workspaces/{shared_id}/preview/"
+                    f"{kind}/pdf?expected_revision={revision}"
+                )
+                preview = client.get(url)
+                assert preview.status_code == 200, (label, kind, preview.text)
+                assert preview.headers["content-type"].startswith("application/pdf")
+                assert preview.headers["content-disposition"].startswith("inline;")
+                assert preview.headers["cache-control"] == "private, no-store"
+                assert preview.headers["x-content-type-options"] == "nosniff"
+                text = "\n".join(
+                    page.extract_text() or ""
+                    for page in PdfReader(BytesIO(preview.content)).pages
+                )
+                assert expected in text and other not in text
+
+            archive = client.get(
+                f"/api/v1/application-workspaces/{shared_id}/download/package.zip"
+                f"?expected_revision={revision}"
+            )
+            assert archive.status_code == 200, (label, archive.text)
+            assert archive.headers["content-type"].startswith("application/zip")
+            assert archive.headers["cache-control"] == "private, no-store"
+            with ZipFile(BytesIO(archive.content)) as bundle:
+                names = bundle.namelist()
+                assert len(names) == 5
+                assert "README-NOT-SUBMITTED.txt" in names
+                cv_file = next(name for name in names if name.endswith("-cv.docx"))
+                letter_file = next(name for name in names if name.endswith("-letter.docx"))
+                for member in (cv_file, letter_file):
+                    paragraphs = "\n".join(
+                        p.text for p in Document(BytesIO(bundle.read(member))).paragraphs
+                    )
+                    assert expected in paragraphs and other not in paragraphs
+            assert client.get(
+                f"/api/v1/application-workspaces/{shared_id}/preview/cv/pdf"
+                f"?expected_revision={5 - revision}"
+            ).status_code == 409
+            assert client.get(
+                f"/api/v1/application-workspaces/{shared_id}/download/package.zip"
+                f"?expected_revision={5 - revision}"
+            ).status_code == 409
+            assert client.get(
+                f"/api/v1/application-workspaces/{shared_id}/download/package.zip"
+            ).status_code == 422
+            assert client.get(
+                f"/api/v1/application-workspaces/{cannot_see}/download/package.zip"
+                f"?expected_revision={revision}"
+            ).status_code == 404
+            assert client.get(
+                f"/api/v1/application-workspaces/{cannot_see}/preview/cv/pdf"
+                f"?expected_revision={revision}"
+            ).status_code == 404
+            assert client.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
+
+        client.cookies.clear()
+        assert client.get(
+            f"/api/v1/application-workspaces/{shared_id}/download/package.zip"
+            "?expected_revision=2"
+        ).status_code == 401
+        assert client.get(
+            f"/api/v1/application-workspaces/{shared_id}/preview/cv/pdf?expected_revision=2"
+        ).status_code == 401

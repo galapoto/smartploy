@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from zipfile import ZipFile
 from dataclasses import replace
 import os
 
@@ -14,7 +15,7 @@ from smartploy.api import create_app
 from smartploy.complete_letter import compose_completed_letter
 from smartploy.application_workspace import (
     WorkspaceError, WorkspaceRevisionConflict, cover_letter_proposal,
-    mark_applied, new_workspace, render_document,
+    mark_applied, new_workspace, render_document, render_application_package,
 )
 from smartploy.application_workspace_storage import MemoryWorkspaceRepository, PostgresWorkspaceRepository
 from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
@@ -357,12 +358,106 @@ def test_api_application_documents_review_and_download_does_not_fake_submission(
     }).status_code == 409
     for kind in ("cv", "letter"):
         for fmt in ("docx", "pdf"):
-            download = api.get(f"/api/v1/application-workspaces/{kid}/download/{kind}/{fmt}")
+            download = api.get(
+                f"/api/v1/application-workspaces/{kid}/download/{kind}/{fmt}"
+                "?expected_revision=2"
+            )
             assert download.status_code == 200, download.text
             assert download.headers["cache-control"] == "private, no-store"
             assert download.headers["x-content-type-options"] == "nosniff"
             assert download.headers["content-disposition"].startswith("attachment;")
             assert len(download.content) > 200
+    # SP108: all new browser links are revision pinned. Existing single-file
+    # links without a query still work for backward compatibility.
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/cv/docx"
+    ).status_code == 200
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/cv/docx"
+        "?expected_revision=1"
+    ).status_code == 409
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/letter/pdf"
+        "?expected_revision=0"
+    ).status_code == 422
+    # SP107: the genuine PDF renderer in a separate read-only exact-revision view.
+    for kind, expected in (("cv", "Approved SQL and data analytics"),
+                           ("letter", "I have SQL skills and want to join your team.")):
+        preview = api.get(
+            f"/api/v1/application-workspaces/{kid}/preview/{kind}/pdf"
+            "?expected_revision=2"
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.headers["content-type"].startswith("application/pdf")
+        assert preview.headers["content-disposition"].startswith("inline;")
+        assert preview.headers["cache-control"] == "private, no-store"
+        assert preview.headers["x-content-type-options"] == "nosniff"
+        assert preview.headers["x-frame-options"] == "DENY"
+        assert preview.headers["cross-origin-resource-policy"] == "same-origin"
+        assert preview.headers["referrer-policy"] == "no-referrer"
+        assert preview.content.startswith(b"%PDF-")
+        text = "\n".join(page.extract_text() or ""
+                         for page in PdfReader(BytesIO(preview.content)).pages)
+        assert expected in text
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/preview/cv/pdf"
+        "?expected_revision=1"
+    ).status_code == 409  # before the saved revision-2 edit
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/preview/cv/pdf"
+    ).status_code == 422  # revision precondition is mandatory
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/preview/cv/pdf"
+        "?expected_revision=0"
+    ).status_code == 422
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/preview/other/pdf"
+        "?expected_revision=2"
+    ).status_code == 404
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}-not-owned/preview/cv/pdf"
+        "?expected_revision=2"
+    ).status_code == 404
+    assert api.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
+    # SP106: the exact same saved job-specific files in one owner-scoped ZIP.
+    package = api.get(
+        f"/api/v1/application-workspaces/{kid}/download/package.zip"
+        "?expected_revision=2"
+    )
+    assert package.status_code == 200, package.text
+    assert package.headers["content-type"].startswith("application/zip")
+    assert package.headers["cache-control"] == "private, no-store"
+    assert package.headers["x-content-type-options"] == "nosniff"
+    assert package.headers["content-disposition"].endswith('application-package.zip"')
+    with ZipFile(BytesIO(package.content)) as archive:
+        names = archive.namelist()
+        assert len(names) == 5
+        assert any(name.endswith("-cv.docx") for name in names)
+        assert any(name.endswith("-letter.pdf") for name in names)
+        assert "README-NOT-SUBMITTED.txt" in names
+        assert all("/" not in name and ".." not in name for name in names)
+        assert "NOT SUBMITTED" in archive.read("README-NOT-SUBMITTED.txt").decode("utf-8")
+        cv_name = next(name for name in names if name.endswith("-cv.docx"))
+        cv_paragraphs = "\n".join(p.text for p in Document(
+            BytesIO(archive.read(cv_name))
+        ).paragraphs)
+        assert cv_paragraphs.endswith("Approved SQL and data analytics")
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/package.zip"
+        "?expected_revision=1"
+    ).status_code == 409
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/package.zip"
+    ).status_code == 422
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}/download/package.zip"
+        "?expected_revision=0"
+    ).status_code == 422
+    assert api.get(
+        f"/api/v1/application-workspaces/{kid}-other-account/download/package.zip"
+        "?expected_revision=2"
+    ).status_code == 404
+    assert api.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
     applied = api.post(f"/api/v1/application-workspaces/{kid}/report-applied", json={
         "confirmed_external_application": True, "expected_revision": 2,
         "reference": "Applicant-entered reference"
@@ -403,3 +498,38 @@ def test_postgres_application_workspaces_persist_and_are_tenant_scoped():
     finally:
         repo.delete(one.profile_id, one.workspace_id)
         repo.delete(two.profile_id, two.workspace_id)
+
+
+def test_sp106_package_contains_real_cv_and_letter_in_pdf_and_docx_only():
+    workspace = new_workspace(example_candidate(), example_profile())
+    data, filename = render_application_package(workspace)
+    assert data.startswith(b"PK")
+    assert filename == "example-oy-junior-data-analyst-application-package.zip"
+    with ZipFile(BytesIO(data)) as bundle:
+        assert len(bundle.namelist()) == 5
+        assert all(name == "README-NOT-SUBMITTED.txt" or
+                   name.startswith("example-oy-junior-data-analyst-")
+                   for name in bundle.namelist())
+        for kind, expected in (("cv", "Candidate Example"), ("letter", "Junior Data Analyst")):
+            doc_name = f"example-oy-junior-data-analyst-{kind}.docx"
+            pdf_name = f"example-oy-junior-data-analyst-{kind}.pdf"
+            doc_text = "\n".join(p.text for p in Document(
+                BytesIO(bundle.read(doc_name))
+            ).paragraphs)
+            pdf_data = bundle.read(pdf_name)
+            assert pdf_data.startswith(b"%PDF-")
+            pdf_text = "\n".join(page.extract_text() or "" for page in
+                                 PdfReader(BytesIO(pdf_data)).pages)
+            assert expected in doc_text and expected in pdf_text
+            assert "Finnish" not in doc_text and "Finnish" not in pdf_text
+        assert "does not contact the employer" in bundle.read(
+            "README-NOT-SUBMITTED.txt").decode("utf-8")
+    assert workspace.status == "draft"
+    assert workspace.revision == 1
+    assert workspace.to_dict()["authority"]["may_submit_to_employer"] is False
+
+
+def test_sp106_package_rejects_an_invalid_saved_cv_without_partial_download():
+    workspace = new_workspace(example_candidate(), example_profile())
+    with pytest.raises(WorkspaceError, match="CV must contain"):
+        render_application_package(replace(workspace, cv_text=""))

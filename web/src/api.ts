@@ -530,12 +530,30 @@ export function deleteApplicationWorkspace(workspaceId: string, expectedUserId: 
 }
 
 export function applicationDownloadUrl(
-  workspaceId: string, kind: "cv" | "letter", format: "pdf" | "docx"
+  workspaceId: string, kind: "cv" | "letter", format: "pdf" | "docx",
+  expectedRevision: number,
 ): string {
   return API_BASE + "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
-    + "/download/" + kind + "/" + format;
+    + "/download/" + kind + "/" + format
+    + "?expected_revision=" + encodeURIComponent(String(expectedRevision));
 }
 
+
+/** Private ZIP GET for exactly the saved job revision reviewed in this UI. */
+export function applicationPackageDownloadUrl(
+  workspaceId: string, expectedRevision: number,
+): string {
+  return API_BASE + "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
+    + "/download/package.zip?expected_revision=" + encodeURIComponent(String(expectedRevision));
+}
+
+/** Opens a read-only PDF for precisely this saved application revision. */
+export function applicationPdfPreviewUrl(
+  workspaceId: string, kind: "cv" | "letter", expectedRevision: number,
+): string {
+  return API_BASE + "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
+    + "/preview/" + kind + "/pdf?expected_revision=" + encodeURIComponent(String(expectedRevision));
+}
 
 export function getLocalAIStatus(): Promise<import("./types").LocalAIStatus> {
   return request<import("./types").LocalAIStatus>("/api/v1/local-ai/status");
