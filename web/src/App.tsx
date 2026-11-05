@@ -1205,9 +1205,13 @@ export default function App() {
           activeCVSelection.current !== cvAtStart) return;
       setSelectedWorkspaceId(response.workspace.workspace_id);
       navigate("applications");
-      setNotice(response.created
-        ? "Draft ready. Step 1: review and save your CV and letter. Step 2: complete the employer form. Step 3: confirm the outcome."
-        : "Opened your existing private application documents.");
+      setNotice(flowMode === "automatic"
+        ? "AutoApply opened the exact job. Review and save your tailored CV and cover letter; " +
+          "then use the visible Chrome companion or paired Playwright browser to inspect and fill " +
+          "approved fields. SmartPloy stops before the employer's final Submit button."
+        : response.created
+          ? "Draft ready. Step 1: review and save your CV and letter. Step 2: complete the employer form. Step 3: confirm the outcome."
+          : "Opened your existing private application documents.");
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged) &&
           lastSessionIdentity.current === actionIdentity &&
