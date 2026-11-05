@@ -139,3 +139,131 @@
   line-height: 1.65;
   color: #74602b;
 }
+
+
+/* SP105: deliberate master-CV provenance and side-by-side reconciliation.
+   The two documents are private; color is secondary to visible explanatory text. */
+.studio-master-cv-source {
+  padding: 15px 16px;
+  border-radius: 12px;
+  border: 1px solid #cddfea;
+  background: #f4f9fd;
+  color: #24465f;
+  margin: 0 0 15px;
+}
+.studio-master-cv-source.outdated {
+  border-color: #e8bd81;
+  background: #fff9ef;
+}
+.studio-master-cv-source-copy { display: grid; gap: 6px; }
+.studio-master-cv-source-copy strong { font-size: 14px; line-height: 1.4; }
+.studio-master-cv-source-copy p {
+  margin: 0;
+  color: #536b7b;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.studio-master-cv-source .row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 13px 0 0;
+}
+.studio-master-cv-source .row-actions button { min-height: 40px; }
+.studio-master-cv-error { margin: 10px 0 0; font-size: 12px; color: #aa3434; }
+.studio-master-cv-source-name { margin: 12px 0 4px; font-size: 12px; line-height: 1.6; }
+.studio-master-cv-source .document-comparison { margin: 12px 0; }
+html[data-smartploy-theme="dark"] .smartploy-app .studio-master-cv-source {
+  color: #e1eef8; background: #182e43; border-color: #466480;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .studio-master-cv-source.outdated {
+  background: #362c21; border-color: #947547;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .studio-master-cv-source-copy p,
+html[data-smartploy-theme="dark"] .smartploy-app .studio-master-cv-source-name {
+  color: #c1d1dc;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .studio-master-cv-error { color: #ffb1ae; }
+
+
+/* SP106: one-click, owner-scoped full application documents, not submission. */
+.studio-application-package {
+  margin: 16px 0;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid #b7d8e5;
+  background: linear-gradient(125deg, #f2f9fd, #fff);
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: #194254;
+}
+.studio-application-package > div { flex: 1 1 275px; min-width: 0; }
+.studio-application-package h4 { font-size: 17px; letter-spacing: -.02em; margin: 5px 0 8px; }
+.studio-application-package p { font-size: 12.5px; line-height: 1.6; margin: 0; color: #4a6674; }
+.studio-application-package > a {
+  flex: 0 1 auto;
+  min-height: 44px;
+  max-width: 100%;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: center;
+}
+.studio-application-package > a.disabled {
+  color: #81929f;
+  background: #ecf2f6;
+  border-color: #d6e1e8;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+.studio-application-package .studio-application-package-note {
+  width: 100%;
+  font-size: 12px;
+  color: #526f7a;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .studio-application-package {
+  color: #e2eef9;
+  border-color: #3d637c;
+  background: linear-gradient(125deg, #192d40, #25374b);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .studio-application-package p {
+  color: #c0d1df;
+}
+@media (max-width: 690px) {
+  .studio-application-package > a { width: 100%; flex: 1 1 100%; }
+}
+
+
+/* SP107: explicit printable-PDF previews for the exact saved revision.
+   The preview opens an authenticated, isolated, read-only new tab. */
+.studio-application-preview {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #d3e4ed;
+}
+.studio-application-preview > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  white-space: normal;
+  text-align: center;
+}
+.studio-application-preview > a.disabled {
+  pointer-events: none;
+  cursor: not-allowed;
+  color: #8093a3;
+  background: #ecf2f6;
+  border-color: #d6e1e8;
+}
+html[data-smartploy-theme="dark"] .smartploy-app .studio-application-preview {
+  border-color: #41647e;
+}
+@media (max-width: 690px) {
+  .studio-application-preview > a { flex: 1 1 100%; }
+}

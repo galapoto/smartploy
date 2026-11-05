@@ -1,0 +1,641 @@
+/** SP111: SmartPloy-to-local-Playwright review flow.
+ * No hidden browser operation: applicant starts one local helper per job,
+ * enters a one-use pairing code, sees the planned fields and approves once.
+ * Same-account/session reverified before and after private bridge actions.
+ */
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, Monitor, ShieldCheck, XCircle } from "lucide-react";
+import { applicationDownloadUrl, getBrowserHandoffReadiness,
+  getEmployerAttemptStatus, getSession, importBrowserReceipt } from "./api";
+import type { BrowserReceiptImport, BrowserObservedReceipt } from "./types";
+import {
+  attachExactReviewedCvLocally, fetchExactReviewedCvPdf,
+  callLocalPlaywrightBridge, localBridgeOriginAllowed,
+  type LocalBridgeOpened, type LocalBridgeInspected,
+  type LocalBridgeFilled, type LocalQuestionsInspected,
+  type LocalAnswersFilled, type LocalReviewedQuestion, type LocalBridgeObserved,
+  type LocalBridgeStopped, type LocalBridgeField,
+} from "./localPlaywrightBridge";
+import "./local-playwright.css";
+
+type Phase = "not-paired" | "opened" | "inspected" | "filled" | "uncertain" | "stopped";
+const CODE = /^[A-Za-z0-9_-]{20,80}$/;
+const SESSION_CHANGED = "Your SmartPloy sign-in changed. The local connection is blocked; restart and review again.";
+
+export default function LocalPlaywrightAssist(props: {
+  packetText: string;
+  enabled: boolean;
+  expectedUserId: string;
+  expectedAuthSource: string;
+  expectedWorkspaceId: string;
+  expectedRevision: number;
+  observationEnabled?: boolean;
+  onReceiptImported?: (receipt: BrowserObservedReceipt) => void;
+}) {
+  const [code, setCode] = useState("");
+  const [phase, setPhase] = useState<Phase>("not-paired");
+  const [fields, setFields] = useState<LocalBridgeField[]>([]);
+  const [planId, setPlanId] = useState("");
+  const [cvAttachment, setCvAttachment] = useState<{
+    available: boolean; label: string; attach_id: string;
+  }>({ available: false, label: "", attach_id: "" });
+  const [cvAttached, setCvAttached] = useState(false);
+  const [cvAttachAttempted, setCvAttachAttempted] = useState(false);
+  const [cvAttachBusy, setCvAttachBusy] = useState(false);
+  const [reviewedQuestions, setReviewedQuestions] = useState<LocalReviewedQuestion[]>([]);
+  const [humanOnlyQuestions, setHumanOnlyQuestions] = useState<string[]>([]);
+  const [questionAnswers, setQuestionAnswers] = useState<string[]>([]);
+  const [questionPlanId, setQuestionPlanId] = useState("");
+  const [questionAttempted, setQuestionAttempted] = useState(false);
+  const [questionInspectionDone, setQuestionInspectionDone] = useState(false);
+  const [questionStatus, setQuestionStatus] = useState("");
+  const [observedReceipt, setObservedReceipt] = useState<BrowserReceiptImport | null>(null);
+  const [receiptSaveClaimed, setReceiptSaveClaimed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
+  const sessionToken = useRef("");
+  const inFlight = useRef(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      // A changed account or job must never expose the old token in new UI.
+      // The local helper remains safe (its bearer token is no longer in UI
+      // memory) and can be stopped with Ctrl+C in the applicant terminal.
+      mounted.current = false;
+      sessionToken.current = "";
+    };
+  }, []);
+
+  async function verifyAccount() {
+    const session = await getSession();
+    if (session.authenticated !== true ||
+        session.user_id !== props.expectedUserId ||
+        session.auth_source !== props.expectedAuthSource) {
+      sessionToken.current = "";
+      throw new Error(SESSION_CHANGED);
+    }
+  }
+
+  async function verifyCurrentDraft() {
+    // Existing owner-scoped backend readiness must recheck source/job and
+    // document revision immediately before each local browser action.
+    // The helper's 15-minute packet is NOT enough to detect another tab edit.
+    // A held/uncertain employer attempt must not lead to a second CV
+    // transmission from a stale browser tab; reuse the server's original
+    // one-use attempt ledger, not a UI-derived submission status.
+    const attempt = await getEmployerAttemptStatus(props.expectedWorkspaceId);
+    if (attempt.previous_attempt_reserved !== false) {
+      throw new Error("An employer application attempt is already reserved or uncertain. " +
+        "Review its receipt before any new local browser action.");
+    }
+    const readiness = await getBrowserHandoffReadiness(props.expectedWorkspaceId);
+    if (readiness.ready !== true ||
+        readiness.document_revision !== props.expectedRevision) {
+      throw new Error("This job or reviewed CV/letter changed. Stop the local browser, " +
+        "save and prepare a fresh application packet.");
+    }
+  }
+
+  async function verifyReceiptDraftIdentity() {
+    // Browser receipt IMPORT is allowed after an employer attempt has been
+    // reserved. A reserved ledger prevents another send, not a read-only
+    // observation of that same exact application. This checks REVISION only.
+    const readiness = await getBrowserHandoffReadiness(props.expectedWorkspaceId);
+    if (readiness.document_revision !== props.expectedRevision) {
+      throw new Error("The saved CV/letter revision changed. A confirmation for " +
+        "the old job cannot be imported into this application.");
+    }
+  }
+
+  async function guardedReceipt(action: () => Promise<void>) {
+    if (!mounted.current || inFlight.current ||
+        props.observationEnabled === false || !sessionToken.current) return;
+    inFlight.current = true;
+    setBusy(true); setError(""); setFeedback("");
+    try {
+      await verifyAccount();
+      await verifyReceiptDraftIdentity();
+      await verifyAccount();
+      if (!mounted.current) return;
+      await action();
+      await verifyAccount();
+    } catch (exc) {
+      if (mounted.current) setError(
+        exc instanceof Error ? exc.message : "Receipt observation was blocked."
+      );
+    } finally {
+      inFlight.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+
+  async function guarded(action: () => Promise<void>) {
+    if (!props.enabled || !mounted.current || inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true); setError(""); setFeedback("");
+    try {
+      await verifyAccount();
+      if (!mounted.current) return;
+      await verifyCurrentDraft();
+      await verifyAccount();
+      if (!mounted.current) return;
+      await action();
+      await verifyAccount();
+    } catch (exc) {
+      if (!mounted.current) return;
+      const message = exc instanceof Error ? exc.message : "The local browser action was blocked.";
+      setError(message);
+    } finally {
+      inFlight.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+
+  function startLocalBrowser() {
+    if (phase !== "not-paired" || !CODE.test(code.trim()) || !props.packetText) return;
+    if (!window.confirm(
+      "Send the currently reviewed SmartPloy packet (approved contact details " +
+      "and cover letter) ONLY to the helper on this computer at 127.0.0.1? " +
+      "The helper opens the exact employer posting in visible Chromium. " +
+      "The employer website may receive data during form filling, but this step " +
+      "does not fill fields, upload a CV or submit an application."
+    )) return;
+    void guarded(async () => {
+      let packet: unknown;
+      try { packet = JSON.parse(props.packetText); }
+      catch { throw new Error("The reviewed application packet is invalid. Copy a fresh one."); }
+      if (!packet || typeof packet !== "object" ||
+          (packet as { workspace_id?: unknown }).workspace_id !== props.expectedWorkspaceId ||
+          (packet as { revision?: unknown }).revision !== props.expectedRevision) {
+        throw new Error("The reviewed packet does not match this exact current job. Copy a fresh one.");
+      }
+      const response = await callLocalPlaywrightBridge<LocalBridgeOpened>(
+        "prepare", { pairing_code: code.trim(), packet }, { expectedStage: "opened" },
+      );
+      // Do not leave an old applicant's browser session reusable after an
+      // in-flight OIDC switch; best-effort cleanup is LOCAL only.
+      try { await verifyAccount(); } catch (exc) {
+        try {
+          await callLocalPlaywrightBridge<LocalBridgeStopped>(
+            "stop", {}, { token: response.token, expectedStage: "stopped" }
+          );
+        } catch { /* helper can always be shut down from terminal */ }
+        throw exc;
+      }
+      if (!mounted.current) return;
+      sessionToken.current = response.token; // memory only: no storage/log/URL
+      setCode("");
+      setPhase("opened");
+      setFeedback("Local Chromium opened for " + response.company +
+        " — " + response.role_title + ". Complete employer login and navigate to " +
+        "the exact application form in the visible browser, then inspect here.");
+    });
+  }
+
+  function inspectLocalBrowser() {
+    if (phase !== "opened" || !sessionToken.current) return;
+    void guarded(async () => {
+      const response = await callLocalPlaywrightBridge<LocalBridgeInspected>(
+        "inspect", {}, { token: sessionToken.current, expectedStage: "inspected" },
+      );
+      if (!mounted.current) return;
+      setFields(response.approved_fields);
+      setPlanId(response.plan_id);
+      setCvAttachment(response.cv_attachment);
+      setCvAttached(false); setCvAttachAttempted(false);
+      setPhase("inspected");
+      setFeedback(response.approved_fields.length
+        ? "Inspect these exact field names. Nothing has been filled or submitted."
+        : "No unique, safe empty fields were found. Complete this form manually.");
+    });
+  }
+
+  function fillLocalBrowser() {
+    if (phase !== "inspected" || !sessionToken.current ||
+        !planId || !fields.length || !props.enabled || inFlight.current) return;
+    if (!window.confirm(
+      "Fill these " + fields.length + " reviewed, ordinary fields ONCE in the " +
+      "visible employer form? The employer page may transmit each value " +
+      "immediately. A separate reviewed CV attachment action is optional; " +
+      "SmartPloy will never click Submit. " +
+      "A changed form or uncertain outcome stops without retry."
+    )) return;
+    // Even after a network timeout the local helper may have filled some
+    // values. Disable local retry before issuing the request.
+    setPhase("uncertain");
+    void guarded(async () => {
+      const response = await callLocalPlaywrightBridge<LocalBridgeFilled>(
+        "fill", { plan_id: planId, confirmation: "FILL REVIEWED FIELDS" },
+        { token: sessionToken.current, expectedStage: "filled" },
+      );
+      if (!mounted.current) return;
+      setPhase("filled");
+      setFeedback("Filled " + response.filled + " of " + response.planned +
+        " reviewed fields. " + (response.stopped_on_change
+          ? "The form changed; finish remaining fields manually. "
+          : "") +
+        "Review every value, attach documents and submit personally on the employer website.");
+    });
+  }
+
+  function reviewEmployerQuestions() {
+    if (!props.enabled || inFlight.current || !sessionToken.current ||
+        questionAttempted || !["opened", "inspected", "filled"].includes(phase)) return;
+    void guarded(async () => {
+      const result = await callLocalPlaywrightBridge<LocalQuestionsInspected>(
+        "questions", {}, {
+          token: sessionToken.current, expectedStage: "questions_inspected",
+        },
+      );
+      if (!mounted.current) return;
+      setReviewedQuestions(result.questions);
+      setHumanOnlyQuestions(result.human_only);
+      setQuestionAnswers(result.questions.map(() => ""));
+      setQuestionPlanId(result.plan_id);
+      setQuestionInspectionDone(true);
+      setQuestionStatus(result.questions.length
+        ? "Only eligible unanswered text questions are shown here. Enter " +
+          "truthful, personally reviewed answers. Leave sensitive and " +
+          "unlisted fields for the visible employer form."
+        : "No safe unanswered text questions. Complete remaining questions " +
+          "personally in the employer browser.");
+    });
+  }
+
+  function fillReviewedEmployerAnswers() {
+    if (!props.enabled || !sessionToken.current || inFlight.current ||
+        !questionInspectionDone || !questionPlanId || questionAttempted ||
+        !["opened", "inspected", "filled"].includes(phase) ||
+        !questionAnswers.some(item => item.trim())) return;
+    if (!window.confirm(
+      "FILL YOUR REVIEWED EMPLOYER ANSWERS ONCE? You confirm every entered " +
+      "statement is accurate and truthful. The employer may receive answers " +
+      "immediately on input/change. Sensitive questions, salary, visa, legal " +
+      "consent and identity details remain manual. SmartPloy NEVER clicks " +
+      "Submit. An uncertain fill will NOT be retried."
+    )) return;
+    // An HTTP response can be lost AFTER employer page input/change.
+    // Consume the local attempt before contacting the helper.
+    setQuestionAttempted(true);
+    const approved = [...questionAnswers];
+    setQuestionAnswers([]);
+    void guarded(async () => {
+      const result = await callLocalPlaywrightBridge<LocalAnswersFilled>(
+        "fill-questions", {
+          plan_id: questionPlanId,
+          confirmation: "FILL REVIEWED ANSWERS",
+          answers: approved,
+        }, { token: sessionToken.current, expectedStage: "answers_filled" },
+      );
+      if (!mounted.current) return;
+      setQuestionStatus("Reviewed employer answers: " + result.filled + " of " +
+        result.planned + " filled. " + (result.status === "filled_for_review"
+          ? "Review every value in the employer browser before submitting."
+          : "Some inputs changed or were refused; inspect the employer page " +
+            "manually and do not retry."));
+    });
+  }
+
+  function attachCurrentReviewedCv() {
+    if (!props.enabled || inFlight.current || !sessionToken.current ||
+        !cvAttachment.available || !cvAttachment.attach_id ||
+        cvAttachAttempted || cvAttachBusy ||
+        !["inspected", "filled"].includes(phase)) return;
+    if (!window.confirm(
+      "Attach the EXACT saved SmartPloy CV PDF to the reviewed \"" +
+      cvAttachment.label + "\" field in the visible employer browser? " +
+      "SmartPloy will re-download and verify the current private PDF, then " +
+      "transfer it ONLY through localhost. The employer website may upload " +
+      "the PDF as soon as the file input changes. This is a single attempt; " +
+      "you must verify the employer's attachment and submit personally."
+    )) return;
+    void guarded(async () => {
+      let packet: unknown;
+      try { packet = JSON.parse(props.packetText); }
+      catch { throw new Error("The private reviewed packet is invalid. Prepare a fresh one."); }
+      if (!packet || typeof packet !== "object") {
+        throw new Error("No reviewed CV document is available for attachment.");
+      }
+      const info = packet as Record<string, unknown>;
+      if (info.workspace_id !== props.expectedWorkspaceId ||
+          info.revision !== props.expectedRevision ||
+          typeof info.cv_pdf_sha256 !== "string" ||
+          typeof info.cv_pdf_size !== "number") {
+        throw new Error("The saved CV revision no longer matches your reviewed application.");
+      }
+      setCvAttachBusy(true);
+      try {
+        const pdf = await fetchExactReviewedCvPdf(
+          applicationDownloadUrl(props.expectedWorkspaceId, "cv", "pdf",
+            props.expectedRevision),
+          { cv_pdf_sha256: info.cv_pdf_sha256, cv_pdf_size: info.cv_pdf_size },
+        );
+        // A second identity check AFTER the private download prevents a
+        // stale account from transferring someone else's CV to localhost.
+        await verifyAccount();
+        await verifyCurrentDraft();
+        await verifyAccount();
+        if (!mounted.current || !props.enabled) return;
+        // Burn the UI attempt BEFORE the local helper sees valid PDF bytes.
+        // A timeout may follow an actual employer-upload event; never retry.
+        setCvAttachAttempted(true);
+        const result = await attachExactReviewedCvLocally(
+          pdf, sessionToken.current, cvAttachment.attach_id,
+        );
+        if (!mounted.current) return;
+        setCvAttached(result.attached_locally);
+        setFeedback("Exact reviewed CV PDF placed in the employer's " +
+          cvAttachment.label + " field. This is NOT employer upload confirmation. " +
+          "Check the employer page and click Submit personally.");
+      } finally {
+        if (mounted.current) setCvAttachBusy(false);
+      }
+    });
+  }
+
+  function observeManualEmployerReceipt() {
+    if (!sessionToken.current || props.observationEnabled === false ||
+        !["opened", "inspected", "filled", "uncertain"].includes(phase) ||
+        inFlight.current || observedReceipt) return;
+    if (!window.confirm(
+      "OBSERVE THIS EMPLOYER CONFIRMATION? You PERSONALLY clicked the employer's " +
+      "Submit button and can see a reference-bearing confirmation for this exact job. " +
+      "SmartPloy will only LOOK at the visible Chromium page using the original " +
+      "Chrome companion inspector. It will NOT submit, retry, or claim independent " +
+      "employer verification. A separate action is required to record evidence."
+    )) return;
+    void guardedReceipt(async () => {
+      const result = await callLocalPlaywrightBridge<LocalBridgeObserved>(
+        "observe", { confirmation: "OBSERVE EMPLOYER CONFIRMATION" },
+        { token: sessionToken.current, expectedStage: "observed" },
+      );
+      if (!mounted.current) return;
+      if (!result.confirmed || !result.receipt) {
+        setFeedback("No unique, reference-bearing confirmation is visible for " +
+          "this exact job. Do NOT repeat an employer Submit action. " +
+          "Check the existing employer portal manually.");
+        return;
+      }
+      const r = result.receipt;
+      if (r.workspace_id !== props.expectedWorkspaceId ||
+          r.document_revision !== props.expectedRevision) {
+        throw new Error("Observed receipt belongs to a different application.");
+      }
+      setObservedReceipt(r);
+      setFeedback("Browser-visible reference found. The employer has NOT " +
+        "independently confirmed delivery through SmartPloy. You may save the " +
+        "observation below after another confirmation.");
+    });
+  }
+
+  function saveManualReceiptObservation() {
+    if (!observedReceipt || receiptSaveClaimed || inFlight.current ||
+        props.observationEnabled === false || !sessionToken.current) return;
+    if (!window.confirm(
+      "SAVE THIS UNVERIFIED BROWSER OBSERVATION? Reference: " +
+      observedReceipt.reference + ". You personally observed the employer page " +
+      "after submitting this exact application. This records an owner-reported " +
+      "browser observation only. It is NOT a provider acknowledgement, " +
+      "does NOT increment independently verified submission counts, and " +
+      "does NOT send or retry the application."
+    )) return;
+    void guardedReceipt(async () => {
+      if (observedReceipt.workspace_id !== props.expectedWorkspaceId ||
+          observedReceipt.document_revision !== props.expectedRevision) {
+        throw new Error("Receipt no longer matches the current saved job.");
+      }
+      // A network timeout could follow a successfully committed receipt.
+      // Never blindly replay a state-changing import for this observation.
+      setReceiptSaveClaimed(true);
+      const result = await importBrowserReceipt(
+        props.expectedWorkspaceId, observedReceipt, props.expectedUserId,
+      );
+      if (result.external_confirmation_verified !== false ||
+          result.receipt.status !== "browser_observed_unverified" ||
+          result.receipt.independently_verified_by_employer !== false ||
+          result.receipt.actually_submitted_count_changed !== false ||
+          result.receipt.workspace_id !== props.expectedWorkspaceId ||
+          result.receipt.document_revision !== props.expectedRevision) {
+        throw new Error("The server did not return a valid unverified receipt status.");
+      }
+      if (!mounted.current) return;
+      props.onReceiptImported?.(result.receipt);
+      setFeedback("Employer page observation saved as UNVERIFIED. No application " +
+        "was submitted by SmartPloy, and no employer acknowledgement was verified.");
+    });
+  }
+
+  function stopLocalBrowser() {
+    if (!sessionToken.current || inFlight.current) return;
+    const token = sessionToken.current;
+    sessionToken.current = "";
+    setBusy(true); setError("");
+    void callLocalPlaywrightBridge<LocalBridgeStopped>(
+      "stop", {}, { token, expectedStage: "stopped" },
+    ).then(() => {
+      if (mounted.current) setFeedback("Local Playwright browser closed. Restart the helper for another job.");
+    }).catch(() => {
+      if (mounted.current) setError(
+        "Could not confirm local browser closure. Press Ctrl+C in the helper terminal."
+      );
+    }).finally(() => {
+      if (!mounted.current) return;
+      setPhase("stopped"); setFields([]); setPlanId("");
+      setCvAttachment({ available: false, label: "", attach_id: "" });
+      setCvAttached(false); setCvAttachAttempted(true);
+      setReviewedQuestions([]); setHumanOnlyQuestions([]);
+      setQuestionAnswers([]); setQuestionPlanId("");
+      setQuestionAttempted(true); setQuestionInspectionDone(false);
+      setQuestionStatus("");
+      setBusy(false);
+    });
+  }
+
+  const trustedPage = localBridgeOriginAllowed(window.location.origin);
+
+  return <section className="local-playwright-panel" aria-label="Paired local Playwright browser">
+    <div className="local-playwright-heading">
+      <Monitor size={20} aria-hidden="true" />
+      <div>
+        <strong>Connect my local Playwright browser</strong>
+        <p>Fill reviewed fields from SmartPloy without pasting your private packet into a terminal.</p>
+      </div>
+    </div>
+    <p className="local-playwright-notice">
+      <ShieldCheck size={15} aria-hidden="true" />
+      Private local connection only · 127.0.0.1 · CV attachment only after consent · no employer submission
+    </p>
+    <p className="muted">
+      Install the reviewed Playwright ZIP once, then start <code>python bridge.py</code> on
+      your own desktop. The terminal prints a one-use code. Keep the visible Chromium
+      browser open while completing the employer's application. The Chrome extension
+      remains an alternative when local-network access is blocked.
+    </p>
+    {!trustedPage ? <p role="alert">This origin cannot connect to your local Playwright helper.
+      Use the Chrome companion instead.</p> : null}
+    {phase === "not-paired" ? <div className="local-playwright-actions">
+      <label htmlFor="smartploy-local-playwright-code">Temporary local pairing code
+        <input id="smartploy-local-playwright-code" type="password"
+          autoComplete="off" spellCheck={false} value={code}
+          onChange={(event) => setCode(event.target.value)}
+          placeholder="Code printed by python bridge.py" maxLength={80} />
+      </label>
+      <button type="button" className="navy-btn"
+        disabled={!props.enabled || busy || !trustedPage || !CODE.test(code.trim())}
+        onClick={startLocalBrowser}>
+        {busy ? "Connecting to local browser…" : "Open reviewed employer form"}
+      </button>
+    </div> : null}
+    {phase === "opened" ? <div className="local-playwright-actions">
+      <button type="button" className="navy-btn" disabled={!props.enabled || busy}
+        onClick={inspectLocalBrowser}>
+        {busy ? "Inspecting…" : "Inspect current employer form"}
+      </button>
+      <small>Navigate/login in the visible local browser first. The page must match this exact job.</small>
+    </div> : null}
+    {phase === "inspected" ? <div className="local-playwright-actions">
+      <strong>Reviewed safe fields ({fields.length})</strong>
+      <ul className="local-playwright-fields">
+        {fields.map((item, index) =>
+          <li key={item.key + ":" + index}>{item.label} <small>{item.key}</small></li>)}
+      </ul>
+      <button type="button" className="navy-btn"
+        disabled={!props.enabled || busy || !fields.length}
+        onClick={fillLocalBrowser}>
+        Fill reviewed fields once (never submit)
+      </button>
+    </div> : null}
+    {sessionToken.current && ["opened", "inspected", "filled"].includes(phase) ?
+      <div className="local-playwright-actions" aria-label="Reviewed employer questions">
+        <strong>Employer questions · applicant review</strong>
+        <p className="muted">
+          Reuses the original Chrome companion question policy. Only safe,
+          unanswered required text questions are eligible for optional
+          one-time filling. You must answer salary, work authorization,
+          legal consent, identity and other sensitive questions yourself.
+        </p>
+        <button type="button" className="outline-btn"
+          disabled={!props.enabled || busy || questionAttempted}
+          onClick={reviewEmployerQuestions}>
+          {questionInspectionDone ? "Reinspect unanswered questions" :
+            "Review unanswered employer questions"}
+        </button>
+        {questionInspectionDone ? <>
+          {reviewedQuestions.length > 0 ? <div className="local-playwright-questions">
+            {reviewedQuestions.map((question, i) =>
+              <label key={question.index + ":" + question.label}>
+                {question.label}
+                <textarea rows={3}
+                  value={questionAnswers[i] || ""}
+                  maxLength={question.max_answer_length}
+                  autoComplete="off" spellCheck={false}
+                  placeholder="Write a truthful answer; leave blank to handle manually"
+                  disabled={!props.enabled || busy || questionAttempted}
+                  onChange={(event) => setQuestionAnswers(previous =>
+                    previous.map((value, n) => n === i ? event.target.value : value)
+                  )}/>
+              </label>)}
+            <button type="button" className="navy-btn"
+              disabled={!props.enabled || busy || questionAttempted ||
+                !questionAnswers.some(value => value.trim())}
+              onClick={fillReviewedEmployerAnswers}>
+              Fill my reviewed answers once (never submit)
+            </button>
+          </div> : null}
+          {humanOnlyQuestions.length ? <div className="local-playwright-manual">
+            <strong>Answer personally on the employer website</strong>
+            <ul>{humanOnlyQuestions.slice(0, 12).map((label, i) =>
+              <li key={label + ":" + i}>{label}</li>)}</ul>
+            {humanOnlyQuestions.length > 12 ?
+              <p>Additional manual fields: {humanOnlyQuestions.length - 12}</p> : null}
+          </div> : null}
+          {questionStatus ? <p role="status">{questionStatus}</p> : null}
+          {questionAttempted ? <p role="alert">
+            Answer filling has been attempted once. Do not retry after
+            an uncertain result; review the actual employer form manually.
+          </p> : null}
+        </> : null}
+      </div> : null}
+    {cvAttachment.available && ["inspected", "filled"].includes(phase) ?
+      <div className="local-playwright-actions" aria-label="Reviewed CV PDF attachment">
+        <strong>CV PDF · {cvAttachment.label}</strong>
+        <p className="muted">
+          Reuse your exact saved SmartPloy CV PDF (SHA-256 and file size verified
+          against this reviewed job). The PDF goes to your own local helper,
+          then to the employer input ONLY after another explicit approval.
+          The employer may upload it immediately on input.
+        </p>
+        <button className="outline-btn" type="button"
+          disabled={!props.enabled || busy || cvAttachBusy || cvAttachAttempted}
+          onClick={attachCurrentReviewedCv}>
+          {cvAttachBusy ? "Verifying local reviewed CV…" :
+            "Attach exact saved CV PDF once"}
+        </button>
+        {cvAttached ? <p role="status">
+          CV placed in the employer file input, but server acceptance is
+          unverified. Review the visible employer page before submitting.
+        </p> : null}
+        {cvAttachAttempted && !cvAttached ? <p role="alert">
+          Attachment result uncertain. Inspect the visible employer browser
+          manually and do not retry this file action.
+        </p> : null}
+      </div> : null}
+    {sessionToken.current && ["opened", "inspected", "filled", "uncertain"].includes(phase) &&
+      props.observationEnabled !== false ?
+      <div className="local-playwright-actions" aria-label="Manual employer receipt observation">
+        <strong>After you submit personally: observe the employer receipt</strong>
+        <p className="muted">
+          First click the employer's own Submit button PERSONALLY, then
+          inspect its confirmation here. This reuses SmartPloy's existing
+          Chrome companion receipt observer. SmartPloy never clicks Submit.
+          A visible reference is a browser observation, not provider verification.
+        </p>
+        <button type="button" className="outline-btn"
+          disabled={busy || !!observedReceipt}
+          onClick={observeManualEmployerReceipt}>
+          Observe employer confirmation (read-only)
+        </button>
+        {observedReceipt ? <div className="local-playwright-receipt">
+          <p><strong>Observed reference:</strong> {observedReceipt.reference}</p>
+          <p><strong>Exact job confirmation:</strong> {observedReceipt.confirmation_page_url}</p>
+          <p>Evidence is browser-observed and unverified by the employer.</p>
+          <button type="button" className="navy-btn"
+            disabled={busy || receiptSaveClaimed}
+            onClick={saveManualReceiptObservation}>
+            Save unverified observation to SmartPloy
+          </button>
+          {receiptSaveClaimed ? <p role="status">
+            Receipt import was attempted once. If its outcome is uncertain,
+            refresh My Applications to check the existing record; do not retry.
+          </p> : null}
+        </div> : null}
+      </div> : null}
+    {phase === "uncertain" ? <p role="alert">
+      The fill attempt may have changed the employer form. Inspect the visible
+      browser manually; do not retry an uncertain application.
+    </p> : null}
+    {phase === "filled" ? <p role="status" className="local-playwright-result">
+      <CheckCircle2 size={17} aria-hidden="true" />
+      Field-fill action completed. Your application is NOT submitted.
+    </p> : null}
+    {phase === "stopped" ? <p role="status">
+      Session stopped. Restart <code>python bridge.py</code> for the next job.
+    </p> : null}
+    {feedback ? <p role="status" className="local-playwright-result">{feedback}</p> : null}
+    {error ? <p role="alert" className="local-playwright-error">
+      <XCircle size={16} aria-hidden="true" /> {error}
+    </p> : null}
+    {sessionToken.current && phase !== "stopped" ? <button type="button"
+      className="outline-btn compact" disabled={busy} onClick={stopLocalBrowser}>
+      Stop local browser session
+    </button> : null}
+    {!props.enabled ? <p role="alert">
+      Additional form filling and CV attachment are blocked or unavailable.
+      If you already submitted personally in this paired browser, you can
+      observe the confirmation without triggering another employer action.
+    </p> : null}
+  </section>;
+}
