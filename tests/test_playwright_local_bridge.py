@@ -183,6 +183,34 @@ def test_sp111_stale_or_forged_packet_and_code_lockout():
     assert not FakeActor.instances
 
 
+def test_sp132_read_only_reinspection_expires_old_contact_and_question_plans():
+    """Applicant login/navigation must not preserve a stale form approval."""
+    current = state()
+    current.prepare(PAIR_CODE, packet())
+    first = current.inspect()
+    question = current.questions()
+    second = current.inspect()
+    assert second["plan_id"] != first["plan_id"]
+    assert current.question_plan is None
+    assert current.question_plan_id == ""
+    assert current.question_page is None
+    with pytest.raises(bridge.BridgeError) as stale_fields:
+        current.fill(first["plan_id"], "FILL REVIEWED FIELDS")
+    assert stale_fields.value.status == 403
+    with pytest.raises(bridge.BridgeError) as stale_questions:
+        current.fill_questions(
+            question["plan_id"], "FILL REVIEWED ANSWERS",
+            ["Reviewed synthetic project"],
+        )
+    assert stale_questions.value.status == 409
+    assert FakeActor.instances[0].page.filled == []
+    assert FakeActor.instances[0].reviewed_answers == []
+    # A fresh, explicitly approved plan may still be used once.
+    filled = current.fill(second["plan_id"], "FILL REVIEWED FIELDS")
+    assert filled["filled"] == filled["planned"] == 3
+    assert filled["submitted"] is False
+
+
 def test_sp111_expired_packet_rechecked_before_inspection_and_fill():
     current = state()
     _opened = current.prepare(PAIR_CODE, packet())
