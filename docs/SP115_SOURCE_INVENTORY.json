@@ -100,7 +100,7 @@
     },
     {
       "path": "browser-playwright/bridge.py",
-      "git_blob_sha1": "4b83c02f620bd34dbac21053bf33bc22868feb85"
+      "git_blob_sha1": "9dea0f05cf744786284468b9b2c7a587e04db548"
     },
     {
       "path": "browser-playwright/INSTALL.txt",
