@@ -892,11 +892,13 @@ export default function App() {
     let host = "";
     try { host = new URL(item.application_url).hostname; }
     catch { setNotice("Add a valid public HTTPS employer URL to start."); return; }
+    const requestedMode = flowMode === "automatic" ? "automatic" : "assisted";
     if (!window.confirm(
-      "Start a private Assisted application for " + item.role_title + " at " +
+      "Prepare this " + (requestedMode === "automatic" ? "AutoApply" : "Assisted") +
+      " application for " + item.role_title + " at " +
       item.company + " (" + host + ")? This user-added employer is NOT verified. " +
       "SmartPloy will prepare your private CV/letter, then guide you to a visible " +
-      "Playwright browser. Nothing is sent or submitted by this step."
+      "Playwright browser. No employer is contacted by this preparation."
     )) return;
     const actionIdentity = lastSessionIdentity.current;
     const cvAtStart = activeCVSelection.current;
@@ -907,11 +909,12 @@ export default function App() {
       );
       if (lastSessionIdentity.current !== actionIdentity ||
           activeCVSelection.current !== cvAtStart) return;
-      setFlowMode("assisted");
+      setFlowMode(requestedMode);
       setSelectedWorkspaceId(result.workspace.workspace_id);
       navigate("applications");
       setNotice("Application opened. Next: review and save your job-specific CV and letter. " +
-        "Then click Start application with Playwright to open the employer form.");
+        "Then pair the visible Playwright browser or Chrome companion to inspect and fill " +
+        "reviewed fields. Final employer submission remains your decision.");
     } catch (exc) {
       if (!(exc instanceof PrivateActionIdentityChanged) &&
           lastSessionIdentity.current === actionIdentity &&
