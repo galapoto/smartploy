@@ -284,11 +284,11 @@
     },
     {
       "path": "web/src/LocalPlaywrightAssist.test.tsx",
-      "git_blob_sha1": "84c5496c0fa98980fd78114e12e6091d616c7d80"
+      "git_blob_sha1": "657d3fe946feb3787d7bb1c1944955ce7fc3f940"
     },
     {
       "path": "web/src/LocalPlaywrightAssist.tsx",
-      "git_blob_sha1": "89b40d4d5e0de41137ce07ea6866239652b27c27"
+      "git_blob_sha1": "4ed9f5e515a0224b5670c9c64dbf3264c942fe04"
     },
     {
       "path": "web/src/localPlaywrightBridge.ts",
