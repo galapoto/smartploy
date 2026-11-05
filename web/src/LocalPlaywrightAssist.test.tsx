@@ -245,7 +245,7 @@ describe("SP111 paired browser review-first UI", () => {
     let scans = 0;
     vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith("/v1/prepare")) return mockReply("opened");
+      if (url.endsWith("/v1/prepare")) return mockReply("opened") as unknown as Response;
       if (url.endsWith("/v1/inspect")) {
         scans += 1;
         if (scans === 1) {
@@ -254,11 +254,11 @@ describe("SP111 paired browser review-first UI", () => {
             total_controls: 0, approved_fields: [],
             cv_attachment: {available: false, label: "", attach_id: ""},
             submitted: false, uploaded: false,
-          })} as never;
+          })} as unknown as Response;
         }
-        return mockReply("inspected");
+        return mockReply("inspected") as unknown as Response;
       }
-      if (url.endsWith("/v1/fill")) return mockReply("filled");
+      if (url.endsWith("/v1/fill")) return mockReply("filled") as unknown as Response;
       throw new Error("Unexpected test route");
     });
     render(<LocalPlaywrightAssist packetText={packet} enabled={true}
@@ -293,14 +293,14 @@ describe("SP111 paired browser review-first UI", () => {
     let scans = 0;
     vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith("/v1/prepare")) return mockReply("opened");
+      if (url.endsWith("/v1/prepare")) return mockReply("opened") as unknown as Response;
       if (url.endsWith("/v1/inspect")) {
         scans += 1;
-        if (scans === 1) return mockReply("inspected");
+        if (scans === 1) return mockReply("inspected") as unknown as Response;
         throw new Error("Synthetic employer navigation made inspection unavailable");
       }
       if (url.endsWith("/v1/fill")) throw new Error("A stale fill must never be requested");
-      return mockReply("stopped");
+      return mockReply("stopped") as unknown as Response;
     });
     render(<LocalPlaywrightAssist packetText={packet} enabled={true}
       autoInspectOnPair={true} expectedUserId="user-A"
