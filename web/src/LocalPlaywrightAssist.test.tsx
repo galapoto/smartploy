@@ -241,6 +241,84 @@ describe("SP111 paired browser review-first UI", () => {
     // No field fill, CV upload or employer submission before the owner's click.
   });
 
+  it("SP132: after AutoApply opens an employer landing page, inspect again after visible Apply", async () => {
+    let scans = 0;
+    vi.mocked(fetch).mockImplementation(async (url: string) => {
+      if (url.endsWith("/v1/prepare")) return mockReply("opened");
+      if (url.endsWith("/v1/inspect")) {
+        scans += 1;
+        if (scans === 1) {
+          return {ok: true, status: 200, json: async () => ({
+            ok: true, stage: "inspected", plan_id: "OLD_PLAN",
+            total_controls: 0, approved_fields: [],
+            cv_attachment: {available: false, label: "", attach_id: ""},
+            submitted: false, uploaded: false,
+          })} as never;
+        }
+        return mockReply("inspected");
+      }
+      if (url.endsWith("/v1/fill")) return mockReply("filled");
+      throw new Error("Unexpected test route");
+    });
+    render(<LocalPlaywrightAssist packetText={packet} enabled={true}
+      autoInspectOnPair={true} expectedUserId="user-A"
+      expectedAuthSource="oidc" expectedWorkspaceId="workspace-A"
+      expectedRevision={2}/>);
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Start visible AutoApply (open & inspect)"}));
+    expect(await screen.findByText(/Form opened, but no safe ordinary fields/)).toBeTruthy();
+    expect(screen.queryByRole("button", {name: /Fill reviewed fields once/})).toBeNull();
+    fireEvent.click(screen.getByRole("button", {name: "Inspect current employer form again"}));
+    expect(await screen.findByRole("button", {name: "Fill reviewed fields once (never submit)"}))
+      .toBeTruthy();
+    expect(scans).toBe(2);
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toEqual([
+      "http://127.0.0.1:48741/v1/prepare",
+      "http://127.0.0.1:48741/v1/inspect",
+      "http://127.0.0.1:48741/v1/inspect",
+    ]);
+    fireEvent.click(screen.getByRole("button", {name:"Fill reviewed fields once (never submit)"}));
+    expect(await screen.findByText(/Field-fill action completed/)).toBeTruthy();
+    const fill = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith("/v1/fill"));
+    expect(JSON.parse(String((fill![1] as RequestInit).body)).plan_id).toBe(planId);
+    expect(screen.queryByRole("button", {name: "Inspect current employer form again"})).toBeNull();
+    expect(document.body.textContent).not.toContain(pairing);
+    expect(document.body.textContent).not.toContain(localToken);
+  });
+
+  it("SP132: a failed reinspection invalidates old fields and cannot fill a stale plan", async () => {
+    let scans = 0;
+    vi.mocked(fetch).mockImplementation(async (url: string) => {
+      if (url.endsWith("/v1/prepare")) return mockReply("opened");
+      if (url.endsWith("/v1/inspect")) {
+        scans += 1;
+        if (scans === 1) return mockReply("inspected");
+        throw new Error("Synthetic employer navigation made inspection unavailable");
+      }
+      if (url.endsWith("/v1/fill")) throw new Error("A stale fill must never be requested");
+      return mockReply("stopped");
+    });
+    render(<LocalPlaywrightAssist packetText={packet} enabled={true}
+      autoInspectOnPair={true} expectedUserId="user-A"
+      expectedAuthSource="oidc" expectedWorkspaceId="workspace-A"
+      expectedRevision={2}/>);
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Start visible AutoApply (open & inspect)"}));
+    expect(await screen.findByRole("button", {name: "Fill reviewed fields once (never submit)"}))
+      .toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: "Inspect current employer form again"}));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.queryByRole("button", {name: "Fill reviewed fields once (never submit)"}))
+      .toBeNull();
+    expect(screen.getByRole("button", {name: "Inspect current employer form"})).toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/v1/fill")))
+      .toHaveLength(0);
+  });
+
   it("blocks cross-account login changes before any local data transfer", async () => {
     vi.mocked(getSession).mockResolvedValue({ ...session, user_id: "different-subject" });
     component();
