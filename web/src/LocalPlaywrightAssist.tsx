@@ -203,12 +203,28 @@ export default function LocalPlaywrightAssist(props: {
       // inspection after opening Chromium. Never automatically fill values,
       // attach a file or click employer Submit. If login/ATS navigation is
       // needed, the applicant can complete it visibly and inspect again.
+      let inspected: LocalBridgeInspected | null = null;
       try {
-        const inspected = await callLocalPlaywrightBridge<LocalBridgeInspected>(
+        inspected = await callLocalPlaywrightBridge<LocalBridgeInspected>(
           "inspect", {}, { token: response.token, expectedStage: "inspected" },
         );
-        await verifyAccount();
-        if (!mounted.current) return;
+      } catch {
+        // A nonstandard landing page is a normal handoff; login and navigation
+        // remain in the visible browser. This never retries a fill.
+      }
+      // IMPORTANT: Account verification must run outside the inspection
+      // catch, so an OIDC switch is never treated as an innocuous form error.
+      try { await verifyAccount(); } catch (exc) {
+        try {
+          await callLocalPlaywrightBridge<LocalBridgeStopped>(
+            "stop", {}, { token: response.token, expectedStage: "stopped" },
+          );
+        } catch { /* local helper can always be stopped from the terminal */ }
+        sessionToken.current = "";
+        throw exc;
+      }
+      if (!mounted.current) return;
+      if (inspected) {
         setFields(inspected.approved_fields);
         setPlanId(inspected.plan_id);
         setCvAttachment(inspected.cv_attachment);
@@ -220,8 +236,7 @@ export default function LocalPlaywrightAssist(props: {
             "Nothing has been sent or submitted by this inspection."
           : "Form opened, but no safe ordinary fields were detected. Complete the " +
             "employer form personally or inspect after navigating to its application page.");
-      } catch {
-        if (!mounted.current) return;
+      } else {
         setPhase("opened");
         setFeedback("Chromium is open. Complete the employer login or click Apply " +
           "on the visible employer website, then inspect the exact form here. " +
