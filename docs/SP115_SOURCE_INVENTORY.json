@@ -148,7 +148,7 @@
     },
     {
       "path": "scripts/verify_sp115_integrated_source.py",
-      "git_blob_sha1": "0648be724f8fe49476c377f917321761b1cc7c12"
+      "git_blob_sha1": "dc4ddf776f71b193ba77b5026f89899d83fc5dd4"
     },
     {
       "path": "smartploy/account_erasure.py",
@@ -216,7 +216,7 @@
     },
     {
       "path": "tests/test_sp115_integrated_source.py",
-      "git_blob_sha1": "16eb56ffa95c4780c5c876905decac9fbd9da55b"
+      "git_blob_sha1": "74fb63a6a8ff30befa35f743ac0df1483dbba1ff"
     },
     {
       "path": "tests/test_sp120_private_assisted.py",
@@ -248,7 +248,7 @@
     },
     {
       "path": "web/src/App.tsx",
-      "git_blob_sha1": "6d99b1ce0fbb0076900f64579f052a7a9ee94488"
+      "git_blob_sha1": "baeb89afcc6092ebbcf3228d1e589c2b996ef865"
     },
     {
       "path": "web/src/application-profile.css",
@@ -284,11 +284,11 @@
     },
     {
       "path": "web/src/LocalPlaywrightAssist.test.tsx",
-      "git_blob_sha1": "95d7745dd38434063cbe46ef2ec3ed3b5029a16f"
+      "git_blob_sha1": "6d14cb120f708674fcf24b2e647658009318821b"
     },
     {
       "path": "web/src/LocalPlaywrightAssist.tsx",
-      "git_blob_sha1": "54f6f125c4489cbdecaddbf5fe97876ba8053897"
+      "git_blob_sha1": "89b40d4d5e0de41137ce07ea6866239652b27c27"
     },
     {
       "path": "web/src/localPlaywrightBridge.ts",
@@ -325,6 +325,26 @@
     {
       "path": "tests/test_complete_letter.py",
       "git_blob_sha1": "1c9131ca6dbc3093179ed65d9d2198d2a753cc56"
+    },
+    {
+      "path": "web/src/structured_cv.ts",
+      "git_blob_sha1": "25a285ce3d6831caa7abe9830d5e670b9d22b492"
+    },
+    {
+      "path": "web/src/structured_cv.test.ts",
+      "git_blob_sha1": "e0c96ad61463906edddfae734517be04fffd8b52"
+    },
+    {
+      "path": "web/src/MasterCVEditor.tsx",
+      "git_blob_sha1": "684d73d89b7d525de89770aa5abb4cb969bd4629"
+    },
+    {
+      "path": "web/src/MasterCVEditor.test.tsx",
+      "git_blob_sha1": "9681cb870cf577591b45036db4ca91b943617472"
+    },
+    {
+      "path": "web/src/styles.css",
+      "git_blob_sha1": "ab1e60677065f1addded20c9db656108692b81c2"
     }
   ],
   "scope": {
