@@ -860,7 +860,7 @@ describe("SP120: search missing a private employer no longer dead-ends the appli
     render(<ApplicationJourney {...props()} mode="assisted" onAddPrivateJob={onAddPrivateJob}/>);
     await screen.findByRole("heading", { name: "Jobs from your CV" });
     expect(screen.getByText(/Can't find the employer's job in these results/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Add employer link & start Assisted/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Add employer link & prepare application/i }));
     expect(onAddPrivateJob).toHaveBeenCalledOnce();
     expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
   });
