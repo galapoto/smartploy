@@ -84,6 +84,12 @@ MANDATORY = frozenset({
     "scripts/verify_sp115_integrated_source.py",
     "tests/test_browser_pdf_attachment_contract.py",
     "docs/SP122_COMPANION_DISTRIBUTION.md",
+    # SP131: source-pinned professional CV/letter authoring and exports.
+    # These are release-review candidates, not independent approvals.
+    "smartploy/complete_letter.py",
+    "smartploy/local_drafting.py",
+    "tests/test_application_workspace.py",
+    "tests/test_complete_letter.py",
 })
 
 
