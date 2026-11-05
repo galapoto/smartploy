@@ -90,6 +90,13 @@ MANDATORY = frozenset({
     "smartploy/local_drafting.py",
     "tests/test_application_workspace.py",
     "tests/test_complete_letter.py",
+    # SP132: reinspection after a manual employer Apply/login navigation.
+    # SP133: approved-facts CV generator and print-faithful live preview.
+    "web/src/structured_cv.ts",
+    "web/src/structured_cv.test.ts",
+    "web/src/MasterCVEditor.tsx",
+    "web/src/MasterCVEditor.test.tsx",
+    "web/src/styles.css",
 })
 
 
