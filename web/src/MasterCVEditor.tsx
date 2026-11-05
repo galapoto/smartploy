@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, FileText, History, Plus, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import { Download, FileText, History, Plus, RefreshCw, Save, ShieldCheck, WandSparkles } from "lucide-react";
 import { getCVEditor, getSession } from "./api";
 import StructuredCVForm from "./StructuredCVForm";
 import DocumentCoach from "./DocumentCoach";
 import {
   cvHasApplicantContent, renderStructuredCV, structuredFromSource,
-  type StructuredCV,
+  draftStructuredCVFromApprovedFacts, type CVApprovedFact, type StructuredCV,
 } from "./structured_cv";
 import type {
   CVDocument, CVEditorArchive, CVEditorDocument, CVEditorSaved, CVEditorRestored,
@@ -17,6 +17,8 @@ const MAX_CHARS = 30000;
 export default function MasterCVEditor(props: {
   cv: CVDocument;
   expectedUserId: string;
+  /** Already loaded, account-scoped profile facts; only approved values qualify. */
+  facts?: ReadonlyArray<CVApprovedFact>;
   onSave: (text: string, currentSha256: string) => Promise<CVEditorSaved>;
   onRestore: (digest: string, currentSha256: string) => Promise<CVEditorRestored>;
   onSaved: (cv: CVDocument) => void;
@@ -99,6 +101,73 @@ export default function MasterCVEditor(props: {
   const canSave = !!snapshot && !loading && !saving &&
     dirty && validStructured &&
     text.trim().length >= 20 && text.trim().length <= MAX_CHARS;
+  const approvedCount = (props.facts || []).filter(fact => fact.approved === true).length;
+
+  async function createProfileCV() {
+    if (!snapshot || loading || saving || inFlight.current || approvedCount === 0) return;
+    if (dirty && !window.confirm(
+      "You have unsaved CV edits. Build a new editable draft using approved profile facts? " +
+      "Your existing text will be kept in Imported source text; nothing is saved automatically."
+    )) return;
+    const scope = requestGeneration.current;
+    try {
+      await verifyAccount();
+      if (scope !== requestGeneration.current || inFlight.current) return;
+      const proposed = draftStructuredCVFromApprovedFacts(props.facts || []);
+      if (!proposed.included) {
+        setError("Approve a name, experience, skill, project or education fact to draft your CV.");
+        return;
+      }
+      // Reuse the reversible editor grammar; never parse an arbitrary uploaded
+      // CV into guessed dates/employers. Unrecognized original text stays
+      // visible in Imported source text until the applicant removes it.
+      const existing = structuredFromSource(text);
+      const model = existing.model;
+      const fresh = proposed.model;
+      for (const field of ["name", "headline", "email", "phone",
+                           "location", "links", "summary"] as const) {
+        if (!model[field].trim() && fresh[field].trim()) model[field] = fresh[field];
+      }
+      for (const section of fresh.sections) {
+        const current = model.sections.find(row => row.kind === section.kind);
+        if (!current) {
+          model.sections.push(section);
+          continue;
+        }
+        const present = new Set(current.entries.map(entry => entry.title.trim()));
+        for (const entry of section.entries) {
+          if (!present.has(entry.title.trim())) {
+            current.entries.push(entry);
+            present.add(entry.title.trim());
+          }
+        }
+      }
+      const fullDraft = renderStructuredCV(model);
+      if (fullDraft.length > MAX_CHARS) {
+        setError("The combined CV exceeds 30,000 characters. Your original is unchanged. " +
+          "Edit or shorten your existing CV before generating from your profile.");
+        return;
+      }
+      await verifyAccount();
+      if (scope !== requestGeneration.current || inFlight.current) return;
+      setText(fullDraft);
+      setStructured(model);
+      setMode("structured");
+      setError("");
+      setConversionNote((existing.origin === "imported"
+        ? "Your entire original CV is preserved under Imported source text. "
+        : "Existing structured entries are preserved; missing approved facts were added. ") +
+        "Review each entry and customize the summary before saving.");
+      setNotice("Created an UNSAVED structured CV draft from " + proposed.included +
+        " approved profile fact(s)." +
+        (proposed.missingName ? " Add your real name before saving." : "") +
+        (proposed.skipped ? " " + proposed.skipped +
+          " ambiguous or unsupported fact(s) need manual review." : "") +
+        " Nothing was approved, sent or submitted.");
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Unable to prepare the private CV draft.");
+    }
+  }
 
   function openStructuredEditor() {
     if (loading || saving || !snapshot || mode === "structured") return;
@@ -275,7 +344,18 @@ export default function MasterCVEditor(props: {
           disabled={saving} onClick={openTextEditor}>
           Text editor
         </button>
+        <button type="button" className="outline-btn compact"
+          disabled={saving || approvedCount === 0}
+          onClick={() => void createProfileCV()}>
+          <WandSparkles size={15}/> Build CV from approved profile
+        </button>
       </div>
+      <p className="master-cv-hint">
+        Build CV creates an editable draft from facts you personally approved;
+        it never invents work history, saves automatically or replaces your original.
+        {approvedCount === 0 ? " Approve profile facts first, or use the editor manually." :
+          " " + approvedCount + " approved fact(s) available."}
+      </p>
       {conversionNote ? <p className="master-cv-message" role="status">{conversionNote}</p> : null}
       {mode === "text" ? <div className="master-cv-toolbar">
         <label htmlFor="master-cv-add-section">Add a section</label>
