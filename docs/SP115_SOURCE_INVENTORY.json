@@ -148,7 +148,7 @@
     },
     {
       "path": "scripts/verify_sp115_integrated_source.py",
-      "git_blob_sha1": "ed29c12907ad363c2489dda8d9401e355ee5601f"
+      "git_blob_sha1": "0648be724f8fe49476c377f917321761b1cc7c12"
     },
     {
       "path": "smartploy/account_erasure.py",
@@ -164,7 +164,7 @@
     },
     {
       "path": "smartploy/application_workspace.py",
-      "git_blob_sha1": "62a7f945e5c78a8d17a98db9f1e296ce2b25896c"
+      "git_blob_sha1": "0cd34bd4ed78c51630204db8529ed0c1c2ca99bf"
     },
     {
       "path": "smartploy/browser_handoff.py",
@@ -216,7 +216,7 @@
     },
     {
       "path": "tests/test_sp115_integrated_source.py",
-      "git_blob_sha1": "9037ca01c7c0d0c42f4505df602b0ac41d0d68c0"
+      "git_blob_sha1": "16eb56ffa95c4780c5c876905decac9fbd9da55b"
     },
     {
       "path": "tests/test_sp120_private_assisted.py",
@@ -228,7 +228,7 @@
     },
     {
       "path": "web/browser-tests/onboarding.e2e.ts",
-      "git_blob_sha1": "55c658f1d73a09f2cacc58403957bf5aeeec53ac"
+      "git_blob_sha1": "37cd6a5eddf9d73607b64830280a57264219c085"
     },
     {
       "path": "web/scripts/package_companion.py",
@@ -248,7 +248,7 @@
     },
     {
       "path": "web/src/App.tsx",
-      "git_blob_sha1": "258f26b53573e2af444a32970325c5689681835a"
+      "git_blob_sha1": "6d99b1ce0fbb0076900f64579f052a7a9ee94488"
     },
     {
       "path": "web/src/application-profile.css",
@@ -256,11 +256,11 @@
     },
     {
       "path": "web/src/ApplicationJourney.test.tsx",
-      "git_blob_sha1": "bc7ea89a77de09f7c54ace95c054845c349e660f"
+      "git_blob_sha1": "7e56f80f9fa9c5f1394c7ad9bc643f5408824ecf"
     },
     {
       "path": "web/src/ApplicationJourney.tsx",
-      "git_blob_sha1": "8007cc2186993e254834835a6e6520730e40c13a"
+      "git_blob_sha1": "b9b0fd297147f852260c90269112a712edad64eb"
     },
     {
       "path": "web/src/ApplicationProfilePanel.test.tsx",
@@ -276,7 +276,7 @@
     },
     {
       "path": "web/src/ApplicationStudio.tsx",
-      "git_blob_sha1": "e14108179774736f1d23b77e80531c270cff65e3"
+      "git_blob_sha1": "86df4a90f4d2bc6d6c404d236e88053d7a243a87"
     },
     {
       "path": "web/src/AuthorizedAutoApplyBatch.tsx",
@@ -284,11 +284,11 @@
     },
     {
       "path": "web/src/LocalPlaywrightAssist.test.tsx",
-      "git_blob_sha1": "d3a80a854c20ca6879a52027c04a3e98312b5c1c"
+      "git_blob_sha1": "95d7745dd38434063cbe46ef2ec3ed3b5029a16f"
     },
     {
       "path": "web/src/LocalPlaywrightAssist.tsx",
-      "git_blob_sha1": "df0e4850e64ab17e4978cbc68c92ef9ae91e91c9"
+      "git_blob_sha1": "54f6f125c4489cbdecaddbf5fe97876ba8053897"
     },
     {
       "path": "web/src/localPlaywrightBridge.ts",
@@ -309,6 +309,22 @@
     {
       "path": "web/src/types.ts",
       "git_blob_sha1": "196580c6319a87cf3d4e4bc951f262be8e904704"
+    },
+    {
+      "path": "smartploy/complete_letter.py",
+      "git_blob_sha1": "26db41cfa44ddfca06453584c81f097afde2e993"
+    },
+    {
+      "path": "smartploy/local_drafting.py",
+      "git_blob_sha1": "3ce0006e216eed01868fa546cdf5c5986a8441dd"
+    },
+    {
+      "path": "tests/test_application_workspace.py",
+      "git_blob_sha1": "e13150cd859f042a5d1929e4b6d3ea94e867cfdd"
+    },
+    {
+      "path": "tests/test_complete_letter.py",
+      "git_blob_sha1": "1c9131ca6dbc3093179ed65d9d2198d2a753cc56"
     }
   ],
   "scope": {
