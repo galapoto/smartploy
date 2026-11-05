@@ -533,3 +533,39 @@ def test_sp106_package_rejects_an_invalid_saved_cv_without_partial_download():
     workspace = new_workspace(example_candidate(), example_profile())
     with pytest.raises(WorkspaceError, match="CV must contain"):
         render_application_package(replace(workspace, cv_text=""))
+
+
+def test_structured_cv_export_is_a_readable_document_not_editor_debug_labels():
+    """SP131: both exports style the same reversible, applicant-reviewed CV."""
+    work = new_workspace(example_candidate(), example_profile())
+    structured = (
+        "Full name: Alex Applicant\\n"
+        "Headline: Data Analyst\\n"
+        "Email: alex@example.invalid\\n"
+        "Phone: \\n"
+        "Location: Helsinki\\n"
+        "Links: \\n\\n"
+        "PROFILE\\n"
+        "  Python and SQL analytics professional\\n\\n"
+        "EXPERIENCE\\n"
+        "Title: Analyst\\n"
+        "Organization: Example Oy\\n"
+        "Period: 2025\\n"
+        "Location: Helsinki\\n"
+        "Details:\\n"
+        "  Created approved reports\\n"
+    )
+    document = replace(work, cv_text=structured)
+    docx, _, _ = render_document(document, kind="cv", file_format="docx")
+    parsed = Document(BytesIO(docx))
+    document_text = "\\n".join(paragraph.text for paragraph in parsed.paragraphs)
+    assert "Alex Applicant" in document_text
+    assert "Data Analyst" in document_text
+    assert "Created approved reports" in document_text
+    assert "Title: Analyst" not in document_text
+    assert "Organization: Example Oy" not in document_text
+    assert "Details:" not in document_text
+    headings = [p.text for p in parsed.paragraphs if p.style.name.startswith("Heading")]
+    assert "Alex Applicant" in headings and "EXPERIENCE" in headings
+    pdf, _, _ = render_document(document, kind="cv", file_format="pdf")
+    assert pdf.startswith(b"%PDF")
