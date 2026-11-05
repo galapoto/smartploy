@@ -5,7 +5,8 @@ import StructuredCVForm from "./StructuredCVForm";
 import DocumentCoach from "./DocumentCoach";
 import {
   cvHasApplicantContent, renderStructuredCV, structuredFromSource,
-  draftStructuredCVFromApprovedFacts, type CVApprovedFact, type StructuredCV,
+  parseStructuredCV, draftStructuredCVFromApprovedFacts, SECTION_OPTIONS,
+  type CVApprovedFact, type StructuredCV,
 } from "./structured_cv";
 import type {
   CVDocument, CVEditorArchive, CVEditorDocument, CVEditorSaved, CVEditorRestored,
@@ -92,6 +93,7 @@ export default function MasterCVEditor(props: {
   }, [refresh, cv.sha256, cv.present]);
 
   const dirty = text !== originalText;
+  const formattedCV = parseStructuredCV(text);
   useEffect(() => {
     props.onUnsavedChange?.(dirty);
     return () => props.onUnsavedChange?.(false);
@@ -396,7 +398,40 @@ export default function MasterCVEditor(props: {
         <div className="master-cv-preview">
           <strong><FileText size={16} /> Live document preview</strong>
           <div className="master-cv-paper" aria-label="CV preview">
-            <pre>{text || "Your CV will appear here as you write."}</pre>
+            {formattedCV ? <article className="master-cv-sheet"
+              aria-label="Formatted structured CV">
+              <header className="master-cv-sheet-head">
+                <h3>{formattedCV.name || "Your name"}</h3>
+                {formattedCV.headline ? <p className="master-cv-sheet-headline">
+                  {formattedCV.headline}</p> : null}
+                <p className="master-cv-sheet-contact">
+                  {[formattedCV.email, formattedCV.phone, formattedCV.location,
+                    formattedCV.links].filter(Boolean).join("  ·  ")}
+                </p>
+              </header>
+              {formattedCV.summary ? <section className="master-cv-sheet-section">
+                <h4>Professional profile</h4>
+                <p>{formattedCV.summary}</p>
+              </section> : null}
+              {formattedCV.sections.map(section => <section key={section.id}
+                className="master-cv-sheet-section">
+                <h4>{SECTION_OPTIONS.find(item => item.kind === section.kind)?.label
+                  || "Other information"}</h4>
+                {section.entries.filter(entry => Object.values(entry).some(Boolean))
+                  .map(entry => <div className="master-cv-sheet-entry" key={entry.id}>
+                    {entry.title ? <strong>{entry.title}</strong> : null}
+                    {[entry.organization, entry.period, entry.location].filter(Boolean).length
+                      ? <p className="master-cv-sheet-meta">
+                        {[entry.organization, entry.period, entry.location]
+                          .filter(Boolean).join(" · ")}</p> : null}
+                    {entry.details ? <p>{entry.details}</p> : null}
+                  </div>)}
+              </section>)}
+              {formattedCV.importedText ? <section className="master-cv-sheet-section">
+                <h4>Imported source text · review before exporting</h4>
+                <pre>{formattedCV.importedText}</pre>
+              </section> : null}
+            </article> : <pre>{text || "Your CV will appear here as you write."}</pre>}
           </div>
           <DocumentCoach kind="master_cv" text={text} />
         </div>
