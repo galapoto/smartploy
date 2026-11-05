@@ -1152,3 +1152,37 @@ h1, h2, h3, h4, p { margin-top: 0; }
   .flow-start-how .row-actions { width: 100%; }
   .flow-start-how .row-actions button { flex: 1; }
 }
+
+/* SP133: the live preview is a readable résumé, not editor key/value syntax.
+   This white "paper" is intentional in both themes, matching the PDF export. */
+.master-cv-mode-switch { flex-wrap: wrap; }
+.master-cv-mode-switch .outline-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: #113e54; color: #f4fbff; font-weight: 750; border: 0;
+}
+.master-cv-mode-switch .outline-btn:hover { background: #185a78; }
+.master-cv-mode-switch button:disabled { opacity: .52; cursor: not-allowed; }
+.master-cv-sheet { color: #1e3545; font: 14px/1.55 Inter, "Segoe UI", sans-serif; overflow-wrap: anywhere; }
+.master-cv-sheet-head { padding-bottom: 14px; border-bottom: 2px solid #17516c; margin-bottom: 16px; }
+.master-cv-sheet-head h3 {
+  margin: 0 0 4px; font-size: clamp(22px, 2.2vw, 30px);
+  line-height: 1.2; letter-spacing: -.035em; color: #103047; font-weight: 800;
+}
+.master-cv-sheet-headline { margin: 0 0 7px; color: #286078; font-size: 15px; font-weight: 650; }
+.master-cv-sheet-contact { margin: 0; font-size: 12px; color: #466071; }
+.master-cv-sheet-section { padding: 2px 0 11px; break-inside: avoid; }
+.master-cv-sheet-section h4 {
+  margin: 0 0 9px; color: #145470; font-size: 12px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .105em;
+}
+.master-cv-sheet-section > p { margin: 0 0 8px; white-space: pre-wrap; }
+.master-cv-sheet-entry { padding: 0 0 11px; }
+.master-cv-sheet-entry strong { display: block; font-size: 14px; font-weight: 750; }
+.master-cv-sheet-entry p { margin: 3px 0 0; white-space: pre-wrap; }
+.master-cv-sheet-meta { font-size: 12px; color: #4c6a7c; }
+.master-cv-sheet-section pre { font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 620px) {
+  .master-cv-paper { padding: 19px 15px; }
+  .master-cv-mode-switch { display: flex; }
+  .master-cv-mode-switch button { flex: 1 1 auto; }
+}
