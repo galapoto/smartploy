@@ -50,9 +50,10 @@ test("valid 15-minute application packet only for the exact job URL", () => {
   assert.equal(Object.hasOwn(result, "may_submit"), false);
 });
 
-test("reject even a matching malicious non-Lever host; auto-fill is scoped to supported ATS", () => {
-  const unsupported = "https://evil.example.com/uprightproject/fake-job/apply";
-  assert.throws(() => validatePacket(packet({ application_url: unsupported }), unsupported, validNow), PacketError);
+test("never disclose reviewed fields to a different employer origin", () => {
+  const reviewed = "https://careers.example.org/jobs/analyst";
+  const other = "https://evil.example.com/uprightproject/fake-job/apply";
+  assert.throws(() => validatePacket(packet({ application_url: reviewed }), other, validNow), PacketError);
 });
 
 test("reject expired, future, overlong, malformed and unsupported packets", () => {
@@ -297,6 +298,66 @@ test("SP43 Greenhouse disallows cross-job, embed, redirect, custom host and trac
   for(const bad of [
     greenhouseModern+"/application",greenhouseModern+"?gh_src=bogus",
     "https://job-boards.greenhouse.io/synthetic-it/jobs/notnumeric",
-    "https://careers.example.com/synthetic-it/jobs/123456789",
+
   ]) assert.throws(()=>validatePacket(packet({application_url:bad}),bad,validNow),PacketError,bad);
+});
+
+test("SP118 TalentAdore exact job packet works only on its canonical hosted form", () => {
+  const jobUrl = "https://ats.talentadore.com/apply/junior-analyst/m6rpoy";
+  const approved = packet({ application_url: jobUrl });
+  const result = validatePacket(approved, jobUrl, validNow);
+  assert.equal(result.application_url, jobUrl);
+  assert.equal(result.fields.first_name, "Test");
+  assert.equal(approved.privacy.employer_submit_allowed_without_new_approval, false);
+  for (const bad of [
+    jobUrl + "?source=duunitori", jobUrl + "#form",
+    "https://ats.talentadore.com/apply/junior-analyst/another",
+    "https://ats.talentadore.com/apply/other/m6rpoy",
+    "https://ats.talentadore.com.evil.invalid/apply/junior-analyst/m6rpoy",
+    "http://ats.talentadore.com/apply/junior-analyst/m6rpoy",
+    "https://ats.talentadore.com/apply/junior-analyst/m6rpoy/finish",
+  ]) assert.throws(() => validatePacket(approved, bad, validNow), PacketError, bad);
+  assert.throws(() => validatePacket(packet({application_url: jobUrl+"?tracking=yes"}), jobUrl, validNow), PacketError);
+});
+
+
+test("SP121 reviewed generic HTTPS employer can fill ordinary fields, never submit", () => {
+  const approved = "https://careers.example.org/jobs/junior-analyst";
+  const live = "https://careers.example.org/apply?job=junior-analyst";
+  const p = validatePacket(packet({application_url:approved}), live, validNow);
+  assert.equal(p.application_url, approved);
+  assert.equal(p.fields.email, "person@example.org");
+  const result = planFields([
+    element({index:0,label:"Full name",name:"full_name"}),
+    element({index:1,label:"Email",type:"email",name:"email"}),
+    element({index:2,label:"Salary expectation",name:"salary",required:true}),
+    element({index:3,label:"Privacy consent",type:"checkbox",required:true}),
+  ],p);
+  assert.deepEqual(result.actions.map(x=>x.key),["full_name","email"]);
+  assert.equal(result.autoSubmitAllowed,false);
+  assert.ok(result.unresolvedRequired.includes("Salary expectation"));
+  assert.ok(result.unresolvedRequired.includes("Privacy consent"));
+});
+
+test("SP121 generic assistance rejects cross-host, local/private/credential and invalid URLs", () => {
+  const allowed = "https://careers.example.org/jobs/analyst";
+  const input=packet({application_url:allowed});
+  for (const bad of [
+    "https://evil.example.org/apply", "https://careers.example.org.evil.com/apply",
+    "http://careers.example.org/apply", "https://localhost/apply",
+    "https://127.0.0.1/apply", "https://192.168.1.1/jobs/analyst",
+    "https://careers.example.org:8443/apply",
+    "https://someone:pass@careers.example.org/apply",
+    "https://careers.example.org/apply#secret",
+    "https://careers.example.org\\@attacker.example.com/jobs/analyst",
+  ]) assert.throws(() => validatePacket(input,bad,validNow),PacketError,bad);
+  for (const bad of [
+    "https://localhost/jobs/analyst", "https://127.0.0.1/jobs/analyst",
+    "https://careers.example.invalid/jobs/analyst",
+    "http://careers.example.org/jobs/analyst",
+    "https://someone:password@careers.example.org/jobs/analyst",
+    "https://careers.example.org:9443/jobs/analyst",
+    "https://jobs.ashbyhq.com/unreviewed/not-a-real-form/extra",
+    "https://ats.talentadore.com/another/job",
+  ]) assert.throws(() => validatePacket(packet({application_url:bad}),bad,validNow),PacketError,bad);
 });

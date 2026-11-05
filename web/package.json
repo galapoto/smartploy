@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "python3 scripts/package_companion.py",
+    "predev": "python3 scripts/package_companion.py && python3 scripts/package_playwright_assistant.py",
     "dev": "vite",
-    "prebuild": "python3 scripts/package_companion.py",
+    "prebuild": "python3 scripts/package_companion.py && python3 scripts/package_playwright_assistant.py",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "preview": "vite preview",

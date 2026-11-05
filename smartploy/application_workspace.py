@@ -7,6 +7,7 @@ from io import BytesIO
 from html import escape
 import re
 from typing import Literal
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -25,6 +26,7 @@ from .complete_letter import compose_completed_letter
 MAX_CV_CHARACTERS = 30000
 MAX_LETTER_CHARACTERS = 10000
 MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
+MAX_PACKAGE_BYTES = 8 * 1024 * 1024
 
 
 class WorkspaceError(ValueError):
@@ -243,8 +245,14 @@ class ApplicationWorkspace:
 def new_workspace(
     candidate: JobCandidate, profile: CandidateProfile,
     source_cv_text: str = "", source_cv_sha256: str = "",
+    *, allow_private_unverified: bool = False,
 ) -> ApplicationWorkspace:
-    if not candidate.source_current:
+    user_saved = (
+        candidate.metadata.get("private_saved_job") is True
+        and candidate.metadata.get("owner_profile_id") == profile.profile_id
+        and candidate.source_current is False
+    )
+    if not candidate.source_current and not (allow_private_unverified and user_saved):
         raise WorkspaceError("This job is no longer current. Check the employer posting.")
     source = source_cv_text.strip()
     if source and len(source) > MAX_CV_CHARACTERS:
@@ -323,6 +331,66 @@ def download_filename(workspace: ApplicationWorkspace, kind: str, file_format: s
     return f"{_slug(workspace.company)}-{_slug(workspace.role_title)}-{kind}.{file_format}"
 
 
+# Presentation-only transformation of the reversible structured CV grammar.
+# Never alters the persisted CV, matching text, or approved evidence.
+_CV_SECTION_HEADINGS = frozenset({
+    "PROFILE", "EXPERIENCE", "EDUCATION", "PROJECTS", "SKILLS",
+    "CERTIFICATIONS", "LANGUAGES", "OTHER INFORMATION", "IMPORTED SOURCE TEXT",
+    "SUMMARY", "PROFESSIONAL EXPERIENCE", "WORK EXPERIENCE",
+})
+
+
+def _printable_document_lines(text: str, kind: str) -> list[tuple[str, str]]:
+    """Return safe semantic text blocks for PDF and DOCX rendering.
+
+    A structured CV uses the exact six-field header emitted by our editor.
+    Unknown or imported formats remain verbatim instead of losing content.
+    """
+    lines = text.split("\n")
+    structured = (
+        kind == "cv" and len(lines) >= 8
+        and all(lines[i].startswith(prefix) for i, prefix in enumerate((
+            "Full name: ", "Headline: ", "Email: ", "Phone: ",
+            "Location: ", "Links: ",
+        )))
+        and lines[6] == "" and lines[7] == "PROFILE"
+    )
+    blocks: list[tuple[str, str]] = []
+    if structured:
+        name, headline, email, phone, location, links = [
+            lines[i].split(": ", 1)[1].strip() for i in range(6)
+        ]
+        if name:
+            blocks.append(("name", name))
+        if headline:
+            blocks.append(("subtitle", headline))
+        contact = [value for value in (email, phone, location, links) if value]
+        if contact:
+            blocks.append(("contact", " | ".join(contact)))
+        lines = lines[7:]
+
+    for line in lines:
+        value = line.strip()
+        if not value:
+            if blocks and blocks[-1][0] != "spacer":
+                blocks.append(("spacer", ""))
+            continue
+        if kind == "cv" and value.upper() in _CV_SECTION_HEADINGS:
+            blocks.append(("section", value.upper()))
+        elif structured and line.startswith("Title: "):
+            if value[7:].strip():
+                blocks.append(("entry", value[7:].strip()))
+        elif structured and line.startswith(("Organization: ", "Period: ", "Location: ")):
+            detail = value.partition(": ")[2].strip()
+            if detail:
+                blocks.append(("meta", detail))
+        elif structured and value == "Details:":
+            continue
+        else:
+            blocks.append(("body", line[2:] if structured and line.startswith("  ") else line))
+    return blocks
+
+
 def render_document(
     workspace: ApplicationWorkspace,
     *, kind: Literal["cv", "letter"], file_format: Literal["pdf", "docx"],
@@ -335,43 +403,79 @@ def render_document(
         limit=MAX_CV_CHARACTERS if kind == "cv" else MAX_LETTER_CHARACTERS,
     )
     heading = "Curriculum Vitae" if kind == "cv" else f"Application — {workspace.role_title}"
+    blocks = _printable_document_lines(text, kind)
+    has_name = any(style == "name" for style, _ in blocks)
     output = BytesIO()
     if file_format == "docx":
         doc = Document()
         section = doc.sections[0]
-        section.top_margin = Inches(.8)
-        section.bottom_margin = Inches(.75)
-        section.left_margin = Inches(.9)
-        section.right_margin = Inches(.9)
+        section.top_margin = Inches(.72)
+        section.bottom_margin = Inches(.7)
+        section.left_margin = Inches(.84)
+        section.right_margin = Inches(.84)
         normal = doc.styles["Normal"]
-        normal.font.name = "Calibri"
-        normal.font.size = Pt(10.5)
+        normal.font.name = "Aptos"
+        normal.font.size = Pt(10.3)
         normal.font.color.rgb = RGBColor(31, 49, 75)
-        normal.paragraph_format.space_after = Pt(5)
-        doc.add_heading(heading, level=1)
-        for line in text.split("\n"):
-            doc.add_paragraph(line)
+        normal.paragraph_format.space_after = Pt(4)
+        if not has_name:
+            doc.add_heading(heading, level=1)
+        for style_name, value in blocks:
+            if style_name == "spacer":
+                continue
+            if style_name == "name":
+                doc.add_heading(value, level=1)
+            elif style_name == "section":
+                doc.add_heading(value, level=2)
+            elif style_name == "entry":
+                doc.add_heading(value, level=3)
+            else:
+                paragraph = doc.add_paragraph(value)
+                if style_name in {"subtitle", "contact", "meta"}:
+                    paragraph.paragraph_format.space_after = Pt(3)
+                    for run in paragraph.runs:
+                        run.font.size = Pt(9.5 if style_name != "subtitle" else 11)
+                        if style_name == "subtitle":
+                            run.bold = True
         doc.save(output)
         mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     else:
         style = ParagraphStyle(
             "Body", fontName="Helvetica", fontSize=10.2, leading=14.8,
             textColor=colors.HexColor("#20334A"), alignment=TA_LEFT,
-            spaceAfter=7, splitLongWords=1,
+            spaceAfter=6, splitLongWords=1,
         )
-        title_style = ParagraphStyle(
-            "Heading", parent=style, fontName="Helvetica-Bold", fontSize=15,
-            leading=20, spaceAfter=15, textColor=colors.HexColor("#0D3262"),
-        )
-        story = [Paragraph(escape(heading), title_style)]
-        for line in text.split("\n"):
-            if line.strip():
-                story.append(Paragraph(escape(line), style))
+        styles = {
+            "body": style,
+            "name": ParagraphStyle("CVName", parent=style, fontName="Helvetica-Bold",
+                fontSize=20, leading=24, spaceAfter=6, textColor=colors.HexColor("#0E3158")),
+            "subtitle": ParagraphStyle("CVSubtitle", parent=style, fontName="Helvetica-Bold",
+                fontSize=11, leading=15, spaceAfter=6),
+            "contact": ParagraphStyle("CVContact", parent=style, fontSize=9,
+                leading=13, spaceAfter=13),
+            "section": ParagraphStyle("CVSection", parent=style, fontName="Helvetica-Bold",
+                fontSize=12, leading=16, spaceBefore=13, spaceAfter=6,
+                textColor=colors.HexColor("#0E507C")),
+            "entry": ParagraphStyle("CVEntry", parent=style, fontName="Helvetica-Bold",
+                fontSize=10.8, leading=15, spaceBefore=7, spaceAfter=3),
+            "meta": ParagraphStyle("CVMeta", parent=style, fontSize=9.5,
+                leading=13, spaceAfter=2),
+        }
+        story = [] if has_name else [
+            Paragraph(escape(heading), ParagraphStyle(
+                "CVDefaultHeading", parent=style, fontName="Helvetica-Bold",
+                fontSize=15, leading=20, spaceAfter=14,
+                textColor=colors.HexColor("#0D3262"),
+            )),
+        ]
+        for style_name, value in blocks:
+            if style_name == "spacer":
+                story.append(Spacer(1, 4))
             else:
-                story.append(Spacer(1, 5))
+                story.append(Paragraph(escape(value), styles.get(style_name, style)))
         pdf = SimpleDocTemplate(
-            output, pagesize=A4, topMargin=21*mm, bottomMargin=21*mm,
-            leftMargin=23*mm, rightMargin=23*mm,
+            output, pagesize=A4, topMargin=19*mm, bottomMargin=19*mm,
+            leftMargin=21*mm, rightMargin=21*mm,
             title=heading, author="SmartPloy user-reviewed application", invariant=1,
         )
         pdf.build(story)
@@ -380,3 +484,46 @@ def render_document(
     if not content or len(content) > MAX_DOCUMENT_BYTES:
         raise WorkspaceError("Generated document exceeds safe download limits")
     return content, mime, filename
+
+
+def render_application_package(workspace: ApplicationWorkspace) -> tuple[bytes, str]:
+    """Four complete document formats in one owner-private ZIP; never a send.
+
+    Reuses render_document, the existing authoritative renderer, without
+    exposing user text in ZIP entry paths or writing files to the server.
+    """
+    output = BytesIO()
+    total_bytes = 0
+    with ZipFile(output, mode="w", compression=ZIP_DEFLATED,
+                 compresslevel=6, allowZip64=False) as bundle:
+        for kind in ("cv", "letter"):
+            for file_format in ("docx", "pdf"):
+                content, _, filename = render_document(
+                    workspace, kind=kind, file_format=file_format,
+                )
+                total_bytes += len(content)
+                if total_bytes > MAX_PACKAGE_BYTES:
+                    raise WorkspaceError("Application package exceeds safe document limits")
+                member = ZipInfo(filename, date_time=(1980, 1, 1, 0, 0, 0))
+                member.external_attr = 0o600 << 16
+                bundle.writestr(member, content, compress_type=ZIP_DEFLATED,
+                                compresslevel=6)
+        note = (
+            "SMARTPLOY APPLICATION DOCUMENTS - NOT SUBMITTED\n\n"
+            "This ZIP contains the saved job-specific CV and cover letter as "
+            "editable DOCX and printable PDF files.\n"
+            "Inspect all documents and use the exact employer application form. "
+            "Downloading does not contact the employer, submit an application "
+            "or verify that an employer received it.\n"
+            "Keep private application documents secure.\n"
+        ).encode("utf-8")
+        note_member = ZipInfo("README-NOT-SUBMITTED.txt",
+                              date_time=(1980, 1, 1, 0, 0, 0))
+        note_member.external_attr = 0o600 << 16
+        bundle.writestr(note_member, note, compress_type=ZIP_DEFLATED,
+                        compresslevel=6)
+    data = output.getvalue()
+    if not data or len(data) > MAX_PACKAGE_BYTES:
+        raise WorkspaceError("Application package exceeds safe download limits")
+    filename = f"{_slug(workspace.company)}-{_slug(workspace.role_title)}-application-package.zip"
+    return data, filename

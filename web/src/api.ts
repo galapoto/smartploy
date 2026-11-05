@@ -169,6 +169,78 @@ export function getCV(): Promise<CVDocument> {
   return request<CVDocument>("/api/v1/profile/cv");
 }
 
+/** SP116 owner-private profile. CV-only is a first-class persisted choice. */
+/** Applicant-triggered private CV parsing: every new fact starts unapproved. */
+export function suggestProfileFactsFromCV(
+  expectedUserId: string,
+): Promise<{
+  created: number; already_known: number;
+  suggestions_are_approved: false;
+  external_ai_forwarding: false; employer_actions_performed: 0;
+}> {
+  return request("/api/v1/profile/cv/suggest-facts", {
+    method: "POST", body: JSON.stringify({confirm_inspect_saved_cv:true}),
+  }, expectedUserId);
+}
+
+export function getApplicationQuestionMemory(): Promise<import("./types").ApplicationQuestionMemory> {
+  return request<import("./types").ApplicationQuestionMemory>(
+    "/api/v1/profile/application-questions"
+  );
+}
+
+export function setApplicationProfileMode(
+  mode: import("./types").ApplicationProfileMode, expectedUserId: string,
+): Promise<{mode: import("./types").ApplicationProfileMode; cv_only_allowed: true; employer_actions_performed: 0}> {
+  return request("/api/v1/profile/application-mode", {
+    method: "PUT", body: JSON.stringify({mode}),
+  }, expectedUserId);
+}
+
+export type ApplicationQuestionDescriptor = {
+  label: string; expected_id: string; expected_name: string;
+  expected_placeholder: string;
+};
+export function rememberApplicationQuestions(
+  workspaceId: string, revision: number,
+  questions: ApplicationQuestionDescriptor[], expectedUserId: string,
+): Promise<{
+  questions: import("./types").ApplicationProfileQuestion[];
+  remembered_count: number; skipped_sensitive_or_duplicate: number;
+  profile_mode?: "cv_only";
+  answers_inferred_from_cv: 0; employer_actions_performed: 0;
+}> {
+  return request("/api/v1/profile/application-questions/observe", {
+    method: "POST", body: JSON.stringify({
+      workspace_id: workspaceId, expected_revision: revision, questions,
+    }),
+  }, expectedUserId);
+}
+
+export function saveApplicationQuestionAnswer(
+  key: string, expectedVersion: number, answer: string,
+  approvedForReuse: boolean, expectedUserId: string,
+): Promise<{
+  question: import("./types").ApplicationProfileQuestion;
+  employer_actions_performed: 0; automatic_employer_submission_authorized: false;
+}> {
+  return request("/api/v1/profile/application-questions/" + encodeURIComponent(key), {
+    method: "PUT", body: JSON.stringify({
+      expected_version: expectedVersion, answer,
+      approved_for_reuse: approvedForReuse,
+      confirm_personally_reviewed: true,
+    }),
+  }, expectedUserId);
+}
+
+export function deleteApplicationQuestion(
+  key: string, expectedUserId: string,
+): Promise<{deleted: true; employer_actions_performed: 0}> {
+  return request("/api/v1/profile/application-questions/" + encodeURIComponent(key), {
+    method: "DELETE",
+  }, expectedUserId);
+}
+
 export function getProfileFacts(): Promise<ProfileFactsResponse> {
   return request<ProfileFactsResponse>("/api/v1/profile/facts");
 }
@@ -257,6 +329,29 @@ export function addManualJob(job: ManualJobPayload, expectedUserId: string): Pro
     method: "POST",
     body: JSON.stringify(job)
   }, expectedUserId);
+}
+
+/** One clicked, private unverified vacancy -> real Assisted application kit. */
+export function startPrivateSavedApplication(
+  savedJobId: string, expectedUserId: string
+): Promise<WorkspaceStartResponse & {
+  source: "private_saved_unverified";
+  employer_verified: false;
+  final_submit_authorized: false;
+  next_step: string;
+  external_actions_performed: 0;
+}> {
+  return request<WorkspaceStartResponse & {
+    source: "private_saved_unverified";
+    employer_verified: false;
+    final_submit_authorized: false;
+    next_step: string;
+    external_actions_performed: 0;
+  }>(
+    "/api/v1/private-jobs/" + encodeURIComponent(savedJobId) + "/application-workspace",
+    { method: "POST", body: JSON.stringify({ acknowledge_unverified_employer: true }) },
+    expectedUserId
+  );
 }
 
 export function getPrivateSavedJobs(): Promise<PrivateSavedJobsResponse> {
@@ -530,12 +625,30 @@ export function deleteApplicationWorkspace(workspaceId: string, expectedUserId: 
 }
 
 export function applicationDownloadUrl(
-  workspaceId: string, kind: "cv" | "letter", format: "pdf" | "docx"
+  workspaceId: string, kind: "cv" | "letter", format: "pdf" | "docx",
+  expectedRevision: number,
 ): string {
   return API_BASE + "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
-    + "/download/" + kind + "/" + format;
+    + "/download/" + kind + "/" + format
+    + "?expected_revision=" + encodeURIComponent(String(expectedRevision));
 }
 
+
+/** Private ZIP GET for exactly the saved job revision reviewed in this UI. */
+export function applicationPackageDownloadUrl(
+  workspaceId: string, expectedRevision: number,
+): string {
+  return API_BASE + "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
+    + "/download/package.zip?expected_revision=" + encodeURIComponent(String(expectedRevision));
+}
+
+/** Opens a read-only PDF for precisely this saved application revision. */
+export function applicationPdfPreviewUrl(
+  workspaceId: string, kind: "cv" | "letter", expectedRevision: number,
+): string {
+  return API_BASE + "/api/v1/application-workspaces/" + encodeURIComponent(workspaceId)
+    + "/preview/" + kind + "/pdf?expected_revision=" + encodeURIComponent(String(expectedRevision));
+}
 
 export function getLocalAIStatus(): Promise<import("./types").LocalAIStatus> {
   return request<import("./types").LocalAIStatus>("/api/v1/local-ai/status");

@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
+
+from .domain import JobCandidate, JobRecord, canonical_json, sha256_text
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -85,6 +87,7 @@ def validate_saved_job(data: dict[str, str]) -> dict[str, str]:
 class PrivateSavedJobRepository(Protocol):
     def save(self, profile_id: str, data: dict[str, str]) -> PrivateSavedJob: ...
     def list(self, profile_id: str, *, limit: int = 100) -> list[PrivateSavedJob]: ...
+    def get(self, profile_id: str, saved_job_id: str) -> PrivateSavedJob | None: ...
     def delete(self, profile_id: str, saved_job_id: str) -> bool: ...
 
 
@@ -111,6 +114,9 @@ class MemoryPrivateSavedJobRepository:
             key=lambda item: (item.created_at, item.saved_job_id),
             reverse=True,
         )[:limit]
+
+    def get(self, profile_id: str, saved_job_id: str) -> PrivateSavedJob | None:
+        return self._jobs.get((profile_id, saved_job_id))
 
     def delete(self, profile_id: str, saved_job_id: str) -> bool:
         return self._jobs.pop((profile_id, saved_job_id), None) is not None
@@ -168,6 +174,19 @@ class PostgresPrivateSavedJobRepository:
                 rows = cur.fetchall()
         return [self._from_row(profile_id, row) for row in rows]
 
+    def get(self, profile_id: str, saved_job_id: str) -> PrivateSavedJob | None:
+        with connect(self.dsn) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT saved_job_id, company, role_title, description,
+                              location, application_url, created_at
+                       FROM smartploy_private_saved_jobs
+                       WHERE profile_id = %s AND saved_job_id = %s""",
+                    (profile_id, saved_job_id),
+                )
+                row = cur.fetchone()
+        return self._from_row(profile_id, row) if row else None
+
     def delete(self, profile_id: str, saved_job_id: str) -> bool:
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
@@ -178,3 +197,35 @@ class PostgresPrivateSavedJobRepository:
                 )
                 changed = cur.rowcount > 0
         return changed
+
+
+def private_candidate(saved: PrivateSavedJob) -> JobCandidate:
+    """One unverified, owner-scoped private job for reviewed assistance only.
+
+    Never enter the public ATS catalog or grant external submission rights.
+    """
+    if not saved.application_url:
+        raise PrivateSavedJobError("Add an employer application URL to start")
+    job = JobRecord(
+        company=saved.company, role_title=saved.role_title,
+        description=saved.description, location=saved.location,
+        application_url=saved.application_url, source="private-user-supplied",
+        job_id=saved.saved_job_id,
+    ).normalized()
+    return JobCandidate(
+        job=job, canonical_url=job.application_url,
+        canonical_key="private-saved-" + saved.saved_job_id.removeprefix("saved-"),
+        description_fingerprint=sha256_text(canonical_json({
+            "company": job.company, "role_title": job.role_title,
+            "description": job.description, "application_url": job.application_url,
+        })),
+        source_ids=("private-user-supplied",), source_observation_ids=(),
+        source_raw_sha256=(), first_seen_at=saved.created_at,
+        last_seen_at=saved.created_at, source_current=False,
+        metadata={
+            "private_saved_job": True,
+            "owner_profile_id": saved.profile_id,
+            "employer_availability_verified": False,
+            "external_actions_authorized": False,
+        },
+    )

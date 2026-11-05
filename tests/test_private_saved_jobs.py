@@ -160,6 +160,8 @@ def test_memory_repository_scopes_list_and_delete_by_owner():
     one = repo.save("profile-a", DATA)
     assert repo.list("profile-a") == [one]
     assert repo.list("profile-b") == []
+    assert repo.get("profile-a", one.saved_job_id) == one
+    assert repo.get("profile-b", one.saved_job_id) is None
     assert repo.delete("profile-b", one.saved_job_id) is False
     assert repo.list("profile-a") == [one]
     assert repo.delete("profile-a", one.saved_job_id) is True
@@ -180,6 +182,8 @@ def test_postgres_private_jobs_survive_reinstantiation_and_isolate_profiles():
         reloaded = PostgresPrivateSavedJobRepository(dsn)
         assert reloaded.list(profile_a) == [created]
         assert reloaded.list(profile_b) == []
+        assert reloaded.get(profile_a, created.saved_job_id) == created
+        assert reloaded.get(profile_b, created.saved_job_id) is None
         assert reloaded.delete(profile_b, created.saved_job_id) is False
         assert reloaded.list(profile_a) == [created]
     finally:

@@ -122,6 +122,21 @@ jobs:
       - name: Web build
         working-directory: web
         run: npm run build
+      - name: Verify reviewed Chrome companion download digest
+        working-directory: web/public
+        run: sha256sum -c smartploy-apply-companion.zip.sha256
+      # Public code only; no account/CV/packet data is included in this ZIP.
+      # A reproducible user-installable artifact, NOT a signed Web Store release.
+      - name: Publish installable Chrome companion (review artifact only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-apply-companion-${{ github.sha }}
+          path: |
+            web/public/smartploy-apply-companion.zip
+            web/public/smartploy-apply-companion.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
 
   browser:
     # Playwright 1.55.1 does not install its pinned Chromium on the hosted
@@ -168,6 +183,12 @@ jobs:
             process.exitCode = 1;
           });
           NODE
+      - name: SP110 real Python Playwright Chromium — synthetic only
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check "playwright==1.55.0" "pytest>=8,<9"
+          python -m playwright install chromium
+          python -m pytest -q tests/test_playwright_assistant.py tests/test_playwright_assistant_chromium.py
       - name: Build exact production web assets
         working-directory: web
         run: npm run build
@@ -313,6 +334,9 @@ jobs:
           # SP45: compare current source ZIP to the real Caddy download before
           # considering this source artifact a verified release candidate.
           bash deploy/personal/scripts/assert-companion-release.sh smartploy.obumai.com 18091
+          # SP110: same source-to-running-Caddy ZIP parity for the reused
+          # local Playwright assistant. No applicant or employer traffic.
+          bash deploy/personal/scripts/assert-playwright-release.sh smartploy.obumai.com 18091
           # Negative control: tag an unrelated existing image as a fake release;
           # the image-ID gate must detect that the running containers are stale.
           BAD_SHA="0000000000000000000000000000000000000000"

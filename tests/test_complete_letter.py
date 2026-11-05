@@ -52,7 +52,7 @@ def test_english_finished_prose_uses_only_approved_job_matched_evidence():
     assert result.complete is True
     assert not result.missing_information
     assert result.text.startswith("Dear Hiring Team,\n\n")
-    assert "My relevant confirmed skills include" in result.text
+    assert "My relevant skills include" in result.text
     assert "Python" in result.text and "SQL" in result.text
     assert "Ruby" not in result.text
     assert "Vehicle deliveries" not in result.text
@@ -67,7 +67,7 @@ def test_finnish_is_real_letter_without_coaching_inside_the_document():
     result = compose_completed_letter(job(), person(), language="fi")
     assert result.complete
     assert result.text.startswith("Hei rekrytointitiimi,\n\n")
-    assert "Tehtävään liittyvää vahvistettua osaamistani ovat" in result.text
+    assert "Tehtävään liittyvään osaamiseeni kuuluu" in result.text
     assert "Python" in result.text and "SQL" in result.text
     assert "Kerro omin sanoin" not in result.text
     assert "[" not in result.text and "•" not in result.text
