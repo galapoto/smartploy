@@ -379,6 +379,9 @@ describe("SP133 approved-profile CV generator", () => {
     const source = screen.getByRole("textbox", {name: "Imported source text"}) as HTMLTextAreaElement;
     expect(source.value).toBe(original);
     expect(screen.getByLabelText("CV preview").textContent).toContain("Analyst at Example Oy, 2024");
+    expect(screen.getByRole("article", {name: "Formatted structured CV"})).toBeTruthy();
+    expect(screen.getByRole("heading", {name: "Approved Applicant"})).toBeTruthy();
+    expect(screen.getByRole("heading", {name: "Work experience"})).toBeTruthy();
     expect(screen.getByLabelText("CV preview").textContent).not.toContain("Unapproved cybersecurity");
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByText(/UNSAVED structured CV draft/)).toBeTruthy();
