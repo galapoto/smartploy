@@ -252,7 +252,30 @@ export default function LocalPlaywrightAssist(props: {
   }
 
   function inspectLocalBrowser() {
-    if (phase !== "opened" || !sessionToken.current) return;
+    // Many employers show only a job detail page first. After the applicant
+    // clicks Apply/signs in, they must be able to inspect the newly visible
+    // form without restarting the helper or silently reusing the old plan.
+    // Re-inspection is read-only; never permit it after any write or upload.
+    if (!["opened", "inspected"].includes(phase) || !sessionToken.current ||
+        busy || inFlight.current || questionAttempted || cvAttachAttempted) return;
+    if (questionAnswers.some(answer => answer.trim()) &&
+        !window.confirm("Reinspect the employer form? Unsaved question answers " +
+          "in this SmartPloy panel will be cleared. Nothing will be submitted.")) return;
+    // The local bridge invalidates the previous inspection token BEFORE it
+    // inspects. Invalidate the matching UI state before network I/O as well,
+    // including when the new inspection fails or times out.
+    setPhase("opened");
+    setFields([]);
+    setPlanId("");
+    setCvAttachment({available: false, label: "", attach_id: ""});
+    setReviewedQuestions([]);
+    setHumanOnlyQuestions([]);
+    setQuestionAnswers([]);
+    setQuestionPlanId("");
+    setQuestionInspectionDone(false);
+    setQuestionStatus("");
+    setQuestionMemory({});
+    setQuestionMemoryAvailable(false);
     void guarded(async () => {
       const response = await callLocalPlaywrightBridge<LocalBridgeInspected>(
         "inspect", {}, { token: sessionToken.current, expectedStage: "inspected" },
@@ -264,8 +287,12 @@ export default function LocalPlaywrightAssist(props: {
       setCvAttached(false); setCvAttachAttempted(false);
       setPhase("inspected");
       setFeedback(response.approved_fields.length
-        ? "Inspect these exact field names. Nothing has been filled or submitted."
-        : "No unique, safe empty fields were found. Complete this form manually.");
+        ? "Detected " + response.approved_fields.length +
+          " safe field(s) on the current form. Check them, then click Fill once. " +
+          "The employer has not received a submission."
+        : "No ordinary empty fields were found. If you are on a job posting, " +
+          "click Apply or sign in inside Chromium and choose Inspect again. " +
+          "Sensitive and nonstandard fields remain manual.");
     });
   }
 
@@ -630,12 +657,16 @@ export default function LocalPlaywrightAssist(props: {
         {busy ? "Opening visible Chromium…" : "Start visible AutoApply (open & inspect)"}
       </button>
     </div> : null}
-    {phase === "opened" ? <div className="local-playwright-actions">
-      <button type="button" className="navy-btn" disabled={!props.enabled || busy}
+    {["opened", "inspected"].includes(phase) && !questionAttempted &&
+      !cvAttachAttempted ? <div className="local-playwright-actions">
+      <button type="button" className={phase === "opened" ? "navy-btn" : "outline-btn"}
+        disabled={!props.enabled || busy}
         onClick={inspectLocalBrowser}>
-        {busy ? "Inspecting…" : "Inspect current employer form"}
+        {busy ? "Inspecting…" : phase === "inspected"
+          ? "Inspect current employer form again" : "Inspect current employer form"}
       </button>
-      <small>Navigate/login in the visible local browser first. The page must match this exact job.</small>
+      <small>After logging in or clicking Apply in visible Chromium, inspect again.
+        This replaces the previous read-only field plan; no values are filled.</small>
     </div> : null}
     {phase === "inspected" ? <div className="local-playwright-actions">
       <strong>Reviewed safe fields ({fields.length})</strong>
