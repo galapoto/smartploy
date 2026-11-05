@@ -1949,6 +1949,7 @@ export default function ApplicationStudio(props: {
           {handoffPacketText && selected.status === "draft" && !browserReceipt &&
             !partnerReceipt
             ? <LocalPlaywrightAssist
+                autoInspectOnPair={props.mode === "automatic"}
                 key={props.expectedUserId + ":" + selected.workspace_id + ":" + selected.revision}
                 packetText={handoffPacketText}
                 expectedUserId={props.expectedUserId}
