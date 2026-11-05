@@ -197,9 +197,36 @@ export default function LocalPlaywrightAssist(props: {
       sessionToken.current = response.token; // memory only: no storage/log/URL
       setCode("");
       setPhase("opened");
-      setFeedback("Local Chromium opened for " + response.company +
-        " — " + response.role_title + ". Complete employer login and navigate to " +
-        "the exact application form in the visible browser, then inspect here.");
+      setFeedback("Visible Chromium opened for " + response.company +
+        " — " + response.role_title + ". Checking whether the reviewed job form is ready…");
+      // The one-time pairing click can automatically perform READ-ONLY
+      // inspection after opening Chromium. Never automatically fill values,
+      // attach a file or click employer Submit. If login/ATS navigation is
+      // needed, the applicant can complete it visibly and inspect again.
+      try {
+        const inspected = await callLocalPlaywrightBridge<LocalBridgeInspected>(
+          "inspect", {}, { token: response.token, expectedStage: "inspected" },
+        );
+        await verifyAccount();
+        if (!mounted.current) return;
+        setFields(inspected.approved_fields);
+        setPlanId(inspected.plan_id);
+        setCvAttachment(inspected.cv_attachment);
+        setCvAttached(false); setCvAttachAttempted(false);
+        setPhase("inspected");
+        setFeedback(inspected.approved_fields.length
+          ? "Employer form ready. Review the " + inspected.approved_fields.length +
+            " detected ordinary field(s), then click Fill to watch Chromium complete them. " +
+            "Nothing has been sent or submitted by this inspection."
+          : "Form opened, but no safe ordinary fields were detected. Complete the " +
+            "employer form personally or inspect after navigating to its application page.");
+      } catch {
+        if (!mounted.current) return;
+        setPhase("opened");
+        setFeedback("Chromium is open. Complete the employer login or click Apply " +
+          "on the visible employer website, then inspect the exact form here. " +
+          "No information was filled or submitted.");
+      }
     });
   }
 
@@ -553,7 +580,8 @@ export default function LocalPlaywrightAssist(props: {
       <Monitor size={20} aria-hidden="true" />
       <div>
         <strong>Connect my local Playwright browser</strong>
-        <p>Fill reviewed fields from SmartPloy without pasting your private packet into a terminal.</p>
+        <p>Watch Chromium open the reviewed employer form. SmartPloy inspects safe fields first,
+          shows you the plan, and fills them only after your approval. Final Submit stays yours.</p>
       </div>
     </div>
     <p className="local-playwright-notice">
@@ -578,7 +606,7 @@ export default function LocalPlaywrightAssist(props: {
       <button type="button" className="navy-btn"
         disabled={!props.enabled || busy || !trustedPage || !CODE.test(code.trim())}
         onClick={startLocalBrowser}>
-        {busy ? "Connecting to local browser…" : "Open reviewed employer form"}
+        {busy ? "Opening visible Chromium…" : "Start visible AutoApply (open & inspect)"}
       </button>
     </div> : null}
     {phase === "opened" ? <div className="local-playwright-actions">
