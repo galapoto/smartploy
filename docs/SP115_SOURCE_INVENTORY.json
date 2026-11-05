@@ -272,11 +272,11 @@
     },
     {
       "path": "web/src/ApplicationStudio.test.tsx",
-      "git_blob_sha1": "39eca927cd2f6794a9c08f98fd1780e592d4d3a5"
+      "git_blob_sha1": "2599d3b9ec1f263e127055457e2f8bf4e345fd9e"
     },
     {
       "path": "web/src/ApplicationStudio.tsx",
-      "git_blob_sha1": "86df4a90f4d2bc6d6c404d236e88053d7a243a87"
+      "git_blob_sha1": "2367413bf85454d0bb25779cbb799a3b6250c883"
     },
     {
       "path": "web/src/AuthorizedAutoApplyBatch.tsx",
@@ -284,7 +284,7 @@
     },
     {
       "path": "web/src/LocalPlaywrightAssist.test.tsx",
-      "git_blob_sha1": "6d14cb120f708674fcf24b2e647658009318821b"
+      "git_blob_sha1": "84c5496c0fa98980fd78114e12e6091d616c7d80"
     },
     {
       "path": "web/src/LocalPlaywrightAssist.tsx",
