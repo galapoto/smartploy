@@ -5,7 +5,7 @@ import StructuredCVForm from "./StructuredCVForm";
 import DocumentCoach from "./DocumentCoach";
 import {
   cvHasApplicantContent, renderStructuredCV, structuredFromSource,
-  parseStructuredCV, draftStructuredCVFromApprovedFacts, SECTION_OPTIONS,
+  parseStructuredCV, emptyStructuredCV, draftStructuredCVFromApprovedFacts, SECTION_OPTIONS,
   type CVApprovedFact, type StructuredCV,
 } from "./structured_cv";
 import type {
@@ -107,9 +107,12 @@ export default function MasterCVEditor(props: {
 
   async function createProfileCV() {
     if (!snapshot || loading || saving || inFlight.current || approvedCount === 0) return;
-    if (dirty && !window.confirm(
-      "You have unsaved CV edits. Build a new editable draft using approved profile facts? " +
-      "Your existing text will be kept in Imported source text; nothing is saved automatically."
+    if (text.trim() && !window.confirm(
+      "Build an editable CV from your approved profile facts? Existing structured " +
+      "entries will be kept. If your current CV is a free-form upload, the generated " +
+      "draft will be clean and will NOT copy unverified source text. Your saved " +
+      "original remains available until you deliberately Save, and is archived " +
+      "in private version history afterward. Unsaved edits will be replaced. Continue?"
     )) return;
     const scope = requestGeneration.current;
     try {
@@ -121,10 +124,12 @@ export default function MasterCVEditor(props: {
         return;
       }
       // Reuse the reversible editor grammar; never parse an arbitrary uploaded
-      // CV into guessed dates/employers. Unrecognized original text stays
-      // visible in Imported source text until the applicant removes it.
+      // CV into guessed titles/dates/employers. A clean draft excludes
+      // unverified free-form source, while the SAVED original is preserved by
+      // the existing CV version-history mechanism on explicit Save.
       const existing = structuredFromSource(text);
-      const model = existing.model;
+      const model = existing.origin === "structured"
+        ? existing.model : emptyStructuredCV();
       const fresh = proposed.model;
       for (const field of ["name", "headline", "email", "phone",
                            "location", "links", "summary"] as const) {
@@ -156,10 +161,11 @@ export default function MasterCVEditor(props: {
       setStructured(model);
       setMode("structured");
       setError("");
-      setConversionNote((existing.origin === "imported"
-        ? "Your entire original CV is preserved under Imported source text. "
-        : "Existing structured entries are preserved; missing approved facts were added. ") +
-        "Review each entry and customize the summary before saving.");
+      setConversionNote((existing.origin === "structured"
+        ? "Existing structured entries were kept; missing approved facts were added. "
+        : "Clean draft created. No unverified old CV text was copied into the new export. " +
+          "Your saved original can be restored with Reload before saving, or from version history after saving. ") +
+        "Review every entry and customize the profile summary before saving.");
       setNotice("Created an UNSAVED structured CV draft from " + proposed.included +
         " approved profile fact(s)." +
         (proposed.missingName ? " Add your real name before saving." : "") +
@@ -354,7 +360,8 @@ export default function MasterCVEditor(props: {
       </div>
       <p className="master-cv-hint">
         Build CV creates an editable draft from facts you personally approved;
-        it never invents work history, saves automatically or replaces your original.
+        it never invents work history or saves automatically. Your saved CV remains
+        recoverable if you choose to replace it.
         {approvedCount === 0 ? " Approve profile facts first, or use the editor manually." :
           " " + approvedCount + " approved fact(s) available."}
       </p>
