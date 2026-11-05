@@ -243,13 +243,14 @@ describe("SP111 paired browser review-first UI", () => {
 
   it("SP132: after AutoApply opens an employer landing page, inspect again after visible Apply", async () => {
     let scans = 0;
-    vi.mocked(fetch).mockImplementation(async (url: string) => {
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
       if (url.endsWith("/v1/prepare")) return mockReply("opened");
       if (url.endsWith("/v1/inspect")) {
         scans += 1;
         if (scans === 1) {
           return {ok: true, status: 200, json: async () => ({
-            ok: true, stage: "inspected", plan_id: "OLD_PLAN",
+            ok: true, stage: "inspected", plan_id: "Z".repeat(22),
             total_controls: 0, approved_fields: [],
             cv_attachment: {available: false, label: "", attach_id: ""},
             submitted: false, uploaded: false,
@@ -290,7 +291,8 @@ describe("SP111 paired browser review-first UI", () => {
 
   it("SP132: a failed reinspection invalidates old fields and cannot fill a stale plan", async () => {
     let scans = 0;
-    vi.mocked(fetch).mockImplementation(async (url: string) => {
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
       if (url.endsWith("/v1/prepare")) return mockReply("opened");
       if (url.endsWith("/v1/inspect")) {
         scans += 1;
