@@ -796,6 +796,47 @@ describe("Application Studio private-read account boundary", () => {
   });
 
 
+  it("SP134 AutoApply's primary button opens the existing private Playwright pairing flow", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const packet = {
+      schema: "smartploy.browser_handoff.v2" as const,
+      issued_at: new Date().toISOString(),
+      expires_at: "2099-01-01T00:15:00Z",
+      application_url: "https://jobs.lever.co/synthetic-fi/job-A",
+      company: "Fictional Employer", role_title: "A private role",
+      workspace_id: "workspace-A", revision: 1,
+      document_sha256: "a".repeat(64),
+      cv_pdf_sha256: "b".repeat(64),
+      approved_fields_sha256: "c".repeat(64), cv_pdf_size: 1024,
+      fields: {full_name: "Synthetic Applicant", first_name: "Synthetic",
+        last_name: "Applicant", email: "synthetic@example.invalid",
+        phone: "", location: "", linkedin: "", github: "",
+        cover_letter: "Approved synthetic cover letter"},
+      privacy: {approved_contact_only: true as const, original_cv_included: false as const,
+        browser_form_fill_allowed_after_user_click: true as const,
+        employer_submit_allowed_without_new_approval: false as const},
+    };
+    vi.mocked(api.createBrowserHandoffPacket).mockResolvedValue({
+      packet, external_actions_performed: false,
+    });
+    studio("automatic");
+    const next = await screen.findByRole("region", {
+      name: "Application progress and next action",
+    });
+    await waitFor(() => expect(within(next)
+      .getByRole("button", {name: "Start visible AutoApply"})).toBeTruthy());
+    fireEvent.click(within(next).getByRole("button", {name: "Start visible AutoApply"}));
+    await waitFor(() => expect(api.createBrowserHandoffPacket)
+      .toHaveBeenCalledWith("workspace-A", 1, "usr-a"));
+    expect(await screen.findByRole("region", {
+      name: "Paired local Playwright browser",
+    })).toBeTruthy();
+    expect(document.querySelector("#smartploy-local-autofill")).toBeTruthy();
+    expect(screen.getByText(/Private Playwright packet prepared only in this tab/)).toBeTruthy();
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
+    expect(api.submitAuthorizedAutoApplyBatch).not.toHaveBeenCalled();
+  });
+
   it("SP111 prepares owner-reviewed Playwright packet in tab memory without clipboard", async () => {
     const clipboard = vi.fn(async (_value: string) => undefined);
     const descriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
