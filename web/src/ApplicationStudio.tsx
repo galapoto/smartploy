@@ -395,6 +395,18 @@ export default function ApplicationStudio(props: {
     return () => { alive = false; };
   }, [selected?.workspace_id, selected?.revision, selected?.application_url, verifyAccount]);
 
+  // The top-level AutoApply action opens the same owner/revision-verified
+  // Playwright handoff as the existing employer-form section. When its private
+  // in-tab packet is ready, take the applicant directly to the pairing panel.
+  // Never launch or fill Chromium without that person's separate consent.
+  useEffect(() => {
+    if (props.mode !== "automatic" || !handoffPacketText) return;
+    const target = document.getElementById("smartploy-local-autofill");
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({block: "start", behavior: "smooth"});
+    }
+  }, [handoffPacketText, props.mode]);
+
   const dirty = Boolean(selected && (
     cvText !== selected.cv_text || letterText !== selected.cover_letter_text
   ));
@@ -1415,6 +1427,15 @@ export default function ApplicationStudio(props: {
                   employerAttempt?.previous_attempt_reserved === true}
                 onClick={() => void save()}><Save size={16} aria-hidden="true"/>
                 {busy ? "Saving…" : nextAction.action.label}</button> :
+              props.mode === "automatic" && nextAction.kind === "manual_handoff" ?
+              <button type="button" className="navy-btn"
+                disabled={busy || handoffBusy || !handoff?.ready || dirty ||
+                  !!browserReceipt || !!partnerReceipt ||
+                  employerAttempt?.previous_attempt_reserved === true}
+                onClick={() => void copyBrowserPacket(true)}>
+                <Monitor size={16} aria-hidden="true"/>
+                {handoffBusy ? "Preparing visible browser…" : "Start visible AutoApply"}
+              </button> :
               <a className="navy-btn" href={nextAction.action.target}>
                 {nextAction.action.label} <ArrowRight size={16} aria-hidden="true"/>
               </a>}
@@ -1948,7 +1969,8 @@ export default function ApplicationStudio(props: {
           </p>
           {handoffPacketText && selected.status === "draft" && !browserReceipt &&
             !partnerReceipt
-            ? <LocalPlaywrightAssist
+            ? <div id="smartploy-local-autofill">
+                <LocalPlaywrightAssist
                 autoInspectOnPair={props.mode === "automatic"}
                 key={props.expectedUserId + ":" + selected.workspace_id + ":" + selected.revision}
                 packetText={handoffPacketText}
@@ -1969,6 +1991,7 @@ export default function ApplicationStudio(props: {
                     "personally; SmartPloy did not submit or verify the employer receipt.");
                 }}
               />
+              </div>
             : null}
           {handoffPacketText ? <div className="studio-packet-fallback">
             <label htmlFor="smartploy-browser-packet">Private packet for your browser companion</label>
