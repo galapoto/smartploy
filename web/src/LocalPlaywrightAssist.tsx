@@ -34,6 +34,7 @@ export default function LocalPlaywrightAssist(props: {
   expectedRevision: number;
   observationEnabled?: boolean;
   onReceiptImported?: (receipt: BrowserObservedReceipt) => void;
+  autoInspectOnPair?: boolean;
 }) {
   const [code, setCode] = useState("");
   const [phase, setPhase] = useState<Phase>("not-paired");
@@ -199,6 +200,11 @@ export default function LocalPlaywrightAssist(props: {
       setPhase("opened");
       setFeedback("Visible Chromium opened for " + response.company +
         " — " + response.role_title + ". Checking whether the reviewed job form is ready…");
+      if (!props.autoInspectOnPair) {
+        setFeedback("Local Chromium opened for " + response.company +
+          " — " + response.role_title + ". Navigate to the employer form and inspect it.");
+        return;
+      }
       // The one-time pairing click can automatically perform READ-ONLY
       // inspection after opening Chromium. Never automatically fill values,
       // attach a file or click employer Submit. If login/ATS navigation is
