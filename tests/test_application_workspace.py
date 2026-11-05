@@ -68,7 +68,7 @@ def test_workspace_draft_uses_only_user_facts_and_is_idempotent():
     assert "Candidate Example" in kit.cv_text
     assert "Python" in kit.cv_text
     assert "Finnish" not in kit.cv_text
-    assert "My relevant confirmed skills include Python." in kit.cover_letter_text
+    assert "My relevant skills include Python." in kit.cover_letter_text
     assert kit.cover_letter_text.endswith("Kind regards,\nCandidate Example")
     assert "[Explain in your own words" not in kit.cover_letter_text
     assert "[" not in kit.cover_letter_text
@@ -105,7 +105,7 @@ def test_sp38_finnish_initial_letter_uses_only_relevant_approved_facts():
     assert first.cover_letter_text == again.cover_letter_text
     assert first.cover_letter_text.startswith("Hei rekrytointitiimi")
     assert "Haen tehtävää Junior Data Analyst" in first.cover_letter_text
-    assert "Tehtävään liittyvää vahvistettua osaamistani ovat" in first.cover_letter_text
+    assert "Tehtävään liittyvään osaamiseeni kuuluu" in first.cover_letter_text
     assert "Python" in first.cover_letter_text
     assert "SQL" in first.cover_letter_text
     assert "Ruby" not in first.cover_letter_text
@@ -183,7 +183,7 @@ def test_sp85_new_letter_exports_contain_real_prose_in_both_formats():
     extracted = "\\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
     for content in (paragraphs, extracted):
         assert "Dear Hiring Team" in content
-        assert "My relevant confirmed skills include Python." in content
+        assert "My relevant skills include Python." in content
         assert "Explain in your own words" not in content
         assert "[Your name]" not in content
 
