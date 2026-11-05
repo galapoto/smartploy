@@ -674,11 +674,12 @@ export default function LocalPlaywrightAssist(props: {
         {fields.map((item, index) =>
           <li key={item.key + ":" + index}>{item.label} <small>{item.key}</small></li>)}
       </ul>
-      <button type="button" className="navy-btn"
-        disabled={!props.enabled || busy || !fields.length}
+      {fields.length ? <button type="button" className="navy-btn"
+        disabled={!props.enabled || busy}
         onClick={fillLocalBrowser}>
         Fill reviewed fields once (never submit)
-      </button>
+      </button> : <small>No safe fields detected yet. Navigate to the real application
+        form in visible Chromium, then use Inspect again.</small>}
     </div> : null}
     {sessionToken.current && ["opened", "inspected", "filled"].includes(phase) ?
       <div className="local-playwright-actions" aria-label="Reviewed employer questions">
