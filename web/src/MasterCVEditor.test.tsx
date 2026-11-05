@@ -362,7 +362,7 @@ describe("SP133 approved-profile CV generator", () => {
     created_at: "2026-11-05T00:00:00Z",
   });
 
-  it("offers an unsaved, editable master CV from approved facts and preserves the imported source", async () => {
+  it("offers a clean, unsaved CV using approved facts, keeping the original saved version", async () => {
     const {onSave} = start({facts: [
       fact("identity", "Approved Applicant"),
       fact("skill", "Python"),
@@ -376,8 +376,7 @@ describe("SP133 approved-profile CV generator", () => {
     expect(await screen.findByRole("textbox", {name: "Full name"})).toBeTruthy();
     expect((screen.getByRole("textbox", {name: "Full name"}) as HTMLInputElement).value)
       .toBe("Approved Applicant");
-    const source = screen.getByRole("textbox", {name: "Imported source text"}) as HTMLTextAreaElement;
-    expect(source.value).toBe(original);
+    expect(screen.queryByRole("textbox", {name: "Imported source text"})).toBeNull();
     expect(screen.getByLabelText("CV preview").textContent).toContain("Analyst at Example Oy, 2024");
     expect(screen.getByRole("article", {name: "Formatted structured CV"})).toBeTruthy();
     expect(screen.getByRole("heading", {name: "Approved Applicant"})).toBeTruthy();
@@ -390,9 +389,12 @@ describe("SP133 approved-profile CV generator", () => {
     const submittedText = onSave.mock.calls[0][0];
     expect(submittedText).toContain("Approved Applicant");
     expect(submittedText).toContain("Python");
-    expect(submittedText).toContain("IMPORTED SOURCE TEXT");
+    expect(submittedText).not.toContain("IMPORTED SOURCE TEXT");
     expect(submittedText).not.toContain("Unapproved cybersecurity");
-    expect(parseStructuredCV(submittedText)?.importedText).toBe(original);
+    expect(parseStructuredCV(submittedText)?.importedText).toBe("");
+    // Saving is explicit and CAS-protected; the original CV is still the
+    // previous version identified by HASH until that user action.
+    expect(onSave.mock.calls[0][1]).toBe(HASH);
   });
 
   it("does not invent an applicant name or allow saving only skill facts", async () => {
