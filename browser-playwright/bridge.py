@@ -258,6 +258,12 @@ class BridgeState:
         self.cv_field = None
         self.attach_id = ""
         self.inspected_url = ""
+        # An applicant can reinspect after clicking Apply or signing in.
+        # Invalidate ANY older question-review token too: no stale answer
+        # plan may survive navigation to a different same-host form.
+        self.question_page = None
+        self.question_plan = None
+        self.question_plan_id = ""
         try:
             page, rows, plan = self.actor.inspect(packet)
         except assistant.PacketError as exc:
