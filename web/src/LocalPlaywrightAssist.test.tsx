@@ -159,7 +159,7 @@ describe("SP111 paired browser review-first UI", () => {
     expect(localBridgeOriginAllowed("http://localhost:3000")).toBe(false);
     component();
     expect(screen.getByRole("region", { name: "Paired local Playwright browser" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Open reviewed employer form" })
+    expect(screen.getByRole("button", { name: "Start visible AutoApply (open & inspect)" })
       .hasAttribute("disabled")).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -169,7 +169,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: { value: pairing },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start visible AutoApply (open & inspect)" }));
     expect(await screen.findByRole("button", { name: "Inspect current employer form" })).toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url, args] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
@@ -217,13 +217,37 @@ describe("SP111 paired browser review-first UI", () => {
     expect((vi.mocked(fetch).mock.calls[3][0] as string).endsWith("/v1/stop")).toBe(true);
   });
 
+  it("SP131 Automatic mode auto-inspects the visible form after one paired browser click", async () => {
+    render(<LocalPlaywrightAssist
+      packetText={packet} enabled={true} autoInspectOnPair={true}
+      expectedUserId="user-A" expectedAuthSource="oidc"
+      expectedWorkspaceId="workspace-A" expectedRevision={2}
+    />);
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {name:"Start visible AutoApply (open & inspect)"}));
+    expect(await screen.findByRole("button", {name:"Fill reviewed fields once (never submit)"}))
+      .toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toEqual([
+      "http://127.0.0.1:48741/v1/prepare",
+      "http://127.0.0.1:48741/v1/inspect",
+    ]);
+    expect(screen.getByText(/Employer form ready/)).toBeTruthy();
+    expect(screen.queryByText(/Field-fill action completed/)).toBeNull();
+    expect(document.body.textContent).not.toContain(localToken);
+    expect(document.body.textContent).not.toContain(pairing);
+    expect(document.body.textContent).not.toContain("private@example.invalid");
+    // No field fill, CV upload or employer submission before the owner's click.
+  });
+
   it("blocks cross-account login changes before any local data transfer", async () => {
     vi.mocked(getSession).mockResolvedValue({ ...session, user_id: "different-subject" });
     component();
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: { value: pairing },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start visible AutoApply (open & inspect)" }));
     const errors = await screen.findAllByRole("alert");
     expect(errors.some((node) => node.textContent?.includes("sign-in changed"))).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
@@ -234,7 +258,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: { value: pairing },
     });
-    const button = screen.getByRole("button", { name: "Open reviewed employer form" });
+    const button = screen.getByRole("button", { name: "Start visible AutoApply (open & inspect)" });
     expect(button.hasAttribute("disabled")).toBe(true);
     fireEvent.click(button);
     expect(fetch).not.toHaveBeenCalled();
@@ -252,7 +276,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: {value: pairing},
     });
-    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    fireEvent.click(screen.getByRole("button", {name:"Start visible AutoApply (open & inspect)"}));
     const alerts = await screen.findAllByRole("alert");
     expect(alerts.some(a => a.textContent?.includes("reserved or uncertain"))).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
@@ -270,7 +294,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: { value: pairing },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start visible AutoApply (open & inspect)" }));
     const alerts = await screen.findAllByRole("alert");
     expect(alerts.some((a) => a.textContent?.includes("CV/letter changed"))).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
@@ -283,7 +307,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: { value: pairing },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start visible AutoApply (open & inspect)" }));
     const errors = await screen.findAllByRole("alert");
     expect(errors.some((node) => node.textContent?.includes("local-network permission denied"))).toBe(true);
     expect(vi.mocked(fetch).mock.calls.every((call) =>
@@ -328,7 +352,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: {value: pairing},
     });
-    fireEvent.click(screen.getByRole("button",{name:"Open reviewed employer form"}));
+    fireEvent.click(screen.getByRole("button",{name:"Start visible AutoApply (open & inspect)"}));
     await screen.findByRole("button",{name:"Inspect current employer form"});
     fireEvent.click(screen.getByRole("button",{name:"Inspect current employer form"}));
     const attach = await screen.findByRole("button",{name:"Attach exact saved CV PDF once"});
@@ -361,7 +385,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: {value: pairing},
     });
-    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    fireEvent.click(screen.getByRole("button", {name:"Start visible AutoApply (open & inspect)"}));
     const review = await screen.findByRole("button", {
       name: "Review unanswered employer questions",
     });
@@ -424,7 +448,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: {value: pairing},
     });
-    fireEvent.click(screen.getByRole("button", {name: "Open reviewed employer form"}));
+    fireEvent.click(screen.getByRole("button", {name: "Start visible AutoApply (open & inspect)"}));
     fireEvent.click(await screen.findByRole("button", {
       name: "Review unanswered employer questions",
     }));
@@ -459,7 +483,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: {value: pairing},
     });
-    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    fireEvent.click(screen.getByRole("button", {name:"Start visible AutoApply (open & inspect)"}));
     fireEvent.click(await screen.findByRole("button", {
       name:"Review unanswered employer questions",
     }));
@@ -481,7 +505,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: {value: pairing},
     });
-    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    fireEvent.click(screen.getByRole("button", {name:"Start visible AutoApply (open & inspect)"}));
     const review = await screen.findByRole("button", {
       name: "Review unanswered employer questions",
     });
@@ -552,7 +576,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: {value: pairing},
     });
-    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    fireEvent.click(screen.getByRole("button", {name:"Start visible AutoApply (open & inspect)"}));
     const observe = await screen.findByRole("button", {
       name: "Observe employer confirmation (read-only)",
     });
@@ -596,7 +620,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: {value: pairing},
     });
-    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    fireEvent.click(screen.getByRole("button", {name:"Start visible AutoApply (open & inspect)"}));
     const observe = await screen.findByRole("button", {
       name: "Observe employer confirmation (read-only)",
     });
@@ -621,7 +645,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
       target: { value: pairing },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start visible AutoApply (open & inspect)" }));
     await screen.findByRole("button", { name: "Inspect current employer form" });
     fireEvent.click(screen.getByRole("button", { name: "Inspect current employer form" }));
     await screen.findByRole("button", { name: "Fill reviewed fields once (never submit)" });
