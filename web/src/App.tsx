@@ -1604,7 +1604,7 @@ export default function App() {
               {cvReadState === "unavailable" ? <button className="secondary-btn" type="button" disabled={refreshing}
                 onClick={() => void load(true)}>{refreshing ? "Checking CV…" : "Retry CV check"}</button> : null}
             </section> : <MasterCVEditor key={accountViewKey} expectedUserId={session?.user_id || ""}
-              cv={cv} onUnsavedChange={reportMasterCVUnsaved}
+              cv={cv} facts={facts} onUnsavedChange={reportMasterCVUnsaved}
               onSave={(text, expectedSha256) => runPrivateMutation(
                 (userId) => saveCVEditor(text, expectedSha256, userId)
               )}
