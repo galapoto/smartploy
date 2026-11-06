@@ -31,10 +31,13 @@ Preferred: connect once, fill from SmartPloy (applicant-local pairing)
    Then find "Connect my local Playwright browser", enter the code shown in
    the terminal and click "Open reviewed employer form". Check the consent
    prompt: the local helper receives only the approved packet.
-4. A visible, isolated Chromium browser opens on the exact employer posting.
-   Navigate to its application form. On TalentAdore, click
+4. A visible, isolated Chromium browser opens the reviewed job. For
+   standard Lever and Ashby links, SmartPloy starts directly on the same
+   job's exact hosted application form. On custom employer sites you may
+   need to click Apply manually; on TalentAdore click
    "Hae tähän työpaikkaan" in the visible employer tab and then inspect.
-   Complete login or MFA yourself.
+   Complete login or MFA yourself. No automatic third-party redirect,
+   employer Submit or CAPTCHA bypass is authorized.
    Return to SmartPloy and click "Inspect current employer form".
 5. Review the suggested field names and click "Fill reviewed fields once".
    SmartPloy asks you to confirm explicitly. The helper verifies the exact
