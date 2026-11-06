@@ -735,4 +735,123 @@ describe("SP111 paired browser review-first UI", () => {
     expect(screen.queryByRole("button", { name: "Fill reviewed fields once (never submit)" })).toBeNull();
     expect(fetch).toHaveBeenCalledTimes(3);
   });
+  it("SP140: explicit one-consent AutoApply opens, inspects and visibly fills once", async () => {
+    render(<LocalPlaywrightAssist
+      packetText={packet} enabled autoInspectOnPair autoFillOnPair
+      expectedUserId="user-A" expectedAuthSource="oidc"
+      expectedWorkspaceId="workspace-A" expectedRevision={2}
+    />);
+    const optIn = screen.getByRole("checkbox", {
+      name: /When this exact employer form is ready, fill my approved ordinary fields/,
+    }) as HTMLInputElement;
+    expect(optIn.checked).toBe(true);
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {
+      name: "Start AutoApply · open, inspect & fill once",
+    }));
+    expect(await screen.findByText(/Visible AutoApply filled 2 of 2/)).toBeTruthy();
+    const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(calls).toEqual([
+      "http://127.0.0.1:48741/v1/prepare",
+      "http://127.0.0.1:48741/v1/inspect",
+      "http://127.0.0.1:48741/v1/fill",
+    ]);
+    const payload = JSON.parse(String((vi.mocked(fetch).mock.calls[2][1] as RequestInit).body));
+    expect(payload).toEqual({plan_id: planId, confirmation: "FILL REVIEWED FIELDS"});
+    expect(screen.getByText(/No application was submitted/)).toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => /attach|submit/.test(String(url)))).toBe(false);
+    expect(window.confirm).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", {name: "Fill reviewed fields once (never submit)"})).toBeNull();
+  });
+
+  it("SP140: applicant can opt out; pairing then inspects without filling", async () => {
+    render(<LocalPlaywrightAssist
+      packetText={packet} enabled autoInspectOnPair autoFillOnPair
+      expectedUserId="user-A" expectedAuthSource="oidc"
+      expectedWorkspaceId="workspace-A" expectedRevision={2}
+    />);
+    fireEvent.click(screen.getByRole("checkbox", {
+      name: /When this exact employer form is ready, fill my approved ordinary fields/,
+    }));
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {
+      name: "Start visible AutoApply (open & inspect)",
+    }));
+    expect(await screen.findByRole("button", {name:"Fill reviewed fields once (never submit)"}))
+      .toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url).split("/").pop()))
+      .toEqual(["prepare", "inspect"]);
+  });
+
+  it("SP140: after applicant opens Apply in Chromium, a new confirmed inspection can fill", async () => {
+    let scans = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/v1/prepare")) return mockReply("opened");
+      if (url.endsWith("/v1/inspect")) {
+        scans += 1;
+        if (scans === 1) return {
+          ok: true, status: 200,
+          json: async () => ({...await mockReply("inspected").json(),
+            approved_fields: [], plan_id: planId,
+            cv_attachment: {available: false, label: "", attach_id: ""}}),
+        };
+        return mockReply("inspected");
+      }
+      if (url.endsWith("/v1/fill")) return mockReply("filled");
+      throw new Error("Unexpected route");
+    }));
+    render(<LocalPlaywrightAssist
+      packetText={packet} enabled autoInspectOnPair autoFillOnPair
+      expectedUserId="user-A" expectedAuthSource="oidc"
+      expectedWorkspaceId="workspace-A" expectedRevision={2}
+    />);
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {
+      name: "Start AutoApply · open, inspect & fill once",
+    }));
+    expect(await screen.findByText(/no safe ordinary fields were detected/i)).toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", {
+      name:"Inspect current employer form again",
+    }));
+    expect(await screen.findByText(/Visible AutoApply filled 2 of 2/)).toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url).split("/").pop()))
+      .toEqual(["prepare", "inspect", "inspect", "fill"]);
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it("SP140: if saved CV/letter changed while inspecting, auto-fill is blocked", async () => {
+    vi.mocked(getBrowserHandoffReadiness)
+      .mockResolvedValueOnce({
+        ready: true, document_revision: 2, blockers: [],
+        contact_fields_ready: true, employer_submission_performed: false,
+        will_require_manual_review: true, files_attached: false,
+      })
+      .mockResolvedValueOnce({
+        ready: false, document_revision: 3, blockers: ["CV changed"],
+        contact_fields_ready: false, employer_submission_performed: false,
+        will_require_manual_review: true, files_attached: false,
+      });
+    render(<LocalPlaywrightAssist
+      packetText={packet} enabled autoInspectOnPair autoFillOnPair
+      expectedUserId="user-A" expectedAuthSource="oidc"
+      expectedWorkspaceId="workspace-A" expectedRevision={2}
+    />);
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {
+      name: "Start AutoApply · open, inspect & fill once",
+    }));
+    expect(await screen.findByText(/This job or reviewed CV\/letter changed/)).toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url).split("/").pop()))
+      .toEqual(["prepare", "inspect"]);
+  });
+
 });
