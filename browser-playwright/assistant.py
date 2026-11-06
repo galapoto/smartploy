@@ -171,6 +171,38 @@ def same_reviewed_form(posting_url: str, current_url: str) -> bool:
     return c.hostname == p.hostname
 
 
+
+def reviewed_initial_form_url(posting_url: str) -> str:
+    """Open the exact Lever/Ashby form instead of a dead-end job landing page.
+
+    The applicant already approved this saved job in SmartPloy. A direct
+    GET in visible Chromium is allowed only for the documented same-job
+    hosted ATS form; generic employers, Greenhouse and TalentAdore keep
+    their original URL. No website buttons, login, upload or submit happen.
+    """
+    parsed = _url_parts(posting_url)
+    providers = {
+        "jobs.lever.co": (LEVER_PATH, "apply"),
+        "jobs.eu.lever.co": (LEVER_PATH, "apply"),
+        "jobs.ashbyhq.com": (ASHBY_PATH, "application"),
+    }
+    provider = providers.get(parsed.hostname)
+    if provider is None or parsed.query:
+        return posting_url
+    pattern, final_segment = provider
+    if not pattern.fullmatch(parsed.path):
+        return posting_url
+    base_path = re.sub(rf"/{final_segment}/?$", "", parsed.path).rstrip("/")
+    form_url = (
+        f"{parsed.scheme}://{parsed.netloc}{base_path}/{final_segment}"
+    )
+    # The original exact-job validator is authoritative. No arbitrary
+    # same-host path guesses, third-party redirect or tracking parameters.
+    if not same_reviewed_form(posting_url, form_url):
+        raise PacketError("The saved employer job has no safe direct form URL")
+    return form_url
+
+
 def _approved_fields_sha256(fields: dict[str, str]) -> str:
     """Copy SmartPloy's original length-prefixed, canonical fields fingerprint."""
     parts = [str(len(fields[key].encode("utf-8"))) + ":" + fields[key]
