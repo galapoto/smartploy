@@ -1867,7 +1867,7 @@ export default function ApplicationStudio(props: {
           aria-label="Browser application assistant">
           <div className="studio-handoff-header">
             <div><p className="section-kicker">EMPLOYER APPLICATION</p><h4>Fill the employer's form</h4>
-              <p>Start a visible Playwright application on any reviewed public HTTPS employer site, including TalentAdore. SmartPloy checks your private documents, opens the employer form in your paired local browser, fills only the fields you approve and attaches your reviewed CV after separate approval. You complete sensitive questions and final submission yourself.</p></div>
+              <p>Start a visible Playwright application on a reviewed public HTTPS employer site. In AutoApply mode, one explicit local pairing confirmation can open, inspect and fill your approved ordinary fields once while you watch. Some fields transmit immediately. You separately approve CV attachment, complete sensitive questions and click the employer's final Submit button yourself. The Chrome extension remains an alternative.</p></div>
             <ExternalLink size={18} />
           </div>
           {employerAttempt?.previous_attempt_reserved ? (
@@ -1976,6 +1976,7 @@ export default function ApplicationStudio(props: {
             ? <div id="smartploy-local-autofill">
                 <LocalPlaywrightAssist
                 autoInspectOnPair={props.mode === "automatic"}
+                autoFillOnPair={props.mode === "automatic"}
                 key={props.expectedUserId + ":" + selected.workspace_id + ":" + selected.revision}
                 packetText={handoffPacketText}
                 expectedUserId={props.expectedUserId}

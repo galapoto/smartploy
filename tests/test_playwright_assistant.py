@@ -72,6 +72,32 @@ def field(index, label, name, **overrides):
     return row
 
 
+def test_sp140_real_lever_unicode_required_markers_map_only_safe_fields():
+    """Based on 6 Nov read-only Chromium inspection of a live Lever form.
+
+    No employer network, real applicant values, upload or submission occurs.
+    The original strict mapper must recognize required-star labels while
+    excluding legal/salary/company inputs even with misleading autocomplete.
+    """
+    candidate = packet()
+    candidate["fields"]["phone"] = "+358401234567"
+    candidate["fields"]["linkedin"] = "https://www.linkedin.com/in/example"
+    controls = [
+        field(0, "Full name✱", "name", required=True),
+        field(1, "Email✱", "email", type="email", required=True),
+        field(2, "Phone ✱", "phone", type="tel", required=True),
+        field(3, "LinkedIn URL✱", "links[linkedin]", type="url", required=True),
+        field(4, "Visa sponsorship✱", "sponsor", autocomplete="name"),
+        field(5, "Salary expectation✱", "salary", autocomplete="name"),
+        field(6, "Company name✱", "company", autocomplete="name"),
+    ]
+    plan = assistant.plan_fields(controls, candidate)
+    assert [item["key"] for item in plan] == [
+        "full_name", "email", "phone", "linkedin",
+    ]
+    assert [item["index"] for item in plan] == [0, 1, 2, 3]
+
+
 @pytest.mark.parametrize(("source", "active", "expected"), [
     ("https://careers.example.org/jobs/junior-analyst",
      "https://careers.example.org/jobs/junior-analyst/apply", True),

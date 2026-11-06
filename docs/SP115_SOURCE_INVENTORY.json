@@ -32,7 +32,7 @@
   "source_artifacts": [
     {
       "path": ".github/workflows/ci.yml",
-      "git_blob_sha1": "c0ec319ad2ebaaf921169d31c8d523ff0939034f"
+      "git_blob_sha1": "497d06f41129801212b305452a9d6342ade0c3ed"
     },
     {
       "path": "AGENTS.md",
@@ -40,7 +40,7 @@
     },
     {
       "path": "browser-companion/logic.mjs",
-      "git_blob_sha1": "eaac608c09943d4aff3c2f13d9c5ca0af244c0f2"
+      "git_blob_sha1": "c6905e51775d10c27ca73e5d229b2ca7addb938d"
     },
     {
       "path": "browser-companion/manifest.json",
@@ -76,7 +76,7 @@
     },
     {
       "path": "browser-companion/tests/logic.test.mjs",
-      "git_blob_sha1": "2c8d34b42db4af8de1b0d4bf710d7b34788e400a"
+      "git_blob_sha1": "0c17961532418ae584ca9d0228261931907145bf"
     },
     {
       "path": "browser-companion/tests/page-question-sync.test.mjs",
@@ -96,7 +96,7 @@
     },
     {
       "path": "browser-playwright/assistant.py",
-      "git_blob_sha1": "25a4f821e322eeceaa951df938485a238bc1b73a"
+      "git_blob_sha1": "747960f3e6d55dec1d1e87cc8aedbbaf16bedb4b"
     },
     {
       "path": "browser-playwright/bridge.py",
@@ -208,7 +208,7 @@
     },
     {
       "path": "tests/test_playwright_assistant.py",
-      "git_blob_sha1": "a35c5d66ecebd23c587473173dc5321fc453dd76"
+      "git_blob_sha1": "0d83a7ce96cace7bb38b38381ca777996ec35a3c"
     },
     {
       "path": "tests/test_private_saved_jobs.py",
@@ -276,7 +276,7 @@
     },
     {
       "path": "web/src/ApplicationStudio.tsx",
-      "git_blob_sha1": "dc112f8db54c8a97b266ffe0b3b644c60cc17ec5"
+      "git_blob_sha1": "095fe0f255966cd54b87b0b7767f74e8fd74119d"
     },
     {
       "path": "web/src/AuthorizedAutoApplyBatch.tsx",
@@ -284,11 +284,11 @@
     },
     {
       "path": "web/src/LocalPlaywrightAssist.test.tsx",
-      "git_blob_sha1": "657d3fe946feb3787d7bb1c1944955ce7fc3f940"
+      "git_blob_sha1": "31e226ed765c1c7fd8f9aca39df8211a40580fb1"
     },
     {
       "path": "web/src/LocalPlaywrightAssist.tsx",
-      "git_blob_sha1": "4ed9f5e515a0224b5670c9c64dbf3264c942fe04"
+      "git_blob_sha1": "a52c7f36b09cd853a0ed3ff82fdc6dc0986980dc"
     },
     {
       "path": "web/src/localPlaywrightBridge.ts",
