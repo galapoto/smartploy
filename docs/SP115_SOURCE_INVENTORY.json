@@ -208,7 +208,7 @@
     },
     {
       "path": "tests/test_playwright_assistant.py",
-      "git_blob_sha1": "67667b028732d843b6495e2f2bcdc80b6d7ae51f"
+      "git_blob_sha1": "a35c5d66ecebd23c587473173dc5321fc453dd76"
     },
     {
       "path": "tests/test_private_saved_jobs.py",
