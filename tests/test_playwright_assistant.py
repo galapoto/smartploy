@@ -403,3 +403,48 @@ def test_sp110_web_build_has_required_zip_origin_and_not_spa_fallback():
     studio = (ROOT/"web/src/ApplicationStudio.tsx").read_text()
     assert 'href="/smartploy-playwright-assistant.zip"' in studio
     assert "Playwright · local form assistant" in studio
+
+
+@pytest.mark.parametrize(("posting", "first_url"), [
+    ("https://jobs.lever.co/example/position",
+     "https://jobs.lever.co/example/position/apply"),
+    ("https://jobs.lever.co/example/position/apply",
+     "https://jobs.lever.co/example/position/apply"),
+    ("https://jobs.eu.lever.co/example/position",
+     "https://jobs.eu.lever.co/example/position/apply"),
+    ("https://jobs.ashbyhq.com/example/position",
+     "https://jobs.ashbyhq.com/example/position/application"),
+    ("https://jobs.ashbyhq.com/example/position/application",
+     "https://jobs.ashbyhq.com/example/position/application"),
+    ("https://boards.greenhouse.io/example/jobs/123",
+     "https://boards.greenhouse.io/example/jobs/123"),
+    ("https://ats.talentadore.com/apply/junior-analyst/m6rpoy",
+     "https://ats.talentadore.com/apply/junior-analyst/m6rpoy"),
+    ("https://careers.example.org/jobs/analyst",
+     "https://careers.example.org/jobs/analyst"),
+])
+def test_sp145_exact_ats_first_navigation(posting, first_url):
+    """Visible browser first GET reaches the reviewed same-job form or URL."""
+    p = packet(posting)
+    assistant.validate_packet(p)
+    assert assistant.reviewed_initial_form_url(posting) == first_url
+    assert assistant.same_reviewed_form(posting, first_url)
+
+
+@pytest.mark.parametrize("untrusted", [
+    "http://jobs.lever.co/example/position",
+    "https://evil.invalid/company/job",
+    "https://jobs.lever.co.evil.invalid/example/position",
+    "https://jobs.lever.co/example/position#fragment",
+    "https://jobs.lever.co:8443/example/position",
+])
+def test_sp145_no_untrusted_direct_ats_form_navigation(untrusted):
+    """The shortcut never relaxes HTTPS or exact supported host policy."""
+    if untrusted == "https://evil.invalid/company/job":
+        assert assistant.reviewed_initial_form_url(untrusted) == untrusted
+        return
+    if untrusted == "https://jobs.lever.co.evil.invalid/example/position":
+        assert assistant.reviewed_initial_form_url(untrusted) == untrusted
+        return
+    with pytest.raises(assistant.PacketError):
+        assistant.reviewed_initial_form_url(untrusted)
