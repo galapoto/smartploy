@@ -91,6 +91,10 @@ MANDATORY = frozenset({
     "tests/test_application_workspace.py",
     "tests/test_complete_letter.py",
     # SP132: reinspection after a manual employer Apply/login navigation.
+    # SP139: applicant-initiated Linux local Playwright launcher and its
+    # offline source/consent regressions; no remotely started process.
+    "browser-playwright/start-smartploy-linux.sh",
+    "tests/test_playwright_linux_launcher.py",
     # SP133: approved-facts CV generator and print-faithful live preview.
     "web/src/structured_cv.ts",
     "web/src/structured_cv.test.ts",
