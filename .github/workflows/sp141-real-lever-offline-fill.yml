@@ -1,0 +1,147 @@
+name: SP141 actual Lever form offline fill four stable fields
+
+on:
+  push:
+    branches:
+      - qa/sp141-real-lever-offline-form-fill-20261106
+
+permissions:
+  contents: read
+
+jobs:
+  live-lever-offline-fill:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned first-party Playwright
+        run: |
+          python -m pip install --disable-pip-version-check "playwright==1.55.0"
+          python -m playwright install chromium
+      - name: Load the REAL public employer form, take browser offline, fill synthetic values LOCALLY
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+          from datetime import datetime, timedelta, timezone
+          from urllib.parse import urlsplit
+          sys.path.insert(0, "browser-playwright")
+          import assistant
+          from playwright.sync_api import sync_playwright
+
+          job = "https://jobs.lever.co/uprightproject/49a0f0c2-b90d-41de-875e-7ac072715ef6"
+          target = job + "/apply"
+          fields = {
+              "full_name": "Synthetic Applicant",
+              "first_name": "Synthetic",
+              "last_name": "Applicant",
+              "email": "synthetic@example.invalid",
+              "phone": "+358401234567",
+              "location": "Helsinki",
+              "linkedin": "https://www.linkedin.com/in/synthetic",
+              "github": "https://github.com/example",
+              "cover_letter": "Synthetic CV-only browser QA, not an application.",
+          }
+          now = datetime.now(timezone.utc)
+          packet = {
+              "schema": assistant.SCHEMA,
+              "issued_at": now.isoformat(),
+              "expires_at": (now + timedelta(minutes=10)).isoformat(),
+              "application_url": job,
+              "company": "Upright Project",
+              "role_title": "Member of Technical Staff (Software)",
+              "workspace_id": "kit-" + "a" * 30,
+              "revision": 2,
+              "document_sha256": "b" * 64,
+              "cv_pdf_sha256": "c" * 64,
+              "cv_pdf_size": 200,
+              "fields": fields,
+              "privacy": {
+                  "approved_contact_only": True,
+                  "original_cv_included": False,
+                  "browser_form_fill_allowed_after_user_click": True,
+                  "employer_submit_allowed_without_new_approval": False,
+              },
+              "approved_fields_sha256": assistant._approved_fields_sha256(fields),
+          }
+          assistant.validate_packet(packet)
+          with sync_playwright() as playwright:
+              browser = playwright.chromium.launch(headless=True)
+              context = browser.new_context(accept_downloads=False)
+              page = context.new_page()
+              # The only external interaction is fetching PUBLIC form content.
+              # Browser-side POST/PATCH/DELETE are denied even before offline.
+              page.route("**/*", lambda route: (
+                  route.continue_() if route.request.method in {"GET", "HEAD", "OPTIONS"}
+                  else route.abort()
+              ))
+              page.goto(target, wait_until="domcontentloaded", timeout=45000)
+              page.locator("form input").first.wait_for(timeout=15000)
+              assert urlsplit(page.url).hostname == "jobs.lever.co"
+              original_rows = assistant.inspect_page(page)
+              # Location cannot retain a text-only value on actual Lever.
+              # Its manual city picker must not be falsely counted completed.
+              approved = {"full_name", "email", "phone", "linkedin"}
+              plan = [p for p in assistant.plan_fields(original_rows, packet)
+                      if p["key"] in approved]
+              keys = [item["key"] for item in plan]
+              assert set(keys) == approved, (
+                  "Real Lever form must plan only four stable ordinary fields. "
+                  "Dynamic location is applicant-manual."
+              )
+              assert "location" not in keys
+              # Read-only metadata diagnosis for a dynamic city picker.
+              for item in plan:
+                  if item["key"] != "location":
+                      continue
+                  for selector in assistant._candidate_selectors(item["row"]):
+                      locator = page.locator(selector)
+                      if locator.count() != 1:
+                          continue
+                      print("SP140_LEVER_LOCATION_WIDGET=" + json.dumps({
+                          "role": locator.get_attribute("role"),
+                          "aria_autocomplete": locator.get_attribute("aria-autocomplete"),
+                          "aria_controls_present": bool(locator.get_attribute("aria-controls")),
+                          "aria_haspopup": locator.get_attribute("aria-haspopup"),
+                          "autocomplete": locator.get_attribute("autocomplete"),
+                          "placeholder": locator.get_attribute("placeholder"),
+                      }, sort_keys=True))
+                      break
+              # CRITICAL: make the context network-offline BEFORE any value.
+              # After this point no dummy fields can reach the employer.
+              context.set_offline(True)
+              actual = assistant.fill_reviewed_page(page, packet, plan, original_rows)
+              local_matches = {}
+              for item in plan:
+                  row = item["row"]
+                  matching = []
+                  for css in assistant._candidate_selectors(row):
+                      loc = page.locator(css)
+                      if loc.count() == 1:
+                          matching.append(loc.input_value() == fields[item["key"]])
+                  local_matches[item["key"]] = any(matching)
+              print("SP141_REAL_EMPLOYER_OFFLINE_FILL=" + json.dumps({
+                  "employer": "Lever",
+                  "real_form_controls": len(original_rows),
+                  "planned_keys": keys,
+                  "filled": actual["filled"],
+                  "planned": actual["planned"],
+                  "matched_local_values": local_matches,
+                  "offline_before_any_fill": True,
+                  "employer_data_transmitted": False,
+                  "cv_uploaded": False,
+                  "submit_clicked": False,
+              }, sort_keys=True))
+              assert actual["submitted"] is False and actual["uploaded"] is False
+              assert actual["filled"] == actual["planned"], (
+                  "Existing engine did not fill all planned real DOM fields"
+              )
+              assert all(local_matches.values()), (
+                  "A real employer form did not retain a planned value locally"
+              )
+              context.close()
+              browser.close()
+          PY
