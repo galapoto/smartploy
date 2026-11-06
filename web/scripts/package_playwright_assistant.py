@@ -15,7 +15,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "browser-playwright"
 DEFAULT_OUTPUT = ROOT / "web/public/smartploy-playwright-assistant.zip"
-FILES = ("INSTALL.txt", "assistant.py", "bridge.py")
+FILES = ("INSTALL.txt", "assistant.py", "bridge.py", "start-smartploy-linux.sh")
 ZIP_TIMESTAMP = (2026, 10, 1, 0, 0, 0)
 MAX_SOURCE_BYTES = 100_000
 
@@ -146,6 +146,12 @@ def reviewed_files() -> dict[str, bytes]:
         or b"def main(" not in files["bridge.py"]
         or b"127.0.0.1" not in files["bridge.py"]
         or b"Playwright" not in files["INSTALL.txt"]
+        or not files["start-smartploy-linux.sh"].startswith(b"#!/bin/sh\\n")
+        or b"playwright==1.55.0" not in files["start-smartploy-linux.sh"]
+        or b'exec "$PY" "$BASE/bridge.py"' not in files["start-smartploy-linux.sh"]
+        or any(word in files["start-smartploy-linux.sh"] for word in (
+            b"sudo ", b"curl ", b"wget ", b"eval ", b"/bin/bash -c",
+        ))
     ):
         raise ValueError("The reviewed browser assistant safety entrypoints are missing")
     return files
@@ -166,7 +172,10 @@ def make_zip(output: Path) -> str:
             for name, data in sorted(entries.items()):
                 info = zipfile.ZipInfo(name, ZIP_TIMESTAMP)
                 info.create_system = 3
-                info.external_attr = 0o100644 << 16
+                info.external_attr = (
+                    0o100755 if name == "start-smartploy-linux.sh"
+                    else 0o100644
+                ) << 16
                 info.compress_type = zipfile.ZIP_STORED
                 archive.writestr(info, data)
         with zipfile.ZipFile(temp_path) as check:
