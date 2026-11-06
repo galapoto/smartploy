@@ -3,12 +3,22 @@ SmartPloy local Playwright form assistant (SP114)
 
 Preferred: connect once, fill from SmartPloy (applicant-local pairing)
 --------------------------------------------------------------------
-1. Extract SmartPloy's reviewed ZIP to your own computer. Verify checksum.
-   Requires desktop Python 3.11+ and Chromium; install once in a venv:
+1. Extract SmartPloy's reviewed ZIP to your own computer. Verify its
+   .sha256 sidecar. On desktop Linux, start with ONE local command inside
+   the extracted directory:
+      sh start-smartploy-linux.sh
+   Python 3.11+ is required. The launcher creates a local virtual environment,
+   asks BEFORE installing pinned Playwright 1.55.0 and asks separately BEFORE
+   downloading Chromium. It never uses sudo, a global Python install, your
+   normal Chrome profile, or a remotely started browser. On subsequent runs,
+   installed dependencies are reused. If your Linux distribution is missing
+   python3-venv or Chromium system dependencies, install them yourself.
+   For manual/other-OS setup in a Python virtual environment:
       python -m pip install playwright==1.55.0
       python -m playwright install chromium
-2. In that extracted directory, start the OPTIONAL local helper:
+2. Start or restart the OPTIONAL local helper on your own computer:
       python bridge.py
+   On Linux, the preceding sh launcher performs this start automatically.
    The terminal displays a temporary pairing code. Keep it private.
    The helper listens ONLY at http://127.0.0.1:48741 on your computer, not
    on SmartPloy's server or the public Internet. It never stores applicant
