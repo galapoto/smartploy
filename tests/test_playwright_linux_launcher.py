@@ -37,7 +37,7 @@ def test_sp139_launcher_is_posix_shell_and_does_not_start_without_python(tmp_pat
     empty_path = tmp_path / "no-executables"
     empty_path.mkdir()
     result = subprocess.run(
-        ["sh", str(SCRIPT)],
+        ["/bin/sh", str(SCRIPT)],
         env={"PATH": str(empty_path)},
         capture_output=True, text=True, timeout=5,
     )
