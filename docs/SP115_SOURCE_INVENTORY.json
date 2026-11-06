@@ -32,7 +32,7 @@
   "source_artifacts": [
     {
       "path": ".github/workflows/ci.yml",
-      "git_blob_sha1": "c0ec319ad2ebaaf921169d31c8d523ff0939034f"
+      "git_blob_sha1": "497d06f41129801212b305452a9d6342ade0c3ed"
     },
     {
       "path": "AGENTS.md",
