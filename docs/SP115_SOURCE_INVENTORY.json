@@ -96,7 +96,7 @@
     },
     {
       "path": "browser-playwright/assistant.py",
-      "git_blob_sha1": "e33b2938f8712aba37d51b8577b8ceaedca64165"
+      "git_blob_sha1": "747960f3e6d55dec1d1e87cc8aedbbaf16bedb4b"
     },
     {
       "path": "browser-playwright/bridge.py",
