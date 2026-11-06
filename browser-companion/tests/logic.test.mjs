@@ -136,6 +136,22 @@ test("SP140: real Lever required-star labels map safe fields, never sensitive co
   }
 });
 
+test("SP141: Lever city input stays manual after real-form offline fill failed retention", () => {
+  const rows = [
+    element({index:0,label:"Full name✱",name:"name",required:true}),
+    element({index:1,label:"Email✱",name:"email",type:"email",required:true}),
+    element({index:2,label:"Current location✱",name:"location",required:true}),
+  ];
+  const lever = validatePacket(packet(), job, validNow);
+  lever.fields.location = "Helsinki";
+  const planned = planFields(rows, lever);
+  assert.deepEqual(planned.actions.map(x => x.key), ["full_name", "email"]);
+  assert.ok(planned.unresolvedRequired.some(x => x.includes("location") && x.includes("manual")));
+  const generic = {...lever, application_url:"https://careers.example.org/jobs/analyst"};
+  const other = planFields(rows, generic);
+  assert.deepEqual(other.actions.map(x => x.key), ["full_name", "email", "location"]);
+});
+
 test("refuse bank, employer identity and legal consent fields", () => {
   for (const row of [
     element({label: "Company name"}),

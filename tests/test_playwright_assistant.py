@@ -72,6 +72,28 @@ def field(index, label, name, **overrides):
     return row
 
 
+def test_sp141_lever_location_picker_manual_after_real_offline_fill_proof():
+    """Real Lever's city value was cleared despite a successful .fill().
+
+    Do not transmit a false completion claim; preserve safe fields and keep
+    ordinary static location fields on other employers independently usable.
+    """
+    p = packet("https://jobs.lever.co/example/position")
+    p["fields"]["location"] = "Helsinki"
+    rows = [
+        field(0, "Full name✱", "name"),
+        field(1, "Email✱", "email", type="email"),
+        field(2, "Current location✱", "location", required=True),
+    ]
+    assert [x["key"] for x in assistant.plan_fields(rows, p)] == [
+        "full_name", "email",
+    ]
+    p["application_url"] = "https://careers.example.org/jobs/reporter"
+    assert [x["key"] for x in assistant.plan_fields(rows, p)] == [
+        "full_name", "email", "location",
+    ]
+
+
 def test_sp140_real_lever_unicode_required_markers_map_only_safe_fields():
     """Based on 6 Nov read-only Chromium inspection of a live Lever form.
 
