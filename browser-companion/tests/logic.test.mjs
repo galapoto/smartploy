@@ -121,6 +121,21 @@ test("strict contact mapping for English, Finnish and Swedish", () => {
   }
 });
 
+test("SP140: real Lever required-star labels map safe fields, never sensitive consent", () => {
+  const cases = [
+    [element({label: "Full name✱", name: "name", required: true}), "full_name"],
+    [element({label: "Email✱", name: "email", type: "email"}), "email"],
+    [element({label: "Phone ✱", name: "phone", type: "tel"}), "phone"],
+    [element({label: "LinkedIn URL✱", name: "links[linkedin]", type: "url"}), "linkedin"],
+    [element({label: "Visa sponsorship✱", autocomplete: "name"}), null],
+    [element({label: "Salary expectation✱", autocomplete: "name"}), null],
+    [element({label: "Company name✱", autocomplete: "name"}), null],
+  ];
+  for (const [row, safe] of cases) {
+    assert.equal(identifyField(row), safe, row.label);
+  }
+});
+
 test("refuse bank, employer identity and legal consent fields", () => {
   for (const row of [
     element({label: "Company name"}),
