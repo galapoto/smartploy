@@ -312,7 +312,7 @@
     },
     {
       "path": "smartploy/complete_letter.py",
-      "git_blob_sha1": "1bdaa202ebc6141e183ac11532badae9b221a061"
+      "git_blob_sha1": "0c1b8b4898beb267d95915f259df1adcabced320"
     },
     {
       "path": "smartploy/local_drafting.py",
