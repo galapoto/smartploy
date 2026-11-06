@@ -172,4 +172,33 @@ describe("SP133 source-faithful profile-to-CV draft", () => {
     expect(cvHasApplicantContent(result.model)).toBe(false);
     expect(result.skipped).toBe(2);
   });
+  it("keeps long and multiline approved career evidence readable without invented titles", () => {
+    const longExperience = "Built a reporting automation workflow for internal analysts using Python and SQL, with a dashboard review stage and documented data quality checks.";
+    const multilineProject = "Reporting pilot\nBuilt a Power BI dashboard from approved source data.\nReviewed the results with stakeholders.";
+    const generated = draftStructuredCVFromApprovedFacts([
+      {fact_type: "identity", value: "Test Applicant", approved: true},
+      {fact_type: "experience", value: longExperience, approved: true},
+      {fact_type: "project", value: multilineProject, approved: true},
+      {fact_type: "skill", value: "Python", approved: true},
+      {fact_type: "experience", value: "Invented senior management", approved: false},
+    ]);
+    const work = generated.model.sections.find(section => section.kind === "experience")!.entries[0];
+    const project = generated.model.sections.find(section => section.kind === "projects")!.entries[0];
+    expect(work.title).toBe("");
+    expect(work.details).toBe(longExperience);
+    expect(project.title).toBe("Reporting pilot");
+    expect(project.details).toBe(
+      "Built a Power BI dashboard from approved source data.\nReviewed the results with stakeholders."
+    );
+    const rendered = renderStructuredCV(generated.model);
+    expect(rendered).toContain(longExperience);
+    expect(rendered).toContain("Reporting pilot");
+    expect(rendered).not.toContain("Invented senior management");
+    const roundTrip = parseStructuredCV(rendered);
+    expect(roundTrip?.sections.find(section => section.kind === "experience")?.entries[0].details)
+      .toBe(longExperience);
+    expect(roundTrip?.sections.find(section => section.kind === "projects")?.entries[0].details)
+      .toBe(project.details);
+  });
+
 });

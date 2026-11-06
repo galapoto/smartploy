@@ -224,6 +224,25 @@ export type CVApprovedFact = {
   fact_type: string; value: string; approved: boolean;
 };
 
+/** Preserve approved work evidence as readable prose instead of a giant bold title.
+ * Only an explicit short first line becomes an entry heading; the remainder
+ * stays verbatim in details. Never infer role, employer, period or results.
+ */
+function entryFromApprovedFact(value: string): CVEntry {
+  const source = value.replace(/\r\n?/g, "\n").trim();
+  const lines = source.split("\n");
+  if (lines.length > 1) {
+    const heading = lines[0].trim();
+    const details = lines.slice(1).join("\n").trim();
+    if (heading && heading.length <= 100 && details) {
+      return {...emptyCVEntry(), title: heading, details};
+    }
+  }
+  return source.length > 100 || source.includes("\n")
+    ? {...emptyCVEntry(), details: source}
+    : {...emptyCVEntry(), title: source};
+}
+
 export function draftStructuredCVFromApprovedFacts(
   facts: ReadonlyArray<CVApprovedFact>,
 ): {model: StructuredCV; included: number; skipped: number; missingName: boolean} {
@@ -273,9 +292,7 @@ export function draftStructuredCVFromApprovedFacts(
     if (!items.length) continue;
     cv.sections.push({
       id: id("cv-section"), kind: section,
-      entries: items.map(value => ({
-        ...emptyCVEntry(), title: value,
-      })),
+      entries: items.map(entryFromApprovedFact),
     });
     included += items.length;
   }
