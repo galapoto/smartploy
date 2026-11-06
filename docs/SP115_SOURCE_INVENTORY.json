@@ -40,7 +40,7 @@
     },
     {
       "path": "browser-companion/logic.mjs",
-      "git_blob_sha1": "eaac608c09943d4aff3c2f13d9c5ca0af244c0f2"
+      "git_blob_sha1": "c6905e51775d10c27ca73e5d229b2ca7addb938d"
     },
     {
       "path": "browser-companion/manifest.json",
@@ -76,7 +76,7 @@
     },
     {
       "path": "browser-companion/tests/logic.test.mjs",
-      "git_blob_sha1": "2c8d34b42db4af8de1b0d4bf710d7b34788e400a"
+      "git_blob_sha1": "0c17961532418ae584ca9d0228261931907145bf"
     },
     {
       "path": "browser-companion/tests/page-question-sync.test.mjs",
@@ -96,7 +96,7 @@
     },
     {
       "path": "browser-playwright/assistant.py",
-      "git_blob_sha1": "25a4f821e322eeceaa951df938485a238bc1b73a"
+      "git_blob_sha1": "e33b2938f8712aba37d51b8577b8ceaedca64165"
     },
     {
       "path": "browser-playwright/bridge.py",
@@ -208,7 +208,7 @@
     },
     {
       "path": "tests/test_playwright_assistant.py",
-      "git_blob_sha1": "a35c5d66ecebd23c587473173dc5321fc453dd76"
+      "git_blob_sha1": "0d83a7ce96cace7bb38b38381ca777996ec35a3c"
     },
     {
       "path": "tests/test_private_saved_jobs.py",
