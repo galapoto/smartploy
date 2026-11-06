@@ -328,11 +328,11 @@
     },
     {
       "path": "web/src/structured_cv.ts",
-      "git_blob_sha1": "25a285ce3d6831caa7abe9830d5e670b9d22b492"
+      "git_blob_sha1": "04a04bc5758b8bfaa5e3e25c14d16c83ee11208d"
     },
     {
       "path": "web/src/structured_cv.test.ts",
-      "git_blob_sha1": "e0c96ad61463906edddfae734517be04fffd8b52"
+      "git_blob_sha1": "042f6c0eafcaacb1749f402db9e2e114a1ee88f3"
     },
     {
       "path": "web/src/MasterCVEditor.tsx",
