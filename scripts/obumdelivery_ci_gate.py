@@ -69,6 +69,35 @@ def current() -> dict:
         if source["source_sha"] != expected:
             raise AdmissionDenied("MANUAL_SOURCE_SHA_MISMATCH")
         source["expected_review_sha"] = expected
+    elif event == "pull_request":
+        # FEATURE-FIRST-001: native review of an *untrusted* feature PR must
+        # never inherit release approval, privileged runner flags or secrets.
+        # These are built-in Woodpecker metadata, independent of Git history.
+        # Fork PR execution additionally requires Woodpecker's own operator
+        # approval policy; product source alone cannot commission that policy.
+        if (
+            os.environ.get("CI_REPO_DEFAULT_BRANCH") != "main"
+            or os.environ.get("CI_COMMIT_BRANCH") != "main"
+            or os.environ.get("CI_COMMIT_TARGET_BRANCH") != "main"
+        ):
+            raise AdmissionDenied("PR_MAIN_TARGET_REQUIRED")
+        number = os.environ.get("CI_COMMIT_PULL_REQUEST", "")
+        if re.fullmatch(r"[1-9][0-9]{0,8}", number) is None:
+            raise AdmissionDenied("PR_NUMBER_REQUIRED")
+        for variable in (
+            "CI_REPO_TRUSTED_NETWORK",
+            "CI_REPO_TRUSTED_VOLUMES",
+            "CI_REPO_TRUSTED_SECURITY",
+        ):
+            if os.environ.get(variable, "").lower() != "false":
+                raise AdmissionDenied("PR_REQUIRES_UNTRUSTED_RUNNER:" + variable)
+        source.update({
+            "event": "pull_request",
+            "pull_request": int(number),
+            "target_branch": "main",
+            "untrusted_ci_only": True,
+            "independent_review_verified": False,
+        })
     elif event != "push":
         raise AdmissionDenied("UNSUPPORTED_CI_EVENT")
     return source

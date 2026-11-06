@@ -123,9 +123,64 @@ def test_manual_does_not_trust_forged_woodpecker_checkout_claim(monkeypatch):
         _simulate_woodpecker_checkout(monkeypatch, "manual", SHA, claimed="c" * 40)
 
 
+def test_pr_to_main_in_untrusted_runner_is_source_ci_only(monkeypatch):
+    for name, value in {
+        "CI_REPO_DEFAULT_BRANCH": "main",
+        "CI_COMMIT_BRANCH": "main",
+        "CI_COMMIT_TARGET_BRANCH": "main",
+        "CI_COMMIT_PULL_REQUEST": "289",
+        "CI_REPO_TRUSTED_NETWORK": "false",
+        "CI_REPO_TRUSTED_VOLUMES": "false",
+        "CI_REPO_TRUSTED_SECURITY": "false",
+    }.items():
+        monkeypatch.setenv(name, value)
+    result = _simulate_woodpecker_checkout(monkeypatch, "pull_request")
+    assert result["event"] == "pull_request"
+    assert result["pull_request"] == 289
+    assert result["target_branch"] == "main"
+    assert result["source_sha"] == SHA
+    assert result["untrusted_ci_only"] is True
+    assert result["independent_review_verified"] is False
+    assert result["release_gate"] == "HOLD"
+    assert result["release_approved"] is False
+    assert result["employer_actions_authorized"] is False
+    assert "expected_review_sha" not in result
+
+
+@pytest.mark.parametrize("change,reason", [
+    ({"CI_REPO_DEFAULT_BRANCH": "dev"}, "PR_MAIN_TARGET_REQUIRED"),
+    ({"CI_COMMIT_BRANCH": "dev"}, "PR_MAIN_TARGET_REQUIRED"),
+    ({"CI_COMMIT_TARGET_BRANCH": "dev"}, "PR_MAIN_TARGET_REQUIRED"),
+    ({"CI_COMMIT_TARGET_BRANCH": ""}, "PR_MAIN_TARGET_REQUIRED"),
+    ({"CI_COMMIT_PULL_REQUEST": ""}, "PR_NUMBER_REQUIRED"),
+    ({"CI_COMMIT_PULL_REQUEST": "0"}, "PR_NUMBER_REQUIRED"),
+    ({"CI_COMMIT_PULL_REQUEST": "not-a-number"}, "PR_NUMBER_REQUIRED"),
+    ({"CI_COMMIT_PULL_REQUEST": "-1"}, "PR_NUMBER_REQUIRED"),
+    ({"CI_REPO_TRUSTED_NETWORK": "true"}, "PR_REQUIRES_UNTRUSTED_RUNNER"),
+    ({"CI_REPO_TRUSTED_VOLUMES": "true"}, "PR_REQUIRES_UNTRUSTED_RUNNER"),
+    ({"CI_REPO_TRUSTED_SECURITY": "true"}, "PR_REQUIRES_UNTRUSTED_RUNNER"),
+    ({"CI_REPO_TRUSTED_SECURITY": ""}, "PR_REQUIRES_UNTRUSTED_RUNNER"),
+])
+def test_pr_untrusted_source_admission_rejects_unsafe_metadata(monkeypatch, change, reason):
+    vars = {
+        "CI_REPO_DEFAULT_BRANCH": "main",
+        "CI_COMMIT_BRANCH": "main",
+        "CI_COMMIT_TARGET_BRANCH": "main",
+        "CI_COMMIT_PULL_REQUEST": "289",
+        "CI_REPO_TRUSTED_NETWORK": "false",
+        "CI_REPO_TRUSTED_VOLUMES": "false",
+        "CI_REPO_TRUSTED_SECURITY": "false",
+        **change,
+    }
+    for name, value in vars.items():
+        monkeypatch.setenv(name, value)
+    with pytest.raises(AdmissionDenied, match=reason):
+        _simulate_woodpecker_checkout(monkeypatch, "pull_request")
+
+
 def test_unsupported_woodpecker_event_is_not_qualified(monkeypatch):
     with pytest.raises(AdmissionDenied, match="UNSUPPORTED_CI_EVENT"):
-        _simulate_woodpecker_checkout(monkeypatch, "pull_request", SHA)
+        _simulate_woodpecker_checkout(monkeypatch, "pull_request_closed", SHA)
 
 
 def test_deliberate_negative_probe_still_fails_before_manual_pin(monkeypatch):
@@ -150,4 +205,8 @@ def test_native_woodpecker_pipeline_executes_exact_negative_control_before_tests
         'python3 -m pip install --no-cache-dir -e ".[dev]"'
     )
     assert "PRODUCTION_RELEASE_GATE_HOLD" in pipeline
+    assert "  - event: pull_request" in pipeline
+    assert "    repo: galapoto/smartploy" in pipeline
+    assert "    branch: main" in pipeline
     assert "docker compose up" not in pipeline
+    assert "from_secret:" not in pipeline
