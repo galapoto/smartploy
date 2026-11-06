@@ -248,10 +248,13 @@ def validate_packet(raw: Any, *, now: datetime | None = None) -> dict[str, Any]:
 
 
 def _tidy(value: Any) -> str:
-    return re.sub(
-        r"\s+", " ",
-        re.sub(r"[()_.:*/\-]+", " ", str(value or "").lower()),
-    ).strip()
+    """Normalize human labels without mistaking required markers for words."""
+    # Real Lever form labels may contain Unicode required stars (✱).
+    # Only the *label-to-safe-field* matcher uses this normalized text;
+    # protected/sensitive metadata rejection still runs first.
+    normalized = unicodedata.normalize("NFKC", str(value or "")).lower()
+    return re.sub(r"[\W_]+", " ", normalized, flags=re.UNICODE).strip()
+
 
 
 def _unsafe_metadata(row: dict[str, Any]) -> bool:
