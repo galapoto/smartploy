@@ -228,7 +228,7 @@
     },
     {
       "path": "web/browser-tests/onboarding.e2e.ts",
-      "git_blob_sha1": "37cd6a5eddf9d73607b64830280a57264219c085"
+      "git_blob_sha1": "dc4664752b270b1edbbbdf4b8704f9d1c8eb18c8"
     },
     {
       "path": "web/scripts/package_companion.py",
@@ -244,11 +244,11 @@
     },
     {
       "path": "web/src/App.test.tsx",
-      "git_blob_sha1": "69ab1e9f3b393dc86e22b5d20d62abaaa03c5caf"
+      "git_blob_sha1": "1d38ae1b2e924810035c0af1a6880e35f47df991"
     },
     {
       "path": "web/src/App.tsx",
-      "git_blob_sha1": "baeb89afcc6092ebbcf3228d1e589c2b996ef865"
+      "git_blob_sha1": "05820c44c4fab47ef8ad033ff5235010c9c66bf5"
     },
     {
       "path": "web/src/application-profile.css",
@@ -296,7 +296,7 @@
     },
     {
       "path": "web/src/main.tsx",
-      "git_blob_sha1": "f2f81b3469d613dadcd14c7b6a9d16abf0804f97"
+      "git_blob_sha1": "ccf3904cc71d8196f7ba80e1edfde5b2c1931f9e"
     },
     {
       "path": "web/src/sp120-assisted-flow.css",
