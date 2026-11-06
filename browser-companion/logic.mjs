@@ -161,9 +161,10 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
 }
 
 function tidy(raw) {
-  return String(raw || "").toLowerCase()
-    .replace(/[()_.:*/\-]+/g, " ")
-    .replace(/\s+/g, " ").trim();
+  // Real Lever labels use Unicode required markers (✱), not only ASCII *.
+  // Preserve Unicode letters and digits; reject unsafe fields BEFORE matching.
+  return String(raw || "").normalize("NFKC").toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 // Ordinary contact autofill must not disguise a salary, visa, legal or
