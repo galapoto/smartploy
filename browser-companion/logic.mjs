@@ -229,11 +229,20 @@ export function planFields(elements, packet) {
   }
   const named = elements.map((row) => ({...row, key: identifyField(row)}));
   const hasCoverLetterField = named.some((row) => row.key === "cover_letter");
+  // Real Lever "Current location" clears plain .fill() inputs until the
+  // applicant selects an employer-side city suggestion. Treat as manual,
+  // not a completed field. Mirror the first-party Python Playwright guard.
+  const leverLocationRequiresManualSelection =
+    /^https:\/\/jobs\.(?:eu\.)?lever\.co\//.test(packet.application_url || "");
   const planned = [];
   const unresolvedRequired = [];
   const skippedUploads = [];
   for (const row of named) {
     const label = text(String(row.label || row.name || row.id || "Unlabelled field"), 150);
+    if (leverLocationRequiresManualSelection && row.key === "location") {
+      unresolvedRequired.push(label + " (select an employer location manually)");
+      continue;
+    }
     if (row.type === "file") {
       skippedUploads.push(label);
       if (row.required && !row.hasValue) unresolvedRequired.push(label + " (file upload)");
