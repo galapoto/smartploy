@@ -35,8 +35,13 @@ export default function LocalPlaywrightAssist(props: {
   observationEnabled?: boolean;
   onReceiptImported?: (receipt: BrowserObservedReceipt) => void;
   autoInspectOnPair?: boolean;
+  /** Only explicit applicant consent can arm one-time ordinary-field filling. */
+  autoFillOnPair?: boolean;
 }) {
   const [code, setCode] = useState("");
+  const [autoFillAfterInspect, setAutoFillAfterInspect] = useState(
+    props.autoFillOnPair === true
+  );
   const [phase, setPhase] = useState<Phase>("not-paired");
   const [fields, setFields] = useState<LocalBridgeField[]>([]);
   const [planId, setPlanId] = useState("");
@@ -163,14 +168,52 @@ export default function LocalPlaywrightAssist(props: {
     }
   }
 
+  /** A single applicant-approved fill after a fresh, exact-job inspection.
+   * Never retries a browser write, uploads a CV or submits the application.
+   */
+  async function fillAfterApprovedInspection(inspected: LocalBridgeInspected, token: string) {
+    if (!inspected.approved_fields.length || !inspected.plan_id ||
+        !token || sessionToken.current !== token) return;
+    // The window may have been edited or its OIDC identity changed while
+    // Chromium opened and inspected the real employer page. Revalidate NOW.
+    await verifyCurrentDraft();
+    await verifyAccount();
+    if (!mounted.current || sessionToken.current !== token) return;
+    // A timeout or browser crash AFTER this point is an uncertain write.
+    // Never expose an automatic retry action, even for partial fills.
+    setPhase("uncertain");
+    const result = await callLocalPlaywrightBridge<LocalBridgeFilled>(
+      "fill", {plan_id: inspected.plan_id, confirmation: "FILL REVIEWED FIELDS"},
+      {token, expectedStage: "filled"},
+    );
+    await verifyAccount();
+    if (!mounted.current || sessionToken.current !== token) return;
+    setPhase("filled");
+    setFeedback("Visible AutoApply filled " + result.filled + " of " +
+      result.planned + " reviewed ordinary employer fields once. " +
+      (result.stopped_on_change
+        ? "The employer form changed; complete the remaining fields yourself. "
+        : "") +
+      "Review the visible employer form, approve CV attachment separately, " +
+      "and click the employer Submit button yourself. No application was submitted.");
+  }
+
   function startLocalBrowser() {
     if (phase !== "not-paired" || !CODE.test(code.trim()) || !props.packetText) return;
-    if (!window.confirm(
-      "Send the currently reviewed SmartPloy packet (approved contact details " +
-      "and cover letter) ONLY to the helper on this computer at 127.0.0.1? " +
-      "The helper opens the exact employer posting in visible Chromium. " +
-      "The employer website may receive data during form filling, but this step " +
-      "does not fill fields, upload a CV or submit an application."
+    const fillAfterPair = props.autoInspectOnPair === true &&
+      props.autoFillOnPair === true && autoFillAfterInspect;
+    if (!window.confirm(fillAfterPair
+      ? "Start visible AutoApply for this exact saved employer job? The local " +
+        "Chromium helper will open the page, inspect its fields and fill ONLY " +
+        "approved ordinary contact/letter fields ONCE when the job form is " +
+        "ready. Some employer websites transmit data on each input. " +
+        "This does NOT attach the CV or click Submit. You must review every " +
+        "value and personally submit. Continue?"
+      : "Send the currently reviewed SmartPloy packet (approved contact details " +
+        "and cover letter) ONLY to the helper on this computer at 127.0.0.1? " +
+        "The helper opens the exact employer posting in visible Chromium. " +
+        "The employer website may receive data during form filling, but this step " +
+        "does not fill fields, upload a CV or submit an application."
     )) return;
     void guarded(async () => {
       let packet: unknown;
@@ -236,6 +279,10 @@ export default function LocalPlaywrightAssist(props: {
         setCvAttachment(inspected.cv_attachment);
         setCvAttached(false); setCvAttachAttempted(false);
         setPhase("inspected");
+        if (fillAfterPair && inspected.approved_fields.length) {
+          await fillAfterApprovedInspection(inspected, response.token);
+          return;
+        }
         setFeedback(inspected.approved_fields.length
           ? "Employer form ready. Review the " + inspected.approved_fields.length +
             " detected ordinary field(s), then click Fill to watch Chromium complete them. " +
@@ -258,6 +305,13 @@ export default function LocalPlaywrightAssist(props: {
     // Re-inspection is read-only; never permit it after any write or upload.
     if (!["opened", "inspected"].includes(phase) || !sessionToken.current ||
         busy || inFlight.current || questionAttempted || cvAttachAttempted) return;
+    const autoFillAfterReinspect = props.autoInspectOnPair === true &&
+      props.autoFillOnPair === true && autoFillAfterInspect;
+    if (autoFillAfterReinspect && !window.confirm(
+      "Reinspect the visible employer form and fill reviewed ordinary fields " +
+      "ONCE if a safe match is found? Inputs may immediately transmit to the " +
+      "employer. No CV upload or final Submit will occur."
+    )) return;
     if (questionAnswers.some(answer => answer.trim()) &&
         !window.confirm("Reinspect the employer form? Unsaved question answers " +
           "in this SmartPloy panel will be cleared. Nothing will be submitted.")) return;
@@ -286,6 +340,10 @@ export default function LocalPlaywrightAssist(props: {
       setCvAttachment(response.cv_attachment);
       setCvAttached(false); setCvAttachAttempted(false);
       setPhase("inspected");
+      if (autoFillAfterReinspect && response.approved_fields.length) {
+        await fillAfterApprovedInspection(response, sessionToken.current);
+        return;
+      }
       setFeedback(response.approved_fields.length
         ? "Detected " + response.approved_fields.length +
           " safe field(s) on the current form. Check them, then click Fill once. " +
@@ -645,6 +703,14 @@ export default function LocalPlaywrightAssist(props: {
     {!trustedPage ? <p role="alert">This origin cannot connect to your local Playwright helper.
       Use the Chrome companion instead.</p> : null}
     {phase === "not-paired" ? <div className="local-playwright-actions">
+      {props.autoFillOnPair ? <label className="local-playwright-remember">
+        <input type="checkbox" checked={autoFillAfterInspect}
+          disabled={!props.enabled || busy}
+          onChange={(event) => setAutoFillAfterInspect(event.target.checked)} />
+        When this exact employer form is ready, fill my approved ordinary fields
+        once after I confirm. Fields may transmit immediately to the employer;
+        CV attachment and final Submit still require my separate approval.
+      </label> : null}
       <label htmlFor="smartploy-local-playwright-code">Temporary local pairing code
         <input id="smartploy-local-playwright-code" type="password"
           autoComplete="off" spellCheck={false} value={code}
@@ -654,7 +720,10 @@ export default function LocalPlaywrightAssist(props: {
       <button type="button" className="navy-btn"
         disabled={!props.enabled || busy || !trustedPage || !CODE.test(code.trim())}
         onClick={startLocalBrowser}>
-        {busy ? "Opening visible Chromium…" : "Start visible AutoApply (open & inspect)"}
+        {busy ? "Opening visible Chromium…" :
+          props.autoFillOnPair && autoFillAfterInspect
+            ? "Start AutoApply · open, inspect & fill once"
+            : "Start visible AutoApply (open & inspect)"}
       </button>
     </div> : null}
     {["opened", "inspected"].includes(phase) && !questionAttempted &&
