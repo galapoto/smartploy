@@ -87,6 +87,15 @@ steps:
           npm run build
           npm run test:e2e
         )
+      # The last native regression stopped inside web/ after e2e failed,
+      # hiding the real error behind a missing extension module. Catch any
+      # future wrong-working-directory result BEFORE checking root modules.
+      - |
+        set -eu
+        test -f web/package.json
+        test -f browser-companion/logic.mjs
+        test -f browser-playwright/assistant.py
+        echo "OBUMDELIVERY_NATIVE_BROWSER_REPO_ROOT_VERIFIED"
       - node --check browser-companion/logic.mjs
       - node --check browser-companion/popup.mjs
       - node --check browser-companion/upload.mjs
