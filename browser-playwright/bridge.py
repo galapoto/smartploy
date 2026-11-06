@@ -63,8 +63,13 @@ class ChromiumActor:
                 self.playwright, self.profile.name
             )
             page = self.context.pages[0] if self.context.pages else self.context.new_page()
-            page.goto(packet["application_url"], wait_until="domcontentloaded",
-                      timeout=45000)
+            # SP145: the reviewed saved job is already authorized for a
+            # visible GET. Lever/Ashby show the actual same-job application
+            # on a distinct exact hosted ATS path. Reuse the original strict
+            # URL validator; no guessed clicks, cross-origin navigation or
+            # employer submission is authorized.
+            target = assistant.reviewed_initial_form_url(packet["application_url"])
+            page.goto(target, wait_until="domcontentloaded", timeout=45000)
         except Exception:
             self.close()
             raise
