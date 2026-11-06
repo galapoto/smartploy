@@ -335,7 +335,8 @@ h1, h2, h3, h4, p { margin-top: 0; }
   .smartploy-app { display: block; }
   .sidebar { position: fixed; inset: 0 auto 0 0; width: min(280px,80vw); height: 100vh; min-height: 0; transform: translateX(-101%); transition: transform .18s ease; box-shadow: 16px 0 50px #10294a1e; }
   .sidebar.open { transform: translateX(0); }
-  .sidebar-scrim.visible { display: block; position: fixed; inset: 0; background: #101c33a8; z-index: 24; border: 0; }
+  /* Keep the dismissal scrim OUTSIDE the open drawer. Its centre must be clickable on narrow screens. */
+  .sidebar-scrim.visible { display: block; position: fixed; inset: 0; left: min(280px,80vw); background: #101c33a8; z-index: 24; border: 0; }
   .menu-toggle { display: inline-flex; }
   .header-search { width: min(100%, 420px); }
   .header-country { display: none; }
