@@ -12,9 +12,9 @@ from dataclasses import dataclass
 import re
 from typing import Literal
 
-from .domain import JobCandidate
+from .domain import JobCandidate, normalize_identity_text
 from .profile import CandidateProfile, ProfileFact
-from .scoring import score_candidate
+from .scoring import ALIASES, score_candidate
 
 Language = Literal["fi", "en"]
 
@@ -28,6 +28,49 @@ _PRIORITY = {
     "language": 6,
 }
 _MAX_FACT_LENGTH = 260
+
+# Canonical labels only: employer descriptions are untrusted and their original
+# free-text wording never enters the letter via the relevance hook.
+_FOCUS_LABELS = (
+    ("python", "Python"), ("sql", "SQL"), ("power_bi", "Power BI"),
+    ("excel", "Excel"), ("azure", "Azure"), ("aws", "AWS"),
+    ("gcp", "Google Cloud"), ("robot_framework", "Robot Framework"),
+    ("testing", "software testing"), ("etl", "data pipelines"),
+    ("data_analysis", "data analysis"), ("business_analysis", "business analysis"),
+    ("api", "API development"), ("healthcare", "healthcare"),
+    ("compliance", "regulatory compliance"),
+)
+
+
+def _has_skill_alias(text: str, concept: str) -> bool:
+    """Exact normalized whole-token match, not Pythonic→Python or NoSQL→SQL."""
+    normalized = " " + normalize_identity_text(text) + " "
+    return any(
+        " " + normalize_identity_text(alias) + " " in normalized
+        for alias in ALIASES[concept]
+    )
+
+
+def _shared_skill_focus(candidate: JobCandidate, used: list[ProfileFact]) -> list[str]:
+    """Mention at most three *verified overlapping* tool names in plain prose.
+
+    The applicant must have explicitly approved a matching skill (not only
+    experience, a preference, or unreviewed CV text), and the same skill must
+    appear in the actual vacancy. Never quote job instructions or imply a
+    qualification from a partial token or model guess.
+    """
+    applicant_skills = [fact.value for fact in used if fact.fact_type == "skill"]
+    posting = " ".join((
+        candidate.job.role_title, candidate.job.description,
+        *candidate.job.requirements, *candidate.job.nice_to_have,
+    ))
+    return [
+        label for concept, label in _FOCUS_LABELS
+        if _has_skill_alias(posting, concept)
+        and any(_has_skill_alias(value, concept) for value in applicant_skills)
+    ][:3]
+
+
 
 
 @dataclass(frozen=True)
@@ -68,8 +111,8 @@ def _sentence(kind: str, values: list[str], language: Language) -> str:
     label = {
         "en": {
             "skill": "My relevant skills include",
-            "experience": "My professional experience includes",
-            "project": "My project work includes",
+            "experience": "Relevant professional experience:",
+            "project": "Relevant project work:"
             "certification": "My certifications include",
             "education": "My educational background includes",
             "domain": "My areas of expertise include",
@@ -77,8 +120,8 @@ def _sentence(kind: str, values: list[str], language: Language) -> str:
         },
         "fi": {
             "skill": "Tehtävään liittyvään osaamiseeni kuuluu",
-            "experience": "Työkokemukseeni kuuluu",
-            "project": "Olen työskennellyt projekteissa, joihin kuuluu",
+            "experience": "Tehtävään liittyvää työkokemusta:",
+            "project": "Tehtävään liittyviä projekteja:"
             "certification": "Sertifikaatteihini kuuluu",
             "education": "Koulutukseeni kuuluu",
             "domain": "Erityisosaamiseeni kuuluu",
@@ -139,6 +182,8 @@ def compose_completed_letter(
     role = _display(candidate.job.role_title, "the advertised role" if language == "en" else "avoin tehtävä")
     company = _display(candidate.job.company, "your organisation" if language == "en" else "organisaationne")
 
+    shared_focus = _shared_skill_focus(candidate, used)
+
     missing: list[str] = []
     if not used:
         missing.append(
@@ -175,8 +220,11 @@ def compose_completed_letter(
         paragraphs = [
             "Hei rekrytointitiimi,",
             f"Haen tehtävää {role} organisaatiossa {company}. "
-            "Haluaisin hyödyntää osaamistani tässä tehtävässä ja "
-            "kehittää sitä osana tiimiänne.",
+            + (f"Tehtäväkuvauksessa mainitaan {_join(shared_focus, 'fi')}, "
+               "jotka kuuluvat osaamiseeni."
+               if shared_focus else
+               "Haluaisin hyödyntää tehtävään liittyvää osaamistani "
+               "ja kehittää sitä osana tiimiänne."),
         ]
         if skills:
             paragraphs.append(skills)
@@ -194,8 +242,11 @@ def compose_completed_letter(
         paragraphs = [
             "Dear Hiring Team,",
             f"I am applying for the {role} position at {company}. "
-            "I am interested in the opportunity to put my relevant "
-            "background to work and continue developing with your team.",
+            + (f"The posting mentions {_join(shared_focus, 'en')}, "
+               "which are among the skills I can offer."
+               if shared_focus else
+               "I would welcome the opportunity to apply my relevant "
+               "background to your team's work."),
         ]
         if skills:
             paragraphs.append(skills)
@@ -218,6 +269,7 @@ def compose_completed_letter(
         missing_information=tuple(missing),
         review_notes=(
             "Only approved facts matched to the job are quoted. No achievements, years, or employer interest were invented.",
+            "Named skill links appear only when the same known skill is present in both the employer posting and an applicant-approved matched skill fact.",
             "For a more distinctive letter, add a verified project outcome and your personal reason for applying.",
             "Review, edit and explicitly save before using this letter. No employer has been contacted.",
         ),
