@@ -146,7 +146,7 @@ def reviewed_files() -> dict[str, bytes]:
         or b"def main(" not in files["bridge.py"]
         or b"127.0.0.1" not in files["bridge.py"]
         or b"Playwright" not in files["INSTALL.txt"]
-        or not files["start-smartploy-linux.sh"].startswith(b"#!/bin/sh\\n")
+        or not files["start-smartploy-linux.sh"].startswith(b"#!/bin/sh\n")
         or b"playwright==1.55.0" not in files["start-smartploy-linux.sh"]
         or b'exec "$PY" "$BASE/bridge.py"' not in files["start-smartploy-linux.sh"]
         or any(word in files["start-smartploy-linux.sh"] for word in (
