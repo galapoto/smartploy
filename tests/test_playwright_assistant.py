@@ -433,17 +433,17 @@ def test_sp145_exact_ats_first_navigation(posting, first_url):
 
 @pytest.mark.parametrize("untrusted", [
     "http://jobs.lever.co/example/position",
-    "https://evil.invalid/company/job",
-    "https://jobs.lever.co.evil.invalid/example/position",
+    "https://careers.evil-example.org/company/job",
+    "https://jobs.lever.co.attacker.example.org/example/position",
     "https://jobs.lever.co/example/position#fragment",
     "https://jobs.lever.co:8443/example/position",
 ])
 def test_sp145_no_untrusted_direct_ats_form_navigation(untrusted):
     """The shortcut never relaxes HTTPS or exact supported host policy."""
-    if untrusted == "https://evil.invalid/company/job":
+    if untrusted == "https://careers.evil-example.org/company/job":
         assert assistant.reviewed_initial_form_url(untrusted) == untrusted
         return
-    if untrusted == "https://jobs.lever.co.evil.invalid/example/position":
+    if untrusted == "https://jobs.lever.co.attacker.example.org/example/position":
         assert assistant.reviewed_initial_form_url(untrusted) == untrusted
         return
     with pytest.raises(assistant.PacketError):
