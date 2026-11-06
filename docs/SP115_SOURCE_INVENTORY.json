@@ -104,7 +104,7 @@
     },
     {
       "path": "browser-playwright/INSTALL.txt",
-      "git_blob_sha1": "359a63098b86f7892b5f75350cd32b8a98e8c4ad"
+      "git_blob_sha1": "d22a23e3073da55a4b12283eafd4d04ce243f789"
     },
     {
       "path": "deploy/personal/scripts/deploy.sh",
@@ -148,7 +148,7 @@
     },
     {
       "path": "scripts/verify_sp115_integrated_source.py",
-      "git_blob_sha1": "dc4ddf776f71b193ba77b5026f89899d83fc5dd4"
+      "git_blob_sha1": "b9bdcb0a58d9161f228b9f6c4f793d09a5dab884"
     },
     {
       "path": "smartploy/account_erasure.py",
@@ -208,7 +208,7 @@
     },
     {
       "path": "tests/test_playwright_assistant.py",
-      "git_blob_sha1": "67667b028732d843b6495e2f2bcdc80b6d7ae51f"
+      "git_blob_sha1": "a35c5d66ecebd23c587473173dc5321fc453dd76"
     },
     {
       "path": "tests/test_private_saved_jobs.py",
@@ -216,7 +216,7 @@
     },
     {
       "path": "tests/test_sp115_integrated_source.py",
-      "git_blob_sha1": "74fb63a6a8ff30befa35f743ac0df1483dbba1ff"
+      "git_blob_sha1": "85993c39c4e0c30ea77e56d7c92b24f3bf4e26d6"
     },
     {
       "path": "tests/test_sp120_private_assisted.py",
@@ -236,7 +236,7 @@
     },
     {
       "path": "web/scripts/package_playwright_assistant.py",
-      "git_blob_sha1": "0f62afbb74da53f8d20a335bc4a9abdd0b1c6846"
+      "git_blob_sha1": "490b0d08fad33375819af926e60ddfb16f6c23e0"
     },
     {
       "path": "web/src/api.ts",
@@ -276,7 +276,7 @@
     },
     {
       "path": "web/src/ApplicationStudio.tsx",
-      "git_blob_sha1": "2367413bf85454d0bb25779cbb799a3b6250c883"
+      "git_blob_sha1": "dc112f8db54c8a97b266ffe0b3b644c60cc17ec5"
     },
     {
       "path": "web/src/AuthorizedAutoApplyBatch.tsx",
@@ -345,6 +345,14 @@
     {
       "path": "web/src/styles.css",
       "git_blob_sha1": "ab1e60677065f1addded20c9db656108692b81c2"
+    },
+    {
+      "path": "browser-playwright/start-smartploy-linux.sh",
+      "git_blob_sha1": "b940af8bf6f50ab216a58d87b1b4e24702e27d3b"
+    },
+    {
+      "path": "tests/test_playwright_linux_launcher.py",
+      "git_blob_sha1": "2e302f8b8f26749f6b9dad7f97b14b4909ef5994"
     }
   ],
   "scope": {

@@ -1951,9 +1951,13 @@ export default function ApplicationStudio(props: {
             by the extension. CV-only profile mode remembers nothing.
           </p>
           <p className="muted" aria-label="Playwright option and limitations">
-            Prefer a visible Playwright session on your own desktop? Download the local
-            Playwright assistant ZIP, read its INSTALL.txt and run it with Python 3.11+
-            and Playwright 1.55.0. It reuses the same short-lived reviewed packet
+            Prefer a visible Playwright session on your own desktop? Download and
+            extract the local Playwright ZIP. On Linux, run <code>sh start-smartploy-linux.sh</code>
+            from its folder. This uses a private Python environment, asks before
+            installing Playwright 1.55.0 or downloading Chromium, and then shows
+            a one-time pairing code. Other platforms can follow INSTALL.txt
+            and start <code>python bridge.py</code> manually. The helper reuses the
+            same short-lived reviewed packet
             and fills unique, ordinary contact/cover-letter fields on any reviewed
             public HTTPS employer form after your explicit approval.
             It can attach the exact saved CV PDF only after a SECOND explicit approval
