@@ -112,7 +112,7 @@ def _sentence(kind: str, values: list[str], language: Language) -> str:
         "en": {
             "skill": "My relevant skills include",
             "experience": "Relevant professional experience:",
-            "project": "Relevant project work:"
+            "project": "Relevant project work:",
             "certification": "My certifications include",
             "education": "My educational background includes",
             "domain": "My areas of expertise include",
@@ -121,7 +121,7 @@ def _sentence(kind: str, values: list[str], language: Language) -> str:
         "fi": {
             "skill": "Tehtävään liittyvään osaamiseeni kuuluu",
             "experience": "Tehtävään liittyvää työkokemusta:",
-            "project": "Tehtävään liittyviä projekteja:"
+            "project": "Tehtävään liittyviä projekteja:",
             "certification": "Sertifikaatteihini kuuluu",
             "education": "Koulutukseeni kuuluu",
             "domain": "Erityisosaamiseeni kuuluu",
