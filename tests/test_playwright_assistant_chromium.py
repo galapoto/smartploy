@@ -570,3 +570,51 @@ def test_sp120_real_chromium_generic_employer_form_fills_reviewed_fields_only():
                 assistant.fill_reviewed_page(page, p, plan, rows)
         finally:
             browser.close()
+
+
+def test_sp144_real_chromium_reactive_clear_is_not_counted_as_filled():
+    """A synthetic employer input can erase text AFTER .fill() returns.
+
+    A successful Playwright call is not proof of a completed application.
+    No employer request, private CV, upload or submit is performed.
+    """
+    target = "https://careers.example.org/jobs/junior-analyst"
+    p = packet(target)
+    html = """<!doctype html><html><body>
+      <form id="application">
+        <label for="person">Full name</label>
+        <input id="person" name="full_name" type="text">
+        <label for="contact">Email</label>
+        <input id="contact" name="email" type="email">
+        <button type="submit">Submit</button>
+      </form>
+      <script>
+        window.submits = 0;
+        document.querySelector("form").addEventListener("submit", e => {
+          e.preventDefault(); window.submits++;
+        });
+        document.querySelector("#person").addEventListener("input", () => {
+          setTimeout(() => {document.querySelector("#person").value = "";}, 20);
+        });
+      </script></body></html>"""
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=html,
+            ))
+            page.goto(target, wait_until="domcontentloaded")
+            rows = assistant.inspect_page(page)
+            plan = assistant.plan_fields(rows, p)
+            assert [item["key"] for item in plan] == ["full_name", "email"]
+            result = assistant.fill_reviewed_page(page, p, plan, rows)
+            assert result == {
+                "filled": 0, "planned": 2, "stopped_on_change": True,
+                "submitted": False, "uploaded": False,
+            }
+            assert page.locator("#person").input_value() == ""
+            assert page.locator("#contact").input_value() == ""
+            assert page.evaluate("window.submits") == 0
+        finally:
+            browser.close()
