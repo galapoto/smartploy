@@ -76,7 +76,17 @@ steps:
       - node --version
       - npm install --global npm@10.9.2 --no-audit --no-fund
       - test "$(npm --version)" = "10.9.2"
-      - cd web && npm ci --no-audit --no-fund && npm run test && npm run build && npm run test:e2e && cd ..
+      # Fail at the actual browser-test error; do not continue in web/ and
+      # report unrelated missing root-level extension modules afterward.
+      - |
+        set -eu
+        (
+          cd web
+          npm ci --no-audit --no-fund
+          npm run test
+          npm run build
+          npm run test:e2e
+        )
       - node --check browser-companion/logic.mjs
       - node --check browser-companion/popup.mjs
       - node --check browser-companion/upload.mjs

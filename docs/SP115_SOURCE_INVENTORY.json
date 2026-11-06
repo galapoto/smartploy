@@ -344,7 +344,7 @@
     },
     {
       "path": "web/src/styles.css",
-      "git_blob_sha1": "ab1e60677065f1addded20c9db656108692b81c2"
+      "git_blob_sha1": "439695a1c03c829131f1456f2b5eb8f54b729944"
     },
     {
       "path": "browser-playwright/start-smartploy-linux.sh",
