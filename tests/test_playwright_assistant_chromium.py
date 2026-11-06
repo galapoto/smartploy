@@ -618,3 +618,66 @@ def test_sp144_real_chromium_reactive_clear_is_not_counted_as_filled():
             assert page.evaluate("window.submits") == 0
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize(("posting", "form_url"), [
+    ("https://jobs.lever.co/example/position",
+     "https://jobs.lever.co/example/position/apply"),
+    ("https://jobs.ashbyhq.com/example/position",
+     "https://jobs.ashbyhq.com/example/position/application"),
+])
+def test_sp145_visible_browser_opens_direct_ats_form_before_one_click_fill(
+    posting, form_url, monkeypatch,
+):
+    """End-to-end actor uses a real, isolated Chromium and OFFLINE ATS DOM.
+
+    The applicant's ONE pairing approval can now reach and inspect these
+    standard hosted forms without an extra manual click on the job landing.
+    Network is fully intercepted: no real ATS, login, CV, upload or submit.
+    """
+    from test_playwright_local_bridge import bridge
+
+    p = packet(posting)
+    seen = []
+    browsers = []
+
+    def isolated_synthetic_context(driver, _private_profile):
+        browser = driver.chromium.launch(headless=True)
+        browsers.append(browser)
+        context = browser.new_context()
+        def intercept(route):
+            seen.append(route.request.url)
+            if route.request.url == form_url:
+                route.fulfill(
+                    status=200, content_type="text/html", body=SAFE_HTML,
+                )
+            else:
+                route.abort()
+        context.route("**/*", intercept)
+        return context
+
+    monkeypatch.setattr(
+        bridge.assistant, "start_visible_browser", isolated_synthetic_context,
+    )
+    actor = bridge.ChromiumActor(p)
+    try:
+        page, rows, plan = actor.inspect(p)
+        assert page.url == form_url
+        assert [item["key"] for item in plan] == [
+            "full_name", "email", "cover_letter",
+        ]
+        result = actor.fill(page, p, plan, rows)
+        assert result == {
+            "filled": 3, "planned": 3, "stopped_on_change": False,
+            "submitted": False, "uploaded": False,
+        }
+        assert page.locator("#full").input_value() == "Applicant Example"
+        assert page.locator("#email").input_value() == "person@example.invalid"
+        assert page.locator("#letter").input_value() == p["fields"]["cover_letter"]
+        assert page.locator("#salary").input_value() == ""
+        assert page.locator("#password").input_value() == ""
+        assert page.evaluate("window.submissionCount") == 0
+        assert form_url in seen
+        assert posting not in seen
+    finally:
+        actor.close()

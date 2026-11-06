@@ -96,15 +96,15 @@
     },
     {
       "path": "browser-playwright/assistant.py",
-      "git_blob_sha1": "9d7c689639e1acb8abcfc7cd7ac622d647bb38b8"
+      "git_blob_sha1": "fc38419c48f5717847d5f0582843a741a0687935"
     },
     {
       "path": "browser-playwright/bridge.py",
-      "git_blob_sha1": "9dea0f05cf744786284468b9b2c7a587e04db548"
+      "git_blob_sha1": "8f0240b66d791cc7d7c1a92aafadfba160faf1ca"
     },
     {
       "path": "browser-playwright/INSTALL.txt",
-      "git_blob_sha1": "d22a23e3073da55a4b12283eafd4d04ce243f789"
+      "git_blob_sha1": "ca66dbfd53538605a4be63d8cf821b3286a144a3"
     },
     {
       "path": "deploy/personal/scripts/deploy.sh",
@@ -204,11 +204,11 @@
     },
     {
       "path": "tests/test_playwright_assistant_chromium.py",
-      "git_blob_sha1": "22af4147cd414ffed852915cd2eb38125ae184e7"
+      "git_blob_sha1": "3313c52a8b504119ac835fbe8f954f122e492f18"
     },
     {
       "path": "tests/test_playwright_assistant.py",
-      "git_blob_sha1": "e95a69fc053d8378a8b588a31ae03c2cc84824e8"
+      "git_blob_sha1": "0fade076fa7062a956a9501a0c2ce36abbd10d3e"
     },
     {
       "path": "tests/test_private_saved_jobs.py",
