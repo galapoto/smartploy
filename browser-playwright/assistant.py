@@ -43,7 +43,7 @@ UNSAFE_METADATA = re.compile(
     r"salary|compensation|wage|expected pay|eeo|race|ethnic|gender|sex|sexual|"
     r"religion|disability|veteran|military|medical|health|criminal|background|"
     r"citizenship|nationality|passport|birth|age|social security|ssn|gdpr|"
-    r"privacy|consent|agreement|attest|signature|certification|legal|bank|tax|"
+    r"privacy|consent|agreement|attest|signature|certification|legal|bank|tax|company|"
     r"employer|organization|organisation|referee|recommender|palkka|työlupa|"
     r"oleskelulupa|kansalaisuus|sukupuoli|uskonto|syntym|henkilötunnus|"
     r"suostumus|tietosuoja|arbetstillstand|medborgarskap|personnummer|samtycke|lön)\b",
@@ -51,7 +51,7 @@ UNSAFE_METADATA = re.compile(
 )
 UNSAFE_COMPACT = re.compile(
     r"(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|citizen|nationality|"
-    r"gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|"
+    r"company|employer|organization|organisation|referral|referee|recommender|gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|"
     r"consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|"
     r"immigrat|taxid|nationalid|gdpr|henkilotunnus|sukupuol|kansalaisuu|"
     r"oleskelulup|tyolup|palkka|arbetstillstand|medborgarskap|personnummer|samtycke)",
