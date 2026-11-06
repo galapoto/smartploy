@@ -280,9 +280,15 @@ class FakeLocator:
         (row,) = self._matches()
         assert not row["hasValue"]
         row["hasValue"] = True
+        row["value"] = value
         self.page.filled.append((row["name"], value))
         if self.page.on_fill:
             self.page.on_fill(self.page)
+
+    def input_value(self, timeout):
+        assert timeout == 2000
+        (row,) = self._matches()
+        return row.get("value", "")
 
 
 class FakePage:
@@ -294,6 +300,9 @@ class FakePage:
 
     def locator(self, selector):
         return FakeLocator(self, selector)
+
+    def wait_for_timeout(self, milliseconds):
+        assert milliseconds == 150
 
 
 def test_sp110_real_fill_function_reuses_obumai_without_submit_or_upload():

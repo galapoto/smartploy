@@ -96,7 +96,7 @@
     },
     {
       "path": "browser-playwright/assistant.py",
-      "git_blob_sha1": "86f703581f00392ec2eb34bc333dd71712cdc62e"
+      "git_blob_sha1": "9d7c689639e1acb8abcfc7cd7ac622d647bb38b8"
     },
     {
       "path": "browser-playwright/bridge.py",
@@ -204,11 +204,11 @@
     },
     {
       "path": "tests/test_playwright_assistant_chromium.py",
-      "git_blob_sha1": "a8f2e5be082f47eb7975131e4f633b003551ccb0"
+      "git_blob_sha1": "22af4147cd414ffed852915cd2eb38125ae184e7"
     },
     {
       "path": "tests/test_playwright_assistant.py",
-      "git_blob_sha1": "8718d6d81c0fe7573802246f2e56798859eb7f26"
+      "git_blob_sha1": "e95a69fc053d8378a8b588a31ae03c2cc84824e8"
     },
     {
       "path": "tests/test_private_saved_jobs.py",
