@@ -318,8 +318,17 @@ def plan_fields(rows: list[dict[str, Any]], packet: dict[str, Any]) -> list[dict
         raise PacketError("Employer form is too large or cannot be inspected safely")
     recognized = [_identify_field(row) for row in rows]
     dedicated_letter = "cover_letter" in recognized
+    # 2026-11-06 real Lever Chromium OFFLINE fill: its Current location
+    # text control cleared the value after a seemingly successful fill.
+    # Lever city entries require applicant selection/validation; never
+    # report those controls as completed ordinary text inputs.
+    is_lever = urlsplit(str(packet.get("application_url", ""))).hostname in {
+        "jobs.lever.co", "jobs.eu.lever.co",
+    }
     candidates = []
     for row, key in zip(rows, recognized):
+        if is_lever and key == "location":
+            continue  # Manual location picker, not a verified text field.
         if key == "additional_information":
             key = None if dedicated_letter else "cover_letter"
         if not key:
