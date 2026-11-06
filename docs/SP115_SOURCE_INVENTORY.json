@@ -312,7 +312,7 @@
     },
     {
       "path": "smartploy/complete_letter.py",
-      "git_blob_sha1": "26db41cfa44ddfca06453584c81f097afde2e993"
+      "git_blob_sha1": "1bdaa202ebc6141e183ac11532badae9b221a061"
     },
     {
       "path": "smartploy/local_drafting.py",
@@ -324,7 +324,7 @@
     },
     {
       "path": "tests/test_complete_letter.py",
-      "git_blob_sha1": "1c9131ca6dbc3093179ed65d9d2198d2a753cc56"
+      "git_blob_sha1": "49006d25e1e88c0ce1d3b6321479713845cdb945"
     },
     {
       "path": "web/src/structured_cv.ts",
