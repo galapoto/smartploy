@@ -89,6 +89,23 @@ jobs:
               assert "full_name" in keys and "email" in keys, (
                   "Live employer form did not yield safe name and email targets"
               )
+              # Read-only metadata diagnosis for a dynamic city picker.
+              for item in plan:
+                  if item["key"] != "location":
+                      continue
+                  for selector in assistant._candidate_selectors(item["row"]):
+                      locator = page.locator(selector)
+                      if locator.count() != 1:
+                          continue
+                      print("SP140_LEVER_LOCATION_WIDGET=" + json.dumps({
+                          "role": locator.get_attribute("role"),
+                          "aria_autocomplete": locator.get_attribute("aria-autocomplete"),
+                          "aria_controls_present": bool(locator.get_attribute("aria-controls")),
+                          "aria_haspopup": locator.get_attribute("aria-haspopup"),
+                          "autocomplete": locator.get_attribute("autocomplete"),
+                          "placeholder": locator.get_attribute("placeholder"),
+                      }, sort_keys=True))
+                      break
               # CRITICAL: make the context network-offline BEFORE any value.
               # After this point no dummy fields can reach the employer.
               context.set_offline(True)
