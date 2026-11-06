@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from scripts.verify_sp115_integrated_source import (
-    CandidateGateError, EXPECTED_HEAD, EXPECTED_SCHEMA, MANIFEST,
+    CandidateGateError, EXPECTED_HEAD, EXPECTED_SCHEMA, MANIFEST, MANDATORY,
     git_blob_sha1, verify_inventory, verify_source_blob,
 )
 
@@ -23,7 +23,7 @@ def manifest():
 def test_sp115_exact_integrated_source_inventory_passes_without_network(manifest):
     assert manifest["schema"] == EXPECTED_SCHEMA
     assert manifest["source_head_sha"] == EXPECTED_HEAD
-    assert verify_inventory(ROOT, manifest) == 79
+    assert verify_inventory(ROOT, manifest) == len(MANDATORY)
 
 
 def test_sp115_single_byte_source_mutation_is_rejected(manifest):
