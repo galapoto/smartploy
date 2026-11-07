@@ -47,8 +47,8 @@ function approved(value="job-board") {
 }
 async function fill(page:Page, actions:unknown[], url=JOB) {
   return page.evaluate(async input=>
-    (window as any).extensionFillReviewed(input.actions,input.url,JOB),
-    {actions,url}
+    (window as any).extensionFillReviewed(input.actions,input.url,input.inspected),
+    {actions,url,inspected:JOB}
   );
 }
 test("radio selection is exact and observed after event settling",async({page})=>{
