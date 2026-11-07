@@ -15,16 +15,16 @@ Preferred: connect once, fill from SmartPloy (applicant-local pairing)
    passwords, uploaded CV files, cookies from Chrome or employer credentials.
    Leave this terminal running until you complete one application.
 3. In signed-in SmartPloy, prepare/review and save the exact CV and letter.
-   Under My applications > Fill the employer's form, click
-   "Prepare Playwright handoff (no clipboard)" to create the expiring
-   private packet in this browser tab without a clipboard copy.
-   Then find "Connect my local Playwright browser", enter the code shown in
+   Under My applications > Start browser AutoApply, select
+   "Start AutoApply · prepare packet" to create an expiring reviewed
+   private packet. Open "Use visible Playwright instead", then find
+   "Connect my local Playwright browser" and enter the code shown in
    the terminal and click "Open reviewed employer form". Check the consent
    prompt: the local helper receives only the approved packet.
 4. A visible, isolated Chromium browser opens on the exact employer posting.
    Navigate to its application form. Complete login or MFA yourself.
    Return to SmartPloy and click "Inspect current employer form".
-5. Review the suggested field names and click "Fill reviewed fields once".
+5. Review the suggested field names and click "Fill reviewed fields once (never submit)".
    SmartPloy asks you to confirm explicitly. The helper verifies the exact
    job, expiry, form/field metadata and one-use review before each input.
    A field input may transmit immediately to the employer's website.
