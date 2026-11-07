@@ -89,7 +89,7 @@ def reviewed_questions_script() -> bytes:
     for source, checks in (
         (logic, ("export function identifyField(", "function unsafeContactMetadata(")),
         (questions, ("export function planReviewedQuestions(", "export function validateReviewedAnswers(")),
-        (filler, ("export function fillReviewedAnswers(", "location.href !== inspectedUrl")),
+        (filler, ("export async function fillReviewedAnswers(", "location.href !== inspectedUrl")),
         (form, ("function inspectForm()", "allElementsCount: all.length")),
     ):
         if any(gate not in source for gate in checks):
