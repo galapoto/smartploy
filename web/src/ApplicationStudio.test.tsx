@@ -1922,8 +1922,10 @@ describe("Application Studio draft-scoped pending indicators", () => {
     expect(link.getAttribute("href")).toBe("/smartploy-apply-companion.zip");
     expect(link.getAttribute("download")).toBe("smartploy-apply-companion.zip");
     expect(link.getAttribute("target")).toBeNull();
-    expect(screen.getByText(/Desktop Chrome or Chromium: download and extract/)).toBeTruthy();
-    expect(screen.getByText(/does not submit jobs in the background/)).toBeTruthy();
+    const install=screen.getByText("Install Chrome companion");
+    fireEvent.click(install);
+    expect(screen.getByText(/enable Developer mode/)).toBeTruthy();
+    expect(screen.getByText(/does not update automatically/)).toBeTruthy();
     expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
     expect(api.markApplicationManuallySent).not.toHaveBeenCalled();
