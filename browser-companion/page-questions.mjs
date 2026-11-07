@@ -68,7 +68,7 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
   }
   function valid(a) {
     if (!a || !Number.isInteger(a.index) || a.index < 0 || a.index >= all.length ||
-        !["text", "textarea"].includes(a.type) || typeof a.value !== "string" ||
+        !["text", "textarea", "select"].includes(a.type) || typeof a.value !== "string" ||
         !a.value.trim() || a.value.length > 1500 ||
         /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(a.value) ||
         typeof a.label !== "string" || a.label.length > 150) return false;
@@ -76,13 +76,14 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
     const live = Array.from(document.querySelectorAll("input,textarea,select"));
     if (!el || !el.isConnected || live.length > 250 || live[a.index] !== el) return false;
     const type = el?.tagName === "TEXTAREA" ? "textarea" :
-      el?.tagName === "INPUT" ? (el.type || "text").toLowerCase() : "";
+      el?.tagName === "INPUT" ? (el.type || "text").toLowerCase() :
+      el?.tagName === "SELECT" ? "select" : "";
     if (type !== a.type || !el.closest("form") || el.disabled || el.readOnly ||
         !(el.required || el.getAttribute("aria-required") === "true") ||
         String(el.value || "").trim() ||
         el.id !== a.expected_id || el.name !== a.expected_name ||
         (el.getAttribute("placeholder") || "") !== a.expected_placeholder ||
-        el.maxLength !== a.expected_max_length ||
+        (Number.isInteger(el.maxLength) ? el.maxLength : -1) !== a.expected_max_length ||
         labelFor(el) !== a.label ||
         el.closest("[hidden],[aria-hidden='true'],[inert]") ||
         getComputedStyle(el).display === "none" ||
@@ -97,6 +98,21 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       .replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
     const identifiers = [a.expected_id, a.expected_name, a.expected_placeholder].join("");
     if (sensitive.test(metadata) || restrictedIdentifiers.test(identifiers)) return false;
+    // A select option is allowed only when the applicant explicitly chose its
+    // exact current employer-provided value. No fuzzy aliases or implicit yes.
+    if (a.type === "select") {
+      if (!Array.isArray(a.options) || a.options.length < 1 ||
+          a.options.length > 24 || !a.options.every(o =>
+            o && typeof o.value === "string" && o.value.length > 0 &&
+            typeof o.label === "string" && o.label.length > 0)) return false;
+      const approved = a.options.filter(o => o.value === a.value);
+      if (approved.length !== 1) return false;
+      const actual = Array.from(el.options).filter(o =>
+        !o.disabled && o.value === a.value &&
+        String(o.label || o.textContent || "").trim() === approved[0].label
+      );
+      if (actual.length !== 1) return false;
+    }
     // A second live field with the same visible question could silently steal
     // a reviewed answer even when the original index/id/name remain stable.
     const duplicates = live.filter(other =>
@@ -118,14 +134,16 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
     }
     const el = all[action.index];
     try {
-      const proto = action.type === "textarea"
-        ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const proto = action.type === "textarea" ? HTMLTextAreaElement.prototype :
+        action.type === "select" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
       if (!setter) return stop("The browser cannot safely fill this question.", filled);
       setter.call(el, action.value);
       el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
       el.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-      if (el.value !== action.value) {
+      if (el.value !== action.value ||
+          (action.type === "select" && (el.selectedOptions.length !== 1 ||
+            el.selectedOptions[0].disabled))) {
         return stop("The employer did not retain an answer; review manually.", filled);
       }
       filled++;
