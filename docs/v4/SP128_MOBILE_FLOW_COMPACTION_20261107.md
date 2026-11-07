@@ -13,3 +13,7 @@ At 320/390px, a signed-in user reaches the original CV-first task and the same M
 
 ## Qualification
 Use exact child SHA full native CI, Vitest, production Vite, synthetic real-Chromium 320/390 and navigation tests, plus signed-in live mobile acceptance by authorized release operator. Parent #318 must be qualified/promoted first. No new dependency, service, API endpoint, schema, auth or external action permission. **Source authoring: SOURCE_READY; production user-verified: NONE.** Independent review, native Woodpecker, exact-SHA authorized deployment and rollback remain required.
+
+### Screenshot-directed fix
+
+The real parent synthetic 390px browser screenshot was approximately 3 screens tall before the first job result, with another complete job search and three secondary home panels below the mode chooser. SP128 removes the duplicate `sp126-job-results` from phone **Home only** (alongside the duplicate aside), while the original `Just find jobs` button/Jobs destination/search bar remain functional. Added exact rendered 320/390px screenshot artifacts and explicit browser checks that a mobile user can still reach a concrete synthetic job listing after tapping `Just find jobs`. Do not claim a production website screenshot from synthetic CI.

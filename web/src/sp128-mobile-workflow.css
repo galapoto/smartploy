@@ -87,7 +87,10 @@
   .smartploy-app .flow-start-privacy { margin:9px 0 0; font-size:11px; line-height:1.45; }
   /* Secondary dashboard copies are redundant with their existing destinations.
      Keep the real Profile, Tools and Sources pages and original desktop side rail. */
-  .smartploy-app .sp126-dashboard-aside { display:none; }
+  .smartploy-app .sp126-dashboard-aside,
+  .smartploy-app .sp126-job-results { display:none; }
+  /* The Jobs destination keeps the complete search, filtering and real
+     results; the existing CV-first action opens it in one click. */
   /* Hide routine version badges, not actionable release warnings. */
   .smartploy-app :is(.release-status-aligned,.release-status-development,.release-status-checking) {
     display:none;

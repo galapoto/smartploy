@@ -1293,6 +1293,7 @@ test("SP128 phone home is CV-first with compact actionable methods and no duplic
     await expect(page.getByRole("button", { name: /Upload CV first/i })).toBeVisible();
     await expect(page.locator(".flow-start-card[data-flow-mode]")).toHaveCount(3);
     await expect(page.locator(".sp126-dashboard-aside")).toBeHidden();
+    await expect(page.locator(".sp126-job-results")).toBeHidden();
     const measurements = await page.evaluate(() => {
       const height = (selector: string) =>
         document.querySelector(selector)!.getBoundingClientRect().height;
@@ -1308,6 +1309,8 @@ test("SP128 phone home is CV-first with compact actionable methods and no duplic
     expect(measurements.cards.every((height) => height <= 170)).toBe(true);
     expect(measurements.columns.split(" ").length).toBe(3);
     expect(measurements.overflow).toBe(false);
+    // Actual rendered screenshots, not a mockup; CI uploads these artifacts.
+    await evidence(page, "sp128-mobile-home-" + width + ".png");
     await page.getByRole("button", { name: "Open menu" }).click();
     await page.getByRole("dialog", { name: "SmartPloy sidebar" })
       .getByRole("button", { name: "CV & AI tools" }).click();
@@ -1336,4 +1339,16 @@ test("SP128 phone home retains dark mode and actual release warning states", asy
     banner.classList.add("release-status-mixed");
   });
   await expect(page.locator(".release-status-mixed")).toBeVisible();
+});
+
+test("SP128 phone can open all job results from the compact home", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 740 });
+  await installSyntheticApi(page);
+  await page.goto("/");
+  await expect(page.locator(".sp126-job-results")).toBeHidden();
+  await page.getByRole("button", { name: /Just find jobs/ }).click();
+  await expect(page.getByRole("heading", { name: "Find jobs" })).toBeVisible();
+  await expect(page.getByText("Junior Data Analyst")).toBeVisible();
+  await expect(page.locator(".sp126-dashboard-aside")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
 });
