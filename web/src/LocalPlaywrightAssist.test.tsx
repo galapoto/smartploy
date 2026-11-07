@@ -60,7 +60,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(getSession).mockResolvedValue(session);
   vi.mocked(getEmployerAttemptStatus).mockResolvedValue({
-    previous_attempt_reserved: false, state: "none",
+    previous_attempt_reserved: false, state: "not_reserved",
     requires_human_reconciliation: false, automatic_employer_submit_authorized: false,
     external_confirmation_verified: false, cross_device_server_claim_required: true,
   });
