@@ -810,7 +810,7 @@ describe("Application Studio private-read account boundary", () => {
     expect(ready.textContent).toContain("Verify review");
     expect(ready.textContent).toContain("Start AutoApply");
     const employerLink=screen.getByRole("link", {name:/Open employer form/i});
-    expect(employerLink.getAttribute("href")).toBe("https://jobs.lever.co/example/role");
+    expect(employerLink.getAttribute("href")).toBe("https://jobs.lever.co/synthetic-fi/job-A");
     expect(employerLink.getAttribute("target")).toBe("_blank");
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
     const record=await screen.findByRole("button",{name:/Record exact CV and job review/});
