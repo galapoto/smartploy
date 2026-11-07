@@ -35,3 +35,7 @@ At source submission: status **SOURCE_READY**, `USER_VERIFIED: NONE` until exact
 ## Subsequent reliability hardening
 
 The initial signed-in essential session/dashboard/search load now has an 18-second bounded connection deadline. When exceeded, the request generation is invalidated, all private state is cleared, an explicit connection-timeout error and **Try again** action are shown in the header-based shell. The deadline is cancelled when the verified essential workspace is ready; optional AI/profile responses do not extend startup. Background refresh does not take down the live shell. The deadline uses the existing request-generation/privacy control, not new fetching or authentication infrastructure. A Vitest fake-clock regression exercises a hung session.
+
+## Exact Chromium regression from initial candidate
+
+The full SP99 legacy browser suite caught an actual mobile-tap target issue: at 390px, the expanded 318px drawer occluded the centre of the full-screen clickable scrim (`Close navigation`). The scrim now starts immediately to the right of the drawer, always leaving at least a 28px outside tap region, and new 320/390/768 browser tests explicitly tap the uncovered scrim. This keeps the old test's behaviour intact instead of weakening its assertion.

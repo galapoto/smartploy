@@ -1267,6 +1267,12 @@ test("SP127 Komplyint-structured mobile header and drawer survive 320/390/768px 
     await page.keyboard.press("Escape");
     await expect(trigger).toBeFocused();
     expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+    // A tap on the dimmed area to the RIGHT of the drawer must close it.
+    // Playwright clicks the scrim's centre; CSS must not let the drawer
+    // overlap that actionable portion.
+    await trigger.click();
+    await page.getByRole("button", { name: "Close navigation" }).click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
     await trigger.click();
     await page.getByRole("dialog", { name: "SmartPloy sidebar" })
       .getByRole("button", { name: "Find jobs" }).click();

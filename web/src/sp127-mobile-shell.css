@@ -90,7 +90,13 @@ html[data-smartploy-theme="dark"] .sp-boot .sp-boot-eyebrow { color: #a5e7e9; }
     inset:0 auto 0 0; overflow-y:auto; overscroll-behavior:contain;
     padding:18px 14px calc(20px + env(safe-area-inset-bottom));
     z-index:40; }
-  .smartploy-app .sidebar-scrim.visible { z-index:39; }
+  /* The overlay is clickable ONLY outside the real drawer. Its centre was
+     previously occluded by the drawer at 320–390px and could not be tapped. */
+  .smartploy-app .sidebar-scrim.visible {
+    z-index:39;
+    left:min(318px,calc(100vw - 28px));
+    right:0;
+  }
   .smartploy-app .sidebar-nav .nav-item { min-height:44px; padding:11px 13px; }
   .smartploy-app .sp126-mobile-close { min-width:44px; height:44px; }
   .smartploy-app .content { padding:clamp(12px,2.5vw,20px); }
