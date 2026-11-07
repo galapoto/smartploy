@@ -396,6 +396,9 @@ export default function LocalPlaywrightAssist(props: {
       // question becomes a permanent MISSING profile prompt immediately.
       // An approved answer may be suggested, but is never filled without
       // this applicant's new, job-specific explicit confirmation.
+      // Native selects are employer-specific option sets, not reusable profile
+      // answers. Preserve the existing private text-question memory only.
+      const reusableQuestions = result.questions.filter(q => q.type !== "select");
       let saved: ApplicationProfileQuestion[] = [];
       let mode: ApplicationProfileMode = "guided";
       let memoryAvailable = false;
@@ -404,10 +407,10 @@ export default function LocalPlaywrightAssist(props: {
         const memory = await getApplicationQuestionMemory();
         await verifyAccount();
         mode = memory.mode;
-        if (mode === "guided" && result.questions.length) {
+        if (mode === "guided" && reusableQuestions.length) {
           const registered = await rememberApplicationQuestions(
             props.expectedWorkspaceId, props.expectedRevision,
-            result.questions.map(q => ({
+            reusableQuestions.map(q => ({
               label: q.label, expected_id: q.expected_id,
               expected_name: q.expected_name,
               expected_placeholder: q.expected_placeholder,
@@ -421,7 +424,7 @@ export default function LocalPlaywrightAssist(props: {
             mode = "cv_only";
           }
         } else {
-          memoryAvailable = mode === "guided";
+          memoryAvailable = false;
         }
       } catch {
         // A failed profile read/write is never evidence of a remembered
@@ -435,8 +438,10 @@ export default function LocalPlaywrightAssist(props: {
       setQuestionMemory(byLabel);
       setQuestionProfileMode(mode);
       setQuestionMemoryAvailable(memoryAvailable);
-      setRememberMyAnswers(mode === "guided" && memoryAvailable);
+      setRememberMyAnswers(mode === "guided" && memoryAvailable &&
+        reusableQuestions.length > 0);
       setQuestionAnswers(result.questions.map(q => {
+        if (q.type === "select") return ""; // the applicant chooses each option anew
         const previous = byLabel[q.label];
         // Exact-label, explicit owner-reviewed reusable answers only.
         return previous?.approved_for_reuse && previous.reusable_scope === "exact_question"
@@ -450,7 +455,7 @@ export default function LocalPlaywrightAssist(props: {
           : memoryAvailable
             ? "New safe employer questions are now saved as missing profile prompts. Reviewed past answers are suggestions only; check them again for this employer."
             : "Profile memory was unavailable: these questions have NOT been saved. You can complete the visible employer form manually or retry later.")
-        : "No safe unanswered text questions. Complete remaining questions " +
+        : "No safe unanswered questions. Complete remaining questions " +
           "personally in the employer browser.");
     });
   }
@@ -465,7 +470,7 @@ export default function LocalPlaywrightAssist(props: {
       "statement is accurate and truthful. The employer may receive answers " +
       "immediately on input/change. " +
       (rememberMyAnswers && questionProfileMode === "guided" && questionMemoryAvailable
-        ? "You ALSO approve saving these answers permanently to your private profile for future exact-question suggestions. "
+        ? "You ALSO approve saving eligible text answers permanently to your private profile for future exact-question suggestions. Dropdown choices are NOT remembered. "
         : "No answer will be stored in your permanent profile. ") +
       "Sensitive questions, salary, visa, legal consent and identity details " +
       "remain manual. SmartPloy NEVER clicks Submit; uncertain fills are NOT retried."
@@ -478,7 +483,7 @@ export default function LocalPlaywrightAssist(props: {
         }
         for (let i = 0; i < reviewedQuestions.length; i++) {
           const q = reviewedQuestions[i], answer = approved[i]?.trim();
-          if (!answer) continue;
+          if (q.type === "select" || !answer) continue;
           const remembered = questionMemory[q.label];
           if (!remembered) {
             throw new Error("This question is not yet saved to your profile. Reinspect it before filling.");
@@ -755,8 +760,8 @@ export default function LocalPlaywrightAssist(props: {
         <strong>Employer questions · applicant review</strong>
         <p className="muted">
           Reuses the original Chrome companion question policy. Only safe,
-          unanswered required text questions are eligible for optional
-          one-time filling. You must answer salary, work authorization,
+          unanswered required text and native dropdown questions are eligible
+          for optional one-time filling. You must answer salary, work authorization,
           legal consent, identity and other sensitive questions yourself.
         </p>
         <button type="button" className="outline-btn"
@@ -770,7 +775,18 @@ export default function LocalPlaywrightAssist(props: {
             {reviewedQuestions.map((question, i) =>
               <label key={question.index + ":" + question.label}>
                 {question.label}
-                <textarea rows={3}
+                {question.type === "select" ? <select
+                  value={questionAnswers[i] || ""}
+                  disabled={!props.enabled || busy || questionAttempted}
+                  onChange={(event) => setQuestionAnswers(previous =>
+                    previous.map((value, n) => n === i ? event.target.value : value)
+                  )}>
+                  <option value="">Choose an exact employer option</option>
+                  {(question.options || []).map(option =>
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>)}
+                </select> : <textarea rows={3}
                   value={questionAnswers[i] || ""}
                   maxLength={question.max_answer_length}
                   autoComplete="off" spellCheck={false}
@@ -778,8 +794,9 @@ export default function LocalPlaywrightAssist(props: {
                   disabled={!props.enabled || busy || questionAttempted}
                   onChange={(event) => setQuestionAnswers(previous =>
                     previous.map((value, n) => n === i ? event.target.value : value)
-                  )}/>
+                  )}/>} 
               </label>)}
+            {reviewedQuestions.some(question => question.type !== "select") ?
             <label className="local-playwright-remember">
               <input type="checkbox"
                 checked={rememberMyAnswers}
@@ -788,8 +805,9 @@ export default function LocalPlaywrightAssist(props: {
                 onChange={event => setRememberMyAnswers(event.target.checked)}
               />
               Permanently remember my reviewed answers in my private profile
-              for future exact-question suggestions (never submit automatically)
-            </label>
+              for future exact-question suggestions. Native dropdown selections
+              are always application-specific (never submit automatically).
+            </label> : null}
             <button type="button" className="navy-btn"
               disabled={!props.enabled || busy || questionAttempted ||
                 !questionAnswers.some(value => value.trim())}
