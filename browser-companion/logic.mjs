@@ -2,6 +2,20 @@
 /* Embedded in original first-party Python Playwright question-rule adapter.
    This module must not have imports: the adapter serializes it to page.evaluate.
    Keep in parity with upload.mjs and the standalone Chrome page callbacks. */
+/* First-party reuse of pathIsSameJob: bind generic actions to the exact
+   reviewed posting and only bounded /apply or /application descendants.
+   Other same-host jobs/shared portals need their own reviewed packet. */
+function sameReviewedJobPath(actual, approved) {
+  if (actual.search !== approved.search) return false;
+  const source = approved.pathname.replace(/\/+$/, "") || "/";
+  const live = actual.pathname.replace(/\/+$/, "") || "/";
+  if (live === source) return true;
+  if (source === "/") return false;
+  if (["/apply", "/application"].some(suffix =>
+      live === source + suffix || live.startsWith(source + suffix + "/"))) return true;
+  return /\/(?:apply|application)$/.test(source) && live.startsWith(source + "/");
+}
+
 function reviewedPublicEmployerForm(activeUrl, packetUrl) {
   const strict = new Set([
     "jobs.lever.co", "jobs.eu.lever.co", "jobs.ashbyhq.com",
@@ -24,7 +38,7 @@ function reviewedPublicEmployerForm(activeUrl, packetUrl) {
   const actual = valid(activeUrl), approved = valid(packetUrl);
   return Boolean(actual && approved && !strict.has(approved.hostname) &&
     (approved.pathname !== "/" || approved.search.length > 0) &&
-    actual.origin === approved.origin);
+    actual.origin === approved.origin && sameReviewedJobPath(actual, approved));
 }
 export const SCHEMA = "smartploy.browser_handoff.v2";
 
