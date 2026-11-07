@@ -654,6 +654,8 @@ async function onStartAutoApply() {
     if (!filled) return;
     await onReviewQuestions();
     // Attachment, reviewed answers and final send remain separate controls.
+  } catch (error) {
+    status(normalizeError(error));
   } finally {
     startAutoApplyInFlight = false;
     $("startAutoApply").disabled = false;
