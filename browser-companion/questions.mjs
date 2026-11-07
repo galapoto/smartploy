@@ -44,9 +44,49 @@ export function planReviewedQuestions(elements) {
   const repeated = new Set();
   const possible = [];
   for (const row of elements) {
-    if (!row || !row.required || row.hasValue || row.disabled ||
-        row.readonly || !row.visible) continue;
+    if (!row || row.hasValue || row.disabled ||
+        row.readonly || !row.visible ||
+        (!row.required && !(row.type === "radio" && row.radioGroup?.required))) continue;
     if (identifyField(row)) continue; // handled by existing exact approved-fact mapping
+    // One reviewed *group*, never one individual yes/no button. Group semantics
+    // are obtained from the native FIELDSET/LEGEND and same-named visible radios.
+    // This adapts ObumAI browser/fill.py radio action, without force clicks,
+    // guessed boolean conversion, legal attestation or submit authority.
+    if (row.type === "radio") {
+      const group = row.radioGroup;
+      if (!group) { humanOnly.push(String(row.label || "Radio choice")); continue; }
+      if (row.index !== group.firstIndex) continue;
+      const label = String(group.label || "").trim();
+      const choices = group.options;
+      const valid = group.required && !group.checked &&
+        label && label.length <= 150 &&
+        typeof group.name === "string" && group.name.length > 0 &&
+        group.name === row.name &&
+        Number.isInteger(group.firstIndex) && group.firstIndex === row.index &&
+        Array.isArray(choices) && choices.length >= 2 && choices.length <= 12 &&
+        choices[0].index === row.index && choices[0].id === row.id &&
+        choices.every(x => x && Number.isInteger(x.index) &&
+          x.index >= 0 && x.index < elements.length &&
+          typeof x.id === "string" && x.id.length <= 150 &&
+          typeof x.value === "string" && x.value.length > 0 && x.value.length <= 150 &&
+          typeof x.label === "string" && x.label.trim().length > 0 &&
+          x.label.length <= 150 && !isSensitiveQuestion({...row,label:x.label})) &&
+        new Set(choices.map(x => x.value)).size === choices.length &&
+        new Set(choices.map(x => tidy(x.label))).size === choices.length &&
+        !isSensitiveQuestion({...row,label,name:group.name});
+      if (!valid) { humanOnly.push(label || "Unreviewed radio choice"); continue; }
+      const key = tidy(label);
+      if (labels.has(key)) repeated.add(key);
+      labels.add(key);
+      possible.push({
+        index: row.index, label, type: "radio_group",
+        expected_id: String(row.id || ""), expected_name: group.name,
+        expected_placeholder: "", expected_max_length: -1,
+        max_answer_length: 150,
+        options: choices.map(x => ({index:x.index,id:x.id,value:x.value,label:x.label}))
+      });
+      continue;
+    }
     const label = String(row.label || "").trim();
     if (!label || label.length > 150) {
       humanOnly.push("Unlabeled or invalid required question");
@@ -100,7 +140,7 @@ export function planReviewedQuestions(elements) {
     else questions.push(item);
   }
   if (questions.length > MAX_QUESTION_ITEMS) {
-    throw new QuestionError("Too many unanswered text questions. Finish this form manually.");
+    throw new QuestionError("Too many unanswered employer questions. Finish this form manually.");
   }
   return { questions, humanOnly, requiresManualReview: humanOnly.length > 0 };
 }
@@ -125,12 +165,12 @@ export function validateReviewedAnswers(plan, values) {
     if (isSensitiveQuestion(question)) {
       throw new QuestionError("A sensitive question must be answered manually.");
     }
-    if (question.type === "select" &&
+    if (["select", "radio_group"].includes(question.type) &&
         !uniqueApprovedOption(value, question.options)) {
       throw new QuestionError("Choose an exact, currently approved employer option.");
     }
     actions.push({
-      ...question, value: question.type === "select" ? value : value.trim()
+      ...question, value: ["select", "radio_group"].includes(question.type) ? value : value.trim()
     });
   }
   if (!actions.length) {
