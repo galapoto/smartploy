@@ -131,6 +131,43 @@ test("SP121 custom public employer: reviewed ordinary question is filled without
   expect(unexpected()).toBe(0);
 });
 
+test("V4 same employer hostname is insufficient for any different job action", async ({page}) => {
+  const unexpected = await interceptEmployer(page);
+  const wrongJob = "https://careers.example.org/jobs/senior-engineer";
+  await inject(page, "popup.mjs",
+    "function fillPlanned(actions, exactUrl) {", "\nfunction inspectFinalSubmit(");
+  await inject(page, "page-questions.mjs",
+    "export async function fillReviewedAnswers(");
+  await inject(page, "page-attachment.mjs",
+    "export async function attachReviewedPdf(");
+  const contacts = await page.evaluate(url =>
+    (window as any).extensionFillPlanned([{
+      index:0, expected_id:"full", expected_name:"full_name",
+      expected_type:"text", label:"Full name", value:"Fictional Applicant"
+    }], url), wrongJob);
+  expect(contacts.filled).toBe(0);
+  expect(contacts.blocker).toMatch(/changed since packet approval/);
+  const question = await page.evaluate(({url,inspected}) =>
+    (window as any).extensionFillQuestions([{
+      index:5, type:"textarea", value:"Truthful synthetic answer",
+      label:"Why this role?", expected_id:"reason", expected_name:"motivation",
+      expected_placeholder:"", expected_max_length:-1
+    }], url, inspected), {url:wrongJob,inspected:FORM});
+  expect(question.status).toBe("blocked");
+  expect(question.filled).toBe(0);
+  const attachment = await page.evaluate(({url,inspected}) =>
+    (window as any).extensionAttachPdf({
+      application_url:url,inspected_url:inspected
+    }), {url:wrongJob,inspected:FORM});
+  expect(attachment.status).toBe("blocked");
+  expect(await page.locator("#full").inputValue()).toBe("");
+  expect(await page.locator("#reason").inputValue()).toBe("");
+  expect(await page.locator("#resume").evaluate(
+    (el:HTMLInputElement) => el.files?.length || 0)).toBe(0);
+  expect(await page.evaluate(() => (window as any).submitCount)).toBe(0);
+  expect(unexpected()).toBe(0);
+});
+
 test("SP121 TalentAdore: existing extension PDF callback accepts exact hosted posting", async ({page}) => {
   const unexpected = await interceptEmployer(page, TALENT);
   await inject(page,"page-attachment.mjs","export async function attachReviewedPdf(");
