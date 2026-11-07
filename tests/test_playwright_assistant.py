@@ -395,6 +395,12 @@ def test_sp110_archive_deterministic_allowlisted_and_checksum(tmp_path):
         assert 'import { uniqueApprovedOption }' not in compiled_questions
         assert original_logic.replace("export ", "").strip() in compiled_questions
         assert original_fill.replace("export ", "").strip() in compiled_questions
+        # React/ATS handlers may resolve after input/change; the local
+        # evaluated adapter MUST carry the async settlement check and the
+        # existing archive generator's gate must accept its exact signature.
+        assert "async function fillReviewedAnswers(" in compiled_questions
+        assert "return fillReviewedAnswers(actions, request.approvedUrl, request.inspectedUrl);" in compiled_questions
+        assert "await new Promise(resolve => setTimeout(resolve, 150))" in compiled_questions
         assert "chrome.tabs" not in compiled_questions
         assert "chrome.scripting" not in compiled_questions
 
