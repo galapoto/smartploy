@@ -7,7 +7,7 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 
 const POSTING = "https://careers.example.org/jobs/junior-analyst";
-const FORM = "https://careers.example.org/apply?job=junior-analyst";
+const FORM = POSTING + "/apply";
 const TALENT = "https://ats.talentadore.com/apply/junior-analyst/m6rpoy";
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n");
 
@@ -59,8 +59,8 @@ async function inject(page: Page, file: string, start: string, end?: string) {
     : start.includes("attachReviewedPdf")
       ? code.replace("export async function attachReviewedPdf(",
         "window.extensionAttachPdf = async function attachReviewedPdf(")
-      : code.replace("export function fillReviewedAnswers(",
-        "window.extensionFillQuestions = function fillReviewedAnswers(");
+      : code.replace("export async function fillReviewedAnswers(",
+        "window.extensionFillQuestions = async function fillReviewedAnswers(");
   await page.addScriptTag({ content: output });
 }
 
@@ -114,7 +114,7 @@ test("SP121 custom public employer: digest-checked PDF attachment is local, not 
 
 test("SP121 custom public employer: reviewed ordinary question is filled without consent", async ({page}) => {
   const unexpected = await interceptEmployer(page);
-  await inject(page,"page-questions.mjs","export function fillReviewedAnswers(");
+  await inject(page,"page-questions.mjs","export async function fillReviewedAnswers(");
   const actions = [{
     index:5, type:"textarea", value:"I have reviewed this fictional answer.",
     label:"Why this role?", expected_id:"reason", expected_name:"motivation",
