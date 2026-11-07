@@ -100,7 +100,21 @@ html[data-smartploy-theme="dark"] .sp-boot .sp-boot-eyebrow { color: #a5e7e9; }
 }
 @media(max-width:630px) {
   .smartploy-app .site-header { gap:8px; }
-  .smartploy-app .sp99-identity:not(.compact) { display:none; }
+  /* Keep the original full page mark discoverable, as required by SP99.
+     Scale the identity lockup down; never hide it under the new header. */
+  .smartploy-app .sp99-identity:not(.compact) {
+    display:flex; align-items:center; padding:5px 2px 9px; margin-bottom:5px;
+    min-height:0;
+  }
+  .smartploy-app .sp99-identity:not(.compact) .sp99-identity-mark {
+    width:36px; height:36px; flex-basis:36px;
+  }
+  .smartploy-app .sp99-identity:not(.compact) .sp99-identity-text strong {
+    font-size:16px;
+  }
+  .smartploy-app .sp99-identity:not(.compact) .sp99-identity-text small {
+    font-size:8px;
+  }
   .smartploy-app .sp125-career-copy { padding:17px; }
   .smartploy-app .sp125-career-copy > p:not(.sp125-career-eyebrow) { display:none; }
   .smartploy-app .sp125-career-cover { min-height:162px; margin-bottom:12px; }
