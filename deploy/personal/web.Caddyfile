@@ -5,7 +5,7 @@
         X-Content-Type-Options "nosniff"
         Referrer-Policy "strict-origin-when-cross-origin"
         Permissions-Policy "camera=(), microphone=(), geolocation=()"
-        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' http://127.0.0.1:48741; img-src 'self' data:; font-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
     }
 
     @backend path /api/* /auth/* /healthz
@@ -33,6 +33,15 @@
     # exists: direct download must return a real ZIP or a genuine HTTP 404.
     @companion path /smartploy-apply-companion.zip /smartploy-apply-companion.zip.sha256
     handle @companion {
+        header Cache-Control "no-store"
+        root * /srv
+        file_server
+    }
+
+    # The bundled visible local Playwright helper is a real static archive.
+    # Missing/old builds must be HTTP 404, never a misleading SPA fallback.
+    @playwright_assistant path /smartploy-playwright-assistant.zip /smartploy-playwright-assistant.zip.sha256
+    handle @playwright_assistant {
         header Cache-Control "no-store"
         root * /srv
         file_server
