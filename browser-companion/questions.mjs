@@ -70,7 +70,7 @@ export function planReviewedQuestions(elements) {
           typeof x.id === "string" && x.id.length <= 150 &&
           typeof x.value === "string" && x.value.length > 0 && x.value.length <= 150 &&
           typeof x.label === "string" && x.label.trim().length > 0 &&
-          x.label.length <= 150 && !isSensitiveQuestion({...row,label:x.label})) &&
+          x.label.length <= 150 && !isSensitiveQuestion({...row,label:x.label,id:x.id})) &&
         new Set(choices.map(x => x.value)).size === choices.length &&
         new Set(choices.map(x => tidy(x.label))).size === choices.length &&
         !isSensitiveQuestion({...row,label,name:group.name});
