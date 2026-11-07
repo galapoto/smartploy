@@ -204,7 +204,7 @@
     },
     {
       "path": "tests/test_playwright_assistant_chromium.py",
-      "git_blob_sha1": "3313c52a8b504119ac835fbe8f954f122e492f18"
+      "git_blob_sha1": "5a2122c76e2d75e0bd2671ed644bf4ae230d3223"
     },
     {
       "path": "tests/test_playwright_assistant.py",

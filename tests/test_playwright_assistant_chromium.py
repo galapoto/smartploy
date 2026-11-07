@@ -681,3 +681,91 @@ def test_sp145_visible_browser_opens_direct_ats_form_before_one_click_fill(
         assert posting not in seen
     finally:
         actor.close()
+
+
+
+# V4: the exact sanitized Chrome-native select policy must function through
+# the packaged local Playwright helper in actual Chromium, not only unit mocks.
+# All employer traffic is intercepted with synthetic fixtures.
+@pytest.mark.parametrize("reactive_reset", [False, True])
+def test_v4_playwright_native_select_retained_value_is_browser_verified(
+    reactive_reset: bool,
+):
+    p = packet("https://jobs.lever.co/example/position")
+    target = p["application_url"] + "/apply"
+    script = load_module(
+        PACKAGER, "v4_native_select_browser"
+    ).reviewed_questions_script().decode()
+    html = """<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <form id="application">
+      <label for="source">Where did you hear about this role?</label>
+      <select id="source" name="job_source" required>
+        <option value="">Choose</option>
+        <option value="job-board">Job board</option>
+        <option value="referral">Referral</option>
+      </select>
+      <label for="legal">Are you authorized to work in Finland?</label>
+      <select id="legal" name="workAuthorization" required>
+        <option value="">Choose</option><option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+      <button type="submit">Submit application</button>
+    </form>
+    <script>
+      window.submitCount=0;
+      document.querySelector("form").addEventListener("submit", e => {
+        e.preventDefault(); window.submitCount++;
+      });
+    </script></body></html>"""
+    if reactive_reset:
+        html = html.replace("</body>", """
+    <script>
+      document.getElementById("source").addEventListener("change", () => {
+        setTimeout(() => {
+          document.getElementById("source").value = "";
+        }, 25);
+      }, {once:true});
+    </script></body>""")
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            traffic = []
+
+            def synthetic_request(route):
+                if route.request.method == "GET" and route.request.url == target:
+                    route.fulfill(status=200, content_type="text/html", body=html)
+                else:
+                    traffic.append(route.request.url)
+                    route.abort()
+
+            page.route("**/*", synthetic_request)
+            page.goto(target, wait_until="domcontentloaded")
+            reviewed = assistant.inspect_reviewed_questions(page, p, script)
+            assert len(reviewed["questions"]) == 1
+            selected = reviewed["questions"][0]
+            assert selected["type"] == "select"
+            assert selected["label"] == "Where did you hear about this role?"
+            assert selected["options"] == [
+                {"value": "job-board", "label": "Job board"},
+                {"value": "referral", "label": "Referral"},
+            ]
+            assert "Are you authorized to work in Finland?" in reviewed["human_only"]
+            result = assistant.fill_reviewed_questions(
+                page, p, script, reviewed, ["job-board"],
+            )
+            assert result["status"] == (
+                "blocked" if reactive_reset else "filled_for_review"
+            )
+            assert result["filled"] == (0 if reactive_reset else 1)
+            assert result["planned"] == 1
+            assert result["submitted"] is False
+            assert result["uploaded"] is False
+            assert page.locator("#source").input_value() == (
+                "" if reactive_reset else "job-board"
+            )
+            assert page.locator("#legal").input_value() == ""
+            assert page.evaluate("window.submitCount") == 0
+            assert traffic == []
+        finally:
+            browser.close()

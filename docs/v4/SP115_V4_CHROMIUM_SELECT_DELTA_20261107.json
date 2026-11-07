@@ -1,0 +1,14 @@
+{
+  "schema": "smartploy.v4.sp115_source_delta.v1",
+  "scope": "tests-only-real-chromium-native-select",
+  "review_state": "SOURCE_CANDIDATE_REVIEW_HOLD",
+  "source_branch": "test/v4-playwright-native-select-chromium-20261107",
+  "source_test_path": "tests/test_playwright_assistant_chromium.py",
+  "previous_git_blob_sha1": "3313c52a8b504119ac835fbe8f954f122e492f18",
+  "new_git_blob_sha1": "5a2122c76e2d75e0bd2671ed644bf4ae230d3223",
+  "synthetic_only": true,
+  "real_employer_test_performed": false,
+  "production_release_approved": false,
+  "claim": "Reuses the original test_playwright_assistant_chromium.py pytest fixture and the packaged Playwright helper; never contacts employers, tests an exact reviewed select and a delayed reactive reset.",
+  "required": "native GitHub Actions/isolated Woodpecker, PR review, signed-in real-employer and exact deploy proof"
+}
