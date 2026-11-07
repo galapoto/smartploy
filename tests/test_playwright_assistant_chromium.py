@@ -800,7 +800,10 @@ def test_v4_reviewed_radio_group_real_chromium_and_delayed_reset(reactive_reset)
       <button type="submit">Submit</button>
     </form>
     <script>
-      window.submits=0;
+      window.submits=0;window.radioClicks=0;
+      document.getElementById("board").addEventListener("click", () => {
+        window.radioClicks++;
+      });
       document.querySelector("form").addEventListener("submit", e => {
         e.preventDefault(); window.submits++;
       });
@@ -848,6 +851,7 @@ def test_v4_reviewed_radio_group_real_chromium_and_delayed_reset(reactive_reset)
             assert page.locator("#friend").is_checked() is False
             assert page.locator("#legalyes").is_checked() is False
             assert page.locator("#legalno").is_checked() is False
+            assert page.evaluate("window.radioClicks") == 1
             assert page.evaluate("window.submits") == 0
             assert outside == []
         finally:
