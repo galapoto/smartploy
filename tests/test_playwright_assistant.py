@@ -211,9 +211,16 @@ class FakeLocator:
         (row,) = self._matches()
         assert not row["hasValue"]
         row["hasValue"] = True
+        row["value"] = value
         self.page.filled.append((row["name"], value))
         if self.page.on_fill:
             self.page.on_fill(self.page)
+
+
+    def input_value(self, timeout):
+        assert timeout == 2000
+        (row,) = self._matches()
+        return row.get("value", "")
 
 
 class FakePage:
@@ -225,6 +232,9 @@ class FakePage:
 
     def locator(self, selector):
         return FakeLocator(self, selector)
+
+    def wait_for_timeout(self, milliseconds):
+        assert milliseconds == 150
 
 
 def test_sp110_real_fill_function_reuses_obumai_without_submit_or_upload():
@@ -247,19 +257,40 @@ def test_sp110_real_fill_function_reuses_obumai_without_submit_or_upload():
     assert not page.rows[2]["hasValue"]
 
 
-@pytest.mark.parametrize("after_first", [
-    lambda page: setattr(page, "url", "https://evil.invalid/steal"),
-    lambda page: page.rows.append(field(2, "Unexpected", "newField")),
-    lambda page: page.rows[1].update(label="Social Security Number"),
+@pytest.mark.parametrize(("after_first", "confirmed"), [
+    (lambda page: setattr(page, "url", "https://evil.invalid/steal"), 0),
+    (lambda page: page.rows.append(field(2, "Unexpected", "newField")), 1),
+    (lambda page: page.rows[1].update(label="Social Security Number"), 1),
 ])
-def test_sp110_changed_url_dom_or_metadata_stops_after_first_value(after_first):
+def test_sp110_changed_url_dom_or_metadata_stops_after_first_value(after_first, confirmed):
     p = packet()
     rows = [field(0, "Full Name", "full"), field(1, "Email", "mail", type="email")]
     page = FakePage(deepcopy(rows), on_fill=after_first)
     plan = assistant.plan_fields(rows, p)
     result = assistant.fill_reviewed_page(page, p, plan, rows)
-    assert result["filled"] == 1
+    assert result["filled"] == confirmed
     assert result["stopped_on_change"] is True
+    assert page.filled == [("full", "Applicant Example")]
+
+
+def test_sp144_reactive_value_reset_during_settle_is_never_verified():
+    """An employer can clear the input after Playwright reported a successful fill."""
+    class ReactivePage(FakePage):
+        def wait_for_timeout(self, milliseconds):
+            super().wait_for_timeout(milliseconds)
+            if self.filled:
+                self.rows[0]["value"] = ""
+
+    p = packet()
+    rows = [field(0, "Full Name", "full"), field(1, "Email", "mail", type="email")]
+    page = ReactivePage(deepcopy(rows))
+    plan = assistant.plan_fields(rows, p)
+    result = assistant.fill_reviewed_page(page, p, plan, rows)
+    assert result == {
+        "filled": 0, "planned": 2, "stopped_on_change": True,
+        "submitted": False, "uploaded": False,
+    }
+    # No blind attempt on the next field, and no automatic employer send.
     assert page.filled == [("full", "Applicant Example")]
 
 

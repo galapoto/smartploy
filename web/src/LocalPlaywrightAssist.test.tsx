@@ -160,6 +160,34 @@ describe("SP111 paired browser review-first UI", () => {
     expect((vi.mocked(fetch).mock.calls[3][0] as string).endsWith("/v1/stop")).toBe(true);
   });
 
+  it("shows a blocking warning, not success, when an employer resets a typed value", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/v1/prepare")) return mockReply("opened");
+      if (url.endsWith("/v1/inspect")) return mockReply("inspected");
+      if (url.endsWith("/v1/fill")) return {
+        ok: true, status: 200,
+        json: async () => ({ ...(await mockReply("filled").json()),
+          filled: 0, planned: 2, stopped_on_change: true }),
+      };
+      if (url.endsWith("/v1/stop")) return mockReply("stopped");
+      throw new Error("Unexpected route");
+    }));
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: { value: pairing },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
+    await screen.findByRole("button", { name: "Inspect current employer form" });
+    fireEvent.click(screen.getByRole("button", { name: "Inspect current employer form" }));
+    await screen.findByRole("button", { name: "Fill reviewed fields once (never submit)" });
+    fireEvent.click(screen.getByRole("button", { name: "Fill reviewed fields once (never submit)" }));
+    expect(await screen.findByText(/Only 0 of 2 reviewed values could be verified/)).toBeTruthy();
+    expect(screen.getByText(/The fill attempt may have changed/)).toBeTruthy();
+    expect(screen.queryByText(/Field-fill action completed/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fill reviewed fields once (never submit)" })).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
   it("blocks cross-account login changes before any local data transfer", async () => {
     vi.mocked(getSession).mockResolvedValue({ ...session, user_id: "different-subject" });
     component();

@@ -171,12 +171,14 @@ export default function LocalPlaywrightAssist(props: {
         { token: sessionToken.current, expectedStage: "filled" },
       );
       if (!mounted.current) return;
-      setPhase("filled");
-      setFeedback("Filled " + response.filled + " of " + response.planned +
-        " reviewed fields. " + (response.stopped_on_change
-          ? "The form changed; finish remaining fields manually. "
-          : "") +
-        "Review every value, attach documents and submit personally on the employer website.");
+      // The helper counts only values observed after the employer UI settles.
+      // A changed form is not a success and must not become a retry prompt.
+      setPhase(response.stopped_on_change ? "uncertain" : "filled");
+      setFeedback(response.stopped_on_change
+        ? "Only " + response.filled + " of " + response.planned +
+          " reviewed values could be verified. Check the visible employer form manually; do not retry."
+        : "Confirmed " + response.filled + " of " + response.planned +
+          " reviewed values remained in the visible form. Attach documents, review and submit personally.");
     });
   }
 

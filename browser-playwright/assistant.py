@@ -357,8 +357,30 @@ def _fill_one(page: Any, field: dict[str, Any], value: str) -> bool:
         if not ok:
             continue
         try:
+            original_url = page.url
             locator.first.fill(value, timeout=5000)
-            return True
+            # SP144: A successful Playwright fill call does NOT prove the
+            # applicant's value survived a reactive employer form. Some
+            # inputs clear or replace it in an async input/change handler.
+            # Observe once after the UI settles; never retry a write.
+            page.wait_for_timeout(150)
+            if page.url != original_url or locator.count() != 1:
+                return False
+            inspected = locator.first.evaluate(READ_FIELDS_JS.replace(
+                "els => els.map((el, index) => {",
+                "el => [el].map((el, index) => {",
+            ))
+            if len(inspected) != 1:
+                return False
+            actual = inspected[0]
+            identity = ("tag", "type", "id", "name", "label",
+                        "autocomplete", "accept", "multiple")
+            if (any(actual.get(k) != field.get(k) for k in identity)
+                    or not actual.get("visible") or not actual.get("inForm")
+                    or actual.get("disabled") or actual.get("readonly")
+                    or _unsafe_metadata(actual)):
+                return False
+            return locator.first.input_value(timeout=2000) == value
         except Exception:
             return False  # No alternate retry after an uncertain form input.
     return False
