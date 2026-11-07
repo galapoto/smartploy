@@ -78,15 +78,77 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       el.getAttribute("placeholder") || el.getAttribute("name") || el.id || "";
     return String(raw).trim().slice(0, 150);
   }
+  // Adapted from ObumAI's approved Playwright radio.check path, but without
+  // forced clicks, checkbox toggling, inferred booleans or final submission.
+  // Require one exact, fully observed FIELDSET/LEGEND group on the SAME form.
+  function reviewedRadioChoice(a, shouldBeEmpty = true) {
+    if (!a || a.type !== "radio_group" ||
+        !Number.isInteger(a.index) || a.index < 0 || a.index >= all.length ||
+        typeof a.value !== "string" || !a.value.length || a.value.length > 150 ||
+        !Array.isArray(a.options) || a.options.length < 2 || a.options.length > 12 ||
+        typeof a.expected_name !== "string" || !a.expected_name ||
+        typeof a.label !== "string" || !a.label ||
+        a.expected_placeholder !== "" || a.expected_max_length !== -1) return null;
+    const first = all[a.index], form = first?.closest("form");
+    const fieldset = first?.closest("fieldset");
+    const legend = fieldset?.querySelector("legend");
+    if (!form || !fieldset || !legend ||
+        fieldset.firstElementChild !== legend ||
+        String(legend.innerText || "").trim() !== a.label ||
+        first?.type !== "radio" || first?.name !== a.expected_name ||
+        first?.id !== a.expected_id) return null;
+    const current = Array.from(document.querySelectorAll("input,textarea,select"));
+    if (current.length !== all.length || current[a.index] !== first) return null;
+    const nodes = Array.from(form.querySelectorAll("input[type='radio']"))
+      .filter(node => node.name === a.expected_name);
+    if (nodes.length !== a.options.length ||
+        !nodes.some(node => node.required ||
+          node.getAttribute("aria-required") === "true")) return null;
+    const inspected = [a.label, a.expected_name, a.expected_id,
+      ...a.options.map(option => String(option?.label || ""))].join(" ")
+      .normalize("NFKC").replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    if (sensitive.test(inspected) || restrictedIdentifiers.test(
+      [a.expected_name, a.expected_id,
+        ...a.options.map(option => String(option?.id || ""))].join(""))) return null;
+    const values = new Set(), labels = new Set();
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i], approved = a.options[i];
+      if (!approved || !Number.isInteger(approved.index) ||
+          !Number.isInteger(a.options[i].index) ||
+          !approved.value || !approved.label ||
+          typeof approved.id !== "string" ||
+          approved.index !== all.indexOf(node) ||
+          current[approved.index] !== node || !node.isConnected ||
+          node.closest("fieldset") !== fieldset || node.disabled ||
+          node.readOnly || node.id !== approved.id ||
+          node.value !== approved.value ||
+          labelFor(node) !== approved.label ||
+          node.closest("[hidden],[aria-hidden='true'],[inert]") ||
+          getComputedStyle(node).display === "none" ||
+          getComputedStyle(node).visibility === "hidden" ||
+          node.getClientRects().length === 0 ||
+          values.has(approved.value) || labels.has(approved.label.normalize("NFKC").toLowerCase())) return null;
+      values.add(approved.value);
+      labels.add(approved.label.normalize("NFKC").toLowerCase());
+    }
+    if (shouldBeEmpty && nodes.some(node => node.checked)) return null;
+    const selected = nodes.filter(node => node.value === a.value);
+    if (selected.length !== 1) return null;
+    if (!shouldBeEmpty &&
+        (nodes.filter(node => node.checked).length !== 1 || !selected[0].checked)) return null;
+    return selected[0];
+  }
   function valid(a) {
     if (!a || !Number.isInteger(a.index) || a.index < 0 || a.index >= all.length ||
-        !["text", "textarea", "select"].includes(a.type) || typeof a.value !== "string" ||
+        !["text", "textarea", "select", "radio_group"].includes(a.type) || typeof a.value !== "string" ||
         !a.value.trim() || a.value.length > 1500 ||
         /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(a.value) ||
         typeof a.label !== "string" || a.label.length > 150) return false;
     const el = all[a.index];
     const live = Array.from(document.querySelectorAll("input,textarea,select"));
     if (!el || !el.isConnected || live.length > 250 || live[a.index] !== el) return false;
+    if (a.type === "radio_group") return !!reviewedRadioChoice(a, true);
     const type = el?.tagName === "TEXTAREA" ? "textarea" :
       el?.tagName === "INPUT" ? (el.type || "text").toLowerCase() :
       el?.tagName === "SELECT" ? "select" : "";
@@ -146,6 +208,23 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
     }
     const el = all[action.index];
     try {
+      if (action.type === "radio_group") {
+        const selected = reviewedRadioChoice(action, true);
+        if (!selected) return stop("Employer radio choices changed; review manually.", filled);
+        const checkSetter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype, "checked")?.set;
+        if (!checkSetter) return stop("The radio input cannot be safely selected.", filled);
+        checkSetter.call(selected, true);
+        selected.dispatchEvent(new Event("input", {bubbles:true, composed:true}));
+        selected.dispatchEvent(new Event("change", {bubbles:true, composed:true}));
+        await new Promise(resolve => setTimeout(resolve, 150));
+        if (location.href !== inspectedUrl ||
+            reviewedRadioChoice(action, false) !== selected) {
+          return stop("Employer radio selection was not retained; review manually.", filled);
+        }
+        filled++;
+        continue;
+      }
       const proto = action.type === "textarea" ? HTMLTextAreaElement.prototype :
         action.type === "select" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
       const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
