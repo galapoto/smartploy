@@ -637,6 +637,36 @@ test("existing job-search cards open the requested assisted journey without crea
   expect(state.applicationWorkspaceCreates).toEqual([]);
 });
 
+test("V4: Jobs-card AutoApply prepares and opens ONLY the selected private application", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Synthetic-CV.pdf",
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Find jobs", exact: true }).click();
+  const card = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
+  await expect(card.getByRole("button", { name: "AutoApply" })).toBeEnabled();
+  await card.getByRole("button", { name: "AutoApply" }).click();
+  await expect(page.getByRole("heading", { name: "Apply in four steps" })).toBeVisible();
+  await expect(page.locator(".flow-mode.selected")).toContainText("AutoApply");
+  await expect(page.getByText("1 of 15 vacancies selected")).toBeVisible();
+  expect(state.applicationWorkspaceCreates).toEqual([]); // selecting mode is not preparing
+  const action = page.getByRole("button", {
+    name: "Prepare and open the selected job application",
+  });
+  await expect(action).toBeEnabled();
+  await action.click();
+  await expect.poll(() => state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  await expect(page.getByRole("heading", { name: /My applications/i }).first()).toBeVisible();
+  const progress = page.getByRole("region", { name: "Application progress and next action" });
+  await expect(progress).toBeVisible();
+  await expect(progress).toContainText("Action required · draft only");
+  await expect(progress).toContainText("Approve contact details before browser autofill");
+  await expect(page.getByRole("region", { name: "Application review queue" }))
+    .toContainText("1 private draft to finish");
+  expect(state.applicationWorkspaceCreates).toHaveLength(1); // no second job or employer send
+});
+
 test("SP93 production build shows all three CV-locked methods with the full sidebar", async ({ page }) => {
   await installSyntheticApi(page);
   await page.goto("/");
