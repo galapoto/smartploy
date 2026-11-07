@@ -1,0 +1,27 @@
+schema: smartploy.reuse.v1
+capability: reviewed-native-select
+source_repo: vesaias/JobNavigator
+source_path: extension/lib/autofill_match.js
+source_commit: 623822529389d6919d86be07271e0ea94e20b514
+source_license: MIT (copyright 2026 JobNavigator Contributors)
+notices_at: docs/v4/third_party/JobNavigator_LICENSE.txt
+local_adaptation:
+  - browser-companion/adapters/approved-option.mjs
+  - browser-companion/questions.mjs
+  - browser-companion/page-questions.mjs
+  - browser-playwright/assistant.py
+  - web/scripts/package_companion.py
+  - web/scripts/package_playwright_assistant.py
+sanitization:
+  - reject fuzzy and substring matching
+  - reject implicit Boolean choice inference
+  - only explicit applicant-selected matching live native select value
+  - no protected-question, consent or legal attestation automation
+  - preserve exact job, user-review, URL and no-submit policy
+tests:
+  - browser-companion/tests/approved-option.test.mjs
+  - browser-companion/tests/questions.test.mjs
+  - tests/test_playwright_assistant.py
+status: SOURCE_READY_UNQUALIFIED
+rea_status: REA_NOT_APPLICABLE_TO_PURE_SOURCE_REUSE
+review_note: Live authenticated employer browser tests remain required.
