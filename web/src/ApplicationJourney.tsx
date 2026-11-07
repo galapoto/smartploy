@@ -88,7 +88,7 @@ export default function ApplicationJourney(props: {
   // query cannot silently become an application in the new result set.
   queueScope.current = JSON.stringify([
     props.userId, props.cv.sha256 || "", props.cv.present,
-    props.mode, filter.trim(), activeQuery, revision, showOther,
+    props.mode, props.selectedJobKey, filter.trim(), activeQuery, revision, showOther,
   ]);
 
   // Debounce only the read-only query. Ranking and filtering happen on the
