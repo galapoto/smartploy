@@ -381,7 +381,12 @@ def test_sp110_archive_deterministic_allowlisted_and_checksum(tmp_path):
         assert compiled_questions == packager.reviewed_questions_script().decode("utf-8")
         assert original_question.replace(
             'import { identifyField } from "./logic.mjs";', ''
+        ).replace(
+            'import { uniqueApprovedOption } from "./adapters/approved-option.mjs";', ''
         ).replace("export ", "").strip() in compiled_questions
+        donor = (ROOT / "browser-companion/adapters/approved-option.mjs").read_text()
+        assert donor.replace("export ", "").strip() in compiled_questions
+        assert 'import { uniqueApprovedOption }' not in compiled_questions
         assert original_logic.replace("export ", "").strip() in compiled_questions
         assert original_fill.replace("export ", "").strip() in compiled_questions
         assert "chrome.tabs" not in compiled_questions
