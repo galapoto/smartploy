@@ -15,6 +15,9 @@ function nativeGroup(changes = {}) {
     name:"job_source", firstIndex:3, required:true, checked:false,
     options, ...(changes.group || {})};
   return [
+    ...[0,1,2].map(index => ({index, type:"hidden", label:"Other",
+      id:"other"+index, name:"other"+index, required:false, hasValue:true,
+      readonly:false, disabled:false, visible:false})),
     {index:3, type:"radio", label:"Friend referral", id:"friend",
       name:"job_source", required:false, hasValue:false,
       readonly:false, disabled:false, visible:true, radioGroup:group},
