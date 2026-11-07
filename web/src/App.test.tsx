@@ -162,6 +162,24 @@ function switchableSession() {
 }
 
 describe("SP127: mobile-first persistent shell and nonblocking startup", () => {
+  it("fails closed with a retry after 18 seconds when session never responds", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(api.getSession).mockImplementation(() => new Promise(() => {}));
+      render(<App />);
+      expect(screen.getByRole("heading", { name: "Connecting to your workspace" })).toBeTruthy();
+      await act(async () => { await vi.advanceTimersByTimeAsync(18005); });
+      expect(screen.getByRole("heading", { name: "SmartPloy isn't available" })).toBeTruthy();
+      expect(screen.getByText(/Workspace connection timed out/)).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+      expect(document.querySelector(".spinner")).toBeNull();
+      expect(screen.queryByText("test@smartploy.invalid")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+
   it("renders the real brand, navigation choices and retry without the circular loading overlay", () => {
     vi.mocked(api.getSession).mockImplementation(() => new Promise(() => {}));
     render(<App />);

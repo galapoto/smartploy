@@ -31,3 +31,7 @@ Copied verbatim from external projects: **none**. Original code added: startup-s
 4. Only with authorized release: inspect exact public signed-in artifact at both mobile + desktop 200/400% zoom, screenshot initial page plus logged-in Jobs→CV→Apply, verify rollback.
 
 At source submission: status **SOURCE_READY**, `USER_VERIFIED: NONE` until exact deployed SHA, real signed-in mobile flow and rollback evidence. No employer submission done.
+
+## Subsequent reliability hardening
+
+The initial signed-in essential session/dashboard/search load now has an 18-second bounded connection deadline. When exceeded, the request generation is invalidated, all private state is cleared, an explicit connection-timeout error and **Try again** action are shown in the header-based shell. The deadline is cancelled when the verified essential workspace is ready; optional AI/profile responses do not extend startup. Background refresh does not take down the live shell. The deadline uses the existing request-generation/privacy control, not new fetching or authentication infrastructure. A Vitest fake-clock regression exercises a hung session.

@@ -439,6 +439,17 @@ export default function App() {
     if (savingSearchPreferences.current || savingAIConsent.current) return;
     const generation = ++loadGeneration.current;
     if (quiet) setRefreshing(true); else setLoading(true);
+    // A stalled session/search request must become an actionable error, not
+    // an endless loading screen. Old responses are invalidated before reset.
+    // Background refreshes leave the already mounted shell in place.
+    const connectionDeadline = quiet ? null : window.setTimeout(() => {
+      if (generation !== loadGeneration.current) return;
+      ++loadGeneration.current;
+      lastSessionIdentity.current = null;
+      clearPrivateWorkspace();
+      setLoading(false); setRefreshing(false);
+      setError("Workspace connection timed out. Check your connection and try again.");
+    }, 18000);
 
     try {
       // Establish a server-issued account identity BEFORE requesting private
@@ -476,6 +487,9 @@ export default function App() {
         throw new Error("Your signed-in account changed during refresh. Reload this workspace.");
       }
       lastSessionIdentity.current = identity;
+      // The essential account-bound workspace has arrived. Optional CV, AI
+      // and application reads must not keep the startup timeout active.
+      if (connectionDeadline !== null) window.clearTimeout(connectionDeadline);
       setDashboard(board); setPreferences(prefs); setDiscovery(results);
       setSession(verifiedWho);
       setLoading(false); setRefreshing(false); setError("");
@@ -522,6 +536,7 @@ export default function App() {
         setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
       }
     } finally {
+      if (connectionDeadline !== null) window.clearTimeout(connectionDeadline);
       if (generation === loadGeneration.current) {
         setLoading(false); setRefreshing(false);
       }
