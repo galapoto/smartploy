@@ -88,6 +88,41 @@ function inspectForm() {
     return String(a).trim().slice(0, 150);
   }
   const all = Array.from(document.querySelectorAll("input,textarea,select"));
+  // First-party form inspector + ObumAI reviewed choice strategy:
+  // only a complete required radio group under an explicit FIELDSET/LEGEND.
+  // Never infer a yes/no answer, click a consent/attestation or guess an option.
+  function radioGroup(el) {
+    if (el?.tagName !== "INPUT" || el.type !== "radio") return null;
+    const fieldset = el.closest("fieldset"), form = el.closest("form");
+    const legend = fieldset?.querySelector("legend");
+    const name = String(el.name || "").trim();
+    const labelText = String(legend?.innerText || "").trim();
+    if (!form || !fieldset || !legend ||
+        fieldset.firstElementChild !== legend ||
+        !name || name.length > 150 ||
+        !labelText || labelText.length > 150) return null;
+    const group = Array.from(form.querySelectorAll("input[type='radio']"))
+      .filter(node => node.name === name);
+    if (group.length < 2 || group.length > 12 ||
+        group.some(node => node.closest("fieldset") !== fieldset ||
+          !all.includes(node) || !visible(node) || node.disabled || node.readOnly)) {
+      return null;
+    }
+    const options = group.map(node => ({
+      index: all.indexOf(node), id: String(node.id || "").slice(0, 150),
+      value: String(node.value || "").slice(0, 150),
+      label: label(node)
+    }));
+    if (options.some(o => o.index < 0 || !o.value || !o.label) ||
+        new Set(options.map(o => o.value)).size !== options.length ||
+        new Set(options.map(o => o.label.toLowerCase())).size !== options.length) {
+      return null;
+    }
+    return {label: labelText, name, firstIndex: options[0].index,
+      required: group.some(node => node.required ||
+        node.getAttribute("aria-required") === "true"),
+      checked: group.some(node => node.checked), options};
+  }
   const elements = all.slice(0, 250).map((el, index) => {
     const type = el.tagName === "TEXTAREA" ? "textarea" :
       el.tagName === "SELECT" ? "select" : (el.type || "text").toLowerCase();
@@ -106,6 +141,7 @@ function inspectForm() {
       accept: type === "file" ? String(el.accept || "").slice(0, 200) : "",
       multiple: type === "file" && el.multiple === true,
       // V4: bounded, explicit native options for one-time applicant review.
+      radioGroup: type === "radio" ? radioGroup(el) : undefined,
       options: type === "select" ? Array.from(el.options).slice(0, 31)
         .map(option => ({
           value: String(option.value || "").slice(0, 150),
@@ -879,7 +915,8 @@ async function onReviewQuestions() {
     const plan = planReviewedQuestions(reply.result.elements);
     currentQuestionPlan = { ...plan, url: tab.url };
     let syncQueued = false;
-    const memoryEligible = plan.questions.filter(item => item.type !== "select");
+    const memoryEligible = plan.questions.filter(item =>
+      item.type !== "select" && item.type !== "radio_group");
     if (memoryEligible.length) {
       try {
         const pending = buildPendingQuestionSync(currentPacket, memoryEligible, {
@@ -911,10 +948,11 @@ async function onReviewQuestions() {
       const label = document.createElement("label");
       label.textContent = item.label + " (review required)";
       label.setAttribute("for", fieldId);
-      const input = document.createElement(item.type === "select" ? "select" : "textarea");
+      const choice = item.type === "select" || item.type === "radio_group";
+      const input = document.createElement(choice ? "select" : "textarea");
       input.id = fieldId;
       input.autocomplete = "off";
-      if (item.type === "select") {
+      if (choice) {
         const empty = document.createElement("option");
         empty.value = "";
         empty.textContent = "Choose the exact employer option";

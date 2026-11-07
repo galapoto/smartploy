@@ -1,0 +1,36 @@
+schema: smartploy.reuse.v1
+contract: docs/v4/SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md
+capability: applicant_reviewed_native_fieldset_radio_groups
+status: SOURCE_CANDIDATE_NOT_RELEASED
+first_party_source:
+  repo: obumai/obumellm
+  commit: d682da2582ebfa3f013cf37dc542384fe605f303
+  path: obumellm/browser/fill.py
+  blob_sha: c95cbc33145ab7b0202c4d983cb6b024a8e16621
+  reference: _fill_one checkbox_or_radio_branch
+first_party_existing_consumers:
+  - browser-companion/popup.mjs
+  - browser-companion/questions.mjs
+  - browser-companion/page-questions.mjs
+  - browser-playwright/assistant.py
+  - web/src/localPlaywrightBridge.ts
+  - web/src/LocalPlaywrightAssist.tsx
+sanitized_adaptation:
+  - no force_click
+  - no automatic yes_no_or_boolean_inference
+  - only complete required fieldset_legend_same_name_group
+  - exact_group_option_id_index_value_label_user_approval
+  - sensitive_work_authorization_consent_identity_salary_and_eeo_manual
+  - no automatic_submission_or_repeat_after_unknown
+  - reactive_settled_state_check_before_reporting_filled
+  - no_radio_choice_saved_to_candidate_profile_memory
+  - same_exact_job_user_packet_and_origin_policy_retained
+tests:
+  - browser-companion/tests/radio-groups.test.mjs
+  - web/src/localPlaywrightBridge.test.ts
+  - web/browser-tests/lever-radio-groups.e2e.ts
+  - tests/test_playwright_assistant_chromium.py
+rea_status: REA_NOT_APPLICABLE_TO_AUTHORIZED_HUMAN_READABLE_SOURCE
+savings: unknown
+release_approved: false
+real_employer_acceptance_verified: false

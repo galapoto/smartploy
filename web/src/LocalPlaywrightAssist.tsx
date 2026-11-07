@@ -398,7 +398,8 @@ export default function LocalPlaywrightAssist(props: {
       // this applicant's new, job-specific explicit confirmation.
       // Native selects are employer-specific option sets, not reusable profile
       // answers. Preserve the existing private text-question memory only.
-      const reusableQuestions = result.questions.filter(q => q.type !== "select");
+      const reusableQuestions = result.questions.filter(q =>
+        q.type !== "select" && q.type !== "radio_group");
       let saved: ApplicationProfileQuestion[] = [];
       let mode: ApplicationProfileMode = "guided";
       let memoryAvailable = false;
@@ -441,7 +442,7 @@ export default function LocalPlaywrightAssist(props: {
       setRememberMyAnswers(mode === "guided" && memoryAvailable &&
         reusableQuestions.length > 0);
       setQuestionAnswers(result.questions.map(q => {
-        if (q.type === "select") return ""; // the applicant chooses each option anew
+        if (q.type === "select" || q.type === "radio_group") return ""; // fresh per-employer choice
         const previous = byLabel[q.label];
         // Exact-label, explicit owner-reviewed reusable answers only.
         return previous?.approved_for_reuse && previous.reusable_scope === "exact_question"
@@ -453,7 +454,7 @@ export default function LocalPlaywrightAssist(props: {
         ? (mode === "cv_only"
           ? "CV-only mode: no question is saved to your profile. You can fill reviewed fields once; remaining questions stay manual."
           : !reusableQuestions.length
-            ? "Reviewed employer dropdown choices are available now. Select exact values for this application; options are never saved as reusable profile answers."
+            ? "Reviewed employer options are available now. Select exact choices for this application; radio and dropdown answers are not saved as reusable profile facts."
             : memoryAvailable
               ? "Safe text questions are saved as missing profile prompts. Reviewed past answers are suggestions only; check them again for this employer."
               : "Text-question profile memory was unavailable: new prompts were not saved. You may still review this employer form and fill the approved fields.")
@@ -472,7 +473,7 @@ export default function LocalPlaywrightAssist(props: {
       "statement is accurate and truthful. The employer may receive answers " +
       "immediately on input/change. " +
       (rememberMyAnswers && questionProfileMode === "guided" && questionMemoryAvailable
-        ? "You ALSO approve saving eligible text answers permanently to your private profile for future exact-question suggestions. Dropdown choices are NOT remembered. "
+        ? "You ALSO approve saving eligible text answers permanently to your private profile for future exact-question suggestions. Dropdown and radio choices are NOT remembered. "
         : "No answer will be stored in your permanent profile. ") +
       "Sensitive questions, salary, visa, legal consent and identity details " +
       "remain manual. SmartPloy NEVER clicks Submit; uncertain fills are NOT retried."
@@ -485,7 +486,7 @@ export default function LocalPlaywrightAssist(props: {
         }
         for (let i = 0; i < reviewedQuestions.length; i++) {
           const q = reviewedQuestions[i], answer = approved[i]?.trim();
-          if (q.type === "select" || !answer) continue;
+          if (q.type === "select" || q.type === "radio_group" || !answer) continue;
           const remembered = questionMemory[q.label];
           if (!remembered) {
             throw new Error("This question is not yet saved to your profile. Reinspect it before filling.");
@@ -777,7 +778,7 @@ export default function LocalPlaywrightAssist(props: {
             {reviewedQuestions.map((question, i) =>
               <label key={question.index + ":" + question.label}>
                 {question.label}
-                {question.type === "select" ? <select
+                {(question.type === "select" || question.type === "radio_group") ? <select
                   value={questionAnswers[i] || ""}
                   disabled={!props.enabled || busy || questionAttempted}
                   onChange={(event) => setQuestionAnswers(previous =>
@@ -798,7 +799,8 @@ export default function LocalPlaywrightAssist(props: {
                     previous.map((value, n) => n === i ? event.target.value : value)
                   )}/>} 
               </label>)}
-            {reviewedQuestions.some(question => question.type !== "select") ?
+            {reviewedQuestions.some(question => question.type !== "select" &&
+              question.type !== "radio_group") ?
             <label className="local-playwright-remember">
               <input type="checkbox"
                 checked={rememberMyAnswers}
@@ -807,7 +809,7 @@ export default function LocalPlaywrightAssist(props: {
                 onChange={event => setRememberMyAnswers(event.target.checked)}
               />
               Permanently remember my reviewed text answers in my private profile
-              for future exact-question suggestions. Native dropdown selections
+              for future exact-question suggestions. Native dropdown and radio selections
               are always application-specific (never submit automatically).
             </label> : null}
             <button type="button" className="navy-btn"

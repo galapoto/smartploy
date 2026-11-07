@@ -1,0 +1,23 @@
+{
+  "schema": "smartploy.v4.radio_react_fix_source_audit.v1",
+  "reference_contract": "docs/v4/SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md",
+  "observed_sha_before_inventory_repin": "12ed1366ca74044745856ac5cdcfb0b5ec451758",
+  "reason": "React radio controls need native click to update controlled state; remove manual checked setter and synthetic double event.",
+  "donor": "obumai/obumellm@d682da2582ebfa3f013cf37dc542384fe605f303:obumellm/browser/fill.py",
+  "synthetic_browser_tests_added": true,
+  "original_permission_gates_unchanged": true,
+  "employer_submit_attempted": false,
+  "release_approved": false,
+  "delta": [
+    {
+      "path": "browser-companion/page-questions.mjs",
+      "old_blob": "359e560ed3c76058d54d72890c897888ee99cb8f",
+      "new_blob": "2b9deccfdfc61994f4cbd8168ae5563f5d74a3e4"
+    },
+    {
+      "path": "tests/test_playwright_assistant_chromium.py",
+      "old_blob": "81ba9a459868e6a6531265b819980bb6af2283d9",
+      "new_blob": "9c377f28d3225dcb7b7e341f6deb3246d4cd6bb8"
+    }
+  ]
+}

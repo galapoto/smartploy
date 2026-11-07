@@ -769,3 +769,90 @@ def test_v4_playwright_native_select_retained_value_is_browser_verified(
             assert traffic == []
         finally:
             browser.close()
+
+
+
+# V4: first-party ObumAI radio-control semantics, restricted to exact user-
+# selected ordinary FIELDSET/LEGEND groups; intercepted synthetic site only.
+@pytest.mark.parametrize("reactive_reset", [False, True])
+def test_v4_reviewed_radio_group_real_chromium_and_delayed_reset(reactive_reset):
+    p = packet("https://jobs.lever.co/example/position")
+    target = p["application_url"] + "/apply"
+    script = load_module(
+        PACKAGER, "v4_radio_group_browser"
+    ).reviewed_questions_script().decode()
+    html = """<!doctype html><html><head><meta charset="utf-8"></head><body>
+    <form id="application">
+      <fieldset>
+        <legend>Where did you hear about this job?</legend>
+        <label><input id="friend" name="job_source" type="radio"
+          value="friend">Friend referral</label>
+        <label><input id="board" name="job_source" type="radio"
+          value="job-board" required>Job board</label>
+      </fieldset>
+      <fieldset>
+        <legend>Are you authorized to work in Finland?</legend>
+        <label><input id="legalyes" name="workAuthorization" type="radio"
+          value="yes">Yes</label>
+        <label><input id="legalno" name="workAuthorization" type="radio"
+          value="no" required>No</label>
+      </fieldset>
+      <button type="submit">Submit</button>
+    </form>
+    <script>
+      window.submits=0;window.radioClicks=0;
+      document.getElementById("board").addEventListener("click", () => {
+        window.radioClicks++;
+      });
+      document.querySelector("form").addEventListener("submit", e => {
+        e.preventDefault(); window.submits++;
+      });
+    </script></body></html>"""
+    if reactive_reset:
+        html = html.replace("</body>", """
+      <script>
+        document.getElementById("board").addEventListener("change", () => {
+          setTimeout(() => {document.getElementById("board").checked=false;},25);
+        }, {once:true});
+      </script></body>""")
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            outside = []
+
+            def intercepted(route):
+                if route.request.method == "GET" and route.request.url == target:
+                    route.fulfill(status=200, content_type="text/html", body=html)
+                else:
+                    outside.append(route.request.url)
+                    route.abort()
+
+            page.route("**/*", intercepted)
+            page.goto(target)
+            reviewed = assistant.inspect_reviewed_questions(page,p,script)
+            assert len(reviewed["questions"]) == 1
+            group=reviewed["questions"][0]
+            assert group["type"] == "radio_group"
+            assert group["label"] == "Where did you hear about this job?"
+            assert group["options"] == [
+                {"index":0,"id":"friend","value":"friend","label":"Friend referral"},
+                {"index":1,"id":"board","value":"job-board","label":"Job board"},
+            ]
+            assert "Are you authorized to work in Finland?" in reviewed["human_only"]
+            result = assistant.fill_reviewed_questions(
+                page,p,script,reviewed,["job-board"]
+            )
+            assert result["status"] == ("blocked" if reactive_reset else "filled_for_review")
+            assert result["filled"] == (0 if reactive_reset else 1)
+            assert result["submitted"] is False
+            assert result["uploaded"] is False
+            assert page.locator("#board").is_checked() is not reactive_reset
+            assert page.locator("#friend").is_checked() is False
+            assert page.locator("#legalyes").is_checked() is False
+            assert page.locator("#legalno").is_checked() is False
+            assert page.evaluate("window.radioClicks") == 1
+            assert page.evaluate("window.submits") == 0
+            assert outside == []
+        finally:
+            browser.close()

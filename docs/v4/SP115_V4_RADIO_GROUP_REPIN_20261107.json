@@ -1,0 +1,51 @@
+{
+  "schema": "smartploy.v4.radio_reuse_sp115_source_audit.v1",
+  "product": "SmartPloy",
+  "contract": "docs/v4/SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md",
+  "base_autoapply_head": "4c74e5a424d7c8d865a9984b62262e7d1c1f3c77",
+  "observed_source_head_before_audit": "7ecc0a6aaaec6d945532e323582aac6812d8de68",
+  "recorded_at": "2026-11-07",
+  "change": "Exact candidate-source pinning for reviewed, applicant-approved native fieldset radio group adapter and tests",
+  "donor": "obumai/obumellm@d682da2582ebfa3f013cf37dc542384fe605f303:obumellm/browser/fill.py",
+  "old_historical_dependency_head_preserved": true,
+  "no_release_or_employer_submission_approval": true,
+  "source_ready_only": true,
+  "saving_estimate": "unknown",
+  "changes": [
+    {
+      "path": "browser-companion/page-questions.mjs",
+      "previous_git_blob_sha1": "496e045a4fab553f0b959e381f31eb9aadf54e57",
+      "candidate_git_blob_sha1": "359e560ed3c76058d54d72890c897888ee99cb8f"
+    },
+    {
+      "path": "browser-companion/popup.mjs",
+      "previous_git_blob_sha1": "970eded60ce77a9c768be70352d47bc6bdb77799",
+      "candidate_git_blob_sha1": "903a6de7bfa7f14b08c29cbaade4209ca19c3901"
+    },
+    {
+      "path": "browser-companion/questions.mjs",
+      "previous_git_blob_sha1": "bcb8ced5b703190f899f78ec5550bcea8a9284d3",
+      "candidate_git_blob_sha1": "20010c2d4f61e5c14b6651ca89bc159a5969a159"
+    },
+    {
+      "path": "browser-playwright/assistant.py",
+      "previous_git_blob_sha1": "409952cb99b568628bd98a23f4a0819573ba9403",
+      "candidate_git_blob_sha1": "88772c9266ae1ebac1a12a12636e9f908d8da776"
+    },
+    {
+      "path": "tests/test_playwright_assistant_chromium.py",
+      "previous_git_blob_sha1": "5a2122c76e2d75e0bd2671ed644bf4ae230d3223",
+      "candidate_git_blob_sha1": "81ba9a459868e6a6531265b819980bb6af2283d9"
+    },
+    {
+      "path": "web/src/LocalPlaywrightAssist.tsx",
+      "previous_git_blob_sha1": "61973583917417894f5864d48957e1c6b5123057",
+      "candidate_git_blob_sha1": "7fcaa04a668762ceeda7b8a70ac393d7dbeaccd6"
+    },
+    {
+      "path": "web/src/localPlaywrightBridge.ts",
+      "previous_git_blob_sha1": "2802d587f82ddbbd6947bdd9e219cc074e865cab",
+      "candidate_git_blob_sha1": "a6012443b2e3cd011491497c730a4afcdf760d68"
+    }
+  ]
+}
