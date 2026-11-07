@@ -451,10 +451,12 @@ export default function LocalPlaywrightAssist(props: {
       setQuestionInspectionDone(true);
       setQuestionStatus(result.questions.length
         ? (mode === "cv_only"
-          ? "CV-only mode: no question is saved to your profile. You can fill ordinary fields once, but more information will be manual."
-          : memoryAvailable
-            ? "New safe employer questions are now saved as missing profile prompts. Reviewed past answers are suggestions only; check them again for this employer."
-            : "Profile memory was unavailable: these questions have NOT been saved. You can complete the visible employer form manually or retry later.")
+          ? "CV-only mode: no question is saved to your profile. You can fill reviewed fields once; remaining questions stay manual."
+          : !reusableQuestions.length
+            ? "Reviewed employer dropdown choices are available now. Select exact values for this application; options are never saved as reusable profile answers."
+            : memoryAvailable
+              ? "Safe text questions are saved as missing profile prompts. Reviewed past answers are suggestions only; check them again for this employer."
+              : "Text-question profile memory was unavailable: new prompts were not saved. You may still review this employer form and fill the approved fields.")
         : "No safe unanswered questions. Complete remaining questions " +
           "personally in the employer browser.");
     });
@@ -804,7 +806,7 @@ export default function LocalPlaywrightAssist(props: {
                   questionProfileMode === "cv_only" || !questionMemoryAvailable}
                 onChange={event => setRememberMyAnswers(event.target.checked)}
               />
-              Permanently remember my reviewed answers in my private profile
+              Permanently remember my reviewed text answers in my private profile
               for future exact-question suggestions. Native dropdown selections
               are always application-specific (never submit automatically).
             </label> : null}
