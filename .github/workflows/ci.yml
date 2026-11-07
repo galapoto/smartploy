@@ -198,6 +198,15 @@ jobs:
       - name: Browser acceptance against isolated synthetic API
         working-directory: web
         run: npm run test:e2e
+      # PR #277's original Python Chromium tests otherwise importorskip.
+      # Explicitly commission them here: approved, intercepted employer only.
+      - name: Real Python Playwright visible-helper Chromium acceptance
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            'pytest==8.4.1' 'playwright==1.55.0'
+          python -m playwright install chromium
+          python -m pytest -q tests/test_playwright_assistant_chromium.py
       - name: Upload synthetic screenshots and failure evidence
         if: always()
         uses: actions/upload-artifact@v4
