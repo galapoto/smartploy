@@ -401,7 +401,7 @@ test("SP87 CV-less job-card shortcut cannot bypass upload and choose Manual", as
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   const card = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
   await card.getByRole("button", { name: /Apply manually/i }).click();
-  await expect(page.getByRole("heading", { name: "From your CV to a complete application." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Apply in four steps" })).toBeVisible();
   await expect(page.getByText(/All three application methods are visible below/)).toBeVisible();
   await expect(page.getByRole("group", { name: "Choose application method" })).toBeVisible();
   for (const mode of ["manual", "assisted", "automatic"]) {
@@ -425,7 +425,7 @@ test("CV-first manual application goes from upload to real matching and selected
   await expect(page.getByRole("group", { name: "Choose application method" })).toBeVisible();
   await page.getByRole("button", { name: /Apply manually/i }).click();
   await expect(page.getByRole("heading", {
-    name: "From your CV to a complete application.",
+    name: "Apply in four steps",
   })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
@@ -631,7 +631,7 @@ test("existing job-search cards open the requested assisted journey without crea
   await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   const analystCard = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
   await analystCard.getByRole("button", { name: /Apply with AI/i }).click();
-  await expect(page.getByRole("heading", { name: "From your CV to a complete application." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Apply in four steps" })).toBeVisible();
   await expect(page.locator(".flow-mode.selected")).toContainText("Apply with AI help");
   await expect(page.locator(".flow-job.highlighted")).toContainText("Junior Data Analyst");
   expect(state.applicationWorkspaceCreates).toEqual([]);
@@ -1019,7 +1019,7 @@ test("SP97: Career tools provides a truthful private AI entry but never bypasses
   await expect(readiness).toContainText("Complete English/Finnish letters");
   await page.getByRole("button", { name: /AI writing assistant/i }).click();
   await expect(page.getByRole("heading", {
-    name: "From your CV to a complete application.",
+    name: "Apply in four steps",
   })).toBeVisible();
   await expect(page.getByRole("button", { name: "Upload CV & find jobs" })).toBeVisible();
   await expect(page.getByRole("group", { name: "Choose application method" })).toBeVisible();
