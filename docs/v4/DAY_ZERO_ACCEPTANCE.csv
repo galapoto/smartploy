@@ -1,0 +1,15 @@
+id,lane,requirement,expected_evidence,status
+P0-01,Journey,CV persists and mode selection advances,UI real-account replay,NOT_RUN
+P0-02,Journey,Selected external job opens exact correct ATS form,Observed URL and job ID,NOT_RUN
+P0-03,Browser,React text and custom autocomplete persists,Fresh DOM verification,NOT_RUN
+P0-04,Browser,Radio/select/checkbox/date/number use approved semantics,Typed option assertions,NOT_RUN
+P0-05,Browser,Exact approved CV and letter upload,Visible employer upload acknowledgment,NOT_RUN
+P0-06,Browser,Conditional question and next stage,Fresh post-transition observation,NOT_RUN
+P0-07,Browser,Pause/takeover/resume transfer authority,Case lease and state receipt,NOT_RUN
+P0-08,Reliability,Browser and server restart without duplicate send,Durable replay negative test,NOT_RUN
+P0-09,Security,Wrong origin and unauthorized send denied,Action policy negative test,NOT_RUN
+P0-10,Reliability,Post-submit disconnect becomes unknown not resend,Correlated receipt reconciliation trace,NOT_RUN
+P0-11,Security,Two-account case collision isolation,API browser queue and cache test,NOT_RUN
+P0-12,Documents,Complete Finnish and English CV/letter PDF DOCX,Exact export and text extraction,NOT_RUN
+P0-13,UI,Responsive branded shell with working sidebar and live controls,Desktop mobile zoom dark/light screenshots,NOT_RUN
+P0-14,Production,Exact approved artifact live and signed-in user journey accepted,Running SHA CI and redacted real trace,NOT_RUN
