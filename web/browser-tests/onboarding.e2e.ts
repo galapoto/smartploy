@@ -1315,7 +1315,7 @@ test("SP128 phone home is CV-first with compact actionable methods and no duplic
     await page.getByRole("button", { name: "Open menu" }).click();
     await page.getByRole("dialog", { name: "SmartPloy sidebar" })
       .getByRole("button", { name: "My CV & documents" }).click();
-    await expect(page.getByRole("heading", { name: "Your CV" })).toBeVisible();
+    await expect(page.locator(".cv-panel").getByRole("heading", { name: "Your CV" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
   }
 });
