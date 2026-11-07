@@ -806,6 +806,9 @@ describe("Application Studio private-read account boundary", () => {
     fireEvent.click(button);
     const ready=await screen.findByLabelText("Browser AutoApply ready");
     expect(ready.textContent).toContain("Browser packet ready");
+    expect(ready.textContent).toContain("Record exact CV and job review below");
+    expect(ready.textContent).toContain("Verify review");
+    expect(ready.textContent).toContain("Start AutoApply");
     const employerLink=screen.getByRole("link", {name:/Open employer form/i});
     expect(employerLink.getAttribute("href")).toBe("https://jobs.lever.co/example/role");
     expect(employerLink.getAttribute("target")).toBe("_blank");
