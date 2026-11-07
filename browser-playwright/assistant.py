@@ -657,12 +657,12 @@ def inspect_reviewed_questions(
     for question in questions:
         if (
             not isinstance(question, dict)
-            or set(question) != {
+            or set(question) != ({
                 "index", "label", "type", "expected_id", "expected_name",
                 "expected_placeholder", "expected_max_length", "max_answer_length",
-            }
+            } | ({"options"} if question.get("type") == "select" else set()))
             or type(question["index"]) is not int or not 0 <= question["index"] < 250
-            or question["type"] not in ("text", "textarea")
+            or question["type"] not in ("text", "textarea", "select")
             or not isinstance(question["label"], str) or not 1 <= len(question["label"]) <= 150
             or type(question["max_answer_length"]) is not int
             or not 2 <= question["max_answer_length"] <= 1500
@@ -671,6 +671,20 @@ def inspect_reviewed_questions(
                 for key in ("expected_id", "expected_name", "expected_placeholder")
             )
             or type(question["expected_max_length"]) is not int
+            or (question.get("type") == "select" and (
+                not isinstance(question.get("options"), list)
+                or not 1 <= len(question["options"]) <= 24
+                or any(
+                    not isinstance(option, dict)
+                    or set(option) != {"value", "label"}
+                    or not isinstance(option["value"], str)
+                    or not 1 <= len(option["value"]) <= 150
+                    or not isinstance(option["label"], str)
+                    or not 1 <= len(option["label"]) <= 150
+                    for option in question["options"]
+                )
+                or len({o["value"] for o in question["options"]}) != len(question["options"])
+            ))
         ):
             raise PacketError("Unsafe employer question plan returned")
     if any(not isinstance(label, str) or not 1 <= len(label) <= 150 for label in human):
