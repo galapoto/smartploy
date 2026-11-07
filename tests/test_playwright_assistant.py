@@ -300,4 +300,4 @@ def test_sp110_web_build_has_required_zip_origin_and_not_spa_fallback():
     assert caddy.index("handle @playwright_assistant") < caddy.index("try_files {path} /index.html")
     studio = (ROOT/"web/src/ApplicationStudio.tsx").read_text()
     assert 'href="/smartploy-playwright-assistant.zip"' in studio
-    assert "Playwright · local form assistant" in studio
+    assert "Use visible Playwright instead" in studio
