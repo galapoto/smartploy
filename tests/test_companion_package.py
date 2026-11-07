@@ -141,7 +141,8 @@ def test_sp44_distribution_fails_closed_on_unreviewed_extension_change(
 
 def test_sp44_web_build_contains_same_first_party_download_and_fail_closed_route():
     package = json.loads((ROOT / "web/package.json").read_text(encoding="utf-8"))
-    assert package["scripts"]["prebuild"] == "python3 scripts/package_companion.py"
+    assert package["scripts"]["prebuild"] == ("python3 scripts/package_companion.py && "
+        "python3 scripts/package_playwright_assistant.py")
     assert package["scripts"]["predev"] == package["scripts"]["prebuild"]
     docker = (ROOT / "web/Dockerfile").read_text(encoding="utf-8")
     assert "COPY browser-companion/ /workspace/browser-companion/" in docker
