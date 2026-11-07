@@ -460,6 +460,86 @@ describe("SP111 paired browser review-first UI", () => {
     expect(window.confirm).toHaveBeenCalledTimes(2);
   });
 
+  it("V4 displays reviewed native employer options without remembering their selections", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/prepare")) return mockReply("opened") as unknown as Response;
+      if (url.endsWith("/v1/inspect")) return mockReply("inspected") as unknown as Response;
+      if (url.endsWith("/v1/questions")) return {
+        ok: true, status: 200,
+        json: async () => ({
+          ...(await mockReply("questions_inspected").json()),
+          questions: [
+            {
+              index: 4, label: "Where did you hear about the role?", type: "select",
+              expected_id: "source", expected_name: "job_source",
+              expected_placeholder: "", expected_max_length: -1,
+              max_answer_length: 1500,
+              options: [
+                { value: "job-board", label: "Job board" },
+                { value: "referral", label: "Referral" },
+              ],
+            },
+            {
+              index: 3, label: "Describe a project you led", type: "textarea",
+              expected_id: "project", expected_name: "project_example",
+              expected_placeholder: "", expected_max_length: -1,
+              max_answer_length: 1500,
+            },
+          ],
+        }),
+      } as unknown as Response;
+      if (url.endsWith("/v1/fill-questions")) return {
+        ok: true, status: 200,
+        json: async () => ({
+          ok: true, stage: "answers_filled", status: "filled_for_review",
+          filled: 2, planned: 2, submitted: false, uploaded: false,
+        }),
+      } as unknown as Response;
+      if (url.endsWith("/v1/stop")) return mockReply("stopped") as unknown as Response;
+      throw new Error("Unexpected route " + url);
+    }));
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: { value: pairing },
+    });
+    fireEvent.click(screen.getByRole("button", {
+      name: "Start visible AutoApply (open & inspect)",
+    }));
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Review unanswered employer questions",
+    }));
+
+    const native = await screen.findByLabelText(
+      "Where did you hear about the role?",
+    ) as HTMLSelectElement;
+    expect(native.tagName).toBe("SELECT");
+    expect(Array.from(native.options).map(option => option.value))
+      .toEqual(["", "job-board", "referral"]);
+    expect(screen.getByLabelText("Describe a project you led").tagName)
+      .toBe("TEXTAREA");
+    fireEvent.change(native, { target: { value: "job-board" } });
+    fireEvent.change(screen.getByLabelText("Describe a project you led"), {
+      target: { value: "I built a reviewed Python analysis pipeline." },
+    });
+    fireEvent.click(screen.getByRole("button", {
+      name: "Fill my reviewed answers once (never submit)",
+    }));
+    expect(await screen.findByText(/Reviewed employer answers: 2 of 2 filled/))
+      .toBeTruthy();
+    expect(rememberApplicationQuestions).toHaveBeenCalledWith(
+      "workspace-A", 2, [{
+        label: "Describe a project you led", expected_id: "project",
+        expected_name: "project_example", expected_placeholder: "",
+      }], "user-A",
+    );
+    expect(saveApplicationQuestionAnswer).toHaveBeenCalledTimes(1);
+    const attempt = vi.mocked(fetch).mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/fill-questions"))!;
+    expect(JSON.parse(String((attempt[1] as RequestInit).body)).answers)
+      .toEqual(["job-board", "I built a reviewed Python analysis pipeline."]);
+  });
+
   it("SP114 reviews only eligible employer questions and fills user-written answers once", async () => {
     component();
     fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
@@ -536,7 +616,7 @@ describe("SP111 paired browser review-first UI", () => {
     expect(screen.getByText(/CV-only mode: no question is saved/)).toBeTruthy();
     expect(rememberApplicationQuestions).not.toHaveBeenCalled();
     const remember = screen.getByLabelText(
-      /Permanently remember my reviewed answers in my private profile/,
+      /Permanently remember my reviewed text answers in my private profile/,
     ) as HTMLInputElement;
     expect(remember.checked).toBe(false);
     expect(remember.disabled).toBe(true);

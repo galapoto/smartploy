@@ -143,10 +143,10 @@ html[data-smartploy-theme="dark"] .local-playwright-receipt p:last-of-type {
   font-size: 12px;
   font-weight: 700;
 }
-.local-playwright-questions textarea {
+.local-playwright-questions textarea,
+.local-playwright-questions select {
   display: block;
   width: 100%;
-  min-height: 85px;
   padding: 10px 12px;
   border: 1px solid #a1bfd7;
   border-radius: 9px;
@@ -154,9 +154,10 @@ html[data-smartploy-theme="dark"] .local-playwright-receipt p:last-of-type {
   color: #132e4c;
   font: 400 13px/1.5 inherit;
   line-height: 1.5;
-  resize: vertical;
 }
-.local-playwright-questions textarea:focus-visible {
+.local-playwright-questions textarea { min-height: 85px; resize: vertical; }
+.local-playwright-questions select { min-height: 44px; cursor: pointer; }
+.local-playwright-questions :is(textarea, select):focus-visible {
   outline: 2px solid #226bc8;
   outline-offset: 2px;
 }
@@ -185,7 +186,8 @@ html[data-smartploy-theme="dark"] .local-playwright-questions {
 html[data-smartploy-theme="dark"] .local-playwright-questions label {
   color: #e5f3ff;
 }
-html[data-smartploy-theme="dark"] .local-playwright-questions textarea {
+html[data-smartploy-theme="dark"] .local-playwright-questions textarea,
+html[data-smartploy-theme="dark"] .local-playwright-questions select {
   background: #172e49;
   border-color: #6b8aaa;
   color: #f2f8ff;

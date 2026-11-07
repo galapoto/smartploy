@@ -58,6 +58,7 @@ def reviewed_receipt_script() -> bytes:
 QUESTION_LOGIC = ROOT / "browser-companion/logic.mjs"
 QUESTION_POLICY = ROOT / "browser-companion/questions.mjs"
 QUESTION_FILLER = ROOT / "browser-companion/page-questions.mjs"
+APPROVED_OPTION_SOURCE = ROOT / "browser-companion/adapters/approved-option.mjs"
 FORM_START = "function inspectForm()"
 FORM_END = "\n/* Strictly fill only"
 
@@ -66,6 +67,7 @@ def reviewed_questions_script() -> bytes:
     logic = QUESTION_LOGIC.read_text(encoding="utf-8")
     questions = QUESTION_POLICY.read_text(encoding="utf-8")
     filler = QUESTION_FILLER.read_text(encoding="utf-8")
+    option_policy = APPROVED_OPTION_SOURCE.read_text(encoding="utf-8")
     popup = RECEIPT_OWNER_SOURCE.read_text(encoding="utf-8")
     start = popup.find(FORM_START)
     end = popup.find(FORM_END, start)
@@ -76,10 +78,18 @@ def reviewed_questions_script() -> bytes:
     if questions.count(importer) != 1:
         raise ValueError("The original question policy dependencies changed")
     questions = questions.replace(importer, "")
+    # Preserve the exact sanitized JobNavigator-derived decision logic when
+    # building the local Playwright helper. Never ship dangling ES imports.
+    option_import = 'import { uniqueApprovedOption } from "./adapters/approved-option.mjs";'
+    if questions.count(option_import) != 1 or (
+        option_policy.count("export function uniqueApprovedOption(") != 1
+    ):
+        raise ValueError("Approved option reuse source changed")
+    questions = questions.replace(option_import, "")
     for source, checks in (
         (logic, ("export function identifyField(", "function unsafeContactMetadata(")),
         (questions, ("export function planReviewedQuestions(", "export function validateReviewedAnswers(")),
-        (filler, ("export function fillReviewedAnswers(", "location.href !== inspectedUrl")),
+        (filler, ("export async function fillReviewedAnswers(", "location.href !== inspectedUrl")),
         (form, ("function inspectForm()", "allElementsCount: all.length")),
     ):
         if any(gate not in source for gate in checks):
@@ -88,6 +98,9 @@ def reviewed_questions_script() -> bytes:
     # exactly; separate IIFEs prevent distinct modules' tidy() collisions.
     script = (
         "(request) => {\n"
+        "  const uniqueApprovedOption = (() => {\n"
+        + option_policy.replace("export ", "") +
+        "\nreturn uniqueApprovedOption;\n})();\n"
         "  const identifyField = (() => {\n"
         + logic.replace("export ", "") + "\nreturn identifyField;\n})();\n"
         "  const rules = (() => {\n"

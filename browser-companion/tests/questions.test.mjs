@@ -38,6 +38,8 @@ test("legal, protected, privacy, salary, immigration, availability questions rem
     "Do you need visa sponsorship?",
     "What is your expected salary?",
     "Are you a citizen of Finland?",
+    "Are you legally eligible to work in Finland?",
+    "Are you authorized to work in this country?",
     "I consent to data retention",
     "Please certify that you can legally work here",
     "Gender identity",
@@ -123,4 +125,37 @@ test("known ordinary question metadata remains eligible after identifier hardeni
   const ordinary = row({id:"roleMotivation",name:"questions[role_motivation]"});
   assert.equal(isSensitiveQuestion(ordinary),false);
   assert.equal(planReviewedQuestions([ordinary]).questions.length,1);
+});
+
+test("V4 ordinary native select has applicant-visible exact options only", () => {
+  const rowSelect = row({
+    type:"select", label:"Where did you find this job?",
+    id:"job_source", name:"job_source", maxLength:-1,
+    options:[
+      {value:"",label:"Choose",disabled:true},
+      {value:"job-board",label:"Job board",disabled:false},
+      {value:"referral",label:"Referral",disabled:false}
+    ]
+  });
+  const plan = planReviewedQuestions([rowSelect]);
+  assert.equal(plan.questions.length,1);
+  assert.equal(plan.questions[0].type,"select");
+  assert.deepEqual(plan.questions[0].options.map(o=>o.value),["job-board","referral"]);
+  assert.deepEqual(validateReviewedAnswers(plan,["referral"]).map(x=>x.value),["referral"]);
+  for(const bad of ["ref","Referral","", "job-board ", "JOB-BOARD"]) {
+    assert.throws(()=>validateReviewedAnswers(plan,[bad]),QuestionError);
+  }
+});
+test("V4 sensitive, duplicate or overflowing native select options remain manual", () => {
+  const ordinary = { type:"select", label:"Choose a source", id:"source",
+    name:"source", maxLength:-1,
+    options:[{value:"yes",label:"Yes"},{value:"yes",label:"Yes again"}]};
+  assert.equal(planReviewedQuestions([row(ordinary)]).questions.length,0);
+  const sensitive = {...ordinary, label:"Do you consent to GDPR processing?",
+    options:[{value:"yes",label:"Yes"},{value:"no",label:"No"}]};
+  assert.equal(planReviewedQuestions([row(sensitive)]).questions.length,0);
+  const tooMany = {...ordinary, options:Array.from({length:31},(_,i)=>({
+    value:"value-"+i,label:"Label "+i
+  }))};
+  assert.equal(planReviewedQuestions([row(tooMany)]).questions.length,0);
 });

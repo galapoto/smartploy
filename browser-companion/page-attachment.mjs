@@ -39,6 +39,17 @@ export async function attachReviewedPdf(payload) {
   const strict = ["jobs.lever.co", "jobs.eu.lever.co", "jobs.ashbyhq.com",
     ...ghHosts, "ats.talentadore.com"];
   const approvedHost = approved.hostname;
+  // Mirror SmartPloy's original exact-job path guard; same host is not enough.
+  const sameReviewedJobPath = (actual, approved) => {
+    if (actual.search !== approved.search) return false;
+    const source = approved.pathname.replace(/\/+$/, "") || "/";
+    const live = actual.pathname.replace(/\/+$/, "") || "/";
+    if (live === source) return true;
+    if (source === "/") return false;
+    if (["/apply", "/application"].some(suffix =>
+        live === source + suffix || live.startsWith(source + suffix + "/"))) return true;
+    return /\/(?:apply|application)$/.test(source) && live.startsWith(source + "/");
+  };
   const generic = !strict.includes(approvedHost) &&
     page.origin === approved.origin && page.hostname === approvedHost &&
     typeof payload.application_url === "string" && payload.application_url.length <= 1500 &&
@@ -48,6 +59,7 @@ export async function attachReviewedPdf(payload) {
     !/(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion|lan|home|intranet)$/i.test(approvedHost) &&
     (approved.pathname !== "/" || approved.search.length > 0) &&
     page.search.length <= 800 && approved.search.length <= 800 &&
+    sameReviewedJobPath(page, approved) &&
     !page.hash && !approved.hash;
   if (
     page.protocol !== "https:" || approved.protocol !== "https:" ||

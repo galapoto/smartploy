@@ -39,13 +39,52 @@ export type LocalBridgeAttached = {
 export type LocalReviewedQuestion = {
   index: number;
   label: string;
-  type: "text" | "textarea";
+  type: "text" | "textarea" | "select";
+  /** Exact applicant-reviewed native employer options; no guessed aliases. */
+  options?: Array<{ value: string; label: string }>;
   expected_id: string;
   expected_name: string;
   expected_placeholder: string;
   expected_max_length: number;
   max_answer_length: number;
 };
+/** Same bounded typed question contract as Playwright assistant's source policy.
+ * Reject nonselect options and ambiguous/malformed dropdown choices BEFORE
+ * rendering them or accepting a one-use action in the web application.
+ */
+export function localReviewedQuestionValid(input: unknown): input is LocalReviewedQuestion {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return false;
+  const item = input as Record<string, unknown>;
+  if (!Number.isSafeInteger(item.index) || (item.index as number) < 0 ||
+      (item.index as number) >= 250 ||
+      typeof item.label !== "string" || !item.label.length || item.label.length > 150 ||
+      !["text", "textarea", "select"].includes(String(item.type)) ||
+      ["expected_id", "expected_name", "expected_placeholder"].some(key =>
+        typeof item[key] !== "string" || (item[key] as string).length > 150) ||
+      !Number.isSafeInteger(item.expected_max_length) ||
+      !Number.isSafeInteger(item.max_answer_length) ||
+      (item.max_answer_length as number) < 2 ||
+      (item.max_answer_length as number) > 1500) return false;
+  if (item.type !== "select") return item.options === undefined;
+  if (!Array.isArray(item.options) ||
+      item.options.length < 1 || item.options.length > 24) return false;
+  const values = new Set<string>(), labels = new Set<string>();
+  for (const candidate of item.options) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return false;
+    const choice = candidate as Record<string, unknown>;
+    if (Object.keys(choice).sort().join("|") !== "label|value" ||
+        typeof choice.value !== "string" || !choice.value.length ||
+        choice.value.length > 150 ||
+        typeof choice.label !== "string" || !choice.label.trim().length ||
+        choice.label.length > 150) return false;
+    const key = choice.label.normalize("NFKC").trim().toLowerCase();
+    if (values.has(choice.value) || labels.has(key)) return false;
+    values.add(choice.value);
+    labels.add(key);
+  }
+  return true;
+}
+
 export type LocalQuestionsInspected = {
   ok: true; stage: "questions_inspected"; plan_id: string;
   questions: LocalReviewedQuestion[]; human_only: string[];
@@ -219,23 +258,7 @@ export async function callLocalPlaywrightBridge<T extends BridgeResult>(
         !Array.isArray(body.human_only) || body.human_only.length > 250 ||
         body.human_only.some(item => typeof item !== "string" ||
           !item.length || item.length > 150) ||
-        body.questions.some(q => {
-          if (!q || typeof q !== "object") return true;
-          const item = q as Record<string, unknown>;
-          return !Number.isSafeInteger(item.index) ||
-            (item.index as number) < 0 || (item.index as number) >= 250 ||
-            typeof item.label !== "string" ||
-            !item.label.length || item.label.length > 150 ||
-            (item.type !== "text" && item.type !== "textarea") ||
-            ["expected_id", "expected_name", "expected_placeholder"].some(key =>
-              typeof item[key] !== "string" ||
-              (item[key] as string).length > 150
-            ) ||
-            !Number.isSafeInteger(item.expected_max_length) ||
-            !Number.isSafeInteger(item.max_answer_length) ||
-            (item.max_answer_length as number) < 2 ||
-            (item.max_answer_length as number) > 1500;
-        })
+        body.questions.some(q => !localReviewedQuestionValid(q))
     ) throw new Error("Invalid employer question review; complete manually.");
   }
   if (route === "fill-questions" && (

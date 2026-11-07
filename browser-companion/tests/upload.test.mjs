@@ -185,8 +185,7 @@ test("SP118 TalentAdore exact posting supports review-only attachment, never fin
 test("SP121 public custom employer origin is reviewed-fill-only, never a final submit", () => {
   const source = "https://careers.example.org/jobs/junior-analyst";
   for (const active of [
-    source, "https://careers.example.org/apply?job=junior-analyst",
-    "https://careers.example.org/applicant/details",
+    source, source + "/apply", source + "/application/step-2",
   ]) {
     assert.equal(reviewedPublicEmployerForm(active,source),true,active);
     assert.equal(exactAssistedForm(active,source),true,active);
@@ -200,6 +199,9 @@ test("SP121 public custom employer origin is reviewed-fill-only, never a final s
     "https://careers.example.org:8080/apply",
     "https://user:pw@careers.example.org/apply",
     "https://careers.example.org/apply#secret",
+    "https://careers.example.org/jobs/another",
+    "https://careers.example.org/apply?job=junior-analyst",
+    source + "/apply?job=another",
     "https://careers.example.org\\@evil.com/jobs/apply",
   ]) assert.equal(exactAssistedForm(bad,source),false,bad);
   for (const bad of [

@@ -7,7 +7,7 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 
 const POSTING = "https://careers.example.org/jobs/junior-analyst";
-const FORM = "https://careers.example.org/apply?job=junior-analyst";
+const FORM = POSTING + "/apply";
 const TALENT = "https://ats.talentadore.com/apply/junior-analyst/m6rpoy";
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n");
 
@@ -59,8 +59,8 @@ async function inject(page: Page, file: string, start: string, end?: string) {
     : start.includes("attachReviewedPdf")
       ? code.replace("export async function attachReviewedPdf(",
         "window.extensionAttachPdf = async function attachReviewedPdf(")
-      : code.replace("export function fillReviewedAnswers(",
-        "window.extensionFillQuestions = function fillReviewedAnswers(");
+      : code.replace("export async function fillReviewedAnswers(",
+        "window.extensionFillQuestions = async function fillReviewedAnswers(");
   await page.addScriptTag({ content: output });
 }
 
@@ -114,7 +114,7 @@ test("SP121 custom public employer: digest-checked PDF attachment is local, not 
 
 test("SP121 custom public employer: reviewed ordinary question is filled without consent", async ({page}) => {
   const unexpected = await interceptEmployer(page);
-  await inject(page,"page-questions.mjs","export function fillReviewedAnswers(");
+  await inject(page,"page-questions.mjs","export async function fillReviewedAnswers(");
   const actions = [{
     index:5, type:"textarea", value:"I have reviewed this fictional answer.",
     label:"Why this role?", expected_id:"reason", expected_name:"motivation",
@@ -127,6 +127,43 @@ test("SP121 custom public employer: reviewed ordinary question is filled without
   expect(result.filled).toBe(1);
   expect(await page.locator("#reason").inputValue()).toBe(actions[0].value);
   expect(await page.locator("#consent").isChecked()).toBe(false);
+  expect(await page.evaluate(() => (window as any).submitCount)).toBe(0);
+  expect(unexpected()).toBe(0);
+});
+
+test("V4 same employer hostname is insufficient for any different job action", async ({page}) => {
+  const unexpected = await interceptEmployer(page);
+  const wrongJob = "https://careers.example.org/jobs/senior-engineer";
+  await inject(page, "popup.mjs",
+    "function fillPlanned(actions, exactUrl) {", "\nfunction inspectFinalSubmit(");
+  await inject(page, "page-questions.mjs",
+    "export async function fillReviewedAnswers(");
+  await inject(page, "page-attachment.mjs",
+    "export async function attachReviewedPdf(");
+  const contacts = await page.evaluate(url =>
+    (window as any).extensionFillPlanned([{
+      index:0, expected_id:"full", expected_name:"full_name",
+      expected_type:"text", label:"Full name", value:"Fictional Applicant"
+    }], url), wrongJob);
+  expect(contacts.filled).toBe(0);
+  expect(contacts.blocker).toMatch(/changed since packet approval/);
+  const question = await page.evaluate(({url,inspected}) =>
+    (window as any).extensionFillQuestions([{
+      index:5, type:"textarea", value:"Truthful synthetic answer",
+      label:"Why this role?", expected_id:"reason", expected_name:"motivation",
+      expected_placeholder:"", expected_max_length:-1
+    }], url, inspected), {url:wrongJob,inspected:FORM});
+  expect(question.status).toBe("blocked");
+  expect(question.filled).toBe(0);
+  const attachment = await page.evaluate(({url,inspected}) =>
+    (window as any).extensionAttachPdf({
+      application_url:url,inspected_url:inspected
+    }), {url:wrongJob,inspected:FORM});
+  expect(attachment.status).toBe("blocked");
+  expect(await page.locator("#full").inputValue()).toBe("");
+  expect(await page.locator("#reason").inputValue()).toBe("");
+  expect(await page.locator("#resume").evaluate(
+    (el:HTMLInputElement) => el.files?.length || 0)).toBe(0);
   expect(await page.evaluate(() => (window as any).submitCount)).toBe(0);
   expect(unexpected()).toBe(0);
 });

@@ -124,7 +124,13 @@ def test_sp140_real_lever_unicode_required_markers_map_only_safe_fields():
     ("https://careers.example.org/jobs/junior-analyst",
      "https://careers.example.org/jobs/junior-analyst/apply", True),
     ("https://careers.example.org/jobs/junior-analyst",
-     "https://careers.example.org/jobs/other", True),
+     "https://careers.example.org/jobs/other", False),
+    ("https://careers.example.org/jobs/junior-analyst",
+     "https://careers.example.org/jobs/junior-analyst/application/step-2", True),
+    ("https://careers.example.org/jobs/junior-analyst",
+     "https://careers.example.org/apply?job=junior-analyst", False),
+    ("https://careers.example.org/jobs/junior-analyst",
+     "https://careers.example.org/jobs/junior-analyst/apply?job=other", False),
     ("https://careers.example.org/jobs/junior-analyst",
      "https://sub.careers.example.org/jobs/junior-analyst/apply", False),
     ("https://careers.example.org/jobs/junior-analyst",
@@ -381,9 +387,20 @@ def test_sp110_archive_deterministic_allowlisted_and_checksum(tmp_path):
         assert compiled_questions == packager.reviewed_questions_script().decode("utf-8")
         assert original_question.replace(
             'import { identifyField } from "./logic.mjs";', ''
+        ).replace(
+            'import { uniqueApprovedOption } from "./adapters/approved-option.mjs";', ''
         ).replace("export ", "").strip() in compiled_questions
+        donor = (ROOT / "browser-companion/adapters/approved-option.mjs").read_text()
+        assert donor.replace("export ", "").strip() in compiled_questions
+        assert 'import { uniqueApprovedOption }' not in compiled_questions
         assert original_logic.replace("export ", "").strip() in compiled_questions
         assert original_fill.replace("export ", "").strip() in compiled_questions
+        # React/ATS handlers may resolve after input/change; the local
+        # evaluated adapter MUST carry the async settlement check and the
+        # existing archive generator's gate must accept its exact signature.
+        assert "async function fillReviewedAnswers(" in compiled_questions
+        assert "return fillReviewedAnswers(actions, request.approvedUrl, request.inspectedUrl);" in compiled_questions
+        assert "await new Promise(resolve => setTimeout(resolve, 150))" in compiled_questions
         assert "chrome.tabs" not in compiled_questions
         assert "chrome.scripting" not in compiled_questions
 

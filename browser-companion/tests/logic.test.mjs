@@ -354,7 +354,7 @@ test("SP118 TalentAdore exact job packet works only on its canonical hosted form
 
 test("SP121 reviewed generic HTTPS employer can fill ordinary fields, never submit", () => {
   const approved = "https://careers.example.org/jobs/junior-analyst";
-  const live = "https://careers.example.org/apply?job=junior-analyst";
+  const live = "https://careers.example.org/jobs/junior-analyst/apply";
   const p = validatePacket(packet({application_url:approved}), live, validNow);
   assert.equal(p.application_url, approved);
   assert.equal(p.fields.email, "person@example.org");
@@ -380,6 +380,9 @@ test("SP121 generic assistance rejects cross-host, local/private/credential and 
     "https://careers.example.org:8443/apply",
     "https://someone:pass@careers.example.org/apply",
     "https://careers.example.org/apply#secret",
+    "https://careers.example.org/jobs/other",
+    "https://careers.example.org/apply?job=junior-analyst",
+    "https://careers.example.org/jobs/analyst?job=other",
     "https://careers.example.org\\@attacker.example.com/jobs/analyst",
   ]) assert.throws(() => validatePacket(input,bad,validNow),PacketError,bad);
   for (const bad of [

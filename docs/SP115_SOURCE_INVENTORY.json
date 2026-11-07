@@ -32,15 +32,15 @@
   "source_artifacts": [
     {
       "path": ".github/workflows/ci.yml",
-      "git_blob_sha1": "497d06f41129801212b305452a9d6342ade0c3ed"
+      "git_blob_sha1": "aade43711f5d34986b7d00491d0cd7e69de178e5"
     },
     {
       "path": "AGENTS.md",
-      "git_blob_sha1": "00e23f884ad093197742646cac97f481fdfae839"
+      "git_blob_sha1": "17919c1769a569fcefbdb22a9c6fdcc2575130df"
     },
     {
       "path": "browser-companion/logic.mjs",
-      "git_blob_sha1": "60e5246ac876f4d154c389abbeca4b60dcf77f04"
+      "git_blob_sha1": "9414de8370de44c032b2956b413156f9a3db397e"
     },
     {
       "path": "browser-companion/manifest.json",
@@ -48,7 +48,7 @@
     },
     {
       "path": "browser-companion/page-attachment.mjs",
-      "git_blob_sha1": "1e0206bcbea4c74fb6463045527134f3eb2dc732"
+      "git_blob_sha1": "017f8060eca47fd604477dc59ef09c799fe4dd56"
     },
     {
       "path": "browser-companion/page-question-sync.mjs",
@@ -56,7 +56,7 @@
     },
     {
       "path": "browser-companion/page-questions.mjs",
-      "git_blob_sha1": "b48e5cdfc9f006e6d5fadad6dc2e246140b279c6"
+      "git_blob_sha1": "496e045a4fab553f0b959e381f31eb9aadf54e57"
     },
     {
       "path": "browser-companion/popup.html",
@@ -64,7 +64,7 @@
     },
     {
       "path": "browser-companion/popup.mjs",
-      "git_blob_sha1": "f5a29df10f0efb446f79854bf7ebdf0637d39181"
+      "git_blob_sha1": "970eded60ce77a9c768be70352d47bc6bdb77799"
     },
     {
       "path": "browser-companion/question-sync.mjs",
@@ -72,11 +72,11 @@
     },
     {
       "path": "browser-companion/questions.mjs",
-      "git_blob_sha1": "b8873417f83c32bf03fcbf563814b2c00aec2794"
+      "git_blob_sha1": "bcb8ced5b703190f899f78ec5550bcea8a9284d3"
     },
     {
       "path": "browser-companion/tests/logic.test.mjs",
-      "git_blob_sha1": "1a0efa7e057452c83aca7f6254cc7858f1844361"
+      "git_blob_sha1": "dba01acfecb9f0d011af508652967e2a9365fba7"
     },
     {
       "path": "browser-companion/tests/page-question-sync.test.mjs",
@@ -88,15 +88,15 @@
     },
     {
       "path": "browser-companion/tests/upload.test.mjs",
-      "git_blob_sha1": "fc15113b4b73a7392476c429f35d457bc489827a"
+      "git_blob_sha1": "4a1b15cf9e15133289d33a8b0bb9dd9dfee0df8f"
     },
     {
       "path": "browser-companion/upload.mjs",
-      "git_blob_sha1": "64504fbc2775cc722ed7c21fb4a58a0025e5d361"
+      "git_blob_sha1": "6e6d87f27377053ec3c8355bed656b243da22c19"
     },
     {
       "path": "browser-playwright/assistant.py",
-      "git_blob_sha1": "fc38419c48f5717847d5f0582843a741a0687935"
+      "git_blob_sha1": "409952cb99b568628bd98a23f4a0819573ba9403"
     },
     {
       "path": "browser-playwright/bridge.py",
@@ -204,11 +204,11 @@
     },
     {
       "path": "tests/test_playwright_assistant_chromium.py",
-      "git_blob_sha1": "3313c52a8b504119ac835fbe8f954f122e492f18"
+      "git_blob_sha1": "5a2122c76e2d75e0bd2671ed644bf4ae230d3223"
     },
     {
       "path": "tests/test_playwright_assistant.py",
-      "git_blob_sha1": "0fade076fa7062a956a9501a0c2ce36abbd10d3e"
+      "git_blob_sha1": "243129c81ebae6e4dfd3f3217f456000b2937db5"
     },
     {
       "path": "tests/test_private_saved_jobs.py",
@@ -224,7 +224,7 @@
     },
     {
       "path": "web/browser-tests/generic-extension.e2e.ts",
-      "git_blob_sha1": "57f9f2b006520b52cab51d7a77093b112f669f93"
+      "git_blob_sha1": "3eb3b479093d8325a3e87c00a0e5b1feb3c4e71c"
     },
     {
       "path": "web/browser-tests/onboarding.e2e.ts",
@@ -232,11 +232,11 @@
     },
     {
       "path": "web/scripts/package_companion.py",
-      "git_blob_sha1": "02d4e11b4a40f64c9c4179cc9d281c0937573f80"
+      "git_blob_sha1": "d6a404f250edd26298e14adb048d6eeb416d5091"
     },
     {
       "path": "web/scripts/package_playwright_assistant.py",
-      "git_blob_sha1": "490b0d08fad33375819af926e60ddfb16f6c23e0"
+      "git_blob_sha1": "1f4bd6ba164fa021e6bf3a96501f3404742bfa9a"
     },
     {
       "path": "web/src/api.ts",
@@ -284,15 +284,15 @@
     },
     {
       "path": "web/src/LocalPlaywrightAssist.test.tsx",
-      "git_blob_sha1": "31e226ed765c1c7fd8f9aca39df8211a40580fb1"
+      "git_blob_sha1": "628f17b45d9a6876982dd693302776555bb48f28"
     },
     {
       "path": "web/src/LocalPlaywrightAssist.tsx",
-      "git_blob_sha1": "a52c7f36b09cd853a0ed3ff82fdc6dc0986980dc"
+      "git_blob_sha1": "61973583917417894f5864d48957e1c6b5123057"
     },
     {
       "path": "web/src/localPlaywrightBridge.ts",
-      "git_blob_sha1": "1ec7aa4fe52465608f38c646aa3f7d218e583d84"
+      "git_blob_sha1": "2802d587f82ddbbd6947bdd9e219cc074e865cab"
     },
     {
       "path": "web/src/main.tsx",
