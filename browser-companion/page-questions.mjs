@@ -211,12 +211,14 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       if (action.type === "radio_group") {
         const selected = reviewedRadioChoice(action, true);
         if (!selected) return stop("Employer radio choices changed; review manually.", filled);
-        const checkSetter = Object.getOwnPropertyDescriptor(
-          HTMLInputElement.prototype, "checked")?.set;
-        if (!checkSetter) return stop("The radio input cannot be safely selected.", filled);
-        checkSetter.call(selected, true);
-        selected.dispatchEvent(new Event("input", {bubbles:true, composed:true}));
-        selected.dispatchEvent(new Event("change", {bubbles:true, composed:true}));
+        // Reuse ObumAI/Playwright's native radio .check() click semantics:
+        // React controls often listen for "click", not synthetic "change".
+        // Only the individually approved, exact input may be clicked; never a
+        // submit, consent checkbox, hidden element or inferred yes/no answer.
+        if (typeof selected.click !== "function") {
+          return stop("The radio input cannot be safely selected.", filled);
+        }
+        selected.click();
         await new Promise(resolve => setTimeout(resolve, 150));
         if (location.href !== inspectedUrl ||
             reviewedRadioChoice(action, false) !== selected) {
