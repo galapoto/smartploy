@@ -134,6 +134,18 @@ jobs:
             web/public/smartploy-apply-companion.zip.sha256
           if-no-files-found: error
           retention-days: 7
+      # Source-only candidate for applicant-installed visible local Chromium.
+      # Publish exactly the deterministic archive produced by npm prebuild.
+      - name: Attach visible Playwright review ZIP with exact SHA256
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-playwright-REVIEW-run-${{ github.run_id }}
+          path: |
+            web/public/smartploy-playwright-assistant.zip
+            web/public/smartploy-playwright-assistant.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
 
   browser:
     # Playwright 1.55.1 does not install its pinned Chromium on the hosted
