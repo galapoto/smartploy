@@ -131,6 +131,22 @@ def _url_parts(raw: str) -> SplitResult:
     return parsed
 
 
+def _same_generic_job_path(approved: SplitResult, current: SplitResult) -> bool:
+    """Port first-party SmartPloy exact-reviewed-job path policy."""
+    if current.query != approved.query:
+        return False
+    source = approved.path.rstrip("/") or "/"
+    live = current.path.rstrip("/") or "/"
+    if live == source:
+        return True
+    if source == "/":
+        return False
+    if any(live == source + suffix or live.startswith(source + suffix + "/")
+           for suffix in ("/apply", "/application")):
+        return True
+    return source.endswith(("/apply", "/application")) and live.startswith(source + "/")
+
+
 def same_reviewed_form(posting_url: str, current_url: str) -> bool:
     """Exact hosted ATS job, or one manually selected public employer origin.
 
@@ -168,7 +184,7 @@ def same_reviewed_form(posting_url: str, current_url: str) -> bool:
         )
     # Unlisted employer site: user must recognize the visible job/form;
     # hostname boundary is strict, so no silent cross-provider redirects.
-    return c.hostname == p.hostname
+    return c.hostname == p.hostname and _same_generic_job_path(p, c)
 
 
 
