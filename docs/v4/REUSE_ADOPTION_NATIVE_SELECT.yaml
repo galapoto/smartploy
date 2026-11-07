@@ -10,6 +10,9 @@ local_adaptation:
   - browser-companion/questions.mjs
   - browser-companion/page-questions.mjs
   - browser-playwright/assistant.py
+  - web/src/localPlaywrightBridge.ts
+  - web/src/LocalPlaywrightAssist.tsx
+  - web/src/local-playwright.css
   - web/scripts/package_companion.py
   - web/scripts/package_playwright_assistant.py
 sanitization:
@@ -18,10 +21,21 @@ sanitization:
   - only explicit applicant-selected matching live native select value
   - no protected-question, consent or legal attestation automation
   - preserve exact job, user-review, URL and no-submit policy
+  - first-party copy/adapt SmartPloy pathIsSameJob for all generic employer executor actions
+  - first-party copy/adapt Playwright _fill_one 150ms settled-value verification
+  - never persist employer-specific select values as general candidate profile answers
 tests:
   - browser-companion/tests/approved-option.test.mjs
   - browser-companion/tests/questions.test.mjs
   - tests/test_playwright_assistant.py
-status: SOURCE_READY_UNQUALIFIED
+  - browser-companion/tests/generic-job-identity.test.mjs
+  - browser-companion/tests/reviewed-answer-persistence.test.mjs
+  - web/src/localPlaywrightBridge.test.ts
+  - web/src/LocalPlaywrightAssist.test.tsx
+  - web/browser-tests/lever-questions.e2e.ts
+  - web/browser-tests/generic-extension.e2e.ts
+  - web/browser-tests/ashby-assisted-fill.e2e.ts
+  - web/browser-tests/greenhouse-reviewed-assist.e2e.ts
+status: SOURCE_READY_WITH_FOCUSED_SOURCE_TESTS_NOT_CI_QUALIFIED
 rea_status: REA_NOT_APPLICABLE_TO_PURE_SOURCE_REUSE
-review_note: Live authenticated employer browser tests remain required.
+review_note: Native Woodpecker CI, Chromium/Vitest/pytest and signed-in real employer acceptance remain required; no deployment claimed.
