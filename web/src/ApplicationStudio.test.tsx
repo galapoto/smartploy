@@ -809,6 +809,17 @@ describe("Application Studio private-read account boundary", () => {
     expect(ready.textContent).toContain("Record exact CV and job review below");
     expect(ready.textContent).toContain("Verify review");
     expect(ready.textContent).toContain("Start AutoApply");
+    // The local helper is present only for this exact private packet, not a
+    // second competing application case or background browser process.
+    const alternate = screen.getByText("Use visible Playwright instead");
+    fireEvent.click(alternate);
+    const helper = screen.getByRole("region", {name:"Paired local Playwright browser"});
+    expect(helper.textContent).toContain("Connect my local Playwright browser");
+    const download = screen.getByRole("link", {name:"Download local Playwright browser ZIP"});
+    expect(download.getAttribute("href")).toBe("/smartploy-playwright-assistant.zip");
+    expect(download.getAttribute("download")).toBe("smartploy-playwright-assistant.zip");
+    expect(screen.getByRole("button", {name:"Open reviewed employer form"})
+      .hasAttribute("disabled")).toBe(true); // not paired, not launched
     const employerLink=screen.getByRole("link", {name:/Open employer form/i});
     expect(employerLink.getAttribute("href")).toBe("https://jobs.lever.co/synthetic-fi/job-A");
     expect(employerLink.getAttribute("target")).toBe("_blank");
