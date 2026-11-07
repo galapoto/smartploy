@@ -100,6 +100,20 @@
   .smartploy-app .sp126-dashboard-main .stat-icon { width:30px; height:30px; }
   .smartploy-app .sp126-dashboard-main .stat-copy strong { font-size:23px; }
   .smartploy-app .sp126-dashboard-main .stat-copy small { font-size:11px; line-height:1.25; }
+
+  /* The complete Jobs page keeps all four actual filters, but four intrinsic
+     select widths cannot fit a single 390px row. Never clip the page. */
+  .smartploy-app .job-filter-bar .filter-right {
+    display:grid; width:100%; min-width:0; max-width:100%;
+    grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
+  }
+  .smartploy-app .job-filter-bar .filter-right select {
+    display:block; width:100%; min-width:0; max-width:100%;
+    font-size:14px; min-height:44px; padding:9px 8px;
+  }
+  .smartploy-app .job-filter-bar .filter-right > button {
+    min-width:44px; min-height:44px;
+  }
 }
 @media (prefers-reduced-motion:reduce) {
   .smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card { transition:none; }

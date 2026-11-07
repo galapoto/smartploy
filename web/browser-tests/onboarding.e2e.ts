@@ -1350,5 +1350,29 @@ test("SP128 phone can open all job results from the compact home", async ({ page
   await expect(page.getByRole("heading", { name: "Find jobs" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await expect(page.locator(".sp126-dashboard-aside")).toHaveCount(0);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+  const layout = await page.evaluate(() => {
+    const selectors = Array.from(document.querySelectorAll<HTMLSelectElement>(
+      ".job-filter-bar .filter-right select"));
+    const offenders = Array.from(document.querySelectorAll<HTMLElement>("body *"))
+      .filter((element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          rect.width > 0 && rect.right > window.innerWidth + 1;
+      }).slice(0, 12).map((element) => ({
+        tag: element.tagName, className: String(element.className).slice(0, 110),
+        right: Math.round(element.getBoundingClientRect().right),
+      }));
+    return {
+      overflow: document.documentElement.scrollWidth > innerWidth + 1,
+      filters: selectors.length,
+      inside: selectors.every((element) => element.getBoundingClientRect().right <= innerWidth + 1),
+      grid: getComputedStyle(document.querySelector(".job-filter-bar .filter-right")!).display,
+      offenders,
+    };
+  });
+  expect(layout.filters).toBe(4);
+  expect(layout.grid).toBe("grid");
+  expect(layout.inside, JSON.stringify(layout.offenders)).toBe(true);
+  expect(layout.overflow, JSON.stringify(layout.offenders)).toBe(false);
 });

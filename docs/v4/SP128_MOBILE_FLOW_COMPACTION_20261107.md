@@ -17,3 +17,7 @@ Use exact child SHA full native CI, Vitest, production Vite, synthetic real-Chro
 ### Screenshot-directed fix
 
 The real parent synthetic 390px browser screenshot was approximately 3 screens tall before the first job result, with another complete job search and three secondary home panels below the mode chooser. SP128 removes the duplicate `sp126-job-results` from phone **Home only** (alongside the duplicate aside), while the original `Just find jobs` button/Jobs destination/search bar remain functional. Added exact rendered 320/390px screenshot artifacts and explicit browser checks that a mobile user can still reach a concrete synthetic job listing after tapping `Just find jobs`. Do not claim a production website screenshot from synthetic CI.
+
+### Actual Jobs-page overflow caught by chromium
+
+A new mobile Browse acceptance test correctly found document horizontal overflow on the destination Jobs page. Source audit found the existing `web/src/styles.css` `.filter-right` is a non-wrapping flex row containing four select controls with intrinsic widths. A 390px viewport cannot display those side by side. SP128 **ADAPTED** the original controls, not replaced them, by presenting them in an explicitly bounded two-column grid at ≤630px with 14px text and 44px touch targets. An actual Chromium regression verifies all four select controls, their right edges, CSS grid and zero document overflow. Diagnostic overflow-element names are included if it regresses again. No horizontal clipping or removal of job filters.
