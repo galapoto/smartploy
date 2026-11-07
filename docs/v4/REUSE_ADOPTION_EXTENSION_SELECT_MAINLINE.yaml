@@ -1,0 +1,39 @@
+schema: smartploy.reuse.v1
+capability: first_releasable_native_dropdown_extension_slice
+scope: extension_only_existing_supported_ATS
+contract: docs/v4/SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md
+source_repo: vesaias/JobNavigator
+source_commit: 623822529389d6919d86be07271e0ea94e20b514
+source_path: extension/lib/autofill_match.js
+source_license: MIT
+license_notice: docs/v4/third_party/JobNavigator_LICENSE.txt
+first_party_adoption:
+  - browser-companion/questions.mjs
+  - browser-companion/page-questions.mjs
+  - browser-companion/popup.mjs
+  - browser-companion/adapters/approved-option.mjs
+  - web/scripts/package_companion.py
+sanitization:
+  - forbid_fuzzy_alias_matching
+  - forbid_unapproved_boolean_inference
+  - exact_and_unique_employer_option_selected_by_candidate
+  - sensitive_attestations_work_eligibility_and_consent_manual
+  - application_origin_and_form_identity_must_match_approved_packet
+  - allow_no_employer_final_submission
+  - delay_and_reinspect_react_control_before_claiming_persistence
+test_inventory:
+  - browser-companion/tests/questions.test.mjs
+  - browser-companion/tests/approved-option.test.mjs
+  - web/browser-tests/lever-questions.e2e.ts
+  - web/browser-tests/ashby-assisted-fill.e2e.ts
+  - web/browser-tests/greenhouse-reviewed-assist.e2e.ts
+  - tests/test_companion_package.py
+scope_exclusions:
+  - local_playwright_helper_not_present_on_main
+  - generic_unknown_employer_redirect_navigation_not_added
+  - custom_react_combobox_portal_not_yet_supported
+  - employer_submission_not_automatically_performed
+  - live_signed_in_employer_acceptance_not_yet_verified
+stage: SOURCE_COMMITTED_CI_PENDING
+release_gate: HOLD
+owner_approval_and_exact_deploy_SHA_required: true
