@@ -50,6 +50,20 @@ export function exactGreenhouseForm(activeUrl, packetUrl) {
    form assistance, NOT final-click rights or independently approved ATS status.
    This permits custom HTTPS careers sites in the same browser tab after explicit
    signed-in SmartPloy review. Any cross-host redirect needs a new job/packet. */
+/* First-party reuse of pathIsSameJob: bind generic actions to the exact
+   reviewed posting and only bounded /apply or /application descendants.
+   Other same-host jobs/shared portals need their own reviewed packet. */
+function sameReviewedJobPath(actual, approved) {
+  if (actual.search !== approved.search) return false;
+  const source = approved.pathname.replace(/\/+$/, "") || "/";
+  const live = actual.pathname.replace(/\/+$/, "") || "/";
+  if (live === source) return true;
+  if (source === "/") return false;
+  if (["/apply", "/application"].some(suffix =>
+      live === source + suffix || live.startsWith(source + suffix + "/"))) return true;
+  return /\/(?:apply|application)$/.test(source) && live.startsWith(source + "/");
+}
+
 export function reviewedPublicEmployerForm(activeUrl, packetUrl) {
   const strict = new Set([
     "jobs.lever.co", "jobs.eu.lever.co", "jobs.ashbyhq.com",
@@ -72,7 +86,7 @@ export function reviewedPublicEmployerForm(activeUrl, packetUrl) {
   const actual = valid(activeUrl), approved = valid(packetUrl);
   return Boolean(actual && approved && !strict.has(approved.hostname) &&
     (approved.pathname !== "/" || approved.search.length > 0) &&
-    actual.origin === approved.origin);
+    actual.origin === approved.origin && sameReviewedJobPath(actual, approved));
 }
 
 /* SP41: reuse the same reviewed PDF + original-user confirmation path on an
