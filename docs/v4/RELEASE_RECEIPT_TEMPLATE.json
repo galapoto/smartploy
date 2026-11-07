@@ -1,0 +1,22 @@
+{
+  "template_only_not_a_release_receipt": true,
+  "feature": "autoapply.reviewable_form_v1",
+  "source_sha": null,
+  "ci_run": null,
+  "artifact_digest": null,
+  "running_ui_sha": null,
+  "running_api_sha": null,
+  "executor": null,
+  "case_id_redacted": null,
+  "employer_family": null,
+  "exact_job_verified": false,
+  "approved_packet_verified": false,
+  "required_controls_verified": false,
+  "approved_upload_observed": false,
+  "review_state_observed": false,
+  "submission_outcome": "not_attempted",
+  "sanitized_trace_ref": null,
+  "signed_in_public_ui_verified": false,
+  "rollback_sha": null,
+  "utc_observed_at": null
+}
