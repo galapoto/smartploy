@@ -1,7 +1,7 @@
 /* Serialized by Chrome only after user authorizes the selected answers.
    No upload, network fetch, navigation, submit or approval control selection.
    Source page can react to input/change; owner is warned before action. */
-export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
+export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
   const stop = (reason, filled = 0) => ({
     status: filled ? "partial_needs_review" : "blocked", filled, reason
   });
@@ -153,20 +153,29 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       setter.call(el, action.value);
       el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
       el.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-      if (el.value !== action.value ||
-          (action.type === "select" && (el.selectedOptions.length !== 1 ||
-            el.selectedOptions[0].disabled))) {
-        return stop("The employer did not retain an answer; review manually.", filled);
+      // First-party reuse: mirror the already implemented Playwright _fill_one
+      // settle-and-observe policy. React/ATS handlers may clear a value just
+      // AFTER an apparently successful DOM setter. Never retry a write.
+      await new Promise(resolve => setTimeout(resolve, 150));
+      if (location.href !== inspectedUrl) {
+        return stop("Employer navigated during fill; review manually.", filled);
       }
-      filled++;
-      // Native input/change events may detach/recreate a React field, or append
-      // new required fields. A value on a detached old node is NOT a live fill.
       const current = Array.from(document.querySelectorAll("input,textarea,select"));
       if (!el.isConnected || current.length !== all.length ||
           current[action.index] !== el || el.id !== action.expected_id ||
-          el.name !== action.expected_name || labelFor(el) !== action.label) {
+          el.name !== action.expected_name || labelFor(el) !== action.label ||
+          el.disabled || el.readOnly) {
         return stop("Employer form rerendered after input; re-inspect manually.", filled);
       }
+      if (el.value !== action.value ||
+          (action.type === "select" && (el.selectedOptions.length !== 1 ||
+            el.selectedOptions[0].disabled ||
+            !action.options.some(approved => approved.value === el.selectedOptions[0].value &&
+              approved.label === String(el.selectedOptions[0].label ||
+                el.selectedOptions[0].textContent || "").trim())))) {
+        return stop("Employer did not retain the reviewed answer; finish manually.", filled);
+      }
+      filled++;
     } catch {
       return stop("The employer form changed during an answer; review manually.", filled);
     }
