@@ -39,9 +39,9 @@ export type LocalBridgeAttached = {
 export type LocalReviewedQuestion = {
   index: number;
   label: string;
-  type: "text" | "textarea" | "select";
+  type: "text" | "textarea" | "select" | "radio_group";
   /** Exact applicant-reviewed native employer options; no guessed aliases. */
-  options?: Array<{ value: string; label: string }>;
+  options?: Array<{ value: string; label: string; index?: number; id?: string }>;
   expected_id: string;
   expected_name: string;
   expected_placeholder: string;
@@ -58,29 +58,43 @@ export function localReviewedQuestionValid(input: unknown): input is LocalReview
   if (!Number.isSafeInteger(item.index) || (item.index as number) < 0 ||
       (item.index as number) >= 250 ||
       typeof item.label !== "string" || !item.label.length || item.label.length > 150 ||
-      !["text", "textarea", "select"].includes(String(item.type)) ||
+      !["text", "textarea", "select", "radio_group"].includes(String(item.type)) ||
       ["expected_id", "expected_name", "expected_placeholder"].some(key =>
         typeof item[key] !== "string" || (item[key] as string).length > 150) ||
       !Number.isSafeInteger(item.expected_max_length) ||
       !Number.isSafeInteger(item.max_answer_length) ||
       (item.max_answer_length as number) < 2 ||
       (item.max_answer_length as number) > 1500) return false;
-  if (item.type !== "select") return item.options === undefined;
+  if (item.type !== "select" && item.type !== "radio_group") return item.options === undefined;
+  const isRadio = item.type === "radio_group";
+  if (isRadio && item.expected_max_length !== -1) return false;
   if (!Array.isArray(item.options) ||
-      item.options.length < 1 || item.options.length > 24) return false;
-  const values = new Set<string>(), labels = new Set<string>();
+      item.options.length < (isRadio ? 2 : 1) ||
+      item.options.length > (isRadio ? 12 : 24)) return false;
+  const values = new Set<string>(), labels = new Set<string>(), indices = new Set<number>();
   for (const candidate of item.options) {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return false;
     const choice = candidate as Record<string, unknown>;
-    if (Object.keys(choice).sort().join("|") !== "label|value" ||
+    if (Object.keys(choice).sort().join("|") !==
+        (isRadio ? "id|index|label|value" : "label|value") ||
         typeof choice.value !== "string" || !choice.value.length ||
         choice.value.length > 150 ||
         typeof choice.label !== "string" || !choice.label.trim().length ||
-        choice.label.length > 150) return false;
+        choice.label.length > 150 ||
+        (isRadio && (!Number.isSafeInteger(choice.index) ||
+          (choice.index as number) < 0 || (choice.index as number) >= 250 ||
+          typeof choice.id !== "string" || choice.id.length > 150 ||
+          indices.has(choice.index as number)))) return false;
     const key = choice.label.normalize("NFKC").trim().toLowerCase();
     if (values.has(choice.value) || labels.has(key)) return false;
     values.add(choice.value);
     labels.add(key);
+    if (isRadio) indices.add(choice.index as number);
+  }
+  if (isRadio) {
+    const first = item.options[0] as Record<string, unknown>;
+    return first.index === item.index && first.id === item.expected_id &&
+      item.max_answer_length === 150;
   }
   return true;
 }
