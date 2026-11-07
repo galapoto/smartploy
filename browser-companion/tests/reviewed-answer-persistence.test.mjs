@@ -26,8 +26,10 @@ async function exercise(reaction) {
       this.disabled = false;
       this.readOnly = false;
       this.isConnected = true;
-      this.value = "";
+      this._value = "";
     }
+    get value() { return this._value; }
+    set value(next) { this._value = next; }
     getAttribute(name) { return name === "placeholder" ? "" : null; }
     closest(selector) { return selector === "form" ? {} : null; }
     getClientRects() { return [1]; }
