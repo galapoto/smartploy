@@ -27,8 +27,8 @@ export default function StartChoices(props: {
       <p className="section-kicker">YOUR APPLICATION JOURNEY</p>
       <h1>{hasCV ? "CV connected. Choose how to apply." : "Start with your CV."}</h1>
       <p>{hasCV
-        ? "Your CV is ready. Pick Manual, Assisted or Automatic to see the right job-matching and application steps."
-        : "Upload your existing CV or create a new one. Then choose Manual, Assisted or Automatic. No application will be sent by connecting a CV."}</p>
+        ? "Your CV is ready. Choose a method to find and apply for jobs."
+        : "Upload or create a CV, then choose how to apply. You can browse jobs without a CV."}</p>
     </div>
     <ol className="flow-start-progress" aria-label="Application journey steps">
       <li className={hasCV ? "done" : "current"}
@@ -46,7 +46,7 @@ export default function StartChoices(props: {
       <div className="flow-start-how" aria-label="Step 1 — connect your CV">
         <div className="flow-start-cv-copy">
           <strong>Step 1 · Connect your CV</strong>
-          <p>Start with a PDF/DOCX file or build a CV in SmartPloy. Your information stays private until you explicitly approve an employer action.</p>
+          <p>Upload a PDF/DOCX or create a CV here. It stays private until you approve sharing.</p>
         </div>
         <div className="row-actions">
           {props.onUpload ? <button type="button" className="primary-btn" onClick={props.onUpload}>
@@ -60,12 +60,12 @@ export default function StartChoices(props: {
       </div>
       <div className="flow-start-locked" role="status">
         <FileCheck2 size={19} aria-hidden="true"/>
-        <span id="flow-start-require-cv"><strong>The three application paths are shown below.</strong> First upload or create your CV to activate a choice. You can still browse jobs without a CV.</span>
+        <span id="flow-start-require-cv"><strong>The three application paths are shown below.</strong> Connect a CV to unlock a method. Browsing works without one.</span>
       </div>
     </> : <>
       <div className="flow-start-ready" role="status">
         <CheckCircle2 size={20} aria-hidden="true"/>
-        <span><strong>CV connected.</strong> Step 1 is complete. Choose Manual, Assisted or Automatic. Review extracted facts before submitting an application.</span>
+        <span><strong>CV connected.</strong> Choose how to apply. Review your facts before sending.</span>
       </div>
 
     </>}
@@ -74,8 +74,8 @@ export default function StartChoices(props: {
         <p className="section-kicker">STEP 2 · APPLICATION METHOD</p>
         <h2>Manual, Assisted or Automatic?</h2>
         <p>{hasCV
-          ? "Your CV is connected. Choose one path to match real jobs and continue."
-          : "See all three paths now. Connect a CV in Step 1 to unlock your choice."}</p>
+          ? "Select one path to continue."
+          : "Connect a CV to unlock these choices."}</p>
       </div>
       <span className={"flow-start-method-status " + (hasCV ? "ready" : "waiting")}>
         {hasCV ? "Ready to choose" : "CV required first"}
@@ -90,7 +90,7 @@ export default function StartChoices(props: {
           <FileCheck2 size={25} aria-hidden="true"/>
           <span className="flow-start-index" aria-hidden="true">01</span>
           <strong>Apply manually</strong>
-          <span>Find CV-matched jobs, open the original employer form and submit it yourself.</span>
+          <span>Open a matching job and complete its application yourself.</span>
           <small>MANUAL · You send the application</small>
           <span className="flow-card-cta">{hasCV ? "Choose manual" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
@@ -102,7 +102,7 @@ export default function StartChoices(props: {
           <WandSparkles size={25} aria-hidden="true"/>
           <span className="flow-start-index" aria-hidden="true">02</span>
           <strong>Assisted · Apply with AI</strong>
-          <span>Prepare a job-specific CV and complete cover letter. Review and fill supported employer forms with the browser companion.</span>
+          <span>Prepare a CV and letter. Review before filling supported forms.</span>
           <small>ASSISTED · You review before sending</small>
           <span className="flow-card-cta">{hasCV ? "Choose assisted" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
@@ -114,7 +114,7 @@ export default function StartChoices(props: {
           <Bot size={25} aria-hidden="true"/>
           <span className="flow-start-index" aria-hidden="true">03</span>
           <strong>Automatic · AutoApply</strong>
-          <span>Prepare multiple matched jobs, then approve exact reviewed submissions where the employer has authorized a Lever/Ashby integration.</span>
+          <span>Prepare matched jobs. Employer actions require explicit authorization.</span>
           <small>AUTOMATIC · Employer-specific authorization required</small>
           <span className="flow-card-cta">{hasCV ? "Choose automatic" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
@@ -134,7 +134,7 @@ export default function StartChoices(props: {
     {props.onOpenApplications ? <div className="flow-start-workspaces">
       <button type="button" className="flow-start-browse-button" onClick={props.onOpenApplications}>
         <FileText size={19} aria-hidden="true"/>
-        <span><strong>Continue saved drafts &amp; letters</strong><small>Open saved applications, review full letters and return to drafts</small></span>
+        <span><strong>Continue saved drafts &amp; letters</strong><small>Open saved applications and letters</small></span>
         <ArrowRight size={17} aria-hidden="true"/>
       </button>
     </div> : null}
@@ -142,10 +142,10 @@ export default function StartChoices(props: {
       <button type="button" className="flow-start-browse-button"
         disabled={props.busyBrowse} onClick={props.onBrowse}>
         <Search size={19} aria-hidden="true"/>
-        <span><strong>Just find jobs</strong><small>Browse Finland-wide openings without creating an application</small></span>
+        <span><strong>Just find jobs</strong><small>Search current jobs without applying</small></span>
         <ArrowRight size={17} aria-hidden="true"/>
       </button>
     </div>
-    <p className="flow-start-privacy">Selecting a mode never authorizes sending an application. SmartPloy requires applicant review and independently authorized employer rights for real automated submission.</p>
+    <p className="flow-start-privacy">Choosing a method never sends anything. Employer submissions require applicant review and explicit authorization.</p>
   </section>;
 }

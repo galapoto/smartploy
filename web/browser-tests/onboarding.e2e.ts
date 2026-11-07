@@ -1282,3 +1282,58 @@ test("SP127 Komplyint-structured mobile header and drawer survive 320/390/768px 
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
   }
 });
+
+
+test("SP128 phone home is CV-first with compact actionable methods and no duplicated secondary panels", async ({ page }) => {
+  await installSyntheticApi(page);
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 740 });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Upload CV first/i })).toBeVisible();
+    await expect(page.locator(".flow-start-card[data-flow-mode]")).toHaveCount(3);
+    await expect(page.locator(".sp126-dashboard-aside")).toBeHidden();
+    const measurements = await page.evaluate(() => {
+      const height = (selector: string) =>
+        document.querySelector(selector)!.getBoundingClientRect().height;
+      return {
+        hero: height(".sp125-career-cover"),
+        cards: Array.from(document.querySelectorAll(".flow-start-card[data-flow-mode]"))
+          .map((el) => el.getBoundingClientRect().height),
+        columns: getComputedStyle(document.querySelector(".flow-start-card[data-flow-mode]")!).gridTemplateColumns,
+        overflow: document.documentElement.scrollWidth > innerWidth + 1,
+      };
+    });
+    expect(measurements.hero).toBeLessThanOrEqual(145);
+    expect(measurements.cards.every((height) => height <= 170)).toBe(true);
+    expect(measurements.columns.split(" ").length).toBe(3);
+    expect(measurements.overflow).toBe(false);
+    await page.getByRole("button", { name: "Open menu" }).click();
+    await page.getByRole("dialog", { name: "SmartPloy sidebar" })
+      .getByRole("button", { name: "CV & AI tools" }).click();
+    await expect(page.getByRole("heading", { name: "Career tools" })).toBeVisible();
+    await page.getByRole("button", { name: "Open menu" }).click();
+    await page.getByRole("dialog", { name: "SmartPloy sidebar" })
+      .getByRole("button", { name: "My CV & documents" }).click();
+    await expect(page.getByRole("heading", { name: "Your CV" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+  }
+});
+
+test("SP128 phone home retains dark mode and actual release warning states", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installSyntheticApi(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  await expect(page.locator(".flow-start-card[data-flow-mode]")).toHaveCount(3);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+  await page.evaluate(() => {
+    const banner = document.querySelector(".release-status") as HTMLElement;
+    if (!banner) throw new Error("Release status missing");
+    banner.classList.remove("release-status-development", "release-status-checking", "release-status-aligned");
+    banner.classList.add("release-status-mixed");
+  });
+  await expect(page.locator(".release-status-mixed")).toBeVisible();
+});

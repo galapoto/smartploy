@@ -6,6 +6,17 @@ import StartChoices from "./StartChoices";
 afterEach(cleanup);
 
 describe("SP89: saved application entry in the CV-first journey", () => {
+  it("keeps concise mobile labels and explicit applicant/ATS boundaries", () => {
+    render(<StartChoices cvPresent onMode={vi.fn()} onBrowse={vi.fn()} />);
+    expect(screen.getByText("Open a matching job and complete its application yourself.")).toBeTruthy();
+    expect(screen.getByText("Prepare a CV and letter. Review before filling supported forms.")).toBeTruthy();
+    expect(screen.getByText("Prepare matched jobs. Employer actions require explicit authorization.")).toBeTruthy();
+    expect(screen.getByText(/Choosing a method never sends anything/)).toBeTruthy();
+    expect(screen.getByText(/Employer submissions require applicant review and explicit authorization/)).toBeTruthy();
+    expect(screen.getAllByRole("button").filter((b) => b.getAttribute("data-flow-mode"))).toHaveLength(3);
+  });
+
+
   it("opens saved applications from the first-use CV screen without picking a mode", () => {
     const onOpenApplications = vi.fn();
     const onMode = vi.fn();

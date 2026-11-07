@@ -9,6 +9,7 @@ import "./finland-shell.css";
 import "./sp125-workspace-theme.css";
 import "./sp126-premium-dashboard.css";
 import "./sp127-mobile-shell.css";
+import "./sp128-mobile-workflow.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
