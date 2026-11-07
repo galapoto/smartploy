@@ -1,0 +1,133 @@
+/* SP127: Komplyint's persistent brand / clear mobile navigation hierarchy
+ * adapted to SmartPloy's existing first-party shell, without copying site CSS.
+ * One compact mobile system overrides the older layered 11px breakpoints. */
+.sp-boot, .sp-boot *, .smartploy-app, .smartploy-app * { box-sizing: border-box; }
+.sp-boot { min-height: 100dvh; min-width: 0; background: #f4f7fb; color: #102343; }
+.sp-boot-header {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center;
+  justify-content: space-between; gap: 12px; padding: 12px clamp(16px,4vw,36px);
+  background: #fff; border-bottom: 1px solid #e1e9f3; min-height: 68px;
+}
+.sp-boot-brand, .sp-mobile-brand {
+  display: inline-flex; align-items: center; gap: 9px; min-width: 0;
+  background: transparent; border: 0; padding: 0; color: inherit; text-align: left;
+}
+.sp-boot-logo { width: 41px; height: 41px; flex: none; }
+.sp-boot-brand > span { display: grid; gap: 0; min-width: 0; }
+.sp-boot-brand strong { font-size: 20px; letter-spacing: -.05em; }
+.sp-boot-brand small { font-size: 10px; color: #59708e; }
+.sp-boot-theme { display: grid; place-items: center; width: 44px; height: 44px;
+  border: 1px solid #dae3ee; border-radius: 12px; background: #fff; color: #1d436a; }
+.sp-boot-main { width: min(100%,1100px); margin: 0 auto; padding: clamp(16px,4vw,40px); }
+.sp-boot-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 20px; }
+.sp-boot-nav-item {
+  display: inline-flex; justify-content: center; align-items: center; gap: 7px;
+  min-height: 44px; min-width: 0; padding: 8px 13px;
+  border: 1px solid #dbe5f1; border-radius: 12px; background: #fff; color: #354f6e;
+  font-size: 13px; font-weight: 700;
+}
+.sp-boot-nav-item.active { color: #063e85; background: #e6f2ff; border-color: #93bde9; }
+.sp-boot-workspace {
+  max-width: 760px; padding: clamp(20px,5vw,38px); background: #fff;
+  border: 1px solid #e1e9f3; border-radius: 18px;
+  box-shadow: 0 18px 38px -32px rgba(4,29,65,.35);
+}
+.sp-boot-eyebrow { color: #19658f; font-size: 11px; letter-spacing: .09em; font-weight: 800; }
+.sp-boot-workspace h1 { font-size: clamp(24px,4vw,38px); line-height: 1.16;
+  letter-spacing: -.04em; max-width: 22ch; margin: 0 0 12px; }
+.sp-boot-workspace > p:not(.sp-boot-eyebrow) { font-size: 15px; line-height: 1.5;
+  color: #53667d; overflow-wrap: anywhere; }
+.sp-boot-progress { width: min(240px,100%); height: 3px; border-radius: 10px;
+  background: linear-gradient(90deg,#13579e 0%,#16b4bc 46%,#e2edf5 46%);
+  margin: 15px 0; }
+.sp-boot-actions { display: flex; align-items: center; flex-wrap: wrap;
+  justify-content: space-between; gap: 10px; margin-top: 18px; color: #53677c; }
+.sp-boot-actions > span { font-size: 12px; }
+.sp-boot-actions .outline-btn { display: inline-flex; align-items: center;
+  min-height: 44px; gap: 8px; }
+.sp-mobile-brand { display: none; }
+html[data-smartploy-theme="dark"] .sp-boot { background: #060b17; color: #eff7ff; }
+html[data-smartploy-theme="dark"] .sp-boot :is(.sp-boot-header,.sp-boot-workspace,.sp-boot-theme,.sp-boot-nav-item) {
+  background: #142235; border-color: #334e68; color: #eff7ff;
+}
+html[data-smartploy-theme="dark"] .sp-boot .sp-boot-nav-item.active {
+  background: #21466c; border-color: #68b9d0; color: #fff;
+}
+html[data-smartploy-theme="dark"] .sp-boot :is(.sp-boot-workspace > p:not(.sp-boot-eyebrow),.sp-boot-brand small,.sp-boot-actions) {
+  color: #b9cee2;
+}
+html[data-smartploy-theme="dark"] .sp-boot .sp-boot-eyebrow { color: #a5e7e9; }
+
+@media(max-width:850px) {
+  .smartploy-app, .smartploy-app.sp126-sidebar-collapsed { display: block; min-width: 0; }
+  .smartploy-app .main-column, .smartploy-app .content { min-width: 0; width: 100%; }
+  /* Komplyint-style persistent brand + accessible menu; keep search on its own row. */
+  .smartploy-app .site-header {
+    display: grid; grid-template-columns: 44px minmax(0,1fr) auto;
+    grid-template-rows: 44px 42px; column-gap: 9px; row-gap: 9px;
+    height: auto; min-height: 114px; padding: 10px clamp(10px,3vw,20px);
+    align-items: center;
+  }
+  .smartploy-app .menu-toggle { display: inline-flex; grid-column:1; grid-row:1;
+    width:44px; height:44px; border-radius:11px; }
+  .smartploy-app .sp-mobile-brand { display: inline-flex; grid-column:2; grid-row:1; }
+  .smartploy-app .sp-mobile-brand-mark { width:36px; height:36px; flex:none; }
+  .smartploy-app .sp-mobile-brand strong { font-size:18px; font-weight:800;
+    letter-spacing:-.04em; overflow:hidden; text-overflow:ellipsis; }
+  .smartploy-app .site-header .header-tools { grid-column:3; grid-row:1;
+    display:flex; margin:0; gap:5px; justify-content:flex-end; min-width:0; }
+  .smartploy-app .site-header .header-search { grid-column:1/-1; grid-row:2;
+    width:100%; min-width:0; max-width:none; height:42px; }
+  .smartploy-app .header-search input { font-size:16px; min-width:0; }
+  .smartploy-app .site-header .header-country,
+  .smartploy-app .site-header .connection-status,
+  .smartploy-app .site-header .obumai-brand,
+  .smartploy-app .site-header .header-refresh { display:none; }
+  .smartploy-app .sp99-theme-toggle { width:44px; height:44px; min-width:44px; }
+  .smartploy-app .header-avatar { width:34px; height:34px; }
+  .smartploy-app .sidebar { width:min(318px,calc(100vw - 28px));
+    max-width:100%; height:100dvh; min-height:0;
+    inset:0 auto 0 0; overflow-y:auto; overscroll-behavior:contain;
+    padding:18px 14px calc(20px + env(safe-area-inset-bottom));
+    z-index:40; }
+  .smartploy-app .sidebar-scrim.visible { z-index:39; }
+  .smartploy-app .sidebar-nav .nav-item { min-height:44px; padding:11px 13px; }
+  .smartploy-app .sp126-mobile-close { min-width:44px; height:44px; }
+  .smartploy-app .content { padding:clamp(12px,2.5vw,20px); }
+  .smartploy-app :is(.sp126-dashboard-layout,.dashboard-grid,.secondary-grid,.studio-layout,
+    .flow-first-use,.application-flow,.flow-start,.panel,.flow-advanced-setup,.sp126-job-results) {
+      min-width:0; max-width:100%; }
+}
+@media(max-width:630px) {
+  .smartploy-app .site-header { gap:8px; }
+  .smartploy-app .sp99-identity:not(.compact) { display:none; }
+  .smartploy-app .sp125-career-copy { padding:17px; }
+  .smartploy-app .sp125-career-copy > p:not(.sp125-career-eyebrow) { display:none; }
+  .smartploy-app .sp125-career-cover { min-height:162px; margin-bottom:12px; }
+  .smartploy-app .sp125-career-copy h2 { font-size:clamp(19px,5.7vw,26px); }
+  .smartploy-app .sp125-career-steps { margin-top:9px; }
+  .smartploy-app .sp125-career-steps li { font-size:11px; }
+  .smartploy-app .site-header .header-tools .sp99-theme-toggle { display:grid; }
+  .smartploy-app :is(.row-actions,.flow-start-actions,.job-buttons,.panel-heading,
+    .studio-export,.flow-start-progress) { flex-wrap:wrap; min-width:0; }
+  .smartploy-app :is(.panel,.stat-card,.flow-start-card,.studio-editor,.studio-document,
+    .job-item,.tool-tile) { min-width:0; max-width:100%; }
+  .smartploy-app :is(.panel,.flow-start,.studio-editor) { overflow-wrap:anywhere; }
+  .sp-boot-nav { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sp-boot-nav-item { justify-content:flex-start; text-align:left; }
+  .sp-boot-brand strong { font-size:19px; }
+  .sp-boot-brand small { font-size:9px; }
+  .sp-boot-logo { width:36px; height:36px; }
+  .sp-boot-main { padding:12px; }
+  .sp-boot-workspace { padding:20px 16px; }
+  .sp-boot-actions { align-items:stretch; }
+}
+@media(max-width:360px) {
+  .smartploy-app .site-header { padding-inline:9px; column-gap:6px; }
+  .smartploy-app .header-avatar { display:none; }
+  .smartploy-app .sp-mobile-brand strong { font-size:16px; }
+  .sp-boot-nav-item { font-size:12px; padding-inline:8px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .smartploy-app .sidebar, .sp-boot-progress { transition:none; animation:none; }
+}

@@ -161,6 +161,41 @@ function switchableSession() {
   return () => { account = "b"; };
 }
 
+describe("SP127: mobile-first persistent shell and nonblocking startup", () => {
+  it("renders the real brand, navigation choices and retry without the circular loading overlay", () => {
+    vi.mocked(api.getSession).mockImplementation(() => new Promise(() => {}));
+    render(<App />);
+    expect(screen.getByRole("heading", { name: "Connecting to your workspace" })).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Workspace navigation while connecting" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry connection" })).toBeTruthy();
+    expect(document.querySelector(".loading-screen")).toBeNull();
+    expect(document.querySelector(".spinner")).toBeNull();
+    expect(document.querySelector(".sp-boot-header .sp-boot-logo")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(screen.getByText("Find jobs will open when ready")).toBeTruthy();
+    // Do not render private profile or employer actions before server identity.
+    expect(screen.queryByText("test@smartploy.invalid")).toBeNull();
+  });
+
+  it("exposes a useful retry after essential API failure without an infinite spinner", async () => {
+    vi.mocked(api.getDashboard).mockRejectedValueOnce(new Error("Server temporarily unavailable"));
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "SmartPloy isn't available" })).toBeTruthy();
+    expect(screen.getByText("Server temporarily unavailable")).toBeTruthy();
+    expect(document.querySelector(".spinner")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
+  });
+
+  it("preserves a working mobile header brand and theme button in loaded App", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
+    expect(document.querySelector(".site-header .sp-mobile-brand-mark")).toBeTruthy();
+    expect(document.querySelectorAll(".site-header .menu-toggle")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Switch to dark mode" })).toBeTruthy();
+  });
+});
+
 describe("actual SmartPloy App first-use and application handoff", () => {
   it("SP87 starts with a CV even when optional AI is unavailable; modes remain locked", async () => {
     vi.mocked(api.getLocalAIStatus).mockImplementation(

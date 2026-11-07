@@ -1222,3 +1222,57 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   expect(horizontalOverflow).toBe(false);
   await evidence(page, "sp125-work-hero-mobile-dark-logo.png");
 });
+
+
+test("SP127 mobile shell has an immediate brand and actions when session API stalls", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 690 });
+  await installSyntheticApi(page);
+  // Override the synthetic session endpoint with a never-resolving request.
+  // The visible shell must not depend on an authenticated private response.
+  await page.route("**/api/v1/session", async () => {
+    await new Promise<void>(() => {});
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Connecting to your workspace" })).toBeVisible();
+  await expect(page.locator(".sp-boot-logo")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry connection" })).toBeVisible();
+  await expect(page.locator(".spinner")).toHaveCount(0);
+  await page.getByRole("button", { name: "Find jobs" }).click();
+  await expect(page.getByText("Find jobs will open when ready")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+});
+
+test("SP127 Komplyint-structured mobile header and drawer survive 320/390/768px widths", async ({ page }) => {
+  await installSyntheticApi(page);
+  for (const width of [320, 390, 768]) {
+    await page.setViewportSize({ width, height: 740 });
+    await page.goto("/");
+    await expect(page.locator(".site-header .sp-mobile-brand")).toBeVisible();
+    await expect(page.locator(".site-header .header-search")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open menu" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+    const viewport = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth > innerWidth + 1,
+      headerBrand: !!document.querySelector(".sp-mobile-brand"),
+      layout: getComputedStyle(document.querySelector(".site-header")!).display,
+    }));
+    expect(viewport.overflow).toBe(false);
+    expect(viewport.headerBrand).toBe(true);
+    expect(viewport.layout).toBe("grid");
+    const trigger = page.getByRole("button", { name: "Open menu" });
+    await trigger.click();
+    await expect(page.getByRole("dialog", { name: "SmartPloy sidebar" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Close menu" })).toBeFocused();
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+    await page.keyboard.press("Escape");
+    await expect(trigger).toBeFocused();
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+    await trigger.click();
+    await page.getByRole("dialog", { name: "SmartPloy sidebar" })
+      .getByRole("button", { name: "Find jobs" }).click();
+    await expect(page.locator("#smartploy-main")).toBeFocused();
+    await expect(page.getByRole("button", { name: "Open menu" }))
+      .toHaveAttribute("aria-expanded", "false");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+  }
+});
