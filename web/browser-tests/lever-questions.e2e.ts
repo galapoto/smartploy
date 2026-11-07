@@ -49,8 +49,8 @@ async function setup(page: Page) {
   );
   await page.addScriptTag({
     content:source.replace(
-      "export function fillReviewedAnswers(",
-      "window.fillReviewedAnswers = function fillReviewedAnswers("
+      "export async function fillReviewedAnswers(",
+      "window.fillReviewedAnswers = async function fillReviewedAnswers("
     )
   });
   return () => outside;
@@ -133,12 +133,12 @@ test("existing answers and hidden questions are not overwritten",async ({page})=
   expect((await act(page,[why()])).status).toBe("blocked");
 });
 
-test("SPA inserts a field on change: browser stops before writing to shifted second control",async ({page})=>{
+test("SPA inserts a field on change: unverified first field is not counted",async ({page})=>{
   await setup(page);
   await page.evaluate(()=>{(window as any).injectDrift=true;});
   const result=await act(page,[why(),project()]);
-  expect(result.status).toBe("partial_needs_review");
-  expect(result.filled).toBe(1);
+  expect(result.status).toBe("blocked");
+  expect(result.filled).toBe(0);
   expect(await page.locator("#why").inputValue()).toBe(why().value);
   expect(await page.locator("#project").inputValue()).toBe("");
 });
@@ -190,8 +190,8 @@ test("single final answer detached or extra required field added on change remai
     },{once:true});
   });
   const detached=await act(page,[why()]);
-  expect(detached.status).toBe("partial_needs_review");
-  expect(detached.filled).toBe(1);
+  expect(detached.status).toBe("blocked");
+  expect(detached.filled).toBe(0);
   expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
 });
 
@@ -199,8 +199,8 @@ test("new required control added by last input is never reported as safely compl
   await setup(page);
   await page.evaluate(() => {(window as any).injectDrift = true;});
   const result=await act(page,[why()]);
-  expect(result.status).toBe("partial_needs_review");
-  expect(result.filled).toBe(1);
+  expect(result.status).toBe("blocked");
+  expect(result.filled).toBe(0);
   expect(await page.locator("#new_required").count()).toBe(1);
   expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
 });
