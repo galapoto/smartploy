@@ -191,9 +191,20 @@ function fillPlanned(actions, exactUrl) {
           /^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(posting) &&
           [posting + "/apply", posting + "/apply/"].includes(x.pathname);
       }
+      const sameReviewedJobPath = (actual, approved) => {
+        if (actual.search !== approved.search) return false;
+        const source = approved.pathname.replace(/\/+$/, "") || "/";
+        const live = actual.pathname.replace(/\/+$/, "") || "/";
+        if (live === source) return true;
+        if (source === "/") return false;
+        if (["/apply", "/application"].some(suffix =>
+            live === source + suffix || live.startsWith(source + suffix + "/"))) return true;
+        return /\/(?:apply|application)$/.test(source) && live.startsWith(source + "/");
+      };
       const host = y.hostname;
       return !strict.includes(host) &&
         x.hostname === host && x.search.length <= 800 && y.search.length <= 800 &&
+        sameReviewedJobPath(x, y) &&
         (y.pathname !== "/" || y.search.length > 0) &&
         /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$/i.test(host) &&
         !/(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion|lan|home|intranet)$/i.test(host);
