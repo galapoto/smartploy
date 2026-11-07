@@ -43,3 +43,34 @@ describe("V4 exact reviewed Playwright dropdown transport", () => {
     })).toBe(false);
   });
 });
+
+describe("V4 radio-group reviewed transport safety", () => {
+  const group = {
+    index: 3, type: "radio_group", label: "Where did you hear about this job?",
+    expected_id: "friend", expected_name: "job_source",
+    expected_placeholder: "", expected_max_length: -1,
+    max_answer_length: 150,
+    options: [
+      {index:3, id:"friend", value:"friend", label:"Friend referral"},
+      {index:4, id:"board", value:"job-board", label:"Job board"},
+    ]
+  };
+  it("accepts a bounded first-party observed fieldset group", () => {
+    expect(localReviewedQuestionValid(group)).toBe(true);
+  });
+  it("rejects duplicate, drifted and unobserved group options", () => {
+    expect(localReviewedQuestionValid({...group, options:undefined})).toBe(false);
+    expect(localReviewedQuestionValid({...group, options:[] })).toBe(false);
+    expect(localReviewedQuestionValid({...group, options:[group.options[0]]})).toBe(false);
+    expect(localReviewedQuestionValid({...group, expected_id:"changed"})).toBe(false);
+    expect(localReviewedQuestionValid({...group, options:[
+      group.options[0], {...group.options[1], index:3}
+    ]})).toBe(false);
+    expect(localReviewedQuestionValid({...group, options:[
+      group.options[0], {...group.options[1], label:"Friend referral"}
+    ]})).toBe(false);
+    expect(localReviewedQuestionValid({...group, options:[
+      group.options[0], {...group.options[1], checked:true}
+    ]})).toBe(false);
+  });
+});
