@@ -18,20 +18,20 @@ const MODE_INFO: Record<ApplicationFlowMode, {
 }> = {
   manual: {
     title: "Apply manually",
-    summary: "See CV-matched jobs, then open the original employer application.",
-    responsibility: "You fill the employer form and press Submit.",
+    summary: "Open the employer form and apply yourself.",
+    responsibility: "You decide when to submit.",
     next: "Next: choose a job and open the employer form.",
   },
   assisted: {
     title: "Apply with AI help",
-    summary: "Get job-specific CV and letter support, with optional reviewed form filling.",
-    responsibility: "You check every detail and decide whether to send.",
+    summary: "Tailored documents and reviewed form help.",
+    responsibility: "Review before sending.",
     next: "Next: choose the kind of assistance, then a job.",
   },
   automatic: {
     title: "AutoApply",
-    summary: "Prepare multiple CV-matched applications, review them and send eligible authorized ATS batches.",
-    responsibility: "Employer submission requires a separately approved Lever/Ashby job and your final review.",
+    summary: "Prepare private applications, then review.",
+    responsibility: "No submission without separate approval.",
     next: "Next: select jobs, prepare drafts and approve eligible submissions in My applications.",
   },
 };
@@ -69,6 +69,9 @@ export default function ApplicationJourney(props: {
   const [showOther, setShowOther] = useState(true);
   const [assistance, setAssistance] = useState<ApplicationAssistanceLevel>("documents");
   const [selected, setSelected] = useState<string[]>([]);
+  // An explicit Jobs-card AutoApply choice is offered once for this exact
+  // account, CV and job. Deselecting or changing modes never reselects it.
+  const pinnedAutoSelectionRef = useRef("");
   // A deliberate single-job choice for Manual/Assisted. This is UI-only:
   // choosing never creates a private workspace or contacts an employer.
   const [focusedKey, setFocusedKey] = useState(props.cv.present ? props.selectedJobKey : "");
@@ -176,6 +179,29 @@ export default function ApplicationJourney(props: {
     });
   }, [results, showOther]);
 
+  // Reuse the exact job returned by the existing authenticated CV/job
+  // endpoint. Never infer a second job, create a draft, or submit on mount.
+  // This restores the Jobs → Automatic → selected-job continuation without
+  // carrying a choice into another account, CV or later mode switch.
+  useEffect(() => {
+    if (props.mode !== "automatic" || !props.cv.present || !props.userId ||
+        !props.selectedJobKey || !results || loading || paging ||
+        filter.trim() !== activeQuery || !!error ||
+        props.queueBusy || queueInFlight.current) return;
+    const pinned = jobs.find((row) =>
+      row.canonical_key === props.selectedJobKey && row.job.source_current &&
+      !!safeExternalJobUrl(row.job.application_url));
+    if (!pinned) return;
+    const identity = JSON.stringify([
+      props.userId, props.cv.sha256 || "", props.selectedJobKey,
+    ]);
+    if (pinnedAutoSelectionRef.current === identity) return;
+    pinnedAutoSelectionRef.current = identity;
+    setSelected([pinned.canonical_key]);
+  }, [props.mode, props.cv.present, props.cv.sha256, props.userId,
+      props.selectedJobKey, results, loading, paging, filter, activeQuery,
+      error, props.queueBusy, jobs]);
+
   // A Search-selected current vacancy is pinned by the original read-only
   // API. If filtering/source refresh removes it, no draft action remains
   // available until the applicant chooses a visible current vacancy.
@@ -188,6 +214,14 @@ export default function ApplicationJourney(props: {
   const queryPending = filter.trim() !== activeQuery;
   const hasChosenJob = props.cv.present && !!props.mode &&
     (props.mode === "automatic" ? currentSelection.length > 0 : !!focusedJob);
+  // A single, explicitly pinned job can continue straight to its exact
+  // private application. All other AutoApply choices use the batch controls.
+  const canContinuePinnedAutoJob =
+    props.mode === "automatic" && !!props.selectedJobKey &&
+    selected.length === 1 && currentSelection.length === 1 &&
+    currentSelection[0] === props.selectedJobKey && !!results &&
+    !loading && !paging && !queryPending && !error &&
+    !props.queueBusy && !queueInFlight.current;
 
   const hasMore = !!results && (
     results.recommended.length < results.recommended_count ||
@@ -507,9 +541,8 @@ export default function ApplicationJourney(props: {
     <section className="panel flow-intro">
       <div className="panel-heading"><div>
         <p className="section-kicker">YOUR APPLICATION GUIDE</p>
-        <h2>From your CV to a complete application.</h2>
-        <p>One clear route, from your connected CV to an application outcome.
-          Pick how much work SmartPloy should do; no mode choice sends anything to an employer.</p>
+        <h2>Apply in four steps</h2>
+        <p>CV → Method → Job → Review. Nothing is sent without approval.</p>
       </div></div>
       <ol className="flow-steps" aria-label="Application steps">
         <li className={props.cv.present ? "done" : "current"}
@@ -564,7 +597,13 @@ export default function ApplicationJourney(props: {
           Upload CV <ArrowRight size={16} aria-hidden="true"/>
         </button> : !props.mode ? <a className="navy-btn" href="#smartploy-flow-choice">
           Choose application type <ArrowRight size={16} aria-hidden="true"/>
-        </a> : <a className="navy-btn" href={hasChosenJob && props.mode === "automatic"
+        </a> : canContinuePinnedAutoJob ? <button className="navy-btn" type="button"
+          onClick={() => void queue([props.selectedJobKey])}
+          disabled={accessInterrupted || blockedKeys.has(props.selectedJobKey) ||
+            staleSelectionCount > 0}
+          aria-label="Prepare and open the selected job application">
+          Prepare &amp; open this job <ArrowRight size={16} aria-hidden="true"/>
+        </button> : <a className="navy-btn" href={hasChosenJob && props.mode === "automatic"
             ? "#smartploy-flow-queue" : "#smartploy-flow-matches"}>
           {hasChosenJob
             ? props.mode === "automatic" ? "Prepare selected applications" : "Continue selected job"
