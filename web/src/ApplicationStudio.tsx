@@ -1648,8 +1648,12 @@ export default function ApplicationStudio(props: {
           {handoffPacketText ? <div className="studio-packet-fallback"
             aria-label="Browser AutoApply ready" role="status">
             <strong><CheckCircle2 size={16}/> Browser packet ready</strong>
-            <p>Open the exact employer form, then choose <strong>Start AutoApply</strong> in
-              the Chrome companion. Review questions and attach your PDF before submitting.</p>
+            <ol aria-label="Browser AutoApply handoff steps">
+              <li>{finalReview?.review_recorded ? "Review recorded" :
+                "Record exact CV and job review below"}</li>
+              <li>On this SmartPloy tab, paste the packet into the companion and select Verify review</li>
+              <li>Open the employer form below, paste the same packet and select Start AutoApply</li>
+            </ol>
             {safePostingLink(selected.application_url) ? <a className="navy-btn"
               href={safePostingLink(selected.application_url)}
               rel="noopener noreferrer" target="_blank">
