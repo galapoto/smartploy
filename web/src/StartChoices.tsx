@@ -146,6 +146,6 @@ export default function StartChoices(props: {
         <ArrowRight size={17} aria-hidden="true"/>
       </button>
     </div>
-    <p className="flow-start-privacy">Choosing a method never sends anything. Employer submissions require applicant review and explicit authorization.</p>
+    <p className="flow-start-privacy">Selecting a mode never authorizes sending an application. Employer submissions require applicant review and explicit authorization.</p>
   </section>;
 }
