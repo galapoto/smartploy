@@ -994,7 +994,10 @@ test("mobile onboarding remains usable when the optional local AI endpoint fails
   await page.setViewportSize({ width: 390, height: 844 });
   await installSyntheticApi(page, { unavailableAI: true });
   await page.goto("/");
-  await expect(page.locator(".sp99-identity .sp99-identity-mark")).toBeVisible();
+  // The persistent phone header carries the full SmartPloy brand; the
+  // duplicate logo underneath the home banner is intentionally removed.
+  await expect(page.locator(".site-header .sp-mobile-brand-mark")).toBeVisible();
+  await expect(page.locator(".site-header .sp-mobile-brand")).toContainText("SmartPloy");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   await page.getByRole("button", { name: /Just find jobs/i }).click();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
