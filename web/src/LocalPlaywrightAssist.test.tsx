@@ -616,7 +616,7 @@ describe("SP111 paired browser review-first UI", () => {
     expect(screen.getByText(/CV-only mode: no question is saved/)).toBeTruthy();
     expect(rememberApplicationQuestions).not.toHaveBeenCalled();
     const remember = screen.getByLabelText(
-      /Permanently remember my reviewed answers in my private profile/,
+      /Permanently remember my reviewed text answers in my private profile/,
     ) as HTMLInputElement;
     expect(remember.checked).toBe(false);
     expect(remember.disabled).toBe(true);
