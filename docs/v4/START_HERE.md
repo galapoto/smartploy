@@ -2,6 +2,8 @@
 
 Binding contract: [SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md](SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md). Root [AGENTS.md](../../AGENTS.md) enforces no silent deviation and copy-sanitize-adopt-first.
 
+**Dated execution board:** [EXECUTION_SCHEDULE_20261107.md](EXECUTION_SCHEDULE_20261107.md) tracks immediate next actions, 7–14 November target windows, six role-based lanes, PR/CI baselines, mandatory live-user evidence and release holds. This is a scheduling record, not proof of deployment or an automated background worker.
+
 ## Day-zero work (in dependency order)
 
 1. Reconcile exact main, integration, deployed UI and API; do not pretend the main branch is production.
