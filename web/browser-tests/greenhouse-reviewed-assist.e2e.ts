@@ -49,7 +49,7 @@ async function setup(page:Page) {
   await page.addScriptTag({content:popup.slice(first,last)+"\nwindow.fillPlanned=fillPlanned;"});
   const questions=(await readFile(
     new URL("../../browser-companion/page-questions.mjs",import.meta.url),"utf8"
-  )).replace("export function fillReviewedAnswers","function fillReviewedAnswers");
+  )).replace("export async function fillReviewedAnswers","async function fillReviewedAnswers");
   await page.addScriptTag({content:questions+"\nwindow.fillReviewedAnswers=fillReviewedAnswers;"});
   const attachment=(await readFile(
     new URL("../../browser-companion/page-attachment.mjs",import.meta.url),"utf8"
