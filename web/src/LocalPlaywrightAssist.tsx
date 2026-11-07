@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Monitor, ShieldCheck, XCircle } from "lucide-react";
-import { getBrowserHandoffReadiness, getSession } from "./api";
+import { getBrowserHandoffReadiness, getEmployerAttemptStatus, getSession } from "./api";
 import {
   callLocalPlaywrightBridge, localBridgeOriginAllowed,
   type LocalBridgeOpened, type LocalBridgeInspected,
@@ -61,6 +61,11 @@ export default function LocalPlaywrightAssist(props: {
     // Existing owner-scoped backend readiness must recheck source/job and
     // document revision immediately before each local browser action.
     // The helper's 15-minute packet is NOT enough to detect another tab edit.
+    const attempt = await getEmployerAttemptStatus(props.expectedWorkspaceId);
+    if (attempt.previous_attempt_reserved) {
+      throw new Error("A previous employer attempt needs reconciliation. " +
+        "Do not restart form filling until its outcome is reviewed.");
+    }
     const readiness = await getBrowserHandoffReadiness(props.expectedWorkspaceId);
     if (readiness.ready !== true ||
         readiness.document_revision !== props.expectedRevision) {
