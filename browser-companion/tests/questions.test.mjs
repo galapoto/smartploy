@@ -38,6 +38,8 @@ test("legal, protected, privacy, salary, immigration, availability questions rem
     "Do you need visa sponsorship?",
     "What is your expected salary?",
     "Are you a citizen of Finland?",
+    "Are you legally eligible to work in Finland?",
+    "Are you authorized to work in this country?",
     "I consent to data retention",
     "Please certify that you can legally work here",
     "Gender identity",
