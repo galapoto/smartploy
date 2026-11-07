@@ -34,7 +34,7 @@ test("V4 injected fill and PDF attachment refuse another job on same employer ho
     "https://careers.example.org/jobs/junior-analyst-2/apply",
   ]) {
     await withEmployerTab(wrong, async () => {
-      const answer = fillReviewedAnswers([{index:0}], approved, wrong);
+      const answer = await fillReviewedAnswers([{index:0}], approved, wrong);
       assert.equal(answer.status, "blocked", wrong);
       assert.equal(answer.reason, "The employer or application form changed.", wrong);
       const attachment = await attachReviewedPdf({
@@ -51,7 +51,7 @@ test("V4 bounded same-job application stages reach ordinary action checks", asyn
     approved, approved + "/apply", approved + "/application/step-2",
   ]) {
     await withEmployerTab(expected, async () => {
-      const answer = fillReviewedAnswers([{index:0}], approved, expected);
+      const answer = await fillReviewedAnswers([{index:0}], approved, expected);
       assert.equal(answer.reason, "At least one reviewed question changed; nothing was filled.");
       const attachment = await attachReviewedPdf({
         application_url: approved, inspected_url: expected,
