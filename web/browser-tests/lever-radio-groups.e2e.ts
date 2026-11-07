@@ -63,6 +63,24 @@ test("radio selection is exact and observed after event settling",async({page})=
   expect(await page.evaluate(()=>(window as any).submits)).toBe(0);
   expect(outside()).toBe(0);
 });
+test("React-like employer state receives an exact radio click once",async({page})=>{
+  const outside=await setup(page);
+  await page.locator("#board").evaluate(el=>{
+    (window as any).radioClicks=0;
+    (window as any).radioSaved=false;
+    el.addEventListener("click",()=>{
+      (window as any).radioClicks++;
+      (window as any).radioSaved=(el as HTMLInputElement).checked;
+    });
+  });
+  const outcome=await fill(page,[approved()]);
+  expect(outcome.status).toBe("filled_for_review");
+  expect(outcome.filled).toBe(1);
+  expect(await page.evaluate(()=>(window as any).radioClicks)).toBe(1);
+  expect(await page.evaluate(()=>(window as any).radioSaved)).toBe(true);
+  expect(await page.evaluate(()=>(window as any).submits)).toBe(0);
+  expect(outside()).toBe(0);
+});
 test("changed radio identity, protected eligibility and answer guesses stop",async({page})=>{
   const outside=await setup(page);
   for(const bad of [
