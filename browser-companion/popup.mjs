@@ -26,6 +26,7 @@ let preflightPassed = false;
 let attemptReserved = false;
 let receiptOnly = false;
 let receiptCheckSequence = 0;
+let startAutoApplyInFlight = false;
 
 function clearReceiptObservation() {
   receiptCheckSequence++;
@@ -598,11 +599,11 @@ async function onInspect() {
 }
 
 async function onFill() {
-  if (receiptOnly || !currentPacket || !currentPlan) return;
+  if (receiptOnly || !currentPacket || !currentPlan) return false;
   if (!window.confirm(
     "Fill only the displayed approved fields on the selected employer page? " +
     "No documents will be uploaded and no application will be submitted."
-  )) return;
+  )) return false;
   try {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
@@ -627,7 +628,36 @@ async function onFill() {
       "Filled " + result.result.filled + " fields (" + result.result.skipped +
       " skipped). Review every value. Select a reviewed PDF for explicit attachment or attach manually.", true
     );
-  } catch (error) { status(normalizeError(error)); }
+    return result.result.filled > 0;
+  } catch (error) { status(normalizeError(error)); return false; }
+}
+
+/** One AutoApply action built from the existing verified inspection and fill
+ * primitives. Consent is still checked inside onFill(). No automatic PDF
+ * attachment, inferred answer, final click, or employer submission.
+ */
+async function onStartAutoApply() {
+  if (startAutoApplyInFlight) return;
+  startAutoApplyInFlight = true;
+  $("startAutoApply").disabled = true;
+  // Failed scans cannot reuse approval or indices from an earlier form.
+  currentPlan = null;
+  currentQuestionPlan = null;
+  currentPacket = null;
+  targetTabId = null;
+  inspectedUrl = "";
+  try {
+    await onInspect();
+    if (!currentPacket || !currentPlan || targetTabId === null ||
+        receiptOnly || attemptReserved) return;
+    const filled = await onFill();
+    if (!filled) return;
+    await onReviewQuestions();
+    // Attachment, reviewed answers and final send remain separate controls.
+  } finally {
+    startAutoApplyInFlight = false;
+    $("startAutoApply").disabled = false;
+  }
 }
 
 async function onAttach() {
@@ -1064,6 +1094,7 @@ async function onReceipt() {
 $("verifyReview").addEventListener("click", () => void onVerifySmartPloyReview());
 $("reserveFinal").addEventListener("click", () => void onReserveFinalAttempt());
 $("inspect").addEventListener("click", () => void onInspect());
+$("startAutoApply").addEventListener("click", () => void onStartAutoApply());
 $("resume").addEventListener("click", () => void onResumeReceipt());
 $("fill").addEventListener("click", () => void onFill());
 $("attach").addEventListener("click", () => void onAttach());
