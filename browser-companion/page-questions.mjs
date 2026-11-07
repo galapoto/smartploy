@@ -34,6 +34,17 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
   const strict = ["jobs.lever.co", "jobs.eu.lever.co", "jobs.ashbyhq.com",
     ...ghHosts, "ats.talentadore.com"];
   const approvedHost = intended.hostname;
+  // Mirror SmartPloy's original exact-job path guard; same host is not enough.
+  const sameReviewedJobPath = (actual, approved) => {
+    if (actual.search !== approved.search) return false;
+    const source = approved.pathname.replace(/\/+$/, "") || "/";
+    const live = actual.pathname.replace(/\/+$/, "") || "/";
+    if (live === source) return true;
+    if (source === "/") return false;
+    if (["/apply", "/application"].some(suffix =>
+        live === source + suffix || live.startsWith(source + suffix + "/"))) return true;
+    return /\/(?:apply|application)$/.test(source) && live.startsWith(source + "/");
+  };
   const generic = !strict.includes(approvedHost) &&
     here.origin === intended.origin && here.hostname === approvedHost &&
     typeof approvedUrl === "string" && approvedUrl.length <= 1500 &&
@@ -43,6 +54,7 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
     !/(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion|lan|home|intranet)$/i.test(approvedHost) &&
     (intended.pathname !== "/" || intended.search.length > 0) &&
     here.search.length <= 800 && intended.search.length <= 800 &&
+    sameReviewedJobPath(here, intended) &&
     !here.hash && !intended.hash;
   if (here.protocol !== "https:" || intended.protocol !== "https:" ||
       (here.origin !== intended.origin && !greenhouse) ||
