@@ -24,16 +24,19 @@
       <p id="reviewInfo" role="status"></p>
       <p class="muted">Only for an independently authorized <strong>Lever</strong> posting:
         after reviewing the complete form, return to the signed-in SmartPloy tab
-        to reserve ONE server-controlled attempt. Ashby and hosted Greenhouse jobs
+        to reserve ONE server-controlled attempt. Ashby, hosted Greenhouse, TalentAdore and user-reviewed public HTTPS employer sites
         support reviewed field filling and PDF help only; submit personally.
+        TalentAdore requires you to open the form using Hae tähän työpaikkaan in
+        the employer tab; a browser receipt is not verified for this ATS.
         If the outcome is uncertain, do not retry automatically.</p>
       <button id="reserveFinal" type="button" class="danger">Reserve ONE reviewed employer final click (if authorized)</button>
       <p id="finalClaimInfo" role="status"></p>
-      <p class="muted">Open the exact employer's Lever <code>/apply</code>, Ashby
-        <code>/application</code>, or hosted Greenhouse
-        <code>/{board}/jobs/{job-id}</code> form. Reopen the companion,
-        paste the SAME packet and inspect. If Greenhouse uses an embedded
-        iframe, custom career page or a nonstandard form, complete it manually.
+      <p class="muted">Open the employer's actual application form in your desktop Chrome tab.
+        Supported ATS paths remain exact; custom public HTTPS careers sites can
+        use a reviewed same-host form. Reopen this extension, paste the SAME
+        current packet, and select Inspect. If the form is inside a cross-origin
+        iframe, redirects to another host, or presents a challenge, finish those
+        parts manually. Your URL and approved fields must be checked again.
         Signed-in review verification lasts at most five minutes.</p>
       <button id="inspect">Inspect verified employer form (no submit)</button>
       <button id="resume" class="secondary">Check a Lever, Ashby or Greenhouse confirmation</button>
@@ -43,8 +46,21 @@
         employer's email and use I applied on employer site in SmartPloy.</p>
     </section>
 
+    <section id="questionSync">
+      <h2>Remember questions in my private profile</h2>
+      <p class="muted">After reviewing unanswered employer questions, the companion queues
+        <strong>only eligible question prompts</strong> temporarily for up to five minutes,
+        never your answers or CV. To save these prompts permanently, return to your
+        <strong>signed-in SmartPloy tab</strong>, reopen this extension and click Sync.
+        CV-only mode will store nothing. Only you can review and approve answers later.</p>
+      <button id="syncQuestions" type="button" class="secondary" disabled>
+        Sync eligible questions to my SmartPloy profile (no submit)
+      </button>
+      <p id="questionSyncInfo" role="status" aria-live="polite"></p>
+    </section>
+
     <section id="plan" hidden>
-      <h2>2. Review the proposed field filling</h2>
+      <h2>2. Review the proposed form fields</h2>
       <p id="job"></p>
       <div id="summary" role="status"></div>
       <ul id="actions"></ul>

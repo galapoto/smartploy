@@ -6,6 +6,7 @@ import "./career-atlas.css";
 import "./document-coach.css";
 import "./document-comparison.css";
 import "./finland-shell.css";
+import "./sp120-assisted-flow.css";
 import "./sp125-workspace-theme.css";
 import "./sp126-premium-dashboard.css";
 

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import * as api from "./api";
 import MasterCVEditor from "./MasterCVEditor";
 import { parseStructuredCV } from "./structured_cv";
-import type { CVDocument, CVEditorDocument, CVEditorSaved, CVEditorRestored } from "./types";
+import type { CVDocument, CVEditorDocument, CVEditorSaved, CVEditorRestored, CandidateFact } from "./types";
 
 vi.mock("./api", () => ({
   getCVEditor: vi.fn(),
@@ -51,10 +51,13 @@ afterEach(() => {
 });
 
 function start(options?: {
-  cv?: CVDocument; userId?: string;
+  cv?: CVDocument; userId?: string; facts?: CandidateFact[];
   onSave?: (text: string, sha: string) => Promise<CVEditorSaved>;
   onRestore?: (digest: string, sha: string) => Promise<CVEditorRestored>;
   onSaved?: (cv: CVDocument) => void;
+  onUnsavedChange?: (dirty: boolean) => void;
+  onWriteStarted?: () => symbol | null;
+  onWriteSettled?: (token: symbol) => void;
 }) {
   const onSave = vi.fn(options?.onSave ?? (async (text: string) => savedResponse(text)));
   const onRestore = vi.fn(options?.onRestore ?? (async (digest: string) => ({
@@ -71,7 +74,11 @@ function start(options?: {
   const onSaved = vi.fn(options?.onSaved ?? (() => {}));
   render(<MasterCVEditor cv={options?.cv || active}
     expectedUserId={options?.userId || USER}
-    onSave={onSave} onRestore={onRestore} onSaved={onSaved}/>);
+    facts={options?.facts}
+    onSave={onSave} onRestore={onRestore} onSaved={onSaved}
+    onWriteStarted={options?.onWriteStarted}
+    onWriteSettled={options?.onWriteSettled}
+    onUnsavedChange={options?.onUnsavedChange}/>);
   return {onSave, onRestore, onSaved};
 }
 
@@ -279,5 +286,135 @@ describe("SP82 applicant-controlled exact CV version restore", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect((editor as HTMLTextAreaElement).value).toBe(original);
     expect(onSaved).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP103 master CV editor write lifecycle", () => {
+  it("keeps the parent CV write barrier until owner verification and handoff finish", async () => {
+    const token = Symbol("cv-save");
+    const order: string[] = [];
+    let finish!: (value: CVEditorSaved) => void;
+    const onSaved = vi.fn(() => order.push("saved"));
+    const onWriteSettled = vi.fn((_token: symbol) => { order.push("settled"); });
+    const {onSave} = start({
+      onWriteStarted: () => { order.push("started"); return token; },
+      onWriteSettled,
+      onSaved,
+      onSave: () => new Promise(resolve => { finish = resolve; }),
+    });
+    const editor = await screen.findByRole("textbox", {name: "Editable master CV text"});
+    fireEvent.change(editor, {target: {value: original + "\nNew applicant project."}});
+    fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(order).toEqual(["started"]);
+    await act(async () => { finish(savedResponse(original)); });
+    await waitFor(() => expect(onWriteSettled).toHaveBeenCalledWith(token));
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["started", "saved", "settled"]);
+  });
+
+  it("releases parent write lock after a rejected save without publishing a CV", async () => {
+    const token = Symbol("rejected-cv");
+    const onWriteSettled = vi.fn();
+    const {onSaved} = start({
+      onWriteStarted: () => token, onWriteSettled,
+      onSave: async () => { throw new Error("CV revision conflict"); },
+    });
+    const editor = await screen.findByRole("textbox", {name: "Editable master CV text"});
+    fireEvent.change(editor, {target: {value: original + "\nAn applicant edit."}});
+    fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(onWriteSettled).toHaveBeenCalledWith(token);
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("does not mutate a CV if the owner-level write barrier is occupied", async () => {
+    const {onSave} = start({ onWriteStarted: () => null });
+    const editor = await screen.findByRole("textbox", {name: "Editable master CV text"});
+    fireEvent.change(editor, {target: {value: original + "\nOne more true fact."}});
+    fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
+    expect(await screen.findByText(/Another CV update is already in progress/)).toBeTruthy();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP104 master CV unsaved reporting", () => {
+  it("reports dirty edits and clears the marker after a verified save", async () => {
+    const onUnsavedChange = vi.fn();
+    const {onSaved} = start({onUnsavedChange});
+    const editor = await screen.findByRole("textbox", {name: "Editable master CV text"});
+    expect(onUnsavedChange).toHaveBeenLastCalledWith(false);
+    fireEvent.change(editor, {target: {value: original + "\nApplicant verified project."}});
+    expect(onUnsavedChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onUnsavedChange).toHaveBeenLastCalledWith(false));
+  });
+});
+
+
+describe("SP133 approved-profile CV generator", () => {
+  const fact = (fact_type: string, value: string, approved = true): CandidateFact => ({
+    fact_id: fact_type + ":" + value, fact_type, value, approved,
+    source: "synthetic-test", confidence: 1,
+    created_at: "2026-11-05T00:00:00Z",
+  });
+
+  it("offers a clean, unsaved CV using approved facts, keeping the original saved version", async () => {
+    const {onSave} = start({facts: [
+      fact("identity", "Approved Applicant"),
+      fact("skill", "Python"),
+      fact("experience", "Analyst at Example Oy, 2024"),
+      fact("skill", "Unapproved cybersecurity certificate", false),
+    ]});
+    await screen.findByRole("textbox", {name: "Editable master CV text"});
+    const button = screen.getByRole("button", {name: "Build CV from approved profile"});
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(button);
+    expect(await screen.findByRole("textbox", {name: "Full name"})).toBeTruthy();
+    expect((screen.getByRole("textbox", {name: "Full name"}) as HTMLInputElement).value)
+      .toBe("Approved Applicant");
+    expect(screen.queryByRole("textbox", {name: "Imported source text"})).toBeNull();
+    expect(screen.getByLabelText("CV preview").textContent).toContain("Analyst at Example Oy, 2024");
+    expect(screen.getByRole("article", {name: "Formatted structured CV"})).toBeTruthy();
+    expect(screen.getByRole("heading", {name: "Approved Applicant"})).toBeTruthy();
+    expect(screen.getByRole("heading", {name: "Work experience"})).toBeTruthy();
+    expect(screen.getByLabelText("CV preview").textContent).not.toContain("Unapproved cybersecurity");
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText(/UNSAVED structured CV draft/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", {name: "Save updated CV"}));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const submittedText = onSave.mock.calls[0][0];
+    expect(submittedText).toContain("Approved Applicant");
+    expect(submittedText).toContain("Python");
+    expect(submittedText).not.toContain("IMPORTED SOURCE TEXT");
+    expect(submittedText).not.toContain("Unapproved cybersecurity");
+    expect(parseStructuredCV(submittedText)?.importedText).toBe("");
+    // Saving is explicit and CAS-protected; the original CV is still the
+    // previous version identified by HASH until that user action.
+    expect(onSave.mock.calls[0][1]).toBe(HASH);
+  });
+
+  it("does not invent an applicant name or allow saving only skill facts", async () => {
+    const {onSave} = start({facts: [fact("skill", "SQL")]});
+    await screen.findByRole("textbox", {name: "Editable master CV text"});
+    fireEvent.click(screen.getByRole("button", {name: "Build CV from approved profile"}));
+    expect(await screen.findByRole("textbox", {name: "Full name"})).toBeTruthy();
+    expect((screen.getByRole("textbox", {name: "Full name"}) as HTMLInputElement).value)
+      .toBe("");
+    expect((screen.getByRole("button", {name: "Save updated CV"}) as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("CV-only users without approved facts retain the manual editor and no generator write", async () => {
+    const {onSave} = start({facts: []});
+    await screen.findByRole("textbox", {name: "Editable master CV text"});
+    const generate = screen.getByRole("button", {name: "Build CV from approved profile"});
+    expect((generate as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(generate);
+    expect(onSave).not.toHaveBeenCalled();
   });
 });

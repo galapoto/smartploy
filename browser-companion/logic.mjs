@@ -1,4 +1,31 @@
 /* Pure, testable rules for SmartPloy's local-only browser companion. */
+/* Embedded in original first-party Python Playwright question-rule adapter.
+   This module must not have imports: the adapter serializes it to page.evaluate.
+   Keep in parity with upload.mjs and the standalone Chrome page callbacks. */
+function reviewedPublicEmployerForm(activeUrl, packetUrl) {
+  const strict = new Set([
+    "jobs.lever.co", "jobs.eu.lever.co", "jobs.ashbyhq.com",
+    "boards.greenhouse.io", "job-boards.greenhouse.io",
+    "ats.talentadore.com"
+  ]);
+  const valid = (raw) => {
+    if (typeof raw !== "string" || raw.length > 1500 ||
+        /[\\\u0000-\u0020\u007f]/u.test(raw)) return null;
+    try {
+      const url = new URL(raw);
+      const host = url.hostname;
+      if (url.protocol !== "https:" || url.username || url.password ||
+          url.port || url.hash || url.search.length > 800 ||
+          !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$/i.test(host) ||
+          /(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion|lan|home|intranet)$/i.test(host)) return null;
+      return url;
+    } catch { return null; }
+  };
+  const actual = valid(activeUrl), approved = valid(packetUrl);
+  return Boolean(actual && approved && !strict.has(approved.hostname) &&
+    (approved.pathname !== "/" || approved.search.length > 0) &&
+    actual.origin === approved.origin);
+}
 export const SCHEMA = "smartploy.browser_handoff.v2";
 
 export class PacketError extends Error {}
@@ -79,12 +106,20 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
     /^\/[A-Za-z0-9_-]{1,100}\/jobs\/[0-9]{1,20}\/?$/.test(target.pathname) &&
     current.pathname.replace(/\/+$/, "") === target.pathname.replace(/\/+$/, "") &&
     !target.search && !current.search && !target.hash && !current.hash;
+  // SP118: TalentAdore hosted job and form use one exact posting path.
+  // Queries, fragments, other openings and alternate job ids fail closed.
+  const talentAdore = target.hostname === "ats.talentadore.com" &&
+    current.hostname === "ats.talentadore.com" &&
+    /^\/apply\/[A-Za-z0-9_-]{1,120}\/[A-Za-z0-9_-]{5,30}\/?$/.test(target.pathname) &&
+    current.pathname.replace(/\/+$/, "") === target.pathname.replace(/\/+$/, "") &&
+    !target.search && !current.search && !target.hash && !current.hash;
+  const genericPublicEmployer = reviewedPublicEmployerForm(activeTabUrl, packet.application_url);
   if (target.protocol !== "https:" || current.protocol !== "https:" ||
       target.username || target.password || current.username || current.password ||
       target.port !== "" || current.port !== "" ||
       (current.origin !== target.origin && !greenhouse) ||
-      !(lever || ashby || greenhouse)) {
-    throw new PacketError("Open the exact supported employer job/application page linked from SmartPloy");
+      !(lever || ashby || greenhouse || talentAdore || genericPublicEmployer)) {
+    throw new PacketError("Open the reviewed employer job or form in a public HTTPS tab. Reapprove if the employer origin changes.");
   }
   const f = packet.fields;
   if (!f || typeof f !== "object") {
@@ -126,9 +161,10 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
 }
 
 function tidy(raw) {
-  return String(raw || "").toLowerCase()
-    .replace(/[()_.:*/\-]+/g, " ")
-    .replace(/\s+/g, " ").trim();
+  // Real Lever labels use Unicode required markers (✱), not only ASCII *.
+  // Preserve Unicode letters and digits; reject unsafe fields BEFORE matching.
+  return String(raw || "").normalize("NFKC").toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 // Ordinary contact autofill must not disguise a salary, visa, legal or
@@ -193,11 +229,20 @@ export function planFields(elements, packet) {
   }
   const named = elements.map((row) => ({...row, key: identifyField(row)}));
   const hasCoverLetterField = named.some((row) => row.key === "cover_letter");
+  // Real Lever "Current location" clears plain .fill() inputs until the
+  // applicant selects an employer-side city suggestion. Treat as manual,
+  // not a completed field. Mirror the first-party Python Playwright guard.
+  const leverLocationRequiresManualSelection =
+    /^https:\/\/jobs\.(?:eu\.)?lever\.co\//.test(packet.application_url || "");
   const planned = [];
   const unresolvedRequired = [];
   const skippedUploads = [];
   for (const row of named) {
     const label = text(String(row.label || row.name || row.id || "Unlabelled field"), 150);
+    if (leverLocationRequiresManualSelection && row.key === "location") {
+      unresolvedRequired.push(label + " (select an employer location manually)");
+      continue;
+    }
     if (row.type === "file") {
       skippedUploads.push(label);
       if (row.required && !row.hasValue) unresolvedRequired.push(label + " (file upload)");

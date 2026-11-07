@@ -120,8 +120,15 @@ def build_prompt(candidate: JobCandidate, profile: CandidateProfile) -> dict:
         raise LocalDraftError("Approve your profile facts before requesting AI suggestions")
     job = candidate.job
     return {
-        "task": "Write a preliminary CV summary and cover-letter draft for human review only",
+        "task": "Create a distinctive, job-specific, complete CV summary and application letter for applicant review",
         "job_is_untrusted_input": True,
+        "writing_brief": {
+            "cv_headline": "One concise role-aligned headline. No invented seniority or credentials.",
+            "cv_summary": "A fluent, ATS-readable professional profile, 45-80 words, with the most relevant approved skills and project or work evidence; do not invent outcomes.",
+            "cover_letter": "Complete, ready-to-edit prose in the vacancy's language (Finnish or English). Aim for 170-260 words if the approved evidence allows it. Use greeting, concrete role/company opening, one strong evidence-led skills paragraph, one specific approved project/work example when available, a credible contribution-oriented close and signoff only if an approved identity is available. Not a checklist or coaching template.",
+            "style": "Direct, polished, human and specific. Short paragraphs; no fake enthusiasm, unsupported superlatives, generic self-praise, bullet lists or labels such as 'confirmed skills'. Never repeat the job advertisement verbatim.",
+            "truth_policy": "Only factual candidate claims from approved_candidate_facts. If no relevant work example is approved, write a shorter coherent letter; put the missing evidence in risks, NOT fabricated prose.",
+        },
         "job": {
             "company": job.company[:150],
             "role_title": job.role_title[:150],
@@ -153,8 +160,13 @@ SYSTEM = (
     "Never imply a job was applied for or that files were sent. No external actions. "
     "Return strictly JSON with exactly the provided output_schema keys. "
     "Every highlight about the candidate must cite exact approved evidence_fact_id values. "
-    "If facts are insufficient, use respectful neutral sentences, state gaps in risks, "
-    "and explain what the user needs to review. This is a proposal, not a finalized CV."
+    "Produce a coherent application letter rather than a guide, template, fact dump or "
+    "mechanical list. Ground the introduction in the actual target role and employer; "
+    "use one or two specific approved work/project examples when available. "
+    "Do not invent employer motivation, measurable impact, qualifications or seniority. "
+    "If facts are insufficient, write shorter honest prose and place missing evidence "
+    "in risks and review_notes, never as placeholders inside the letter. "
+    "This is an editable proposal, not a finalized CV or submitted application."
 )
 
 

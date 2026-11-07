@@ -212,3 +212,116 @@ export function cvHasApplicantContent(cv: StructuredCV): boolean {
     cv.sections.some((section) => section.entries.some(populated))
   );
 }
+
+/** SP133: create an *unsaved* structured master CV using only approved facts.
+ *
+ * Free-text evidence is placed verbatim in editable entries. We deliberately
+ * do not infer job titles, employers, dates, levels, results or a professional
+ * identity from a skill. Source CV bytes and the server's evidence ledger are
+ * untouched; the owner reviews the draft before a version-checked save.
+ */
+export type CVApprovedFact = {
+  fact_type: string; value: string; approved: boolean;
+};
+
+/** Preserve approved work evidence as readable prose instead of a giant bold title.
+ * Only an explicit short first line becomes an entry heading; the remainder
+ * stays verbatim in details. Never infer role, employer, period or results.
+ */
+function entryFromApprovedFact(value: string): CVEntry {
+  const source = value.replace(/\r\n?/g, "\n").trim();
+  const lines = source.split("\n");
+  if (lines.length > 1) {
+    const heading = lines[0].trim();
+    const details = lines.slice(1).join("\n").trim();
+    if (heading && heading.length <= 100 && details) {
+      return {...emptyCVEntry(), title: heading, details};
+    }
+  }
+  return source.length > 100 || source.includes("\n")
+    ? {...emptyCVEntry(), details: source}
+    : {...emptyCVEntry(), title: source};
+}
+
+export function draftStructuredCVFromApprovedFacts(
+  facts: ReadonlyArray<CVApprovedFact>,
+): {model: StructuredCV; included: number; skipped: number; missingName: boolean} {
+  const cv = emptyStructuredCV();
+  const seen = new Set<string>();
+  const approved = facts.filter(fact =>
+    fact.approved === true && typeof fact.value === "string" && !!fact.value.trim()
+  ).filter(fact => {
+    const fingerprint = fact.fact_type + "\u0000" + fact.value.trim();
+    if (seen.has(fingerprint)) return false;
+    seen.add(fingerprint);
+    return true;
+  });
+  const values = (kind: string): string[] =>
+    approved.filter(fact => fact.fact_type === kind)
+      .map(fact => fact.value.trim());
+
+  const names = values("identity");
+  if (names.length === 1 && names[0].length <= 500) cv.name = names[0];
+  const locations = values("location");
+  if (locations.length === 1 && locations[0].length <= 500) cv.location = locations[0];
+  const contact = values("contact");
+  const emails = contact.filter(value =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 500);
+  const phones = contact.filter(value =>
+    /^\+?[\d()\- .]{7,24}$/.test(value) && /\d{6}/.test(value.replace(/\D/g, "")));
+  const urls = contact.filter(value =>
+    /^https:\/\/[^\s]+$/i.test(value) && value.length <= 500);
+  if (emails.length === 1) cv.email = emails[0];
+  if (phones.length === 1) cv.phone = phones[0];
+  if (urls.length === 1) cv.links = urls[0];
+
+  const sectionKinds: ReadonlyArray<{factType: string; section: CVSectionKind}> = [
+    {factType: "experience", section: "experience"},
+    {factType: "education", section: "education"},
+    {factType: "project", section: "projects"},
+    {factType: "skill", section: "skills"},
+    {factType: "certification", section: "certifications"},
+    {factType: "language", section: "languages"},
+    {factType: "domain", section: "additional"},
+  ];
+  let included = cv.name ? 1 : 0;
+  included += cv.location ? 1 : 0;
+  included += [cv.email, cv.phone, cv.links].filter(Boolean).length;
+  for (const {factType, section} of sectionKinds) {
+    const items = values(factType).filter(value => value.length <= 700);
+    if (!items.length) continue;
+    cv.sections.push({
+      id: id("cv-section"), kind: section,
+      entries: items.map(entryFromApprovedFact),
+    });
+    included += items.length;
+  }
+  // Reuse short EXACT approved skills; no self-promotion, fabricated
+  // statistics or arbitrary truncation of potentially qualified facts.
+  const shortSkills = values("skill").filter(value => value.length <= 85).slice(0, 4);
+  if (shortSkills.length) {
+    cv.summary = "Relevant skills: " + shortSkills.join(" · ");
+  }
+  const extras = contact.filter(value =>
+    value !== cv.email && value !== cv.phone && value !== cv.links
+    && value.length <= 700
+  );
+  if (extras.length) {
+    const existing = cv.sections.find(section => section.kind === "additional");
+    const entries = extras.map(value => ({
+      ...emptyCVEntry(), title: value,
+    }));
+    if (existing) existing.entries.push(...entries);
+    else cv.sections.push({
+      id: id("cv-section"), kind: "additional", entries,
+    });
+    included += extras.length;
+  }
+  // Missing/ambiguous identity and work authorization are intentionally not
+  // silently guessed or published in a CV; the applicant supplies/reviews them.
+  return {
+    model: cv, included,
+    skipped: approved.length - included,
+    missingName: !cv.name.trim(),
+  };
+}
