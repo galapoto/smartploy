@@ -1208,7 +1208,10 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.getByRole("region", { name: "Career search and applications banner" })).toBeVisible();
-  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeVisible();
+  await expect(page.locator(".site-header .sp-mobile-brand")).toBeVisible();
+  await expect(page.locator(".site-header .sp-mobile-brand-mark")).toBeVisible();
+  // No second wordmark below the banner: the top header remains fully branded.
+  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Switch to dark mode" })).toBeVisible();
   await page.getByRole("button", { name: "Switch to dark mode" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
@@ -1294,6 +1297,10 @@ test("SP128 phone home is CV-first with compact actionable methods and no duplic
     await expect(page.locator(".flow-start-card[data-flow-mode]")).toHaveCount(3);
     await expect(page.locator(".sp126-dashboard-aside")).toBeHidden();
     await expect(page.locator(".sp126-job-results")).toBeHidden();
+    await expect(page.locator(".sp126-dashboard-main > .stats-grid")).toBeHidden();
+    await expect(page.locator(".site-footer")).toBeHidden();
+    await expect(page.locator(".flow-start-locked")).toHaveCSS("width", "1px");
+    await expect(page.locator(".site-header .sp-mobile-brand")).toBeVisible();
     const measurements = await page.evaluate(() => {
       const height = (selector: string) =>
         document.querySelector(selector)!.getBoundingClientRect().height;
@@ -1311,6 +1318,10 @@ test("SP128 phone home is CV-first with compact actionable methods and no duplic
     expect(measurements.overflow).toBe(false);
     // Actual rendered screenshots, not a mockup; CI uploads these artifacts.
     await evidence(page, "sp128-mobile-home-" + width + ".png");
+    if (width === 390) {
+      const fullHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+      expect(fullHeight).toBeLessThan(1300);
+    }
     await page.getByRole("button", { name: "Open menu" }).click();
     await page.getByRole("dialog", { name: "SmartPloy sidebar" })
       .getByRole("button", { name: "CV & AI tools" }).click();
