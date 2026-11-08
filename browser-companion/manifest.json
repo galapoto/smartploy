@@ -1,18 +1,27 @@
 {
   "manifest_version": 3,
   "name": "SmartPloy Apply Companion",
-  "version": "0.5.1",
-  "description": "Reviewed Lever, Ashby and hosted Greenhouse form/PDF help. Only individually approved Lever jobs permit one-use final click. No background sending.",
+  "version": "0.5.3",
+  "description": "SmartPloy Job intelligence: reviewed employer form help. No background sending; user approval is required.",
   "permissions": [
     "activeTab",
     "scripting",
     "storage"
   ],
   "action": {
-    "default_title": "SmartPloy Apply Companion",
-    "default_popup": "popup.html"
+    "default_title": "SmartPloy · Job intelligence",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   },
   "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
     "128": "icon128.png"
   }
 }

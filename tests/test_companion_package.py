@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+import zlib
 
 import pytest
 
@@ -27,6 +28,25 @@ def load_packager():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def bundle_icon_content_matches_site(bundle, packager):
+    assert bundle.read("smartploy-mark-v2.svg") == (ROOT / "web/public/smartploy-mark-v2.svg").read_bytes()
+    assert bundle.read("icon128.png") == (ROOT / "web/public/smartploy-mark.png").read_bytes()
+    assert b'src="smartploy-mark-v2.svg"' in bundle.read("popup.html")
+    for size in (16, 32, 48, 128):
+        assert packager._valid_png(bundle.read(f"icon{size}.png"), size)
+
+
+def png_chunk(kind: bytes, payload: bytes) -> bytes:
+    return (len(payload).to_bytes(4, "big") + kind + payload +
+            zlib.crc32(kind + payload).to_bytes(4, "big"))
+
+
+def png_with_short_raster(original: bytes) -> bytes:
+    """Make a CRC-valid, size-correct PNG with an intentionally incomplete image."""
+    return (original[:33] + png_chunk(b"IDAT", zlib.compress(b"\x00")) +
+            png_chunk(b"IEND", b""))
 
 
 def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_path):
@@ -58,6 +78,12 @@ def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_pat
         assert manifest["manifest_version"] == 3
         assert manifest["permissions"] == ["activeTab", "scripting", "storage"]
         assert manifest["action"]["default_popup"] == "popup.html"
+        assert manifest["version"] == "0.5.3"
+        assert manifest["icons"] == {"16": "icon16.png", "32": "icon32.png", "48": "icon48.png", "128": "icon128.png"}
+        assert manifest["action"]["default_icon"] == manifest["icons"]
+        assert packager._valid_png(zipfile_src.read("icon128.png"), 128)
+        bundle_icon_content_matches_site(zipfile_src, packager)
+
         for denied in (
             "host_permissions", "background", "content_scripts",
             "externally_connectable", "update_url",
@@ -94,7 +120,9 @@ def test_sp44_package_cli_produces_verified_output_without_network(tmp_path):
 
 @pytest.mark.parametrize("violation", [
     "host_permission", "background", "remote_import", "missing_import",
-    "symlink", "unapproved_popup_asset",
+    "symlink", "unapproved_popup_asset", "logo_mismatch", "broken_icon128",
+    "broken_icon32", "bad_crc_icon16", "short_raster_icon48", "short_raster_icon128",
+    "invalid_trns_icon16", "unexpected_srgb_icon48", "invalid_trns_icon128",
 ])
 def test_sp44_distribution_fails_closed_on_unreviewed_extension_change(
     tmp_path, monkeypatch, violation,
@@ -123,6 +151,28 @@ def test_sp44_distribution_fails_closed_on_unreviewed_extension_change(
     elif violation == "symlink":
         (scratch / "popup.css").unlink()
         (scratch / "popup.css").symlink_to(scratch / "logic.mjs")
+    elif violation in ("broken_icon128", "broken_icon32"):
+        size = 128 if violation == "broken_icon128" else 32
+        icon = scratch / f"icon{size}.png"
+        icon.write_bytes(icon.read_bytes()[:24])
+    elif violation == "bad_crc_icon16":
+        icon = scratch / "icon16.png"
+        altered = bytearray(icon.read_bytes())
+        altered[-5] ^= 1
+        icon.write_bytes(altered)
+    elif violation in ("short_raster_icon48", "short_raster_icon128"):
+        size = 48 if violation.endswith("48") else 128
+        icon = scratch / f"icon{size}.png"
+        icon.write_bytes(png_with_short_raster(icon.read_bytes()))
+    elif violation in ("invalid_trns_icon16", "unexpected_srgb_icon48", "invalid_trns_icon128"):
+        size = 16 if violation.endswith("16") else 48 if violation.endswith("48") else 128
+        icon = scratch / f"icon{size}.png"
+        original = icon.read_bytes()
+        kind = b"sRGB" if size == 48 else b"tRNS"
+        payload = b"\x00" if size == 48 else b"\x00\x00"
+        icon.write_bytes(original[:33] + png_chunk(kind, payload) + original[33:])
+    elif violation == "logo_mismatch":
+        (scratch / "smartploy-mark-v2.svg").write_text("<svg/>", encoding="utf-8")
     elif violation == "unapproved_popup_asset":
         (scratch / "popup.html").write_text(
             (scratch / "popup.html").read_text().replace(

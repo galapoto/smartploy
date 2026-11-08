@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[1] / "browser-companion"
 
 def test_no_new_browser_background_or_remote_host_capability():
     manifest = json.loads((ROOT / "manifest.json").read_text())
-    assert manifest["version"] == "0.5.1"
+    assert tuple(map(int, manifest["version"].split("."))) >= (0, 5, 1)
+    assert manifest["action"]["default_icon"] == manifest["icons"]
     assert set(manifest["permissions"]) == {"activeTab", "scripting", "storage"}
     for key in ("host_permissions", "background", "content_scripts"):
         assert key not in manifest

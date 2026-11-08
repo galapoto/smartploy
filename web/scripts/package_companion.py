@@ -23,7 +23,9 @@ DEFAULT_OUTPUT = ROOT / "web" / "public" / "smartploy-apply-companion.zip"
 # Explicit review boundary. New extension code/modules must be consciously
 # added to this allowlist before a production package can include them.
 FILES = (
-    "manifest.json", "popup.html", "popup.css", "popup.mjs", "icon128.png",
+    "manifest.json", "popup.html", "popup.css", "popup.mjs",
+    "icon16.png", "icon32.png", "icon48.png", "icon128.png",
+    "smartploy-mark-v2.svg",
     "logic.mjs", "upload.mjs", "questions.mjs", "page-questions.mjs",
     "page-attachment.mjs", "page-review.mjs", "review-bridge.mjs",
     "page-final-claim.mjs", "page-final-submit.mjs", "attempt-lock.mjs",
@@ -35,6 +37,62 @@ MODULE_IMPORT = re.compile(
 )
 HTML_ASSET = re.compile(r"""(?:src|href)=["']([^"']+)["']""")
 
+
+def _valid_png(data: bytes, expected_size: int) -> bool:
+    """Admit only complete, bounded 8-bit RGBA PNGs with valid raster rows."""
+    import zlib
+
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or len(data) > MAX_SOURCE_BYTES:
+        return False
+    index, seen_header, seen_image = 8, False, False
+    idat = bytearray()
+    try:
+        while index + 12 <= len(data):
+            n = int.from_bytes(data[index:index + 4], "big")
+            kind = data[index + 4:index + 8]
+            start, stop = index + 8, index + 8 + n
+            if n > MAX_SOURCE_BYTES or stop + 4 > len(data):
+                return False
+            chunk = data[start:stop]
+            crc = int.from_bytes(data[stop:stop + 4], "big")
+            if zlib.crc32(kind + chunk) != crc:
+                return False
+            if kind == b"IHDR":
+                if seen_header or index != 8 or n != 13:
+                    return False
+                seen_header = True
+                if (int.from_bytes(chunk[:4], "big") != expected_size
+                    or int.from_bytes(chunk[4:8], "big") != expected_size
+                    or chunk[8:] != b"\x08\x06\x00\x00\x00"):
+                    return False
+            elif kind == b"IDAT":
+                if not seen_header:
+                    return False
+                seen_image = True
+                idat.extend(chunk)
+            elif kind == b"IEND":
+                if n or not seen_image or stop + 4 != len(data):
+                    return False
+                break
+            else:
+                # First-party icons intentionally use only IHDR, IDAT, IEND.
+                # Even CRC-valid ancillary chunks can be invalid for RGBA.
+                return False
+            index = stop + 4
+        else:
+            return False
+        # Bound decompression before inspecting scanlines; tiny compressed
+        # inputs can otherwise expand far beyond the reviewed icon size.
+        row_bytes = 1 + expected_size * 4
+        expected_bytes = expected_size * row_bytes
+        decoder = zlib.decompressobj()
+        raw = decoder.decompress(bytes(idat), expected_bytes + 1)
+        return (decoder.eof and not decoder.unused_data
+                and not decoder.unconsumed_tail
+                and len(raw) == expected_bytes
+                and all(raw[at] <= 4 for at in range(0, expected_bytes, row_bytes)))
+    except (ValueError, OverflowError, IndexError, zlib.error):
+        return False
 
 def reviewed_files() -> tuple[dict[str, bytes], str]:
     manifest_path = SOURCE / "manifest.json"
@@ -49,7 +107,11 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
             "content_scripts", "externally_connectable", "update_url",
         ))
         or manifest.get("action", {}).get("default_popup") != "popup.html"
-        or manifest.get("icons", {}).get("128") != "icon128.png"
+        or manifest.get("icons") != {
+            "16": "icon16.png", "32": "icon32.png",
+            "48": "icon48.png", "128": "icon128.png",
+        }
+        or manifest.get("action", {}).get("default_icon") != manifest.get("icons")
         or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", str(manifest.get("version", "")))
     ):
         raise ValueError("Unexpected companion permissions or manifest configuration")
@@ -60,10 +122,14 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
         if not item.is_file() or item.is_symlink() or item.stat().st_size > MAX_SOURCE_BYTES:
             raise ValueError(f"Unapproved, missing, symlinked or oversized asset: {name}")
         files[name] = item.read_bytes()
-    if len(files["icon128.png"]) < 100 or not files["icon128.png"].startswith(
-        b"\x89PNG\r\n\x1a\n"
-    ):
-        raise ValueError("The reviewed extension icon is not a PNG")
+    for size in (16, 32, 48, 128):
+        if not _valid_png(files[f"icon{size}.png"], size):
+            raise ValueError(f"The reviewed extension icon{size}.png failed PNG integrity checks")
+    # Keep the extension lockup identical to the actual SmartPloy website source.
+    if files["smartploy-mark-v2.svg"] != (ROOT / "web" / "public" / "smartploy-mark-v2.svg").read_bytes():
+        raise ValueError("Extension mark differs from the approved SmartPloy website mark")
+    if files["icon128.png"] != (ROOT / "web" / "public" / "smartploy-mark.png").read_bytes():
+        raise ValueError("Extension 128px mark differs from SmartPloy website PNG")
     if b'<script src="popup.mjs" type="module"></script>' not in files["popup.html"]:
         raise ValueError("The packaged popup does not load its reviewed module")
     if b'href="popup.css"' not in files["popup.html"]:
@@ -93,7 +159,7 @@ def make_zip(output: Path) -> str:
     files, version = reviewed_files()
     output.parent.mkdir(parents=True, exist_ok=True)
     text = (
-        "SmartPloy Apply Companion v" + version + "\n\n"
+        "SmartPloy Apply Companion v" + version + " — Job intelligence\n\n"
         "1. Extract this ZIP to a local folder on your own desktop computer.\n"
         "2. In Chrome/Chromium open chrome://extensions and enable Developer mode.\n"
         "3. Choose Load unpacked, then select the EXTRACTED folder containing manifest.json.\n"

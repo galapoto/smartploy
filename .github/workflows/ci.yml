@@ -122,6 +122,17 @@ jobs:
       - name: Web build
         working-directory: web
         run: npm run build
+      # Reviewable, source-built Chrome package. The actual deployment still
+      # requires independent approval and a live release receipt.
+      - name: Upload reviewed extension ZIP (not a production release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-extension-review-v0.5.3
+          path: |
+            web/public/smartploy-apply-companion.zip
+            web/public/smartploy-apply-companion.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
 
   browser:
     # Playwright 1.55.1 does not install its pinned Chromium on the hosted
