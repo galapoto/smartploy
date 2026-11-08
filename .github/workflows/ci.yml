@@ -127,7 +127,7 @@ jobs:
       - name: Upload reviewed extension ZIP (not a production release)
         uses: actions/upload-artifact@v4
         with:
-          name: smartploy-extension-review-v0.5.2
+          name: smartploy-extension-review-v0.5.3
           path: |
             web/public/smartploy-apply-companion.zip
             web/public/smartploy-apply-companion.zip.sha256
