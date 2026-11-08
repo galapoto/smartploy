@@ -351,6 +351,9 @@ export default function App() {
   const loadGeneration = useRef(0);
   // Actively cancel stale private GETs; a generation guard alone leaves open connections.
   const activeLoadController = useRef<AbortController | null>(null);
+  // Mutation-related verification GETs have a bounded, abortable lifetime;
+  // the actual POST/PUT remains separate and is never silently retried.
+  const privateVerificationControllers = useRef<Set<AbortController>>(new Set());
   const lastSessionIdentity = useRef<string | null>(null);
   const savingSearchPreferences = useRef(false);
   const savingAIConsent = useRef(false);
@@ -363,6 +366,7 @@ export default function App() {
       mobileMenuFocusMainRef.current = true;
     }
     setMobileNav(false);
+    privateVerificationControllers.current.forEach((controller) => controller.abort());
     setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
     setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
     setPrivateSavedJobs([]);
@@ -393,7 +397,8 @@ export default function App() {
    * Backend authorization remains mandatory for each operation.
    */
   const runPrivateMutation = useCallback(async <T,>(
-    action: (expectedUserId: string) => Promise<T>
+    action: (expectedUserId: string) => Promise<T>,
+    readSignal?: AbortSignal,
   ): Promise<T> => {
     // Capture the initiating account synchronously, *before* the preflight
     // await. The server must reject if a later browser cookie belongs to B.
@@ -414,7 +419,7 @@ export default function App() {
     const verifyIdentity = async () => {
       let currentIdentity: string | null = null;
       try {
-        currentIdentity = sessionIdentity(await getSession());
+        currentIdentity = sessionIdentity(await getSession(readSignal));
       } catch {
         // A missing/expired session fails closed, even when email is unchanged.
       }
@@ -545,6 +550,7 @@ export default function App() {
       }
     } catch (exc) {
       if (generation === loadGeneration.current) {
+        controller.abort(); // cancel all sibling GETs after account verification fails
         lastSessionIdentity.current = null;
         clearPrivateWorkspace();
         setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
@@ -564,6 +570,7 @@ export default function App() {
       window.clearInterval(timer);
       ++loadGeneration.current;
       activeLoadController.current?.abort();
+      privateVerificationControllers.current.forEach((controller) => controller.abort());
     };
   }, [load]);
 
@@ -611,6 +618,9 @@ export default function App() {
       throw new Error("A search preference save is already in progress.");
     }
     savingSearchPreferences.current = true;
+    const verifyController = new AbortController();
+    privateVerificationControllers.current.add(verifyController);
+    const verifyDeadline = window.setTimeout(() => verifyController.abort(), 18000);
     // A concurrent refresh cannot publish an old preference snapshot while
     // the PUT and its paired discovery GET are in progress.
     ++loadGeneration.current;
@@ -623,7 +633,7 @@ export default function App() {
     const requireSameAccount = async () => {
       let observedIdentity: string | null = null;
       try {
-        observedIdentity = sessionIdentity(await getSession());
+        observedIdentity = sessionIdentity(await getSession(verifyController.signal));
       } catch {
         // Treat failed/unauthenticated session verification as a privacy
         // boundary failure, not permission to publish stale private results.
@@ -646,7 +656,7 @@ export default function App() {
       await requireSameAccount();
       const result = await updateSearchPreferences(next, expectedUserId);
       await requireSameAccount();
-      const fresh = await getSearchResults();
+      const fresh = await getSearchResults(verifyController.signal);
       await requireSameAccount();
 
       // Reuse the ORIGINAL signed-in private POST after *every* saved
@@ -713,6 +723,9 @@ export default function App() {
       if (!accountUnverified) await requireSameAccount();
       throw exc;
     } finally {
+      window.clearTimeout(verifyDeadline);
+      verifyController.abort();
+      privateVerificationControllers.current.delete(verifyController);
       savingSearchPreferences.current = false;
       if (accountUnverified) {
         ++loadGeneration.current;
@@ -730,6 +743,9 @@ export default function App() {
     if (savingAIConsent.current || aiConsentStatus !== "ready") return;
     const originatingIdentity = lastSessionIdentity.current;
     savingAIConsent.current = true;
+    const verifyController = new AbortController();
+    privateVerificationControllers.current.add(verifyController);
+    const verifyDeadline = window.setTimeout(() => verifyController.abort(), 18000);
     ++loadGeneration.current; // Invalidate older private GET responses.
     activeLoadController.current?.abort();
     setRefreshing(false); // A cancelled refresh must not leave its spinner stuck.
@@ -738,10 +754,10 @@ export default function App() {
       const data = await runPrivateMutation(async (userId) => {
         await action(userId);
         const [consents, events] = await Promise.all([
-          getJobAIConsents(), getJobAIConsentEvents()
+          getJobAIConsents(verifyController.signal), getJobAIConsentEvents(verifyController.signal)
         ]);
         return { consents, events };
-      });
+      }, verifyController.signal);
       setAIConsents(data.consents.consents);
       setAIConsentEvents(data.events.events);
       setAIConsentStatus("ready");
@@ -751,6 +767,9 @@ export default function App() {
         setNotice(exc instanceof Error ? exc.message : "Could not change your AI permission.");
       }
     } finally {
+      window.clearTimeout(verifyDeadline);
+      verifyController.abort();
+      privateVerificationControllers.current.delete(verifyController);
       savingAIConsent.current = false;
       if (originatingIdentity === lastSessionIdentity.current) setAIConsentBusy(false);
     }
