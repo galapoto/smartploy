@@ -222,8 +222,7 @@ export default function LocalPlaywrightAssist(props: {
       setCvAttachBusy(true);
       try {
         const pdf = await fetchExactReviewedCvPdf(
-          applicationDownloadUrl(props.expectedWorkspaceId, "cv", "pdf",
-            props.expectedRevision),
+          applicationDownloadUrl(props.expectedWorkspaceId, "cv", "pdf"),
           { cv_pdf_sha256: info.cv_pdf_sha256, cv_pdf_size: info.cv_pdf_size },
         );
         // A second identity check AFTER the private download prevents a
