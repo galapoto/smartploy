@@ -1,0 +1,155 @@
+/* SP V4: one calm visual language. Layer AFTER first-party SP125-128 CSS.
+   Existing cards, routes, privileges and employer review remain unchanged. */
+:root{--sp-brand-black:#05070b;--sp-brand-surface:#0e141d;
+  --sp-brand-raised:#141c28;--sp-brand-navy:#021e3d;
+  --sp-brand-cyan:#06d9e8;--sp-brand-white:#f7faff;
+  --sp-brand-muted:#b6c3d2;--sp-brand-line:#293341}
+html[data-smartploy-theme="dark"],html[data-smartploy-theme="dark"] body,
+html[data-smartploy-theme="dark"] .smartploy-app,
+html[data-smartploy-theme="dark"] .sp-boot{
+  background:var(--sp-brand-black);color:var(--sp-brand-white)
+}
+html[data-smartploy-theme="dark"] .smartploy-app{
+  --sp125-bg:#05070b;--sp125-rail:#0a0e14;--sp125-card:#0e141d;
+  --sp125-raised:#141c28;--sp125-border:#293341;
+  --sp125-muted:#b6c3d2;--sp126-violet:#06d9e8;
+  --sp126-teal:#06d9e8;--sp126-blue:#06d9e8;
+  --blue:#06d9e8;--deep:#f7faff;--muted:#b6c3d2
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sidebar{
+  background:#090d13;border-color:#202a36
+}
+html[data-smartploy-theme="dark"] .smartploy-app .site-header,
+html[data-smartploy-theme="dark"] .sp-boot .sp-boot-header{
+  background:#080d14;border-color:#24303e
+}
+html[data-smartploy-theme="dark"] .sp-boot :is(.sp-boot-workspace,.sp-boot-theme,.sp-boot-nav-item),
+html[data-smartploy-theme="dark"] .smartploy-app :is(.panel,.stat-card,.job-item,.tool-tile,.action-card:not(.featured),.source-card,.cv-panel,.setup-card){
+  background:var(--sp-brand-surface);border-color:var(--sp-brand-line);
+  color:var(--sp-brand-white);box-shadow:0 12px 28px -23px #000c
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.site-brand,.site-brand strong,.page-intro h1,
+ .flow-start-heading h1,.flow-start-method-heading h2,.flow-start-card strong,
+ .small-heading h3,.panel h2,.panel h3){color:var(--sp-brand-white)}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.site-brand small,.nav-label,.page-intro p,
+ .flow-start-card > span:not(.flow-start-index):not(.flow-card-cta),.flow-start-ready,
+ .flow-start-privacy,.stat-copy small,.sp125-career-copy > p:not(.sp125-career-eyebrow)),
+html[data-smartploy-theme="dark"] .sp-boot :is(.sp-boot-brand small,.sp-boot-workspace > p){
+  color:var(--sp-brand-muted)
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.active{
+  background:#102331;border-color:#326475;color:var(--sp-brand-white);
+  box-shadow:0 6px 20px -18px #06d9e8
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.active::before{
+  background:var(--sp-brand-cyan)
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item:hover,
+html[data-smartploy-theme="dark"] .smartploy-app :is(.sp126-desktop-collapse,.sp126-mobile-close):hover{
+  background:#16222e;color:#fff
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.sp126-desktop-collapse,.sp126-mobile-close,
+ .sp99-theme-toggle,.outline-btn,.icon-btn,.flow-start-browse-button){
+  background:#101923;border-color:#2b4051;color:var(--sp-brand-white)
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.primary-btn,.flow-card-cta):not(:disabled){
+  background:var(--sp-brand-cyan);color:#04121a;border-color:var(--sp-brand-cyan);
+  box-shadow:none
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-card-cta{color:#04121a}
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-cover{
+  background:linear-gradient(115deg,#080e16,#0a1622);
+  border:1px solid #233243;box-shadow:0 10px 24px -21px #000
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-art{opacity:.46}
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-copy :is(h2,.sp125-career-eyebrow){color:#f7faff}
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-eyebrow::before{background:var(--sp-brand-cyan)}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li{
+  background:#121c28;border:1px solid #314050;color:#c4cfdd;box-shadow:none
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li.current{
+  background:#102b38;border-color:#367b83;color:#f7faff;box-shadow:none
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li.done{
+  background:#111e2b;border-color:#2c5664;color:#f7faff
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+ .flow-start-card[data-flow-mode]{
+  background:#0e1621;background-image:none;border:1px solid #2a3a4c;
+  color:var(--sp-brand-white);--flow-tone:#06d9e8;
+  box-shadow:0 14px 25px -22px #000e
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+ .flow-start-card[data-flow-mode]:not(:disabled):hover{
+  border-color:#06d9e8;background:#14202b
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+ .flow-start-card[data-flow-mode] > svg:first-child{
+  background:#122b3a;color:#06d9e8
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+ .flow-start-card[data-flow-mode] .flow-card-cta{
+  background:#102b38;border:1px solid #286977;color:#f7faff
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .stat-card,
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-aside .panel{
+  background:#0e141d;background-image:none;border-color:var(--sp-brand-line)
+}
+html[data-smartploy-theme="dark"] .smartploy-app .stat-icon{
+  background:#122b3a;color:var(--sp-brand-cyan)
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(input,select,textarea){
+  background:#0a1018;color:#f7faff;border-color:#344051
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(input,select,textarea):focus-visible,
+html[data-smartploy-theme="dark"] .smartploy-app :is(button,a):focus-visible{
+  outline:2px solid #06d9e8;outline-offset:3px
+}
+html[data-smartploy-theme="dark"] .sp-boot .sp-boot-nav-item.active{
+  background:#102b38;border-color:#367b83;color:#f7faff
+}
+html[data-smartploy-theme="dark"] .sp-boot .sp-boot-progress{
+  background:linear-gradient(90deg,#06d9e8 35%,#22303e 35%)
+}
+/* Do not rotate any branded or refresh control. Progress is static, and
+   status remains in the DOM for assistive technologies. */
+.smartploy-app .header-refresh svg,.sp-boot-progress,.loading-mark,.spinner{
+  animation:none!important
+}
+/* Keep the useful job/applicant destinations, but stop duplicating their
+   entire content, KPIs, instructions and branding on the HOME surface. */
+.smartploy-app .sp99-identity:not(.compact),
+.smartploy-app .flow-start-masthead,
+.smartploy-app .sp125-career-steps,
+.smartploy-app .sp126-dashboard-aside,
+.smartploy-app .sp126-job-results,
+.smartploy-app .sp126-dashboard-main > .stats-grid,
+.smartploy-app .flow-dashboard-setup,
+.smartploy-app .flow-start-method-heading .section-kicker,
+.smartploy-app .flow-start-method-heading p:last-child{
+  display:none
+}
+.smartploy-app .sp126-dashboard-layout{grid-template-columns:minmax(0,1fr)}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card{
+  min-height:152px;padding:15px;gap:7px
+}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card > small{
+  position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap
+}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card > span:not(.flow-card-cta):not(.flow-start-index){
+  font-size:13px;line-height:1.35
+}
+.smartploy-app .sp126-dashboard-main .flow-start-heading h1{
+  font-size:clamp(27px,3.4vw,42px);line-height:1.15
+}
+.smartploy-app .sp126-dashboard-main .flow-start-ready{
+  padding:9px 12px;margin:6px 0;background:#10212a;border-color:#29505b
+}
+.smartploy-app .sp126-dashboard-main .flow-start-method-heading{margin:12px 0 8px}
+@media(max-width:630px){
+  .smartploy-app .sp125-career-cover{max-height:125px}
+  .smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card{min-height:88px}
+}
+@media(prefers-reduced-motion:reduce){
+  .smartploy-app *, .sp-boot *{animation:none!important;transition:none!important}
+}
