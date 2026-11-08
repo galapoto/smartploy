@@ -22,3 +22,7 @@ Test evidence **pending actual CI run**. Real public employer acceptance **NOT V
 ## SP129.1 — sanitation against reactive employer upload clearing
 
 The SP112 donor previously treated Playwright `set_input_files` returning without an exception as proof of a local attachment. This was insufficient when a reactive employer page cleared/replaced its FileList on change. **SANITIZED** the adapted `assistant.attach_reviewed_cv_pdf` with the already proven SP144 single settled observation (150ms), same URL/field identity, exact FileList name, MIME and byte size. If the field was cleared, no `attached_locally` success is returned; the existing bridge burns the one attempt and requires manual inspection. Added a real synthetic Chromium regression for employer-side async clearing. Not proof of server-side file acceptance and never an employer submit.
+
+## Minimal action UI and packaged instructions
+
+The SP111 installer previously instructed users to upload all CVs manually and claimed no upload, which was now inaccurate for the separately authorized SP129 path. **SANITIZED** first-party `INSTALL.txt` to distinguish optional exact reviewed CV local file selection from employer acceptance and keep final submit in the user's hands. The visible local browser panel now shows the essential action and concise status; setup/supported-ATS help is behind native keyboard-accessible `details` disclosure, not removed. No new service, API or package dependency.

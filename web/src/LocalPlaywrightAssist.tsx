@@ -285,11 +285,14 @@ export default function LocalPlaywrightAssist(props: {
       Private local connection only · 127.0.0.1 · CV attachment only after consent · no employer submission
     </p>
     <p className="muted">
-      Install the reviewed Playwright ZIP once, then start <code>python bridge.py</code> on
-      your own desktop. The terminal prints a one-use code. Keep the visible Chromium
-      browser open while completing the employer's application. The Chrome extension
-      remains an alternative when local-network access is blocked.
+      Start <code>python bridge.py</code> on your computer, then enter its one-use code.
     </p>
+    <details className="local-playwright-help">
+      <summary>Setup &amp; supported websites</summary>
+      <p>Install the reviewed Playwright ZIP once and keep Chromium open.
+        Supported: Lever, Ashby and Greenhouse. Complete employer login yourself.
+        If local-network access is blocked, use the Chrome companion.</p>
+    </details>
     {!trustedPage ? <p role="alert">This origin cannot connect to your local Playwright helper.
       Use the Chrome companion instead.</p> : null}
     {phase === "not-paired" ? <div className="local-playwright-actions">
@@ -328,10 +331,7 @@ export default function LocalPlaywrightAssist(props: {
       <div className="local-playwright-actions" aria-label="Reviewed CV PDF attachment">
         <strong>CV PDF · {cvAttachment.label}</strong>
         <p className="muted">
-          Reuse your exact saved SmartPloy CV PDF (SHA-256 and file size verified
-          against this reviewed job). The PDF goes to your own local helper,
-          then to the employer input ONLY after another explicit approval.
-          The employer may upload it immediately on input.
+          Exact reviewed PDF · separate approval · employer upload unverified.
         </p>
         <button className="outline-btn" type="button"
           disabled={!props.enabled || busy || cvAttachBusy || cvAttachAttempted}

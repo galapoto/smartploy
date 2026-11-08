@@ -92,3 +92,13 @@ html[data-smartploy-theme="dark"] .local-playwright-error { color: #ffabb3; }
   .local-playwright-panel { padding: 14px 12px; }
   .local-playwright-panel button { width: 100%; }
 }
+
+/* SP129: only the action and required privacy boundary stay expanded. */
+.local-playwright-help { width:100%; font-size:12px; color:inherit; }
+.local-playwright-help summary {
+  display:inline-block; cursor:pointer; min-height:36px;
+  padding:8px 2px; font-weight:700; text-decoration:underline;
+  text-underline-offset:3px;
+}
+.local-playwright-help summary:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
+.local-playwright-help p { margin:3px 0 2px; max-width:60ch; line-height:1.5; }
