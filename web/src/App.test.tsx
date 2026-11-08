@@ -162,6 +162,30 @@ function switchableSession() {
 }
 
 describe("SP127: mobile-first persistent shell and nonblocking startup", () => {
+  it("aborts sibling account-A profile reads when session verification switches to B", async () => {
+    let sessionChecks = 0;
+    vi.mocked(api.getSession).mockImplementation(async () => {
+      sessionChecks += 1;
+      const who = sessionChecks === 1 ? "A" : "B";
+      return {
+        authenticated: true, email: "same-address@smartploy.invalid",
+        user_id: "owner-" + who, profile_id: "profile-" + who,
+        auth_source: "fixture",
+      };
+    });
+    let oldReadAborted = false;
+    vi.mocked(api.getCV).mockImplementation((signal) => new Promise((_resolve, reject) => {
+      signal?.addEventListener("abort", () => {
+        oldReadAborted = true;
+        reject(new DOMException("Cancelled old account CV", "AbortError"));
+      }, { once: true });
+    }));
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "SmartPloy isn't available" })).toBeTruthy();
+    expect(oldReadAborted).toBe(true);
+    expect(screen.queryByText(/same-address@smartploy.invalid/)).toBeNull();
+  });
+
   it("aborts superseded private bootstrap reads on Retry and component teardown", () => {
     const signals: AbortSignal[] = [];
     vi.mocked(api.getSession).mockImplementation((signal) => {
