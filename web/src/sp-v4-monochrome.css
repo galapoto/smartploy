@@ -119,6 +119,7 @@ html[data-smartploy-theme="dark"] .sp-boot .sp-boot-progress{
 /* Keep the useful job/applicant destinations, but stop duplicating their
    only repeated decorative prose on the HOME surface; keep result cards, real
    dashboard actions and the working sidebar visible on desktop. */
+.smartploy-app .sp99-identity,
 .smartploy-app .flow-start-masthead,
 .smartploy-app .sp125-career-steps,
 .smartploy-app .flow-start-method-heading .section-kicker,
