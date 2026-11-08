@@ -648,13 +648,10 @@ test("SP93 production build shows all three CV-locked methods with the full side
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   const logo = page.locator(".sp99-identity .sp99-identity-mark");
-  // Home remains a usable workspace; aesthetic decluttering must never hide
-  // the actual matching job cards or controls on desktop.
-  await expect(page.locator(".sp126-job-results .search-result-card").first()).toBeVisible().catch(async () => {
-    // Unsaved general preferences legitimately mean no results; inspect an
-    // actual visible browse action rather than asserting data was invented.
-    await expect(page.getByRole("button", { name: /Just find jobs/i })).toBeVisible();
-  });
+  // Home still exposes its real browsing entry and result area on desktop.
+  // Job results themselves depend on explicitly saved search preferences.
+  await expect(page.locator(".sp126-job-results")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Just find jobs/i })).toBeVisible();
   await expect(logo).toBeVisible();
   const bounds = await logo.boundingBox();
   expect(bounds?.width).toBeGreaterThan(20);
