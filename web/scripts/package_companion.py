@@ -92,7 +92,25 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
 def _write_reviewed_archive(output: Path, entries: dict[str, bytes]) -> str:
     """Reuse one atomic, reproducible ZIP writer for both channels."""
     output.parent.mkdir(parents=True, exist_ok=True)
-    digest = _write_reviewed_archive(output, entries)
+    # ZIP_STORED + fixed metadata is deterministic across Python/zlib/runtime
+    # versions; a failed build cannot leave an incomplete public download.
+    with NamedTemporaryFile(dir=output.parent, prefix=".companion-", delete=False) as temp:
+        temp_path = Path(temp.name)
+    try:
+        with zipfile.ZipFile(temp_path, "w", allowZip64=False) as archive:
+            for name, data in sorted(entries.items()):
+                info = zipfile.ZipInfo(name, ZIP_TIMESTAMP)
+                info.create_system = 3
+                info.external_attr = 0o100644 << 16
+                info.compress_type = zipfile.ZIP_STORED
+                archive.writestr(info, data)
+        with zipfile.ZipFile(temp_path) as check:
+            if check.namelist() != sorted(entries) or check.testzip() is not None:
+                raise ValueError("ZIP integrity or reviewed asset list mismatch")
+        digest = sha256(temp_path.read_bytes()).hexdigest()
+        os.replace(temp_path, output)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
     return digest
 
@@ -121,25 +139,7 @@ def make_zip(output: Path) -> str:
     ) + "\n"
     entries = {**files, "INSTALL.txt": text, "SHA256SUMS.txt": sums.encode("ascii")}
 
-    # ZIP_STORED + fixed metadata is deterministic across Python/zlib/runtime
-    # versions; a failed build cannot leave an incomplete public download.
-    with NamedTemporaryFile(dir=output.parent, prefix=".companion-", delete=False) as temp:
-        temp_path = Path(temp.name)
-    try:
-        with zipfile.ZipFile(temp_path, "w", allowZip64=False) as archive:
-            for name, data in sorted(entries.items()):
-                info = zipfile.ZipInfo(name, ZIP_TIMESTAMP)
-                info.create_system = 3
-                info.external_attr = 0o100644 << 16
-                info.compress_type = zipfile.ZIP_STORED
-                archive.writestr(info, data)
-        with zipfile.ZipFile(temp_path) as check:
-            if check.namelist() != sorted(entries) or check.testzip() is not None:
-                raise ValueError("ZIP integrity or reviewed asset list mismatch")
-        digest = sha256(temp_path.read_bytes()).hexdigest()
-        os.replace(temp_path, output)
-    finally:
-        temp_path.unlink(missing_ok=True)
+    digest = _write_reviewed_archive(output, entries)
 
     # Independent checksum can be downloaded/compared without a private API.
     checksum = output.with_name(output.name + ".sha256")
