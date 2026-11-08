@@ -60,7 +60,7 @@ export default function StartChoices(props: {
       </div>
       <div className="flow-start-locked" role="status">
         <FileCheck2 size={19} aria-hidden="true"/>
-        <span id="flow-start-require-cv"><strong>The three application paths are shown below.</strong> Connect a CV to unlock a method. Browsing works without one.</span>
+        <span id="flow-start-require-cv"><strong>Upload a CV to unlock these options.</strong> You can still browse jobs.</span>
       </div>
     </> : <>
       <div className="flow-start-ready" role="status">
