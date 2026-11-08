@@ -67,8 +67,8 @@ html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-eyebrow::before{b
 html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li{
   background:#121c28;border:1px solid #314050;color:#c4cfdd;box-shadow:none
 }
-html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li.current{
-  background:#102b38;border-color:#367b83;color:#f7faff;box-shadow:none
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-progress li.current{
+  background:#102b38;background-image:none;border-color:#367b83;color:#f7faff;box-shadow:none
 }
 html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li.done{
   background:#111e2b;border-color:#2c5664;color:#f7faff
@@ -90,6 +90,20 @@ html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-sta
 html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
  .flow-start-card[data-flow-mode] .flow-card-cta{
   background:#102b38;border:1px solid #286977;color:#f7faff
+}
+/* Override older SP126 high-specificity lavender/pale-blue dashboard choices. */
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-browse-button,
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-workspaces .flow-start-browse-button {
+  background:#111e2a;background-image:none;border-color:#2c495b;
+  color:#f7faff;box-shadow:none
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main
+ .flow-start-browse-button :is(strong,small,svg){
+  color:#f7faff
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main
+ .flow-start-browse-button:hover{
+  background:#192d39;color:#f7faff;border-color:#06d9e8
 }
 html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .stat-card,
 html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-aside .panel{
