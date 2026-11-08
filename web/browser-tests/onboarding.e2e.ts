@@ -1430,7 +1430,11 @@ test("SP156 Komplyint typography is self-hosted and banner has one clear heading
       body: getComputedStyle(document.querySelector(".smartploy-app")!).fontFamily,
       banner: getComputedStyle(document.querySelector(".sp125-career-copy h2")!).fontFamily,
       nav: getComputedStyle(document.querySelector(".sidebar-nav .nav-item")!).fontFamily,
-      loaded: ["Lato", "EB Garamond", "Manrope"].map(name => document.fonts.check('400 20px "' + name + '"')),
+      loaded: [
+        document.fonts.check('400 20px "Lato"'),
+        document.fonts.check('400 40px "EB Garamond"'),
+        document.fonts.check('700 15px "Manrope"'),
+      ],
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
