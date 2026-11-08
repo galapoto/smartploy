@@ -23,7 +23,9 @@ DEFAULT_OUTPUT = ROOT / "web" / "public" / "smartploy-apply-companion.zip"
 # Explicit review boundary. New extension code/modules must be consciously
 # added to this allowlist before a production package can include them.
 FILES = (
-    "manifest.json", "popup.html", "popup.css", "popup.mjs", "icon128.png",
+    "manifest.json", "popup.html", "popup.css", "popup.mjs",
+    "icon16.png", "icon32.png", "icon48.png", "icon128.png",
+    "smartploy-mark-v2.svg",
     "logic.mjs", "upload.mjs", "questions.mjs", "page-questions.mjs",
     "page-attachment.mjs", "page-review.mjs", "review-bridge.mjs",
     "page-final-claim.mjs", "page-final-submit.mjs", "attempt-lock.mjs",
@@ -49,7 +51,11 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
             "content_scripts", "externally_connectable", "update_url",
         ))
         or manifest.get("action", {}).get("default_popup") != "popup.html"
-        or manifest.get("icons", {}).get("128") != "icon128.png"
+        or manifest.get("icons") != {
+            "16": "icon16.png", "32": "icon32.png",
+            "48": "icon48.png", "128": "icon128.png",
+        }
+        or manifest.get("action", {}).get("default_icon") != manifest.get("icons")
         or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", str(manifest.get("version", "")))
     ):
         raise ValueError("Unexpected companion permissions or manifest configuration")
@@ -60,10 +66,17 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
         if not item.is_file() or item.is_symlink() or item.stat().st_size > MAX_SOURCE_BYTES:
             raise ValueError(f"Unapproved, missing, symlinked or oversized asset: {name}")
         files[name] = item.read_bytes()
-    if len(files["icon128.png"]) < 100 or not files["icon128.png"].startswith(
-        b"\x89PNG\r\n\x1a\n"
-    ):
-        raise ValueError("The reviewed extension icon is not a PNG")
+    for size in (16, 32, 48):
+        icon = files[f"icon{size}.png"]
+        if len(icon) < 100 or not icon.startswith(b"\x89PNG\r\n\x1a\n") or int.from_bytes(icon[16:20], "big") != size or int.from_bytes(icon[20:24], "big") != size:
+            raise ValueError(f"The reviewed extension icon{size}.png is not a {size}x{size} PNG")
+    if len(files["icon128.png"]) < 100 or not files["icon128.png"].startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("The reviewed extension icon128.png is not a PNG")
+    # Keep the extension lockup identical to the actual SmartPloy website source.
+    if files["smartploy-mark-v2.svg"] != (ROOT / "web" / "public" / "smartploy-mark-v2.svg").read_bytes():
+        raise ValueError("Extension mark differs from the approved SmartPloy website mark")
+    if files["icon128.png"] != (ROOT / "web" / "public" / "smartploy-mark.png").read_bytes():
+        raise ValueError("Extension 128px mark differs from SmartPloy website PNG")
     if b'<script src="popup.mjs" type="module"></script>' not in files["popup.html"]:
         raise ValueError("The packaged popup does not load its reviewed module")
     if b'href="popup.css"' not in files["popup.html"]:

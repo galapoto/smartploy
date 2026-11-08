@@ -29,6 +29,17 @@ def load_packager():
     return module
 
 
+def bundle_icon_content_matches_site(bundle):
+    assert bundle.read("smartploy-mark-v2.svg") == (ROOT / "web/public/smartploy-mark-v2.svg").read_bytes()
+    assert bundle.read("icon128.png") == (ROOT / "web/public/smartploy-mark.png").read_bytes()
+    assert b'src="smartploy-mark-v2.svg"' in bundle.read("popup.html")
+    for size in (16, 32, 48):
+        icon = bundle.read(f"icon{size}.png")
+        assert icon.startswith(b"\x89PNG\r\n\x1a\n")
+        assert int.from_bytes(icon[16:20], "big") == size
+        assert int.from_bytes(icon[20:24], "big") == size
+
+
 def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_path):
     packager = load_packager()
     first = tmp_path / "first" / "smartploy-apply-companion.zip"
@@ -58,6 +69,11 @@ def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_pat
         assert manifest["manifest_version"] == 3
         assert manifest["permissions"] == ["activeTab", "scripting", "storage"]
         assert manifest["action"]["default_popup"] == "popup.html"
+        assert manifest["version"] == "0.5.2"
+        assert manifest["icons"] == {"16": "icon16.png", "32": "icon32.png", "48": "icon48.png", "128": "icon128.png"}
+        assert manifest["action"]["default_icon"] == manifest["icons"]
+        assert bundle_icon_content_matches_site(zipfile_src)
+
         for denied in (
             "host_permissions", "background", "content_scripts",
             "externally_connectable", "update_url",
@@ -94,7 +110,7 @@ def test_sp44_package_cli_produces_verified_output_without_network(tmp_path):
 
 @pytest.mark.parametrize("violation", [
     "host_permission", "background", "remote_import", "missing_import",
-    "symlink", "unapproved_popup_asset",
+    "symlink", "unapproved_popup_asset", "logo_mismatch",
 ])
 def test_sp44_distribution_fails_closed_on_unreviewed_extension_change(
     tmp_path, monkeypatch, violation,
@@ -123,6 +139,8 @@ def test_sp44_distribution_fails_closed_on_unreviewed_extension_change(
     elif violation == "symlink":
         (scratch / "popup.css").unlink()
         (scratch / "popup.css").symlink_to(scratch / "logic.mjs")
+    elif violation == "logo_mismatch":
+        (scratch / "smartploy-mark-v2.svg").write_text("<svg/>", encoding="utf-8")
     elif violation == "unapproved_popup_asset":
         (scratch / "popup.html").write_text(
             (scratch / "popup.html").read_text().replace(
