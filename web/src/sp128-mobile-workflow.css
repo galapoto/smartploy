@@ -92,7 +92,7 @@
   /* The Jobs destination keeps the complete search, filtering and real
      results; the existing CV-first action opens it in one click. */
   /* Hide routine version badges, not actionable release warnings. */
-  .smartploy-app :is(.release-status-aligned,.release-status-development,.release-status-checking) {
+  .smartploy-app :is(.release-status-aligned,.release-status-checking) {
     display:none;
   }
   .smartploy-app .sp126-dashboard-main .stats-grid { gap:8px; margin:10px 0; }
