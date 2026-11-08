@@ -89,9 +89,34 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
     return files, str(manifest["version"])
 
 
+def _write_reviewed_archive(output: Path, entries: dict[str, bytes]) -> str:
+    """Reuse one atomic, reproducible ZIP writer for both channels."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    # ZIP_STORED + fixed metadata is deterministic across Python/zlib/runtime
+    # versions; a failed build cannot leave an incomplete public download.
+    with NamedTemporaryFile(dir=output.parent, prefix=".companion-", delete=False) as temp:
+        temp_path = Path(temp.name)
+    try:
+        with zipfile.ZipFile(temp_path, "w", allowZip64=False) as archive:
+            for name, data in sorted(entries.items()):
+                info = zipfile.ZipInfo(name, ZIP_TIMESTAMP)
+                info.create_system = 3
+                info.external_attr = 0o100644 << 16
+                info.compress_type = zipfile.ZIP_STORED
+                archive.writestr(info, data)
+        with zipfile.ZipFile(temp_path) as check:
+            if check.namelist() != sorted(entries) or check.testzip() is not None:
+                raise ValueError("ZIP integrity or reviewed asset list mismatch")
+        digest = sha256(temp_path.read_bytes()).hexdigest()
+        os.replace(temp_path, output)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+    return digest
+
+
 def make_zip(output: Path) -> str:
     files, version = reviewed_files()
-    output.parent.mkdir(parents=True, exist_ok=True)
     text = (
         "SmartPloy Apply Companion v" + version + "\n\n"
         "1. Extract this ZIP to a local folder on your own desktop computer.\n"
@@ -114,25 +139,7 @@ def make_zip(output: Path) -> str:
     ) + "\n"
     entries = {**files, "INSTALL.txt": text, "SHA256SUMS.txt": sums.encode("ascii")}
 
-    # ZIP_STORED + fixed metadata is deterministic across Python/zlib/runtime
-    # versions; a failed build cannot leave an incomplete public download.
-    with NamedTemporaryFile(dir=output.parent, prefix=".companion-", delete=False) as temp:
-        temp_path = Path(temp.name)
-    try:
-        with zipfile.ZipFile(temp_path, "w", allowZip64=False) as archive:
-            for name, data in sorted(entries.items()):
-                info = zipfile.ZipInfo(name, ZIP_TIMESTAMP)
-                info.create_system = 3
-                info.external_attr = 0o100644 << 16
-                info.compress_type = zipfile.ZIP_STORED
-                archive.writestr(info, data)
-        with zipfile.ZipFile(temp_path) as check:
-            if check.namelist() != sorted(entries) or check.testzip() is not None:
-                raise ValueError("ZIP integrity or reviewed asset list mismatch")
-        digest = sha256(temp_path.read_bytes()).hexdigest()
-        os.replace(temp_path, output)
-    finally:
-        temp_path.unlink(missing_ok=True)
+    digest = _write_reviewed_archive(output, entries)
 
     # Independent checksum can be downloaded/compared without a private API.
     checksum = output.with_name(output.name + ".sha256")
@@ -140,12 +147,38 @@ def make_zip(output: Path) -> str:
     return digest
 
 
+def make_store_zip(output: Path) -> str:
+    """Review-only Chrome Web Store ZIP from exactly the approved MV3 assets.
+
+    Store signing, publishing and updates require separate owner authorization
+    and Web Store review. Neither public web assets nor credentials are touched.
+    """
+    # Never replace the first-party public install ZIP or let a store-only
+    # artifact accidentally become a publicly served download.
+    target = output.resolve()
+    if (target.is_relative_to((ROOT / "web/public").resolve())
+            or target.is_relative_to((ROOT / "web/dist").resolve())):
+        raise ValueError("STORE_PACKAGE_MUST_NOT_REPLACE_PUBLIC_COMPANION")
+    files, _version = reviewed_files()
+    digest = _write_reviewed_archive(output, files)
+    output.with_name(output.name + ".sha256").write_text(
+        f"{digest}  {output.name}\n", encoding="ascii",
+    )
+    return digest
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build reviewed MV3 companion ZIP")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--store-output", type=Path, default=None,
+                        help="Review-only Chrome Web Store ZIP; never publish")
     args = parser.parse_args()
-    digest = make_zip(args.output)
-    print(f"SmartPloy reviewed companion: {args.output.name} sha256={digest}")
+    if args.store_output is not None:
+        digest = make_store_zip(args.store_output)
+        print(f"SmartPloy reviewed Web Store draft: {args.store_output.name} sha256={digest}")
+    else:
+        digest = make_zip(args.output)
+        print(f"SmartPloy reviewed companion: {args.output.name} sha256={digest}")
 
 
 if __name__ == "__main__":

@@ -202,6 +202,7 @@ services:
       dockerfile: web/Dockerfile
       args:
         APP_VERSION: ${SMARTPLOY_IMAGE_TAG:-dev}
+        CHROME_WEB_STORE_ID: ${SMARTPLOY_CHROME_WEB_STORE_ID:-}
     image: smartploy-web:${SMARTPLOY_IMAGE_TAG:-dev}
     restart: unless-stopped
     depends_on:

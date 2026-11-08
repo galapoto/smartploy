@@ -16,6 +16,7 @@ import {
   getBrowserReceipt, importBrowserReceipt, getSession
 } from "./api";
 import ApplicationAgentCard from "./ApplicationAgentCard";
+import { chromeWebStoreLink } from "./chromeStoreLink";
 import ApplicationAgentInbox from "./ApplicationAgentInbox";
 import ApplicationAttemptAudit from "./ApplicationAttemptAudit";
 import AuthorizedAutoApplyBatch from "./AuthorizedAutoApplyBatch";
@@ -1628,6 +1629,11 @@ export default function ApplicationStudio(props: {
               onClick={() => void copyBrowserPacket()}>
               <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" : "Copy approved autofill packet"}
             </button>
+            {chromeWebStoreLink ? <a className="outline-btn"
+              href={chromeWebStoreLink} target="_blank" rel="noopener noreferrer"
+              aria-label="Install SmartPloy Apply Companion from Chrome Web Store">
+              <ExternalLink size={15}/> Install extension · auto-updates
+            </a> : null}
             <a className="outline-btn" href="/smartploy-apply-companion.zip"
               download="smartploy-apply-companion.zip"
               aria-label="Download Chrome companion ZIP from SmartPloy">
@@ -1642,7 +1648,9 @@ export default function ApplicationStudio(props: {
             chrome://extensions, enable Developer mode and choose Load unpacked.
             Select the extracted folder containing manifest.json. The companion
             runs only when you click it; it does not submit jobs in the background.
-            It is not a Chrome Web Store install and does not update automatically.
+            {chromeWebStoreLink
+              ? "A Chrome Web Store installation updates through Chrome. The ZIP is a manual fallback."
+              : "The ZIP is not a Chrome Web Store install and does not update automatically."}
           </p>
           {handoffPacketText ? <div className="studio-packet-fallback">
             <label htmlFor="smartploy-browser-packet">Private packet for your browser companion</label>
