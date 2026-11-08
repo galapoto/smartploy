@@ -149,7 +149,7 @@ function FinlandPageIdentity({ compact = false }: { compact?: boolean }) {
       <BrandMark className="sp99-identity-mark" />
       <div className="sp99-identity-text">
         <strong>SmartPloy</strong>
-        <small>JOB INTELLIGENCE FOR FINLAND</small>
+        <small>JOB INTELLIGENCE</small>
       </div>
     </div>
     <p>Build a stronger application, one clear step at a time.</p>
