@@ -28,11 +28,18 @@ Preferred: connect once, fill from SmartPloy (applicant-local pairing)
    SmartPloy asks you to confirm explicitly. The helper verifies the exact
    job, expiry, form/field metadata and one-use review before each input.
    A field input may transmit immediately to the employer's website.
-6. Review everything in the visible browser. Upload your CV PDF and answer
-   any salary/visa/legal/consent questions PERSONALLY. If you choose to apply,
-   click the employer's own Submit button PERSONALLY, save its receipt, then
-   click "Stop local browser session" in SmartPloy or Ctrl+C in the helper.
-7. The helper is single-use. Restart it for a new application (new pairing
+6. Optional: when SmartPloy finds ONE unambiguous résumé PDF input, click
+   "Attach exact saved CV PDF once" and separately approve the transfer.
+   It rechecks your current saved document SHA-256, size, sign-in, job and
+   one-use employer form identity before selecting the PDF in Chromium.
+   The employer's website may upload immediately when the input changes.
+   "Attached locally" does NOT prove the employer accepted the file.
+   If the action is absent or uncertain, attach/reconcile manually; do NOT retry.
+7. Review every field, the CV attachment and all sensitive questions (visa,
+   salary, eligibility, legal declarations and consent) YOURSELF. If you choose
+   to submit, use the employer's own Submit button personally and save its
+   receipt. Click "Stop local browser session" or Ctrl+C when finished.
+8. The helper is single-use. Restart it for a new application (new pairing
    code). If local networking is blocked by your browser's security policy,
    use the retained Chrome companion extension instead.
 
@@ -43,8 +50,10 @@ test-origin ports), rejects DNS-rebinding Host headers and unknown origins,
 uses a time-limited one-use code and random in-memory session token, and
 allows at most one explicitly approved field-fill attempt. There is no
 remote server browser, background auto-submit or general-any-site control.
-No CAPTCHA/MFA bypass, hidden password/consent filling, file upload, retries
-after uncertain outcomes or automatic final employer click. The bridge does
+No CAPTCHA/MFA bypass, hidden password/consent filling, unapproved file upload,
+retries after uncertain outcomes or automatic final employer click. A separate,
+explicitly approved and verified CV FileList selection is the ONLY optional
+binary action; employer-side receipt remains unverified. The bridge does
 not keep applicant packets on disk; its temporary Chromium profile is
 destroyed after the helper stops. Chrome/Chromium may require local-network
 permission; a browser that denies this permission must fail closed.

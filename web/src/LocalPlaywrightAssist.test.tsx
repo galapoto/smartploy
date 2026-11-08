@@ -8,8 +8,10 @@ import { getBrowserHandoffReadiness, getEmployerAttemptStatus, getSession } from
 import LocalPlaywrightAssist from "./LocalPlaywrightAssist";
 import { localBridgeOriginAllowed } from "./localPlaywrightBridge";
 
-vi.mock("./api", () => ({
-  getSession: vi.fn(), getBrowserHandoffReadiness: vi.fn(),
+vi.mock("./api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./api")>()),
+  getSession: vi.fn(),
+  getBrowserHandoffReadiness: vi.fn(),
   getEmployerAttemptStatus: vi.fn(),
 }));
 
@@ -19,6 +21,7 @@ const planId = "P".repeat(22);
 const packet = JSON.stringify({
   schema: "smartploy.browser_handoff.v2",
   workspace_id: "workspace-A", revision: 2,
+  cv_pdf_sha256: "a".repeat(64), cv_pdf_size: 33,
   company: "Synthetic Employer", role_title: "QA Engineer",
   application_url: "https://jobs.lever.co/example/role",
   fields: { full_name: "Private Applicant", email: "private@example.invalid" },
@@ -28,7 +31,7 @@ const session = {
   auth_source: "oidc", email: "same@example.invalid",
 };
 
-function mockReply(stage: "opened" | "inspected" | "filled" | "stopped") {
+function mockReply(stage: "opened" | "inspected" | "filled" | "attached" | "stopped") {
   const values = {
     opened: {
       ok: true, stage: "opened", token: localToken,
@@ -39,12 +42,16 @@ function mockReply(stage: "opened" | "inspected" | "filled" | "stopped") {
       ok: true, stage: "inspected", plan_id: planId, total_controls: 3,
       approved_fields: [{ key: "full_name", label: "Full Name" },
         { key: "email", label: "Email" }],
+      cv_attachment: { available: true, label: "Résumé", attach_id: "Q".repeat(22) },
       submitted: false, uploaded: false,
     },
     filled: {
       ok: true, stage: "filled", filled: 2, planned: 2,
       stopped_on_change: false, submitted: false, uploaded: false,
     },
+    attached: { ok: true, stage: "attached",
+      attached_locally: true, employer_upload_confirmed: false,
+      submitted: false, uploaded: true },
     stopped: { ok: true, stage: "stopped", submitted: false, uploaded: false },
   };
   return { ok: true, status: 200, json: async () => values[stage] };
@@ -61,7 +68,8 @@ beforeEach(() => {
   vi.mocked(getSession).mockResolvedValue(session);
   vi.mocked(getEmployerAttemptStatus).mockResolvedValue({
     previous_attempt_reserved: false, state: "not_reserved",
-    requires_human_reconciliation: false, automatic_employer_submit_authorized: false,
+    requires_human_reconciliation: false,
+    automatic_employer_submit_authorized: false,
     external_confirmation_verified: false, cross_device_server_claim_required: true,
   });
   vi.mocked(getBrowserHandoffReadiness).mockResolvedValue({
@@ -74,6 +82,7 @@ beforeEach(() => {
     if (url.endsWith("/v1/prepare")) return mockReply("opened");
     if (url.endsWith("/v1/inspect")) return mockReply("inspected");
     if (url.endsWith("/v1/fill")) return mockReply("filled");
+    if (url.endsWith("/v1/attach")) return mockReply("attached");
     if (url.endsWith("/v1/stop")) return mockReply("stopped");
     throw new Error("Unexpected route");
   }));
@@ -90,21 +99,6 @@ describe("SP111 paired browser review-first UI", () => {
     expect(screen.getByRole("region", { name: "Paired local Playwright browser" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open reviewed employer form" })
       .hasAttribute("disabled")).toBe(true);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it("blocks a reserved or uncertain employer attempt before contacting the local browser", async () => {
-    vi.mocked(getEmployerAttemptStatus).mockResolvedValue({
-      previous_attempt_reserved: true, state: "uncertain",
-      requires_human_reconciliation: true, automatic_employer_submit_authorized: false,
-      external_confirmation_verified: false, cross_device_server_claim_required: true,
-    });
-    component();
-    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
-      target: { value: pairing },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Open reviewed employer form" }));
-    expect(await screen.findByText(/previous employer attempt needs reconciliation/i)).toBeTruthy();
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -133,6 +127,7 @@ describe("SP111 paired browser review-first UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Inspect current employer form" }));
     expect(await screen.findByText("Full Name")).toBeTruthy();
     expect(screen.getByText("Email")).toBeTruthy();
+    expect(screen.getByRole("button", {name:"Attach exact saved CV PDF once"})).toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(2);
     const inspected = vi.mocked(fetch).mock.calls[1] as [string, RequestInit];
     expect(inspected[0]).toBe("http://127.0.0.1:48741/v1/inspect");
@@ -212,6 +207,27 @@ describe("SP111 paired browser review-first UI", () => {
   });
 
 
+  it("SP112 blocks paired browser before transferring a CV on a reserved employer attempt", async () => {
+    vi.mocked(getEmployerAttemptStatus).mockResolvedValue({
+      previous_attempt_reserved: true, state: "uncertain",
+      requires_human_reconciliation: true,
+      automatic_employer_submit_authorized: false,
+      external_confirmation_verified: false, cross_device_server_claim_required: true,
+    });
+    component();
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
+    // Wait for the guarded, async owner attempt check; the page may already
+    // contain an unrelated status/alert before this check settles.
+    await waitFor(() => expect(
+      screen.getAllByRole("alert").some(a => a.textContent?.includes("previous employer attempt needs reconciliation"))
+    ).toBe(true));
+    expect(fetch).not.toHaveBeenCalled();
+    expect(getEmployerAttemptStatus).toHaveBeenCalledWith("workspace-A");
+  });
+
   it("rejects stale application revisions before sending to the helper", async () => {
     vi.mocked(getBrowserHandoffReadiness).mockResolvedValue({
       ready: false, document_revision: 3,
@@ -243,6 +259,70 @@ describe("SP111 paired browser review-first UI", () => {
       String(call[0]).startsWith("http://127.0.0.1:48741/")
     )).toBe(true);
     expect(screen.queryByRole("button", { name: "Inspect current employer form" })).toBeNull();
+  });
+
+  it("SP112 attaches the saved exact PDF only after separate confirmation", async () => {
+    const pdf = new TextEncoder().encode("%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n");
+    const digest = new Uint8Array(32).fill(0xaa);
+    const sha = "aa".repeat(32);
+    vi.mocked(getBrowserHandoffReadiness).mockResolvedValue({
+      ready: true, document_revision: 2, blockers: [],
+      contact_fields_ready: true, employer_submission_performed: false,
+      will_require_manual_review: true, files_attached: false,
+    });
+    const fromServer = packet.replace('"cv_pdf_sha256":"'+ "a".repeat(64) + '"',
+       '"cv_pdf_sha256":"' + sha + '"').replace('"cv_pdf_size":33',
+       '"cv_pdf_size":' + pdf.byteLength);
+    // The packet is synthetic. The digest function is deterministic only in
+    // this unit test: real Chromium uses the browser's native SubtleCrypto.
+    Object.defineProperty(window.crypto, "subtle", {
+      configurable: true, value: { digest: vi.fn(async () => digest.buffer) },
+    });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.includes("/download/cv/pdf")) return {
+        ok: true, status: 200, headers: { get: () => String(pdf.length) },
+        arrayBuffer: async () => pdf.buffer,
+      };
+      if (url.endsWith("/v1/prepare")) return mockReply("opened");
+      if (url.endsWith("/v1/inspect")) return mockReply("inspected");
+      if (url.endsWith("/v1/attach")) return mockReply("attached");
+      if (url.endsWith("/v1/stop")) return mockReply("stopped");
+      throw new Error("Unexpected route");
+    }));
+    const ui = render(<LocalPlaywrightAssist
+      packetText={fromServer} enabled={true}
+      expectedUserId="user-A" expectedAuthSource="oidc"
+      expectedWorkspaceId="workspace-A" expectedRevision={2}
+    />);
+    fireEvent.change(screen.getByLabelText("Temporary local pairing code"), {
+      target: {value: pairing},
+    });
+    fireEvent.click(screen.getByRole("button",{name:"Open reviewed employer form"}));
+    await screen.findByRole("button",{name:"Inspect current employer form"});
+    fireEvent.click(screen.getByRole("button",{name:"Inspect current employer form"}));
+    const attach = await screen.findByRole("button",{name:"Attach exact saved CV PDF once"});
+    expect(attach.hasAttribute("disabled")).toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    fireEvent.click(attach);
+    expect(await screen.findByText(/CV placed in the employer file input/)).toBeTruthy();
+    const urls = vi.mocked(fetch).mock.calls.map(c=>String(c[0]));
+    expect(urls.filter(u=>u.includes("/download/cv/pdf"))).toHaveLength(1);
+    expect(urls.filter(u=>u.endsWith("/v1/attach"))).toHaveLength(1);
+    const pdfReq = vi.mocked(fetch).mock.calls.find(c=>String(c[0]).endsWith("/v1/attach"))!;
+    const init = pdfReq[1] as RequestInit & {targetAddressSpace:string};
+    expect(init.targetAddressSpace).toBe("loopback");
+    expect(init.credentials).toBe("omit");
+    expect(init.redirect).toBe("error");
+    expect(init.body).toEqual(pdf.buffer);
+    expect((init.headers as Record<string,string>)["X-Smartploy-Attach-Confirmation"])
+      .toBe("ATTACH REVIEWED CV");
+    expect(screen.getByRole("button",{name:"Attach exact saved CV PDF once"})
+      .hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/server acceptance is/)).toBeTruthy();
+    expect(urls.every(u=>u.startsWith("http://127.0.0.1:48741/") ||
+      u.includes("/api/v1/application-workspaces/"))).toBe(true);
+    expect(ui.container.textContent).not.toContain("private@example.invalid");
+    expect(window.confirm).toHaveBeenCalledTimes(2);
   });
 
   it("never retries a fill whose browser outcome is uncertain", async () => {
