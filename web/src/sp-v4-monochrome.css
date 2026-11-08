@@ -245,7 +245,7 @@ html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-copy h2{
   font-family:"Lato",Arial,sans-serif;
   font-size:clamp(15px,1.25vw,17px);
   font-weight:400;line-height:1.55;
-  color:#e6eef7;
+  color:#253548;
   max-width:68ch;
   letter-spacing:0;
   opacity:1;
@@ -258,12 +258,17 @@ html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-copy h2{
 }
 .smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card
  > span:not(.flow-card-cta):not(.flow-start-index){
-  font-size:14px;line-height:1.5;color:#e8eef5;opacity:1
+  font-size:14px;line-height:1.5;color:#364759;opacity:1
 }
 .smartploy-app .sp126-dashboard-main .flow-start-browse-button strong{
   font-size:15px;line-height:1.35
 }
-.smartploy-app .flow-start-privacy{font-size:13px;line-height:1.5;color:#bfcbd8}
+.smartploy-app .flow-start-privacy{font-size:13px;line-height:1.5;color:#46596b}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main
+ .flow-start-heading > p:last-child{color:#e6eef7}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+ .flow-start-card > span:not(.flow-card-cta):not(.flow-start-index){color:#e8eef5}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-privacy{color:#bfcbd8}
 @media(max-width:630px){
   .smartploy-app .sp125-career-cover{
     min-height:116px;max-height:none;margin-bottom:16px;
