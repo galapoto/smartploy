@@ -44,7 +44,7 @@ def _valid_png(data: bytes, expected_size: int) -> bool:
 
     if data[:8] != b"\x89PNG\r\n\x1a\n" or len(data) > MAX_SOURCE_BYTES:
         return False
-    index, seen_header, seen_image, image_ended = 8, False, False, False
+    index, seen_header, seen_image = 8, False, False
     idat = bytearray()
     try:
         while index + 12 <= len(data):
@@ -66,7 +66,7 @@ def _valid_png(data: bytes, expected_size: int) -> bool:
                     or chunk[8:] != b"\x08\x06\x00\x00\x00"):
                     return False
             elif kind == b"IDAT":
-                if not seen_header or image_ended:
+                if not seen_header:
                     return False
                 seen_image = True
                 idat.extend(chunk)
@@ -75,10 +75,9 @@ def _valid_png(data: bytes, expected_size: int) -> bool:
                     return False
                 break
             else:
-                if not seen_header or kind[0] & 0x20 == 0:
-                    return False
-                if seen_image:
-                    image_ended = True
+                # First-party icons intentionally use only IHDR, IDAT, IEND.
+                # Even CRC-valid ancillary chunks can be invalid for RGBA.
+                return False
             index = stop + 4
         else:
             return False
