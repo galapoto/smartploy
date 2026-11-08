@@ -117,14 +117,12 @@ html[data-smartploy-theme="dark"] .sp-boot .sp-boot-progress{
   animation:none!important
 }
 /* Keep the useful job/applicant destinations, but stop duplicating their
-   entire content, KPIs, instructions and branding on the HOME surface. */
-.smartploy-app .sp99-identity:not(.compact),
+   entire content and redundant KPIs on the HOME surface. */
 .smartploy-app .flow-start-masthead,
 .smartploy-app .sp125-career-steps,
 .smartploy-app .sp126-dashboard-aside,
 .smartploy-app .sp126-job-results,
 .smartploy-app .sp126-dashboard-main > .stats-grid,
-.smartploy-app .flow-dashboard-setup,
 .smartploy-app .flow-start-method-heading .section-kicker,
 .smartploy-app .flow-start-method-heading p:last-child{
   display:none
