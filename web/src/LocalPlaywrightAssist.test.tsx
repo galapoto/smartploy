@@ -219,8 +219,11 @@ describe("SP111 paired browser review-first UI", () => {
       target: {value: pairing},
     });
     fireEvent.click(screen.getByRole("button", {name:"Open reviewed employer form"}));
-    const alerts = await screen.findAllByRole("alert");
-    expect(alerts.some(a => a.textContent?.includes("reserved or uncertain"))).toBe(true);
+    // Wait for the guarded, async owner attempt check; the page may already
+    // contain an unrelated status/alert before this check settles.
+    await waitFor(() => expect(
+      screen.getAllByRole("alert").some(a => a.textContent?.includes("reserved or uncertain"))
+    ).toBe(true));
     expect(fetch).not.toHaveBeenCalled();
     expect(getEmployerAttemptStatus).toHaveBeenCalledWith("workspace-A");
   });
