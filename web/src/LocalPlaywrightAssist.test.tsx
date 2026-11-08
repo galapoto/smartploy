@@ -222,7 +222,7 @@ describe("SP111 paired browser review-first UI", () => {
     // Wait for the guarded, async owner attempt check; the page may already
     // contain an unrelated status/alert before this check settles.
     await waitFor(() => expect(
-      screen.getAllByRole("alert").some(a => a.textContent?.includes("reserved or uncertain"))
+      screen.getAllByRole("alert").some(a => a.textContent?.includes("previous employer attempt needs reconciliation"))
     ).toBe(true));
     expect(fetch).not.toHaveBeenCalled();
     expect(getEmployerAttemptStatus).toHaveBeenCalledWith("workspace-A");
