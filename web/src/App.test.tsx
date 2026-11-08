@@ -833,7 +833,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByText(/90% search match/i)).toBeNull();
     expect(currentPrefs.mode).toBe("general");
     // The preference save's post-write GETs must be independently abortable.
-    const lastSearchSignal = vi.mocked(api.getSearchResults).mock.calls.at(-1)?.[0];
+    const lastSearchSignal = vi.mocked(api.getSearchResults).mock.calls[vi.mocked(api.getSearchResults).mock.calls.length - 1]?.[0];
     expect(lastSearchSignal).toBeInstanceOf(AbortSignal);
     expect(lastSearchSignal?.aborted).toBe(true); // released after save completes
 
@@ -1496,8 +1496,8 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     ));
     await waitFor(() => expect(screen.getByText("Withdrawn")).toBeTruthy());
     // Never leave follow-up consent reads alive after a completed mutation.
-    const lastConsentSignal = vi.mocked(api.getJobAIConsents).mock.calls.at(-1)?.[0];
-    const lastEventSignal = vi.mocked(api.getJobAIConsentEvents).mock.calls.at(-1)?.[0];
+    const lastConsentSignal = vi.mocked(api.getJobAIConsents).mock.calls[vi.mocked(api.getJobAIConsents).mock.calls.length - 1]?.[0];
+    const lastEventSignal = vi.mocked(api.getJobAIConsentEvents).mock.calls[vi.mocked(api.getJobAIConsentEvents).mock.calls.length - 1]?.[0];
     expect(lastConsentSignal).toBeInstanceOf(AbortSignal);
     expect(lastEventSignal).toBe(lastConsentSignal);
     expect(lastConsentSignal?.aborted).toBe(true);
