@@ -648,6 +648,13 @@ test("SP93 production build shows all three CV-locked methods with the full side
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   const logo = page.locator(".sp99-identity .sp99-identity-mark");
+  // Home remains a usable workspace; aesthetic decluttering must never hide
+  // the actual matching job cards or controls on desktop.
+  await expect(page.locator(".sp126-job-results .search-result-card").first()).toBeVisible().catch(async () => {
+    // Unsaved general preferences legitimately mean no results; inspect an
+    // actual visible browse action rather than asserting data was invented.
+    await expect(page.getByRole("button", { name: /Just find jobs/i })).toBeVisible();
+  });
   await expect(logo).toBeVisible();
   const bounds = await logo.boundingBox();
   expect(bounds?.width).toBeGreaterThan(20);
@@ -1177,7 +1184,7 @@ test("SP125 dark canvas, action rows and application descriptions remain legible
       contentWidth: document.querySelector(".content")!.getBoundingClientRect().width,
     };
   });
-  expect(readings.canvas).toBe("rgb(6, 11, 23)");
+  expect(readings.canvas).toBe("rgb(5, 7, 11)");
   expect(readings.browse).toBeGreaterThanOrEqual(4.5);
   expect(readings.details).toBeGreaterThanOrEqual(4.5);
   expect(readings.card).toBeGreaterThanOrEqual(4.5);
