@@ -1417,7 +1417,7 @@ export default function App() {
           <FinlandPageIdentity />
           {/* Keep CV -> Manual/Assisted/Auto directly after the compact cover.
               No lost actions, secondary landing page, or duplicate mode selector. */}
-          <div className="sp126-dashboard-layout">
+          <div className={cx("sp126-dashboard-layout", !cv.present && !preferences?.completed && "sp-home-setup")}>
             <div className="sp126-dashboard-main">
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
