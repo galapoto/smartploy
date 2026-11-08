@@ -223,7 +223,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Upload CV first/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Create CV from scratch/i })).toBeTruthy();
-    expect(screen.getByText(/The three application paths are shown below/i)).toBeTruthy();
+    expect(screen.getByText(/Upload a CV to unlock these options/i)).toBeTruthy();
     const sidebar = screen.getByRole("navigation", { name: "Main navigation" });
     expect(sidebar).toBeTruthy();
     expect(screen.getByRole("button", { name: "Apply for jobs" })).toBeTruthy();
