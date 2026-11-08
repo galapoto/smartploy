@@ -349,6 +349,7 @@ export default function App() {
 
   // Old in-flight requests must not repopulate another account's workspace.
   const loadGeneration = useRef(0);
+  const loadAbort = useRef<AbortController | null>(null);
   const lastSessionIdentity = useRef<string | null>(null);
   const savingSearchPreferences = useRef(false);
   const savingAIConsent = useRef(false);
@@ -394,6 +395,7 @@ export default function App() {
     const expectedUserId = session?.user_id?.trim() || "";
     const denyStaleAction = (): never => {
       ++loadGeneration.current; // invalidate private GET responses in flight
+      loadAbort.current?.abort();
       lastSessionIdentity.current = null;
       clearPrivateWorkspace();
       setLoading(false);
@@ -438,12 +440,19 @@ export default function App() {
   const load = useCallback(async (quiet = false) => {
     if (savingSearchPreferences.current || savingAIConsent.current) return;
     const generation = ++loadGeneration.current;
+    // One in-flight workspace generation at a time; abort its HTTP reads,
+    // not just its React state. Retries and scheduled refreshes share this fence.
+    loadAbort.current?.abort();
+    const abortController = new AbortController();
+    loadAbort.current = abortController;
+    const { signal } = abortController;
     if (quiet) setRefreshing(true); else setLoading(true);
     // A stalled session/search request must become an actionable error, not
     // an endless loading screen. Old responses are invalidated before reset.
     // Background refreshes leave the already mounted shell in place.
     const connectionDeadline = quiet ? null : window.setTimeout(() => {
       if (generation !== loadGeneration.current) return;
+      abortController.abort();
       ++loadGeneration.current;
       lastSessionIdentity.current = null;
       clearPrivateWorkspace();
@@ -455,7 +464,7 @@ export default function App() {
       // Establish a server-issued account identity BEFORE requesting private
       // preferences, CVs, drafts or other tenant-scoped responses. Starting
       // them alongside the session request could mix two browser identities.
-      const who = await getSession();
+      const who = await getSession(signal);
       if (generation !== loadGeneration.current) return;
       const identity = sessionIdentity(who);
       if (lastSessionIdentity.current !== null &&
@@ -469,19 +478,19 @@ export default function App() {
       // must never block first-use navigation when Ollama or a CV is slow.
       // A slow Ollama availability endpoint cannot hold profile documents
       // and private saved jobs hostage. Attach a rejection handler now.
-      const localAIRequest = Promise.allSettled([getLocalAIStatus()]);
+      const localAIRequest = Promise.allSettled([getLocalAIStatus(signal)]);
       const secondaryRequest = Promise.allSettled([
-        getApplications(), getHealth(), getCV(), getProfileFacts(),
-        getJobs(), getPrivateSavedJobs(), getJobAIConsents(), getJobAIConsentEvents()
+        getApplications(signal), getHealth(signal), getCV(signal), getProfileFacts(signal),
+        getJobs(signal), getPrivateSavedJobs(signal), getJobAIConsents(signal), getJobAIConsentEvents(signal)
       ]);
       const [board, prefs, results] = await Promise.all([
-        getDashboard(), getSearchPreferences(), getSearchResults()
+        getDashboard(signal), getSearchPreferences(signal), getSearchResults(signal)
       ]);
       if (generation !== loadGeneration.current) return;
 
       // Account switch during GETs: reject all mixed snapshots, rather than
       // showing A's job/CV data under B's currently signed-in browser.
-      const verifiedWho = await getSession();
+      const verifiedWho = await getSession(signal);
       if (generation !== loadGeneration.current) return;
       if (sessionIdentity(verifiedWho) !== identity) {
         throw new Error("Your signed-in account changed during refresh. Reload this workspace.");
@@ -509,7 +518,7 @@ export default function App() {
 
       const secondary = await secondaryRequest;
       if (generation !== loadGeneration.current) return;
-      const finalWho = await getSession();
+      const finalWho = await getSession(signal);
       if (generation !== loadGeneration.current) return;
       if (sessionIdentity(finalWho) !== identity) {
         throw new Error("Your signed-in account changed during profile loading. Reload this workspace.");
@@ -531,12 +540,14 @@ export default function App() {
       }
     } catch (exc) {
       if (generation === loadGeneration.current) {
+        abortController.abort();
         lastSessionIdentity.current = null;
         clearPrivateWorkspace();
         setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
       }
     } finally {
       if (connectionDeadline !== null) window.clearTimeout(connectionDeadline);
+      if (loadAbort.current === abortController) loadAbort.current = null;
       if (generation === loadGeneration.current) {
         setLoading(false); setRefreshing(false);
       }
@@ -546,7 +557,12 @@ export default function App() {
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => { void load(true); }, 60000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      ++loadGeneration.current;
+      loadAbort.current?.abort();
+      loadAbort.current = null;
+    };
   }, [load]);
 
   const navigate = (target: Page) => {
