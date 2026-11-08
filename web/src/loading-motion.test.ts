@@ -4,13 +4,16 @@ import { describe, expect, it } from "vitest";
 
 const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+const shell = readFileSync(new URL("./sp127-mobile-shell.css", import.meta.url), "utf8");
 
 describe("V4 motion acceptance: no endless rotations while loading", () => {
   it("shows an accessible, static progress indicator while the account loads", () => {
-    expect(app).toContain('className="loading-progress-track"');
-    expect(app).toContain('role="status" aria-busy="true"');
-    expect(styles).toContain(".loading-progress-track");
-    expect(styles).toContain(".loading-progress-fill");
+    // SP127's immediate, non-private startup shell replaces the old
+    // blocking full-page progress screen with a static status line.
+    expect(app).toContain('className="sp-boot-progress" role="progressbar"');
+    expect(app).toContain('role={props.loading ? "status" : "alert"}');
+    expect(shell).toContain(".sp-boot-progress");
+    expect(app).not.toContain('className="loading-progress-track"');
     expect(app).not.toContain('className="spinner"');
     expect(styles).not.toContain("@keyframes spin");
     expect(styles).not.toContain("animation: spin");
