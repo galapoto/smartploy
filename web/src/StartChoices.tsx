@@ -24,7 +24,6 @@ export default function StartChoices(props: {
       <span>SMARTPLOY / APPLICATION WORKSPACE</span><span>FINLAND · PRIVATE WORKSPACE</span>
     </div>
     <div className="flow-start-heading">
-      <p className="section-kicker">YOUR APPLICATION JOURNEY</p>
       <h1>{hasCV ? "CV connected. Choose how to apply." : "Start with your CV."}</h1>
       <p>{hasCV
         ? "Your CV is ready. Choose a method to find and apply for jobs."

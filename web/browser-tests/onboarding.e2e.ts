@@ -1422,6 +1422,8 @@ test("SP156 Komplyint typography is self-hosted and banner has one clear heading
   const hero = page.getByRole("region", { name: "Career search and applications banner" });
   await expect(hero).toBeVisible();
   expect((await hero.innerText()).trim()).toBe("Apply with confidence");
+  await expect(page.locator(".flow-start-heading .section-kicker")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   const families = await page.evaluate(async () => {
     await document.fonts.load('400 20px "Lato"');
     await document.fonts.load('400 40px "EB Garamond"');

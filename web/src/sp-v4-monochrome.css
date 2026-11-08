@@ -290,3 +290,48 @@ html[data-smartploy-theme="dark"] .smartploy-app .flow-start-privacy{color:#bfcb
     font-size:13px;line-height:1.45;
   }
 }
+
+/* SP156.1: Komplyint-inspired clarity is one heading + instruction + actions.
+   The full CV prerequisite remains in the accessible DOM via aria-describedby,
+   but duplicate mini-paragraphs do not crowd the desktop Home. */
+.smartploy-app .sp126-dashboard-main .flow-start-how{
+  padding:0;margin:0 0 16px;background:transparent;
+  background-image:none;border:0;box-shadow:none;
+}
+.smartploy-app .sp126-dashboard-main .flow-start-how .flow-start-cv-copy{
+  display:none;
+}
+.smartploy-app .sp126-dashboard-main .flow-start-how .row-actions{
+  display:flex;gap:10px;justify-content:flex-start;
+  align-items:center;flex-wrap:wrap;width:100%;margin:0;
+}
+.smartploy-app .sp126-dashboard-main .flow-start-locked{
+  position:absolute;width:1px;height:1px;overflow:hidden;
+  clip-path:inset(50%);white-space:nowrap;padding:0;margin:0;border:0;
+}
+/* Light mode retains the approved white/black contrast but NEVER introduces
+   unrelated purple, orange or green accents on the CV method cards. */
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode]{
+  --flow-tone:#088d9c;
+  background:#f8fbfc;background-image:none;
+  border:1px solid #cbdde4;border-top:3px solid #06b6c8;
+  box-shadow:0 12px 28px -22px rgba(3,25,47,.3);
+}
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:first-child{
+  color:#057a88;background:#dff7f9;border-color:#a8dce1;
+}
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:last-child{
+  color:#057a88;
+}
+@media(max-width:630px){
+  .smartploy-app .sp126-dashboard-main .flow-start-how .row-actions{
+    display:grid;grid-template-columns:minmax(0,1fr);
+    gap:8px;
+  }
+  .smartploy-app .sp126-dashboard-main .flow-start-how .row-actions > button{
+    width:100%;min-height:44px;
+  }
+}
