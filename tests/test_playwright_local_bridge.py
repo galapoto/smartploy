@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from copy import deepcopy
+from hashlib import sha256
 from http.client import HTTPConnection
 from http.server import HTTPServer
 import importlib.util
@@ -45,8 +46,10 @@ class FakeActor:
             field(3, "Cover Letter", "letter", tag="textarea", type="textarea"),
             field(4, "Visa Status", "visa", autocomplete="name"),
             field(5, "Password", "password", type="password"),
+            field(6, "Résumé", "resume_file", type="file", accept="application/pdf"),
         ])
         self.closed = False
+        self.attachments = []
         self.instances.append(self)
 
     def inspect(self, p):
@@ -57,6 +60,14 @@ class FakeActor:
     def fill(self, page, p, plan, rows):
         assert page is self.page
         return assistant.fill_reviewed_page(page, p, plan, rows)
+
+    def attach(self, page, p, rows, file_field, raw_pdf, expected_url):
+        assistant.validate_reviewed_cv_pdf(raw_pdf, p)
+        assert file_field["type"] == "file"
+        assert page.url == expected_url
+        self.attachments.append((file_field["name"], sha256(raw_pdf).hexdigest()))
+        return {"attached_locally": True, "employer_upload_confirmed": False,
+                "submitted": False}
 
     def close(self):
         self.closed = True
@@ -300,3 +311,123 @@ def test_sp111_production_csp_permits_exact_loopback_bridge_only():
     assert "connect-src *" not in caddy
     assert "http://localhost:*" not in caddy
     assert "http://192.168." not in caddy
+
+
+# SP112: reuse real v2 packet CV digest, not arbitrary user file bytes.
+FAKE_PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n"
+
+
+def reviewed_pdf_packet():
+    p = packet()
+    p["cv_pdf_sha256"] = sha256(FAKE_PDF).hexdigest()
+    p["cv_pdf_size"] = len(FAKE_PDF)
+    return p
+
+
+def test_sp112_exact_pdf_local_attachment_once_and_never_submitted():
+    current = state()
+    current.prepare(PAIR_CODE, reviewed_pdf_packet())
+    inspected = current.inspect()
+    attachment = inspected["cv_attachment"]
+    assert attachment["available"] is True
+    assert attachment["label"] == "Résumé"
+    with pytest.raises(bridge.BridgeError) as wrong:
+        current.attach("invalid-id", "ATTACH REVIEWED CV", FAKE_PDF)
+    assert wrong.value.status == 403
+    with pytest.raises(bridge.BridgeError):
+        current.attach(attachment["attach_id"], "SUBMIT", FAKE_PDF)
+    with pytest.raises(bridge.BridgeError) as mismatch:
+        current.attach(attachment["attach_id"], "ATTACH REVIEWED CV", b"%PDF-wrong\n%%EOF")
+    assert mismatch.value.status == 422
+    assert FakeActor.instances[0].attachments == []
+    result = current.attach(attachment["attach_id"], "ATTACH REVIEWED CV", FAKE_PDF)
+    assert result == {
+        "ok": True, "stage": "attached", "attached_locally": True,
+        "employer_upload_confirmed": False,
+        "submitted": False, "uploaded": True,
+    }
+    assert FakeActor.instances[0].attachments == [
+        ("resume_file", sha256(FAKE_PDF).hexdigest()),
+    ]
+    with pytest.raises(bridge.BridgeError) as retry:
+        current.attach(attachment["attach_id"], "ATTACH REVIEWED CV", FAKE_PDF)
+    assert retry.value.status == 409
+    current.stop()
+
+
+def test_sp112_pdf_attachment_requires_inspection_and_fresh_original_hash():
+    current = state()
+    current.prepare(PAIR_CODE, reviewed_pdf_packet())
+    with pytest.raises(bridge.BridgeError):
+        current.attach("no-inspection", "ATTACH REVIEWED CV", FAKE_PDF)
+    inspection = current.inspect()
+    current.packet["expires_at"] = "2000-01-01T00:00:00+00:00"
+    with pytest.raises(bridge.BridgeError) as stale:
+        current.attach(inspection["cv_attachment"]["attach_id"], "ATTACH REVIEWED CV", FAKE_PDF)
+    assert stale.value.status == 410
+    current.stop()
+
+
+def test_sp112_attachment_one_attempt_burned_after_uncertain_browser_failure():
+    class UncertainActor(FakeActor):
+        def attach(self, *_args):
+            raise RuntimeError("synthetic employer event uncertain")
+    current = bridge.BridgeState(pairing_code=PAIR_CODE, actor_factory=UncertainActor)
+    current.prepare(PAIR_CODE, reviewed_pdf_packet())
+    inspected = current.inspect()
+    aid = inspected["cv_attachment"]["attach_id"]
+    with pytest.raises(bridge.BridgeError) as uncertain:
+        current.attach(aid, "ATTACH REVIEWED CV", FAKE_PDF)
+    assert uncertain.value.status == 409
+    with pytest.raises(bridge.BridgeError) as retry:
+        current.attach(aid, "ATTACH REVIEWED CV", FAKE_PDF)
+    assert retry.value.status == 409
+    current.stop()
+
+
+def test_sp112_real_http_binary_pdf_transfer_exact_headers_and_origin():
+    current = state()
+    with fake_local_http_server(current) as port:
+        reply, _, opened = http_request(
+            port, "/v1/prepare",
+            {"pairing_code": PAIR_CODE, "packet": reviewed_pdf_packet()},
+        )
+        assert reply == 200
+        token = opened["token"]
+        status, _, inspected = http_request(
+            port, "/v1/inspect", headers={"Authorization": "Bearer " + token},
+        )
+        assert status == 200
+        aid = inspected["cv_attachment"]["attach_id"]
+
+        def send_pdf(pdf, *, origin=SAFE_ORIGIN, change=None):
+            conn = HTTPConnection("127.0.0.1", port, timeout=5)
+            headers = {
+                "Origin": origin, "Content-Type": "application/pdf",
+                "Authorization": "Bearer " + token,
+                "X-Smartploy-Attach-Id": aid,
+                "X-Smartploy-Attach-Confirmation": "ATTACH REVIEWED CV",
+            }
+            if change:
+                headers.update(change)
+            conn.request("POST", "/v1/attach", body=pdf, headers=headers)
+            response = conn.getresponse()
+            data = json.loads(response.read())
+            code = response.status
+            cors = response.getheader("Access-Control-Allow-Origin")
+            conn.close()
+            return code, cors, data
+
+        bad, cors, _ = send_pdf(FAKE_PDF, origin="https://evil.invalid")
+        assert bad == 403 and cors is None
+        bad, _, _ = send_pdf(b"%PDF-incorrect\n%%EOF\n")
+        assert bad == 422
+        assert FakeActor.instances[0].attachments == []
+        passed, cors, result = send_pdf(FAKE_PDF)
+        assert passed == 200 and cors == SAFE_ORIGIN
+        assert result["stage"] == "attached"
+        assert result["submitted"] is False
+        assert result["employer_upload_confirmed"] is False
+        again, _, _ = send_pdf(FAKE_PDF)
+        assert again == 409
+        assert len(FakeActor.instances[0].attachments) == 1
