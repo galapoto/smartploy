@@ -30,9 +30,9 @@ const MODE_INFO: Record<ApplicationFlowMode, {
   },
   automatic: {
     title: "AutoApply",
-    summary: "Prepare multiple CV-matched applications, review them and send eligible authorized ATS batches.",
-    responsibility: "Employer submission requires a separately approved Lever/Ashby job and your final review.",
-    next: "Next: select jobs, prepare drafts and approve eligible submissions in My applications.",
+    summary: "Choose a job to open its visible browser-filling workflow, or prepare a batch for later review.",
+    responsibility: "You review each exact CV, letter and employer form. Ordinary fields can be filled in your paired browser; final Submit stays with you unless a separately authorized provider supports it.",
+    next: "Next: click AutoApply on one job, or shortlist several jobs for private preparation.",
   },
 };
 
@@ -48,6 +48,7 @@ export default function ApplicationJourney(props: {
   onUpload: () => void;
   onReviewCV: () => void;
   onFindJobs: () => void;
+  onAddPrivateJob?: () => void;
   onOpenApplications: (workspaceId?: string) => void;
   onPrepare: (canonicalKey: string) => Promise<void>;
   onPrepareSelected: (
@@ -85,7 +86,7 @@ export default function ApplicationJourney(props: {
   // query cannot silently become an application in the new result set.
   queueScope.current = JSON.stringify([
     props.userId, props.cv.sha256 || "", props.cv.present,
-    props.mode, filter.trim(), activeQuery, revision, showOther,
+    props.mode, filter.trim(), activeQuery, revision, showOther, props.uploading,
   ]);
 
   // Debounce only the read-only query. Ranking and filtering happen on the
@@ -115,6 +116,18 @@ export default function ApplicationJourney(props: {
     }
   }, [props.mode]);
 
+  // Changing a CV invalidates the old shortlist immediately, not only after
+  // the replacement API returns a new SHA. In-flight work stops after its
+  // current server request; it cannot publish results into the new CV view.
+  useEffect(() => {
+    if (!props.uploading) return;
+    stopRequestedRef.current = true;
+    setSelected([]);
+    setFocusedKey("");
+    setBatchResult(null);
+    setBatchProgress(null);
+  }, [props.uploading]);
+
   // No CV, session tokens, or profile contents are persisted in browser storage.
   // An account switch unmounts this keyed component in the parent. Epoch and
   // authenticated-user checks also protect delayed page and search responses.
@@ -123,7 +136,9 @@ export default function ApplicationJourney(props: {
     const epoch = ++requestEpoch.current;
     setPaging(false);
     setPagingError("");
-    if (!props.cv.present) {
+    if (!props.cv.present || props.uploading) {
+      // Never paint matching jobs from the old CV while the user replaces,
+      // edits or restores it. The next comparison begins after the write.
       setResults(null);
       setLoading(false);
       return () => { active = false; };
@@ -150,7 +165,7 @@ export default function ApplicationJourney(props: {
       if (active && epoch === requestEpoch.current) setLoading(false);
     });
     return () => { active = false; };
-  }, [props.cv.present, props.cv.sha256, props.userId,
+  }, [props.cv.present, props.cv.sha256, props.uploading, props.userId,
       props.selectedJobKey, activeQuery, revision]);
 
   useEffect(() => {
@@ -186,7 +201,7 @@ export default function ApplicationJourney(props: {
   const shortlistSuggestion = addCVShortlist(selected, results?.recommended || []);
   const quickDraftKeys = addCVShortlist([], results?.recommended || []).selected;
   const queryPending = filter.trim() !== activeQuery;
-  const hasChosenJob = props.cv.present && !!props.mode &&
+  const hasChosenJob = props.cv.present && !props.uploading && !!props.mode &&
     (props.mode === "automatic" ? currentSelection.length > 0 : !!focusedJob);
 
   const hasMore = !!results && (
@@ -196,7 +211,7 @@ export default function ApplicationJourney(props: {
   );
 
   async function loadMore() {
-    if (!results || paging || !props.cv.present || !hasMore) return;
+    if (!results || paging || props.uploading || !props.cv.present || !hasMore) return;
     const epoch = requestEpoch.current;
     setPaging(true);
     setPagingError("");
@@ -245,7 +260,7 @@ export default function ApplicationJourney(props: {
   }
 
   function toggleSelected(key: string) {
-    if (props.queueBusy || queueInFlight.current || batchResult?.accessInterrupted ||
+    if (props.uploading || props.queueBusy || queueInFlight.current || batchResult?.accessInterrupted ||
         loading || paging || queryPending || !!error ||
         !jobs.some((row) => row.canonical_key === key && row.job.source_current &&
           !!safeExternalJobUrl(row.job.application_url))) return;
@@ -256,7 +271,7 @@ export default function ApplicationJourney(props: {
   }
 
   function selectCVShortlist() {
-    if (props.mode !== "automatic" || !results || props.queueBusy ||
+    if (props.uploading || props.mode !== "automatic" || !results || props.queueBusy ||
         !!queueInFlight.current || loading || paging || queryPending || !!error ||
         batchResult?.accessInterrupted || staleSelectionCount > 0) return;
     const proposal = addCVShortlist(selected, results.recommended);
@@ -288,6 +303,7 @@ export default function ApplicationJourney(props: {
   }
 
   async function prepareOne(key: string) {
+    if (props.uploading || !props.cv.present || !!queueInFlight.current) return;
     setError("");
     try { await props.onPrepare(key); }
     catch (exc) { setError(exc instanceof Error ? exc.message : "Unable to open your draft."); }
@@ -309,7 +325,7 @@ export default function ApplicationJourney(props: {
         new Set(exactKeys).size !== exactKeys.length ||
         visibleCurrentKeys(exactKeys, jobs).length !== exactKeys.length ||
         exactKeys.some((key) => blockedKeys.has(key)) || accessInterrupted ||
-        props.mode !== "automatic" || !results || !props.cv.present ||
+        props.mode !== "automatic" || !results || !props.cv.present || props.uploading ||
         loading || paging || queryPending || !!error || staleSelectionCount ||
         props.queueBusy || queueInFlight.current) return;
     const keys = [...exactKeys]; // immutable exact selection for this run
@@ -387,7 +403,7 @@ export default function ApplicationJourney(props: {
     // No background mutation: a real user click and exact-job confirmation
     // are required before preparing even private drafts. Only title-matched,
     // source-current, linked rows from the loaded CV-derived result qualify.
-    if (!props.cv.present || props.mode !== "automatic" || !results ||
+    if (!props.cv.present || props.uploading || props.mode !== "automatic" || !results ||
         loading || paging || queryPending || !!error || accessInterrupted ||
         selected.length || batchResult || props.queueBusy ||
         queueInFlight.current || !quickDraftKeys.length) return;
@@ -446,15 +462,26 @@ export default function ApplicationJourney(props: {
         {props.mode === "automatic" ? <label className="flow-select">
           <input type="checkbox" checked={chosen}
             onChange={() => toggleSelected(row.canonical_key)}
-            disabled={props.queueBusy || !!queueInFlight.current ||
+            disabled={props.uploading || props.queueBusy || !!queueInFlight.current ||
               accessInterrupted || loading || paging || queryPending ||
               !job.source_current || !link ||
               (!chosen && selected.length >= AUTOAPPLY_SELECTION_LIMIT)} />
           {chosen ? "Selected" : "Select for preparation"}
         </label> : null}
+        {props.mode === "automatic" && link && job.source_current ?
+          <button type="button" className="navy-btn compact"
+            aria-label={"AutoApply " + job.role_title + " at " + job.company}
+            disabled={props.uploading || !!props.preparing || props.queueBusy ||
+              !!queueInFlight.current || accessInterrupted || loading || paging ||
+              queryPending || !results || !props.cv.present}
+            onClick={() => void prepareOne(row.canonical_key)}>
+            {props.preparing === row.canonical_key
+              ? "Opening application…" : "AutoApply · open this job"}
+            <ArrowRight size={15} aria-hidden="true"/>
+          </button> : null}
         {props.mode && props.mode !== "automatic" ? <button type="button"
           className={focused ? "navy-btn compact" : "secondary-btn compact"}
-          aria-pressed={focused} disabled={!job.source_current}
+          aria-pressed={focused} disabled={props.uploading || !job.source_current}
           onClick={() => setFocusedKey(row.canonical_key)}>
           {focused ? "Selected job" : "Choose this job"}
           {focused ? <CheckCircle2 size={14}/> : <ArrowRight size={14}/>}
@@ -481,14 +508,14 @@ export default function ApplicationJourney(props: {
               <span className="muted">Employer link unavailable. This job cannot be submitted here.</span>
             : null}
           {props.mode === "manual" ? <button className="outline-btn compact" type="button"
-            disabled={!!props.preparing || !job.source_current}
+            disabled={props.uploading || !!props.preparing || !job.source_current}
             onClick={() => void prepareOne(row.canonical_key)}>
             {props.preparing === row.canonical_key ? "Saving…" : "Save application draft"}
             <ArrowRight size={14}/>
           </button> : null}
           {props.mode === "assisted" && assistance !== "filter" ? <button
             className="navy-btn compact" type="button"
-            disabled={!!props.preparing || !job.source_current}
+            disabled={props.uploading || !!props.preparing || !job.source_current}
             onClick={() => void prepareOne(row.canonical_key)}>
             {props.preparing === row.canonical_key ? "Opening…" : "Prepare CV & application"}
             <ArrowRight size={14}/>
@@ -589,7 +616,7 @@ export default function ApplicationJourney(props: {
           {props.uploading ? "Uploading and reading your CV…" :
             props.cv.present ? "Replace CV" : "Upload CV & find jobs"}
         </button>
-        <button className="outline-btn" type="button" onClick={props.onReviewCV}>
+        <button className="outline-btn" type="button" disabled={props.uploading} onClick={props.onReviewCV}>
           {props.cv.present ? "Review CV text & facts" : "Create CV from scratch"} <ArrowRight size={16}/>
         </button>
       </div>
@@ -604,7 +631,12 @@ export default function ApplicationJourney(props: {
         <p>This choice controls the next job actions. You can switch methods anytime;
           selecting a method never authorizes an employer submission.</p>
       </div></div>
-      {!props.cv.present ? <div className="flow-decision flow-cv-required" role="status">
+      {props.uploading ? <div className="flow-decision flow-cv-required" role="status">
+        <CircleHelp size={20} aria-hidden="true"/>
+        <p id="flow-cv-updating"><strong>CV update in progress.</strong>
+          {" "}Job selection and draft preparation are paused until the new CV is ready.
+          Any remaining automatic preparation steps have been stopped.</p>
+      </div> : !props.cv.present ? <div className="flow-decision flow-cv-required" role="status">
         <CircleHelp size={20} aria-hidden="true"/>
         <p id="flow-choose-require-cv"><strong>All three application methods are visible below.</strong>
           {" "}First upload or create your CV in Step 1. The choices become active
@@ -626,8 +658,8 @@ export default function ApplicationJourney(props: {
             data-flow-mode={choice}
             className={"flow-mode" + (props.mode === choice ? " selected" : "")}
             aria-pressed={props.mode === choice}
-            disabled={!props.cv.present || props.queueBusy || !!queueInFlight.current}
-            aria-describedby={!props.cv.present ? "flow-choose-require-cv" : undefined}
+            disabled={!props.cv.present || props.uploading || props.queueBusy || !!queueInFlight.current}
+            aria-describedby={props.uploading ? "flow-cv-updating" : !props.cv.present ? "flow-choose-require-cv" : undefined}
             onClick={() => props.onMode(choice)}>
             <span className="flow-mode-head">
               <Icon size={23} aria-hidden="true"/>
@@ -687,11 +719,25 @@ export default function ApplicationJourney(props: {
             (results?.other_jobs_count ?? results?.other_jobs.length ?? 0) + ")"}
         </button>
       </div> : null}
+      {props.cv.present && (props.mode === "assisted" || props.mode === "automatic") && props.onAddPrivateJob ?
+        <div className="sp120-search-escape" role="note">
+          <div>
+            <strong>Can't find the employer's job in these results?</strong>
+            <p>Search covers imported vacancies only. Add the direct employer link
+              to open a real private application and its visible Playwright/Chrome form-filling tools instead of a bookmark dead end.</p>
+          </div>
+          <button type="button" className="primary-btn"
+            onClick={props.onAddPrivateJob}>
+            Add employer link & prepare application <ArrowRight size={16}/>
+          </button>
+        </div> : null}
       {!props.cv.present ? <div className="empty-state">
         <UploadCloud size={28}/><h3>Your matching jobs appear here</h3>
         <p>Upload your CV above to continue. If you just want to browse, use Find Jobs without uploading anything.</p>
         <button className="secondary-btn" type="button" onClick={props.onFindJobs}>Browse all jobs <ArrowRight size={16}/></button>
-      </div> : loading ? <p className="muted" role="status">
+      </div> : props.uploading ? <p className="muted" role="status">
+        Updating your CV. Current job matches will refresh after the new version is ready.
+      </p> : loading ? <p className="muted" role="status">
         <Loader2 size={16} className="rotate"/> Comparing your CV with current vacancies…
       </p> : error ? <div role="alert" className="flow-error">{error}
         <button className="outline-btn compact" type="button" onClick={() => setRevision(n => n+1)}>
@@ -717,7 +763,7 @@ export default function ApplicationJourney(props: {
                 "Choose jobs for AutoApply preparation"
               : focusedJob ? "Selected: " + focusedJob.job.role_title + " at " +
                 focusedJob.job.company : "Choose one job to continue"}</strong>
-              <p>{props.mode === "automatic" ? "Tick up to 15 current vacancies, then select Prepare applications & start agents below. No employer is contacted." :
+              <p>{props.mode === "automatic" ? "Click AutoApply on one job to open its reviewed browser-filling workflow, or tick up to 15 vacancies for private batch preparation. No employer is contacted by preparing." :
                 focusedJob ? "Use the buttons inside the highlighted job to take the next step. Choosing a job did not create or send an application." :
                 "Click Choose this job on a vacancy. SmartPloy then shows the next action for your chosen method; choosing alone does not create a draft or submit."}</p>
             </div>
@@ -753,7 +799,7 @@ export default function ApplicationJourney(props: {
             <button type="button" className="navy-btn"
               disabled={!quickDraftKeys.length || selected.length > 0 || !!batchResult ||
                 loading || paging || queryPending || !!error || staleSelectionCount > 0 ||
-                props.queueBusy || !!queueInFlight.current || accessInterrupted}
+                props.uploading || props.queueBusy || !!queueInFlight.current || accessInterrupted}
               onClick={prepareCVMatchedDraftsNow}>
               {props.queueBusy ? "Preparing private drafts…" :
                 selected.length ? "Use your selected jobs below" :
@@ -771,13 +817,13 @@ export default function ApplicationJourney(props: {
             <button className="navy-btn compact" type="button"
               disabled={!shortlistSuggestion.added.length || !results || loading ||
                 paging || queryPending || !!error || staleSelectionCount > 0 ||
-                props.queueBusy || !!queueInFlight.current || accessInterrupted}
+                props.uploading || props.queueBusy || !!queueInFlight.current || accessInterrupted}
               onClick={selectCVShortlist}>
               Select {shortlistSuggestion.added.length} CV-title matched job{shortlistSuggestion.added.length === 1 ? "" : "s"}
               <CheckCircle2 size={15} aria-hidden="true"/>
             </button>
             <button className="outline-btn compact" type="button"
-              disabled={!selected.length || props.queueBusy || !!queueInFlight.current}
+              disabled={!selected.length || props.uploading || props.queueBusy || !!queueInFlight.current}
               onClick={clearSelected}>Clear selected jobs</button>
           </div>
           <p className="flow-shortlist-note">
@@ -870,7 +916,7 @@ export default function ApplicationJourney(props: {
             </> : null}
           </div> : null}
           <button className="primary-btn" type="button"
-            disabled={!runnableSelection.length || props.queueBusy || !!queueInFlight.current ||
+            disabled={!runnableSelection.length || props.uploading || props.queueBusy || !!queueInFlight.current ||
               loading || paging || queryPending || !!error || staleSelectionCount > 0}
             onClick={() => void queue()}>
             {props.queueBusy ? "Preparing selected drafts and agents…" :

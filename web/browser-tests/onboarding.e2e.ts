@@ -90,6 +90,8 @@ async function installSyntheticApi(page: Page, options: {
   cvFilename?: string;
   unavailableAI?: boolean;
   readyAI?: boolean;
+  masterCVSha256?: string;
+  masterCVText?: string;
 } = {}): Promise<MockState> {
   const state: MockState = {
     userId: "synthetic-user-a",
@@ -174,6 +176,18 @@ async function installSyntheticApi(page: Page, options: {
       });
       return;
     }
+    if (path === "/api/v1/profile/cv/editor" && request.method() === "GET") {
+      if (!state.cvFilename || !options.masterCVSha256) {
+        await response(route, {detail: "No version-verifiable synthetic master CV"}, 404);
+      } else {
+        await response(route, {
+          present: true, text: options.masterCVText || "", sha256: options.masterCVSha256,
+          filename: state.cvFilename, created_by_editor: false, history: [],
+          employer_actions_performed: 0, approved_profile_facts_added: 0,
+        });
+      }
+      return;
+    }
     if (path === "/api/v1/profile/cv/matches" && request.method() === "GET") {
       await response(route, {
         cv_present: Boolean(state.cvFilename), cv_filename: state.cvFilename,
@@ -236,6 +250,89 @@ async function installSyntheticApi(page: Page, options: {
     }
     if (path === "/api/v1/application-agents" && request.method() === "GET") {
       await response(route, { agents: [], count: 0, external_actions_authorized: false });
+      return;
+    }
+    if (path.startsWith("/api/v1/application-workspaces/") &&
+        request.method() === "PUT") {
+      const id = decodeURIComponent(path.slice("/api/v1/application-workspaces/".length));
+      const body = JSON.parse(request.postData() || "{}") as Record<string, unknown>;
+      const owned = state.privateWorkspaces[state.userId] || [];
+      const existing = owned.find(item => item.workspace_id === id);
+      if (!existing || body.expected_revision !== existing.revision ||
+          request.headers()["x-smartploy-expected-user-id"] !== state.userId ||
+          typeof body.cv_text !== "string" || typeof body.cover_letter_text !== "string") {
+        await response(route, {detail: "Owner and exact revision are mandatory"}, 409);
+      } else {
+        const edited = {
+          ...existing, cv_text: body.cv_text,
+          cover_letter_text: body.cover_letter_text,
+          revision: existing.revision + 1,
+        };
+        state.privateWorkspaces[state.userId] = owned.map(item =>
+          item.workspace_id === id ? edited : item
+        );
+        await response(route, {workspace: edited});
+      }
+      return;
+    }
+    if (path.startsWith("/api/v1/application-workspaces/") &&
+        /\/preview\/(cv|letter)\/pdf$/.test(path) && request.method() === "GET") {
+      const match = path.match(
+        /^\/api\/v1\/application-workspaces\/([^/]+)\/preview\/(cv|letter)\/pdf$/
+      );
+      const id = match ? decodeURIComponent(match[1]) : "";
+      const expectedRevision = Number(new URL(request.url()).searchParams.get("expected_revision"));
+      const owned = (state.privateWorkspaces[state.userId] || [])
+        .find(item => item.workspace_id === id);
+      if (!owned) {
+        await response(route, {detail: "Not a workspace owned by this user"}, 404);
+      } else if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== owned.revision) {
+        await response(route, {detail: "Saved documents changed; refresh to review"}, 409);
+      } else {
+        // Synthetic only: real PDF bytes and content are proved in Python API tests.
+        // This tests browser route, exact revision, and no employer transfer.
+        await route.fulfill({
+          status: 200,
+          contentType: "application/pdf",
+          headers: {
+            "Content-Disposition": "inline; filename=\"synthetic-preview.pdf\"",
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+          },
+          body: "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n",
+        });
+      }
+      return;
+    }
+    if (path.startsWith("/api/v1/application-workspaces/") &&
+        path.endsWith("/download/package.zip") && request.method() === "GET") {
+      const id = decodeURIComponent(path.slice(
+        "/api/v1/application-workspaces/".length, -"/download/package.zip".length,
+      ));
+      const owned = (state.privateWorkspaces[state.userId] || [])
+        .find(item => item.workspace_id === id);
+      const revisionParam = new URL(request.url()).searchParams.get("expected_revision");
+      if (!owned) {
+        await response(route, {detail: "No owner-scoped synthetic application"}, 404);
+      } else if (!revisionParam || !/^[1-9][0-9]*$/.test(revisionParam) ||
+                 !Number.isSafeInteger(Number(revisionParam))) {
+        await response(route, {detail: "Saved revision is required"}, 422);
+      } else if (Number(revisionParam) !== owned.revision) {
+        await response(route, {detail: "Saved documents changed; refresh to review"}, 409);
+      } else {
+        // Real file contents are tested by backend ZIP/PDF/DOCX tests.
+        // An empty valid ZIP here proves browser download/filename routing.
+        await route.fulfill({
+          status: 200,
+          contentType: "application/zip",
+          headers: {
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": 'attachment; filename="synthetic-application-package.zip"',
+            "X-Content-Type-Options": "nosniff",
+          },
+          body: Buffer.from("UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==", "base64"),
+        });
+      }
       return;
     }
     if (path.startsWith("/api/v1/application-workspaces/") &&
@@ -335,7 +432,8 @@ async function installSyntheticApi(page: Page, options: {
         external_actions_authorized: false,
       },
       "/api/v1/profile/cv": state.cvFilename
-        ? { present: true, filename: state.cvFilename, size_bytes: 1200 }
+        ? { present: true, filename: state.cvFilename, size_bytes: 1200,
+            ...(options.masterCVSha256 ? {sha256: options.masterCVSha256} : {}) }
         : { present: false },
       "/api/v1/profile/facts": { facts: [], count: 0 },
       "/api/v1/applications": { applications: [], count: 0 },
@@ -524,6 +622,33 @@ test("SP70: Manual, Assisted and AutoApply explain and preserve distinct job act
   await expect(page.getByRole("button", { name: /Prepare applications & start agents/i })).toBeDisabled();
   expect(state.applicationWorkspaceCreates).toEqual([]);
   await evidence(page, "sp70-autoapply-selection-before-preparation.png");
+});
+
+test("SP131: AutoApply for one matching job opens its exact private browser-ready workspace", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Fictional-IT-CV.pdf",
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  await page.getByRole("button", { name: /AutoApply/i }).click();
+  const job = page.locator(".flow-job").filter({ hasText: "Junior Data Analyst" });
+  await expect(job.getByRole("button", {
+    name: "AutoApply Junior Data Analyst at Example Oy",
+  })).toBeEnabled();
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+  await job.getByRole("button", {
+    name: "AutoApply Junior Data Analyst at Example Oy",
+  }).click();
+  await expect.poll(() => state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  await expect(page.getByRole("heading", { name: /My applications/i }).first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "Application review queue" }))
+    .toContainText("1 private draft to finish");
+  // Opening AutoApply must not call an employer, claim a sent receipt,
+  // or bypass the exact CV/letter review and local browser pairing.
+  await expect(page.getByRole("region", { name: "Application review queue" }))
+    .toContainText("0 employer-acknowledged");
+  await evidence(page, "sp131-one-job-autoapply-open-workspace.png");
 });
 
 test("SP75: one-click CV-matched AutoApply shortlist prepares only reviewed current job drafts", async ({ page }) => {
@@ -825,12 +950,12 @@ test("saved private jobs do not enter ATS discovery and vanish after account swi
   await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your saved opportunities" })).toBeVisible();
   await page.getByRole("button", { name: "Save job" }).first().click();
-  const modal = page.getByRole("dialog", { name: "Save an opportunity" });
+  const modal = page.getByRole("dialog", { name: "Add a job and start applying" });
   await modal.getByPlaceholder("e.g. Junior Data Analyst").fill("PRIVATE-BOOKMARK-A");
   await modal.getByPlaceholder("Employer name").fill("Fictional Private Company");
   await modal.getByPlaceholder("Paste the responsibilities and key requirements here.")
     .fill("User-saved reference, not a verified posting");
-  await modal.getByRole("button", { name: "Save job" }).click();
+  await modal.getByRole("button", { name: "Save job only" }).click();
 
   await expect(page.getByText("PRIVATE-BOOKMARK-A")).toBeVisible();
   expect(state.privateSavedJobs["synthetic-user-a"]).toHaveLength(1);
@@ -860,7 +985,7 @@ test("a same-email account change resets unsaved criteria and private CV details
     cvFilename: "PRIVATE-ACCOUNT-A.pdf",
   });
   await page.goto("/");
-  await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toBeVisible();
+  await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
   await page.getByPlaceholder(/Data analyst, Junior software tester/i).fill("UNSAVED ACCOUNT A ONLY");
@@ -881,7 +1006,7 @@ test("a same-email account change resets unsaved criteria and private CV details
     .toHaveValue("Account B role");
   await page.getByRole("button", { name: "Start here", exact: true }).click();
   await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toHaveCount(0);
-  await expect(page.getByText("ACCOUNT-B.pdf")).toBeVisible();
+  await expect(page.getByText("ACCOUNT-B.pdf", { exact: true })).toBeVisible();
 });
 
 test("a delayed application-draft response is discarded after same-email account switch", async ({ page }) => {
@@ -1221,4 +1346,176 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
     document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(horizontalOverflow).toBe(false);
   await evidence(page, "sp125-work-hero-mobile-dark-logo.png");
+});
+
+
+test("SP104: actual browser preserves unsaved cover letter after cancelled navigation", async ({ page }) => {
+  const state = await installSyntheticApi(page, { cvFilename: "Synthetic-Approved-CV.docx" });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "CV connected. Choose how to apply." })).toBeVisible();
+  await page.locator('.flow-start-card[data-flow-mode="manual"]').click();
+  await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
+  await page.getByRole("button", { name: "Choose this job" }).first().click();
+  await page.getByRole("button", { name: "Save application draft" }).click();
+  const letter = page.getByRole("textbox", { name: "Editable cover letter text" });
+  await expect(letter).toBeVisible();
+  const unsaved = "SYNTHETIC ONLY: complete applicant letter with unsaved additional evidence.";
+  await letter.fill(unsaved);
+
+  let warning = "";
+  page.once("dialog", async dialog => {
+    warning = dialog.message();
+    await dialog.dismiss();
+  });
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  expect(warning).toContain("unsaved changes to your application CV or cover letter");
+  await expect(letter).toHaveValue(unsaved);
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+
+  page.once("dialog", async dialog => { await dialog.accept(); });
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  await expect(page.getByRole("heading", { name: "How do you want to apply?" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Editable cover letter text" })).toHaveCount(0);
+  // Leaving a draft is a local navigation only, never an employer request.
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+});
+
+
+test("SP105: compare and deliberately use a newer master CV in one saved job without employer submission", async ({page}) => {
+  const fullMaster = "Full verified applicant CV in private synthetic fixture. Python, SQL, Power BI, Azure and project evidence.";
+  const state = await installSyntheticApi(page, {
+    cvFilename: "Current-master-CV.docx",
+    masterCVSha256: "b".repeat(64),
+    masterCVText: fullMaster,
+  });
+  await page.goto("/");
+  await page.locator('.flow-start-card[data-flow-mode="manual"]').click();
+  await expect(page.getByRole("heading", {name: "Jobs from your CV"})).toBeVisible();
+  await page.getByRole("button", {name: "Choose this job"}).first().click();
+  await page.getByRole("button", {name: "Save application draft"}).click();
+  const cv = page.getByRole("textbox", {name: "Editable CV text"});
+  const letter = page.getByRole("textbox", {name: "Editable cover letter text"});
+  await expect(cv).toHaveValue("FICTIONAL CV draft for Junior Data Analyst");
+  await expect(letter).toHaveValue("FICTIONAL letter for Example Oy");
+  const panel = page.getByRole("region", {name: "CV version and comparison"});
+  await expect(panel).toContainText("started from an earlier master CV");
+  await panel.getByRole("button", {name: "Compare with current master CV"}).click();
+  const comparison = page.getByRole("region", {name: "Job-specific CV versus current master CV"});
+  await expect(comparison).toContainText(fullMaster);
+  await expect(cv).toHaveValue("FICTIONAL CV draft for Junior Data Analyst");
+  page.once("dialog", async dialog => dialog.accept());
+  await panel.getByRole("button", {name: /Use current master CV in this job draft/i}).click();
+  await expect(cv).toHaveValue(fullMaster);
+  await expect(letter).toHaveValue("FICTIONAL letter for Example Oy");
+  await page.getByRole("button", {name: "Undo master CV replacement"}).click();
+  await expect(cv).toHaveValue("FICTIONAL CV draft for Junior Data Analyst");
+  await expect(letter).toHaveValue("FICTIONAL letter for Example Oy");
+  // The first copy and its undo were both editor-only.
+  expect(state.privateWorkspaces[state.userId][0].revision).toBe(1);
+  await panel.getByRole("button", {name: "Compare with current master CV"}).click();
+  await expect(comparison).toContainText(fullMaster);
+  page.once("dialog", async dialog => dialog.accept());
+  await panel.getByRole("button", {name: /Use current master CV in this job draft/i}).click();
+  await expect(cv).toHaveValue(fullMaster);
+  expect(state.privateWorkspaces[state.userId][0].revision).toBe(1);
+  await page.getByRole("button", {name: /^Save changes$/}).click();
+  await expect.poll(() => state.privateWorkspaces[state.userId][0].revision).toBe(2);
+  expect(state.privateWorkspaces[state.userId][0].cv_text).toBe(fullMaster);
+  expect(state.privateWorkspaces[state.userId][0].cover_letter_text)
+    .toBe("FICTIONAL letter for Example Oy");
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  await expect(page.getByRole("button", {name: /Submit reviewed application to authorized/i}))
+    .toHaveCount(0);
+  await evidence(page,"sp105-current-master-cv-reconciliation.png");
+});
+
+
+test("SP106: one saved job downloads a private CV and letter ZIP without employer submission", async ({page}) => {
+  const state = await installSyntheticApi(page,{cvFilename:"User-owned-CV.docx"});
+  await page.goto("/");
+  await page.locator('.flow-start-card[data-flow-mode="manual"]').click();
+  await page.getByRole("button",{name:"Choose this job"}).first().click();
+  await page.getByRole("button",{name:"Save application draft"}).click();
+  const panel = page.getByRole("region",{name:"Complete application file package"});
+  const link = panel.getByRole("link",{
+    name:"Download complete application ZIP with CV and cover letter PDF and DOCX",
+  });
+  await expect(link).toHaveAttribute(
+    "href", /\/download\/package\.zip\?expected_revision=1$/
+  );
+  const priorVersionUrl = (await link.getAttribute("href"))!;
+  const letter = page.getByRole("textbox",{name:"Editable cover letter text"});
+  await letter.fill("Saved applicant letter with a genuinely reviewed job-specific correction.");
+  await expect(panel.getByLabel(
+    "Download complete application ZIP with CV and cover letter PDF and DOCX"
+  )).toHaveAttribute("aria-disabled","true");
+  await page.getByRole("button",{name:/^Save changes$/}).click();
+  await expect(link).toHaveAttribute("aria-disabled","false");
+  await expect(link).toHaveAttribute(
+    "href", /\/download\/package\.zip\?expected_revision=2$/
+  );
+  // A stale link in another browser tab cannot silently export a newer CV.
+  const stale = await page.evaluate(async (url) => {
+    const result = await fetch(url, {credentials: "same-origin", cache: "no-store"});
+    return result.status;
+  }, priorVersionUrl);
+  expect(stale).toBe(409);
+  const missing = await page.evaluate(async (url) =>
+    (await fetch(url, {credentials: "same-origin", cache: "no-store"})).status,
+    priorVersionUrl.split("?")[0]
+  );
+  expect(missing).toBe(422);
+  const downloadPromise = page.waitForEvent("download");
+  await link.click();
+  const file = await downloadPromise;
+  expect(file.suggestedFilename()).toBe("synthetic-application-package.zip");
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  expect(state.privateWorkspaces[state.userId][0].status).toBe("draft");
+  expect(state.privateWorkspaces[state.userId][0].revision).toBe(2);
+});
+
+
+test("SP107: exact saved PDFs are previewable without employer submission or stale revision drift", async ({page}) => {
+  const state = await installSyntheticApi(page, {cvFilename: "Owned-CV.docx"});
+  await page.goto("/");
+  await page.locator('.flow-start-card[data-flow-mode="assisted"]').click();
+  await page.getByRole("button", {name: "Choose this job"}).first().click();
+  await page.getByRole("button", {name: "Prepare CV & application"}).click();
+  const panel = page.getByRole("region", {name: "Complete application file package"});
+  const cvPreview = panel.getByRole("link", {name: "Preview saved CV PDF in a new tab"});
+  const letterPreview = panel.getByRole("link", {name: "Preview saved cover letter PDF in a new tab"});
+  await expect(cvPreview).toHaveAttribute("target", "_blank");
+  await expect(cvPreview).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(cvPreview).toHaveAttribute("href", /\/preview\/cv\/pdf\?expected_revision=1$/);
+  // Browser-context fetch exercises the installed account-scoped synthetic
+  // page route. Playwright's separate page.request API bypasses page.route.
+  const previewRequest = async (url: string) => page.evaluate(async (href) => {
+    const result = await fetch(href, { credentials: "same-origin", cache: "no-store" });
+    return {status: result.status, media: result.headers.get("content-type"),
+      disposition: result.headers.get("content-disposition")};
+  }, url);
+  const first = await previewRequest((await cvPreview.getAttribute("href"))!);
+  expect(first.status).toBe(200);
+  expect(first.media).toContain("application/pdf");
+  expect(first.disposition).toContain("inline");
+
+  const editor = page.getByRole("textbox", {name: "Editable cover letter text"});
+  await editor.fill("Revised applicant-owned complete letter text for a synthetic employer.");
+  await expect(panel.getByLabel("Preview saved CV PDF in a new tab")).toHaveAttribute(
+    "aria-disabled", "true"
+  );
+  await expect(panel.getByLabel("Preview saved cover letter PDF in a new tab"))
+    .not.toHaveAttribute("href", /preview\/letter\/pdf/);
+  await page.getByRole("button", {name: /^Save changes$/}).click();
+  await expect(cvPreview).toHaveAttribute("href", /\/preview\/cv\/pdf\?expected_revision=2$/);
+  await expect(letterPreview).toHaveAttribute("href", /\/preview\/letter\/pdf\?expected_revision=2$/);
+  const latest = await previewRequest((await letterPreview.getAttribute("href"))!);
+  expect(latest.status).toBe(200);
+  const stale = await previewRequest(
+    (await cvPreview.getAttribute("href"))!.replace("expected_revision=2", "expected_revision=1")
+  );
+  expect(stale.status).toBe(409);
+  expect(state.applicationWorkspaceCreates).toEqual(["synthetic-analyst"]);
+  expect(state.privateWorkspaces[state.userId][0].revision).toBe(2);
+  expect(state.privateWorkspaces[state.userId][0].status).toBe("draft");
 });

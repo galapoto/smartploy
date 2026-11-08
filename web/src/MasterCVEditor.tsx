@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, FileText, History, Plus, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import { Download, FileText, History, Plus, RefreshCw, Save, ShieldCheck, WandSparkles } from "lucide-react";
 import { getCVEditor, getSession } from "./api";
 import StructuredCVForm from "./StructuredCVForm";
 import DocumentCoach from "./DocumentCoach";
 import {
   cvHasApplicantContent, renderStructuredCV, structuredFromSource,
-  type StructuredCV,
+  parseStructuredCV, emptyStructuredCV, draftStructuredCVFromApprovedFacts, SECTION_OPTIONS,
+  type CVApprovedFact, type StructuredCV,
 } from "./structured_cv";
 import type {
   CVDocument, CVEditorArchive, CVEditorDocument, CVEditorSaved, CVEditorRestored,
@@ -17,9 +18,15 @@ const MAX_CHARS = 30000;
 export default function MasterCVEditor(props: {
   cv: CVDocument;
   expectedUserId: string;
+  /** Already loaded, account-scoped profile facts; only approved values qualify. */
+  facts?: ReadonlyArray<CVApprovedFact>;
   onSave: (text: string, currentSha256: string) => Promise<CVEditorSaved>;
   onRestore: (digest: string, currentSha256: string) => Promise<CVEditorRestored>;
   onSaved: (cv: CVDocument) => void;
+  onUnsavedChange?: (dirty: boolean) => void;
+  // Parent-level live mutation barrier; optional for standalone editor QA.
+  onWriteStarted?: () => symbol | null;
+  onWriteSettled?: (token: symbol) => void;
 }) {
   const { cv, expectedUserId, onSave, onRestore, onSaved } = props;
   const [snapshot, setSnapshot] = useState<CVEditorDocument | null>(null);
@@ -86,11 +93,89 @@ export default function MasterCVEditor(props: {
   }, [refresh, cv.sha256, cv.present]);
 
   const dirty = text !== originalText;
+  const formattedCV = parseStructuredCV(text);
+  useEffect(() => {
+    props.onUnsavedChange?.(dirty);
+    return () => props.onUnsavedChange?.(false);
+  }, [dirty, props.onUnsavedChange]);
   const validStructured = mode !== "structured" ||
     (!!structured && cvHasApplicantContent(structured));
   const canSave = !!snapshot && !loading && !saving &&
     dirty && validStructured &&
     text.trim().length >= 20 && text.trim().length <= MAX_CHARS;
+  const approvedCount = (props.facts || []).filter(fact => fact.approved === true).length;
+
+  async function createProfileCV() {
+    if (!snapshot || loading || saving || inFlight.current || approvedCount === 0) return;
+    if (text.trim() && !window.confirm(
+      "Build an editable CV from your approved profile facts? Existing structured " +
+      "entries will be kept. If your current CV is a free-form upload, the generated " +
+      "draft will be clean and will NOT copy unverified source text. Your saved " +
+      "original remains available until you deliberately Save, and is archived " +
+      "in private version history afterward. Unsaved edits will be replaced. Continue?"
+    )) return;
+    const scope = requestGeneration.current;
+    try {
+      await verifyAccount();
+      if (scope !== requestGeneration.current || inFlight.current) return;
+      const proposed = draftStructuredCVFromApprovedFacts(props.facts || []);
+      if (!proposed.included) {
+        setError("Approve a name, experience, skill, project or education fact to draft your CV.");
+        return;
+      }
+      // Reuse the reversible editor grammar; never parse an arbitrary uploaded
+      // CV into guessed titles/dates/employers. A clean draft excludes
+      // unverified free-form source, while the SAVED original is preserved by
+      // the existing CV version-history mechanism on explicit Save.
+      const existing = structuredFromSource(text);
+      const model = existing.origin === "structured"
+        ? existing.model : emptyStructuredCV();
+      const fresh = proposed.model;
+      for (const field of ["name", "headline", "email", "phone",
+                           "location", "links", "summary"] as const) {
+        if (!model[field].trim() && fresh[field].trim()) model[field] = fresh[field];
+      }
+      for (const section of fresh.sections) {
+        const current = model.sections.find(row => row.kind === section.kind);
+        if (!current) {
+          model.sections.push(section);
+          continue;
+        }
+        const present = new Set(current.entries.map(entry => entry.title.trim()));
+        for (const entry of section.entries) {
+          if (!present.has(entry.title.trim())) {
+            current.entries.push(entry);
+            present.add(entry.title.trim());
+          }
+        }
+      }
+      const fullDraft = renderStructuredCV(model);
+      if (fullDraft.length > MAX_CHARS) {
+        setError("The combined CV exceeds 30,000 characters. Your original is unchanged. " +
+          "Edit or shorten your existing CV before generating from your profile.");
+        return;
+      }
+      await verifyAccount();
+      if (scope !== requestGeneration.current || inFlight.current) return;
+      setText(fullDraft);
+      setStructured(model);
+      setMode("structured");
+      setError("");
+      setConversionNote((existing.origin === "structured"
+        ? "Existing structured entries were kept; missing approved facts were added. "
+        : "Clean draft created. No unverified old CV text was copied into the new export. " +
+          "Your saved original can be restored with Reload before saving, or from version history after saving. ") +
+        "Review every entry and customize the profile summary before saving.");
+      setNotice("Created an UNSAVED structured CV draft from " + proposed.included +
+        " approved profile fact(s)." +
+        (proposed.missingName ? " Add your real name before saving." : "") +
+        (proposed.skipped ? " " + proposed.skipped +
+          " ambiguous or unsupported fact(s) need manual review." : "") +
+        " Nothing was approved, sent or submitted.");
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Unable to prepare the private CV draft.");
+    }
+  }
 
   function openStructuredEditor() {
     if (loading || saving || !snapshot || mode === "structured") return;
@@ -140,6 +225,11 @@ export default function MasterCVEditor(props: {
       "edited file will remain downloadable in the private version history. " +
       "No profile facts are approved and nothing is sent to an employer."
     )) return;
+    const writeToken = props.onWriteStarted?.();
+    if (writeToken === null) {
+      setError("Another CV update is already in progress. Review it before saving.");
+      return;
+    }
     inFlight.current = true;
     setSaving(true); setError(""); setNotice("");
     const token = ++requestGeneration.current;
@@ -175,6 +265,7 @@ export default function MasterCVEditor(props: {
       }
     } finally {
       inFlight.current = false;
+      if (writeToken) props.onWriteSettled?.(writeToken);
       if (token === requestGeneration.current) setSaving(false);
     }
   }
@@ -188,6 +279,11 @@ export default function MasterCVEditor(props: {
       (dirty ? "Your unsaved editor changes will be discarded. " : "") +
       "No employer will be contacted and no qualifications approved."
     )) return;
+    const writeToken = props.onWriteStarted?.();
+    if (writeToken === null) {
+      setError("Another CV update is already in progress. Review it before restoring.");
+      return;
+    }
     const current = snapshot;
     inFlight.current = true;
     setSaving(true); setError(""); setNotice("");
@@ -228,6 +324,7 @@ export default function MasterCVEditor(props: {
       }
     } finally {
       inFlight.current = false;
+      if (writeToken) props.onWriteSettled?.(writeToken);
       if (token === requestGeneration.current) setSaving(false);
     }
   }
@@ -255,7 +352,19 @@ export default function MasterCVEditor(props: {
           disabled={saving} onClick={openTextEditor}>
           Text editor
         </button>
+        <button type="button" className="outline-btn compact"
+          disabled={saving || approvedCount === 0}
+          onClick={() => void createProfileCV()}>
+          <WandSparkles size={15}/> Build CV from approved profile
+        </button>
       </div>
+      <p className="master-cv-hint">
+        Build CV creates an editable draft from facts you personally approved;
+        it never invents work history or saves automatically. Your saved CV remains
+        recoverable if you choose to replace it.
+        {approvedCount === 0 ? " Approve profile facts first, or use the editor manually." :
+          " " + approvedCount + " approved fact(s) available."}
+      </p>
       {conversionNote ? <p className="master-cv-message" role="status">{conversionNote}</p> : null}
       {mode === "text" ? <div className="master-cv-toolbar">
         <label htmlFor="master-cv-add-section">Add a section</label>
@@ -296,7 +405,40 @@ export default function MasterCVEditor(props: {
         <div className="master-cv-preview">
           <strong><FileText size={16} /> Live document preview</strong>
           <div className="master-cv-paper" aria-label="CV preview">
-            <pre>{text || "Your CV will appear here as you write."}</pre>
+            {formattedCV ? <article className="master-cv-sheet"
+              aria-label="Formatted structured CV">
+              <header className="master-cv-sheet-head">
+                <h3>{formattedCV.name || "Your name"}</h3>
+                {formattedCV.headline ? <p className="master-cv-sheet-headline">
+                  {formattedCV.headline}</p> : null}
+                <p className="master-cv-sheet-contact">
+                  {[formattedCV.email, formattedCV.phone, formattedCV.location,
+                    formattedCV.links].filter(Boolean).join("  ·  ")}
+                </p>
+              </header>
+              {formattedCV.summary ? <section className="master-cv-sheet-section">
+                <h4>Professional profile</h4>
+                <p>{formattedCV.summary}</p>
+              </section> : null}
+              {formattedCV.sections.map(section => <section key={section.id}
+                className="master-cv-sheet-section">
+                <h4>{SECTION_OPTIONS.find(item => item.kind === section.kind)?.label
+                  || "Other information"}</h4>
+                {section.entries.filter(entry => Object.values(entry).some(Boolean))
+                  .map(entry => <div className="master-cv-sheet-entry" key={entry.id}>
+                    {entry.title ? <strong>{entry.title}</strong> : null}
+                    {[entry.organization, entry.period, entry.location].filter(Boolean).length
+                      ? <p className="master-cv-sheet-meta">
+                        {[entry.organization, entry.period, entry.location]
+                          .filter(Boolean).join(" · ")}</p> : null}
+                    {entry.details ? <p>{entry.details}</p> : null}
+                  </div>)}
+              </section>)}
+              {formattedCV.importedText ? <section className="master-cv-sheet-section">
+                <h4>Imported source text · review before exporting</h4>
+                <pre>{formattedCV.importedText}</pre>
+              </section> : null}
+            </article> : <pre>{text || "Your CV will appear here as you write."}</pre>}
           </div>
           <DocumentCoach kind="master_cv" text={text} />
         </div>

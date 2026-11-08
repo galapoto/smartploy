@@ -771,3 +771,97 @@ describe("SP96: the applicant has one obvious next action at each gate", () => {
     expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
   });
 });
+
+
+describe("SP101: CV replacement safely pauses application preparation", () => {
+  it("disables old-job drafting and clears focused selection while replacement runs", async () => {
+    const p = { ...props(), mode: "assisted" as const };
+    const view = render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[0]);
+    expect(screen.getByRole("button", { name: /prepare CV & application/i })).toBeTruthy();
+
+    view.rerender(<ApplicationJourney {...p} uploading />);
+    expect(screen.getByText(/CV update in progress/i)).toBeTruthy();
+    expect((screen.getByRole("button", { name: /apply with AI help/i }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
+    // The old matching rows are removed entirely during a CV mutation.
+    expect(screen.queryByRole("button", { name: /choose this job/i })).toBeNull();
+    expect(screen.getByText(/Updating your CV. Current job matches will refresh/)).toBeTruthy();
+    expect(p.onPrepare).not.toHaveBeenCalled();
+    view.rerender(<ApplicationJourney {...p} uploading={false}/>);
+    expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
+    expect(p.onPrepare).not.toHaveBeenCalled();
+  });
+
+  it("stops remaining AutoApply jobs as soon as a replacement starts", async () => {
+    let finish!: () => void;
+    const outstanding = new Promise<void>((resolve) => { finish = resolve; });
+    let stop: (() => boolean) | undefined;
+    const onPrepareSelected = vi.fn(async (keys: string[],
+      _onProgress: (completed: number, total: number) => void,
+      shouldStop?: () => boolean): Promise<AutoApplyBatchOutcome> => {
+      stop = shouldStop;
+      await outstanding;
+      return { preparedKeys: keys, failedKeys: [],
+        agentsActive: keys.length, agentsPaused: 0,
+        agentsClosed: 0, agentsUnavailable: 0 };
+    });
+    const p = { ...props(), mode: "automatic" as const, onPrepareSelected };
+    const view = render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getByRole("button", { name: /Select 1 CV-title matched job/i }));
+    fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
+    await waitFor(() => expect(onPrepareSelected).toHaveBeenCalledOnce());
+    expect(stop?.()).toBe(false);
+
+    view.rerender(<ApplicationJourney {...p} uploading />);
+    expect(stop?.()).toBe(true);
+    expect(screen.queryByRole("button", { name: /prepare applications & start agents/i })).toBeNull();
+    expect(screen.getByText(/Updating your CV. Current job matches will refresh/)).toBeTruthy();
+    finish();
+    await waitFor(() => expect(onPrepareSelected).toHaveBeenCalledTimes(1));
+  });
+});
+
+
+describe("SP103 no stale matches during CV mutation", () => {
+  it("clears older CV results during editing and refetches only once the new CV is ready", async () => {
+    const p = props();
+    const view = render(<ApplicationJourney {...p}/>);
+    expect(await screen.findByText("IT-suunnittelija")).toBeTruthy();
+    expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
+    view.rerender(<ApplicationJourney {...p} uploading/>);
+    expect(await screen.findByText(/Updating your CV. Current job matches will refresh/)).toBeTruthy();
+    expect(screen.queryByText("IT-suunnittelija")).toBeNull();
+    expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
+    view.rerender(<ApplicationJourney {...p} cv={{
+      present: true, filename: "Edited.pdf", sha256: "edited-cv",
+    }} uploading={false}/>);
+    await waitFor(() => expect(api.getCVJobMatches).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("IT-suunnittelija")).toBeTruthy();
+  });
+
+  it("never begins a read-only match while the page mounts during an active CV write", async () => {
+    render(<ApplicationJourney {...props()} uploading/>);
+    expect(screen.getByText(/Updating your CV. Current job matches will refresh/)).toBeTruthy();
+    expect(api.getCVJobMatches).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("SP120: search missing a private employer no longer dead-ends the applicant", () => {
+  it("offers the exact add-and-start escape hatch on empty Assisted CV results", async () => {
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, recommended: [], other_jobs: [], current_jobs_count: 0, recommended_count: 0,
+    });
+    const onAddPrivateJob = vi.fn();
+    render(<ApplicationJourney {...props()} mode="assisted" onAddPrivateJob={onAddPrivateJob}/>);
+    await screen.findByRole("heading", { name: "Jobs from your CV" });
+    expect(screen.getByText(/Can't find the employer's job in these results/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Add employer link & prepare application/i }));
+    expect(onAddPrivateJob).toHaveBeenCalledOnce();
+    expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
+  });
+});

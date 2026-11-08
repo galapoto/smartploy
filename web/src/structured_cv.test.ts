@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cvHasApplicantContent, emptyCVSection, emptyStructuredCV,
   parseStructuredCV, renderStructuredCV, structuredFromSource,
+  draftStructuredCVFromApprovedFacts,
 } from "./structured_cv";
 
 describe("SP80 structured CV text fidelity and safe conversion", () => {
@@ -116,4 +117,88 @@ describe("SP80 structured CV text fidelity and safe conversion", () => {
     expect(output).toContain("Used Python");
     expect(parseStructuredCV(output)?.sections[0].entries).toHaveLength(1);
   });
+});
+
+
+describe("SP133 source-faithful profile-to-CV draft", () => {
+  it("includes only approved facts in an editable CV without inventing achievements", () => {
+    const rows = [
+      {fact_type: "identity", value: "Approved Applicant", approved: true},
+      {fact_type: "skill", value: "Python", approved: true},
+      {fact_type: "skill", value: "SQL", approved: true},
+      {fact_type: "experience", value: "QA testing at Example Oy, 2025", approved: true},
+      {fact_type: "education", value: "BEng Environmental Engineering", approved: true},
+      {fact_type: "project", value: "Reporting automation pilot", approved: true},
+      {fact_type: "contact", value: "approved@example.invalid", approved: true},
+      {fact_type: "location", value: "Helsinki", approved: true},
+      {fact_type: "skill", value: "Unapproved CISO certification", approved: false},
+      {fact_type: "work_authorization", value: "Do not publish visa status", approved: true},
+    ];
+    const result = draftStructuredCVFromApprovedFacts(rows);
+    const doc = result.model;
+    expect(doc.name).toBe("Approved Applicant");
+    expect(doc.email).toBe("approved@example.invalid");
+    expect(doc.location).toBe("Helsinki");
+    expect(doc.summary).toContain("Python · SQL");
+    expect(doc.sections.map(section => section.kind))
+      .toEqual(["experience", "education", "projects", "skills"]);
+    const text = renderStructuredCV(doc);
+    expect(text).toContain("QA testing at Example Oy, 2025");
+    expect(text).toContain("BEng Environmental Engineering");
+    expect(text).toContain("Reporting automation pilot");
+    expect(text).not.toContain("Unapproved CISO");
+    expect(text).not.toContain("Do not publish visa status");
+    expect(text).not.toMatch(/leadership|99%|10 years/i);
+    expect(result.included).toBe(8);
+    expect(result.skipped).toBe(1);
+    expect(result.missingName).toBe(false);
+    expect(parseStructuredCV(text)?.sections[0].entries[0].title)
+      .toBe("QA testing at Example Oy, 2025");
+    expect(rows[0].value).toBe("Approved Applicant"); // input immutable
+  });
+
+  it("fails closed on ambiguous identity and ignores unapproved contact and claims", () => {
+    const result = draftStructuredCVFromApprovedFacts([
+      {fact_type: "identity", value: "First Name", approved: true},
+      {fact_type: "identity", value: "Different Name", approved: true},
+      {fact_type: "contact", value: "unapproved@example.invalid", approved: false},
+      {fact_type: "skill", value: "Power BI", approved: true},
+      {fact_type: "skill", value: "Power BI", approved: true},
+    ]);
+    expect(result.model.name).toBe("");
+    expect(result.model.email).toBe("");
+    expect(result.model.sections[0].entries).toHaveLength(1);
+    expect(result.missingName).toBe(true);
+    expect(cvHasApplicantContent(result.model)).toBe(false);
+    expect(result.skipped).toBe(2);
+  });
+  it("keeps long and multiline approved career evidence readable without invented titles", () => {
+    const longExperience = "Built a reporting automation workflow for internal analysts using Python and SQL, with a dashboard review stage and documented data quality checks.";
+    const multilineProject = "Reporting pilot\nBuilt a Power BI dashboard from approved source data.\nReviewed the results with stakeholders.";
+    const generated = draftStructuredCVFromApprovedFacts([
+      {fact_type: "identity", value: "Test Applicant", approved: true},
+      {fact_type: "experience", value: longExperience, approved: true},
+      {fact_type: "project", value: multilineProject, approved: true},
+      {fact_type: "skill", value: "Python", approved: true},
+      {fact_type: "experience", value: "Invented senior management", approved: false},
+    ]);
+    const work = generated.model.sections.find(section => section.kind === "experience")!.entries[0];
+    const project = generated.model.sections.find(section => section.kind === "projects")!.entries[0];
+    expect(work.title).toBe("");
+    expect(work.details).toBe(longExperience);
+    expect(project.title).toBe("Reporting pilot");
+    expect(project.details).toBe(
+      "Built a Power BI dashboard from approved source data.\nReviewed the results with stakeholders."
+    );
+    const rendered = renderStructuredCV(generated.model);
+    expect(rendered).toContain(longExperience);
+    expect(rendered).toContain("Reporting pilot");
+    expect(rendered).not.toContain("Invented senior management");
+    const roundTrip = parseStructuredCV(rendered);
+    expect(roundTrip?.sections.find(section => section.kind === "experience")?.entries[0].details)
+      .toBe(longExperience);
+    expect(roundTrip?.sections.find(section => section.kind === "projects")?.entries[0].details)
+      .toBe(project.details);
+  });
+
 });

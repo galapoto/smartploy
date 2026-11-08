@@ -25,10 +25,29 @@ export function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
     /^\/[A-Za-z0-9_-]{1,100}\/jobs\/[0-9]{1,20}\/?$/u.test(intended.pathname) &&
     here.pathname.replace(/\/+$/, "") === intended.pathname.replace(/\/+$/, "") &&
     !here.search && !intended.search && !here.hash && !intended.hash;
+  const talentAdore = here.hostname === "ats.talentadore.com" &&
+    intended.hostname === "ats.talentadore.com" &&
+    /^\/apply\/[A-Za-z0-9_-]{1,120}\/[A-Za-z0-9_-]{5,30}\/?$/u.test(intended.pathname) &&
+    here.pathname.replace(/\/+$/, "") === intended.pathname.replace(/\/+$/, "") &&
+    !here.search && !intended.search && !here.hash && !intended.hash;
+  // Standalone injected function: same safe public-origin rule as upload.mjs.
+  const strict = ["jobs.lever.co", "jobs.eu.lever.co", "jobs.ashbyhq.com",
+    ...ghHosts, "ats.talentadore.com"];
+  const approvedHost = intended.hostname;
+  const generic = !strict.includes(approvedHost) &&
+    here.origin === intended.origin && here.hostname === approvedHost &&
+    typeof approvedUrl === "string" && approvedUrl.length <= 1500 &&
+    !/[\\\u0000-\u0020\u007f]/u.test(approvedUrl) &&
+    !/[\\\u0000-\u0020\u007f]/u.test(location.href) &&
+    /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$/i.test(approvedHost) &&
+    !/(?:^|\.)(?:localhost|local|internal|test|invalid|example|onion|lan|home|intranet)$/i.test(approvedHost) &&
+    (intended.pathname !== "/" || intended.search.length > 0) &&
+    here.search.length <= 800 && intended.search.length <= 800 &&
+    !here.hash && !intended.hash;
   if (here.protocol !== "https:" || intended.protocol !== "https:" ||
       (here.origin !== intended.origin && !greenhouse) ||
       here.username || here.password || intended.username || intended.password ||
-      here.port || intended.port || !(lever || ashby || greenhouse) ||
+      here.port || intended.port || !(lever || ashby || greenhouse || talentAdore || generic) ||
       (typeof window !== "undefined" && window.top !== window.self) ||
       location.href !== inspectedUrl) {
     return stop("The employer or application form changed.");
