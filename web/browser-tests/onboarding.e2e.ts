@@ -647,7 +647,7 @@ test("SP93 production build shows all three CV-locked methods with the full side
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
-  const logo = page.locator(".sp99-identity .sp99-identity-mark");
+  const logo = page.locator(".sidebar .site-brand-mark");
   // Home still exposes its real browsing entry and result area on desktop.
   // Job results themselves depend on explicitly saved search preferences.
   await expect(page.locator(".sp126-job-results")).toBeVisible();
@@ -1094,14 +1094,15 @@ test("SP125 career banner and complete logo preserve the actionable CV flow", as
   await expect(panorama.getByRole("heading", {
     name: "Find your next role. Apply with confidence.",
   })).toBeVisible();
-  const fullLogo = page.getByRole("group", { name: "SmartPloy complete page logo" });
+  const fullLogo = page.locator(".sidebar .site-brand");
   await expect(fullLogo).toBeVisible();
-  const brandMark = fullLogo.locator(".sp99-identity-mark");
+  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeHidden();
+  const brandMark = fullLogo.locator(".site-brand-mark");
   await expect(brandMark).toBeVisible();
   const logoRect = await brandMark.boundingBox();
-  expect(logoRect?.width).toBeGreaterThanOrEqual(48);
-  expect(logoRect?.height).toBeGreaterThanOrEqual(48);
-  const pageLogo = fullLogo.locator(".sp99-identity-text strong");
+  expect(logoRect?.width).toBeGreaterThanOrEqual(24);
+  expect(logoRect?.height).toBeGreaterThanOrEqual(24);
+  const pageLogo = fullLogo.locator("strong").first();
   await expect(pageLogo).toHaveText("SmartPloy");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
@@ -1123,7 +1124,8 @@ test("SP99 dark/light mode is usable, persists after reload, and does not remove
   const darkSurface = await panel.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(darkSurface).not.toBe(lightSurface);
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
-  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeVisible();
+  await expect(page.locator(".sidebar .site-brand-mark")).toBeVisible();
+  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeHidden();
   await evidence(page, "sp125-work-hero-cv-first-dark.png");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
