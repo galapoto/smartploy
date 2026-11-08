@@ -4,6 +4,8 @@ Binding contract: [SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md](SMARTPLOY_V4_PRODU
 
 **Dated execution board:** [EXECUTION_SCHEDULE_20261107.md](EXECUTION_SCHEDULE_20261107.md) tracks immediate next actions, 7–14 November target windows, six role-based lanes, PR/CI baselines, mandatory live-user evidence and release holds. This is a scheduling record, not proof of deployment or an automated background worker.
 
+**Actual-user outcomes and evidence (live-only ticks):** [LIVE_USER_OUTCOME_CHECKLIST.md](LIVE_USER_OUTCOME_CHECKLIST.md). **Approved server release command:** [APPROVED_RELEASE_COMMANDS.md](APPROVED_RELEASE_COMMANDS.md). Implementations must emit a run receipt and cannot mark a target done merely because code is merged or CI is green.
+
 ## Day-zero work (in dependency order)
 
 1. Reconcile exact main, integration, deployed UI and API; do not pretend the main branch is production.
