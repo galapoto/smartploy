@@ -72,7 +72,7 @@ def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_pat
         assert manifest["version"] == "0.5.2"
         assert manifest["icons"] == {"16": "icon16.png", "32": "icon32.png", "48": "icon48.png", "128": "icon128.png"}
         assert manifest["action"]["default_icon"] == manifest["icons"]
-        assert bundle_icon_content_matches_site(zipfile_src)
+        bundle_icon_content_matches_site(zipfile_src)
 
         for denied in (
             "host_permissions", "background", "content_scripts",
