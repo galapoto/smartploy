@@ -647,11 +647,17 @@ test("SP93 production build shows all three CV-locked methods with the full side
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  // Empty CV-first Home is intentionally one focused task, not a dashboard
+  // of zero-value cards; Jobs/Applications/Profile remain reachable.
+  await expect(page.locator(".sp126-dashboard-layout.sp-home-setup")).toBeVisible();
+  await expect(page.locator(".sp126-dashboard-aside")).toBeHidden();
+  await expect(page.locator(".sp126-job-results")).toBeHidden();
+  await expect(page.locator(".sp126-dashboard-main > .stats-grid")).toBeHidden();
   const logo = page.locator(".sidebar .site-brand-mark");
   // Home still exposes its real browsing entry and result area on desktop.
   // Job results themselves depend on explicitly saved search preferences.
-  await expect(page.locator(".sp126-job-results")).toBeVisible();
   await expect(page.getByRole("button", { name: /Just find jobs/i })).toBeVisible();
+  await expect(page.locator(".sp126-dashboard-layout.sp-home-setup .sp126-job-results")).toBeHidden();
   await expect(logo).toBeVisible();
   const bounds = await logo.boundingBox();
   expect(bounds?.width).toBeGreaterThan(20);
