@@ -69,9 +69,10 @@ def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_pat
         assert manifest["manifest_version"] == 3
         assert manifest["permissions"] == ["activeTab", "scripting", "storage"]
         assert manifest["action"]["default_popup"] == "popup.html"
-        assert manifest["version"] == "0.5.2"
+        assert manifest["version"] == "0.5.3"
         assert manifest["icons"] == {"16": "icon16.png", "32": "icon32.png", "48": "icon48.png", "128": "icon128.png"}
         assert manifest["action"]["default_icon"] == manifest["icons"]
+        assert packager._valid_png(zipfile_src.read("icon128.png"), 128)
         bundle_icon_content_matches_site(zipfile_src)
 
         for denied in (
@@ -110,7 +111,7 @@ def test_sp44_package_cli_produces_verified_output_without_network(tmp_path):
 
 @pytest.mark.parametrize("violation", [
     "host_permission", "background", "remote_import", "missing_import",
-    "symlink", "unapproved_popup_asset", "logo_mismatch",
+    "symlink", "unapproved_popup_asset", "logo_mismatch", "broken_icon128",
 ])
 def test_sp44_distribution_fails_closed_on_unreviewed_extension_change(
     tmp_path, monkeypatch, violation,
@@ -139,6 +140,9 @@ def test_sp44_distribution_fails_closed_on_unreviewed_extension_change(
     elif violation == "symlink":
         (scratch / "popup.css").unlink()
         (scratch / "popup.css").symlink_to(scratch / "logic.mjs")
+    elif violation == "broken_icon128":
+        icon = scratch / "icon128.png"
+        icon.write_bytes(icon.read_bytes()[:24])
     elif violation == "logo_mismatch":
         (scratch / "smartploy-mark-v2.svg").write_text("<svg/>", encoding="utf-8")
     elif violation == "unapproved_popup_asset":

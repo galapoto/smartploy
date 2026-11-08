@@ -38,6 +38,42 @@ MODULE_IMPORT = re.compile(
 HTML_ASSET = re.compile(r"""(?:src|href)=["']([^"']+)["']""")
 
 
+def _valid_png(data: bytes, expected_size: int) -> bool:
+    """Reject corrupt image bytes: a PNG signature alone is insufficient."""
+    import zlib
+
+    if data[:8] != b"\\x89PNG\\r\\n\\x1a\\n":
+        return False
+    index, width, height, idat, ended = 8, None, None, [], False
+    try:
+        while index + 12 <= len(data):
+            n = int.from_bytes(data[index:index + 4], "big")
+            kind = data[index + 4:index + 8]
+            start, stop = index + 8, index + 8 + n
+            if n > 10_000_000 or stop + 4 > len(data):
+                return False
+            chunk = data[start:stop]
+            crc = int.from_bytes(data[stop:stop + 4], "big")
+            if zlib.crc32(kind + chunk) != crc:
+                return False
+            if kind == b"IHDR":
+                width = int.from_bytes(chunk[:4], "big")
+                height = int.from_bytes(chunk[4:8], "big")
+            elif kind == b"IDAT":
+                idat.append(chunk)
+            elif kind == b"IEND":
+                ended = True
+                if stop + 4 != len(data):
+                    return False
+                break
+            index = stop + 4
+        if not ended or width != expected_size or height != expected_size or not idat:
+            return False
+        return bool(zlib.decompress(b"".join(idat)))
+    except (ValueError, OverflowError, zlib.error):
+        return False
+
+
 def reviewed_files() -> tuple[dict[str, bytes], str]:
     manifest_path = SOURCE / "manifest.json"
     if manifest_path.is_symlink():
@@ -70,8 +106,8 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
         icon = files[f"icon{size}.png"]
         if len(icon) < 100 or not icon.startswith(b"\x89PNG\r\n\x1a\n") or int.from_bytes(icon[16:20], "big") != size or int.from_bytes(icon[20:24], "big") != size:
             raise ValueError(f"The reviewed extension icon{size}.png is not a {size}x{size} PNG")
-    if len(files["icon128.png"]) < 100 or not files["icon128.png"].startswith(b"\x89PNG\r\n\x1a\n"):
-        raise ValueError("The reviewed extension icon128.png is not a PNG")
+    if not _valid_png(files["icon128.png"], 128):
+        raise ValueError("The reviewed extension icon128.png failed PNG integrity checks")
     # Keep the extension lockup identical to the actual SmartPloy website source.
     if files["smartploy-mark-v2.svg"] != (ROOT / "web" / "public" / "smartploy-mark-v2.svg").read_bytes():
         raise ValueError("Extension mark differs from the approved SmartPloy website mark")
@@ -106,7 +142,7 @@ def make_zip(output: Path) -> str:
     files, version = reviewed_files()
     output.parent.mkdir(parents=True, exist_ok=True)
     text = (
-        "SmartPloy Apply Companion v" + version + "\n\n"
+        "SmartPloy Apply Companion v" + version + " — Job intelligence\n\n"
         "1. Extract this ZIP to a local folder on your own desktop computer.\n"
         "2. In Chrome/Chromium open chrome://extensions and enable Developer mode.\n"
         "3. Choose Load unpacked, then select the EXTRACTED folder containing manifest.json.\n"
