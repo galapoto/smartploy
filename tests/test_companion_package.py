@@ -38,13 +38,15 @@ def bundle_icon_content_matches_site(bundle, packager):
         assert packager._valid_png(bundle.read(f"icon{size}.png"), size)
 
 
+def png_chunk(kind: bytes, payload: bytes) -> bytes:
+    return (len(payload).to_bytes(4, "big") + kind + payload +
+            zlib.crc32(kind + payload).to_bytes(4, "big"))
+
+
 def png_with_short_raster(original: bytes) -> bytes:
     """Make a CRC-valid, size-correct PNG with an intentionally incomplete image."""
-    def chunk(kind: bytes, payload: bytes) -> bytes:
-        return (len(payload).to_bytes(4, "big") + kind + payload +
-                zlib.crc32(kind + payload).to_bytes(4, "big"))
-    return (original[:33] + chunk(b"IDAT", zlib.compress(b"\x00")) +
-            chunk(b"IEND", b""))
+    return (original[:33] + png_chunk(b"IDAT", zlib.compress(b"\x00")) +
+            png_chunk(b"IEND", b""))
 
 
 def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_path):
@@ -120,6 +122,7 @@ def test_sp44_package_cli_produces_verified_output_without_network(tmp_path):
     "host_permission", "background", "remote_import", "missing_import",
     "symlink", "unapproved_popup_asset", "logo_mismatch", "broken_icon128",
     "broken_icon32", "bad_crc_icon16", "short_raster_icon48", "short_raster_icon128",
+    "invalid_trns_icon16", "unexpected_srgb_icon48", "invalid_trns_icon128",
 ])
 def test_sp44_distribution_fails_closed_on_unreviewed_extension_change(
     tmp_path, monkeypatch, violation,
@@ -161,6 +164,13 @@ def test_sp44_distribution_fails_closed_on_unreviewed_extension_change(
         size = 48 if violation.endswith("48") else 128
         icon = scratch / f"icon{size}.png"
         icon.write_bytes(png_with_short_raster(icon.read_bytes()))
+    elif violation in ("invalid_trns_icon16", "unexpected_srgb_icon48", "invalid_trns_icon128"):
+        size = 16 if violation.endswith("16") else 48 if violation.endswith("48") else 128
+        icon = scratch / f"icon{size}.png"
+        original = icon.read_bytes()
+        kind = b"sRGB" if size == 48 else b"tRNS"
+        payload = b"\x00" if size == 48 else b"\x00\x00"
+        icon.write_bytes(original[:33] + png_chunk(kind, payload) + original[33:])
     elif violation == "logo_mismatch":
         (scratch / "smartploy-mark-v2.svg").write_text("<svg/>", encoding="utf-8")
     elif violation == "unapproved_popup_asset":
