@@ -122,6 +122,20 @@ jobs:
       - name: Web build
         working-directory: web
         run: npm run build
+      - name: Prepare reviewed Chrome Web Store ZIP (not published)
+        run: |
+          python3 web/scripts/package_companion.py --store-output "$RUNNER_TEMP/smartploy-apply-companion-store.zip"
+          cd "$RUNNER_TEMP"
+          sha256sum --check smartploy-apply-companion-store.zip.sha256
+      - name: Save Web Store candidate for independent review
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-chrome-web-store-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/smartploy-apply-companion-store.zip
+            ${{ runner.temp }}/smartploy-apply-companion-store.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
 
   browser:
     # Playwright 1.55.1 does not install its pinned Chromium on the hosted

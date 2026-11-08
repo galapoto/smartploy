@@ -89,9 +89,16 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
     return files, str(manifest["version"])
 
 
+def _write_reviewed_archive(output: Path, entries: dict[str, bytes]) -> str:
+    """Reuse one atomic, reproducible ZIP writer for both channels."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    digest = _write_reviewed_archive(output, entries)
+
+    return digest
+
+
 def make_zip(output: Path) -> str:
     files, version = reviewed_files()
-    output.parent.mkdir(parents=True, exist_ok=True)
     text = (
         "SmartPloy Apply Companion v" + version + "\n\n"
         "1. Extract this ZIP to a local folder on your own desktop computer.\n"
@@ -140,12 +147,32 @@ def make_zip(output: Path) -> str:
     return digest
 
 
+def make_store_zip(output: Path) -> str:
+    """Review-only Chrome Web Store ZIP from exactly the approved MV3 assets.
+
+    Store signing, publishing and updates require separate owner authorization
+    and Web Store review. Neither public web assets nor credentials are touched.
+    """
+    files, _version = reviewed_files()
+    digest = _write_reviewed_archive(output, files)
+    output.with_name(output.name + ".sha256").write_text(
+        f"{digest}  {output.name}\n", encoding="ascii",
+    )
+    return digest
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build reviewed MV3 companion ZIP")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--store-output", type=Path, default=None,
+                        help="Review-only Chrome Web Store ZIP; never publish")
     args = parser.parse_args()
-    digest = make_zip(args.output)
-    print(f"SmartPloy reviewed companion: {args.output.name} sha256={digest}")
+    if args.store_output is not None:
+        digest = make_store_zip(args.store_output)
+        print(f"SmartPloy reviewed Web Store draft: {args.store_output.name} sha256={digest}")
+    else:
+        digest = make_zip(args.output)
+        print(f"SmartPloy reviewed companion: {args.output.name} sha256={digest}")
 
 
 if __name__ == "__main__":
