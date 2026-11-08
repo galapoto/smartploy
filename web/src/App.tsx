@@ -156,6 +156,71 @@ function FinlandPageIdentity({ compact = false }: { compact?: boolean }) {
   </div>;
 }
 
+/**
+ * A lightweight, non-private shell is immediately available while the
+ * signed-in API identity is verified. Never guess applicant data or mount
+ * private workspace tools before the server confirms the account.
+ *
+ * Structural reference: Komplyint's persistent mobile brand / navigation
+ * hierarchy. No Komplyint source or assets are copied.
+ */
+function StartupShell(props: {
+  page: Page;
+  loading: boolean;
+  error: string;
+  theme: "light" | "dark";
+  onTheme: () => void;
+  onNavigate: (page: Page) => void;
+  onRetry: () => void;
+}) {
+  const requested = NAV.find((item) => item.id === props.page)?.label ?? "Start here";
+  return <div className="sp-boot">
+    <a className="skip-to-content" href="#smartploy-main">Skip to main content</a>
+    <header className="sp-boot-header">
+      <button className="sp-boot-brand" type="button"
+        aria-label="Go to start page" onClick={() => props.onNavigate("dashboard")}>
+        <BrandMark className="sp-boot-logo" />
+        <span><strong>SmartPloy</strong><small>Job intelligence for Finland</small></span>
+      </button>
+      <button className="sp-boot-theme" type="button" onClick={props.onTheme}
+        aria-label={props.theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+        {props.theme === "dark" ? <Sun size={19} aria-hidden="true" /> :
+          <Moon size={19} aria-hidden="true" />}
+      </button>
+    </header>
+    <main id="smartploy-main" className="sp-boot-main" tabIndex={-1}>
+      <nav className="sp-boot-nav" aria-label="Workspace navigation while connecting">
+        {NAV.slice(0, 5).map((item) => {
+          const Icon = item.icon;
+          return <button type="button" key={item.id}
+            aria-current={props.page === item.id ? "page" : undefined}
+            className={cx("sp-boot-nav-item", props.page === item.id && "active")}
+            onClick={() => props.onNavigate(item.id)}>
+            <Icon size={18} aria-hidden="true" /><span>{item.label}</span>
+          </button>;
+        })}
+      </nav>
+      <section className="sp-boot-workspace" aria-labelledby="sp-boot-title">
+        <p className="sp-boot-eyebrow">YOUR CAREER WORKSPACE</p>
+        <h1 id="sp-boot-title">{props.loading
+          ? "Connecting to your workspace" : "SmartPloy isn't available"}</h1>
+        <p role={props.loading ? "status" : "alert"}>{props.loading
+          ? "Checking your secure session and current jobs."
+          : props.error || "The workspace could not be loaded."}</p>
+        {props.loading ? <div className="sp-boot-progress" role="progressbar"
+          aria-label="Workspace connection in progress" /> : null}
+        <div className="sp-boot-actions">
+          <span>{requested} {props.loading ? "will open when ready" : "is temporarily unavailable"}</span>
+          <button className="outline-btn" type="button" onClick={props.onRetry}>
+            <RefreshCw size={16} aria-hidden="true" />
+            {props.loading ? "Retry connection" : "Try again"}
+          </button>
+        </div>
+      </section>
+    </main>
+  </div>;
+}
+
 export default function App() {
   const [theme, toggleTheme] = useSmartployTheme();
   const [page, setPage] = useState<Page>("dashboard");
@@ -195,6 +260,10 @@ export default function App() {
   const [cvPreview, setCVPreview] = useState(false);
   const [jobDialog, setJobDialog] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuPanelRef = useRef<HTMLElement>(null);
+  const mobileMenuFocusMainRef = useRef(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return window.localStorage.getItem("smartploy-sidebar-compact-v1") === "true"; }
     catch { return false; }
@@ -205,6 +274,65 @@ export default function App() {
     catch { /* Browsers with disabled storage can still collapse this session. */ }
     return next;
   });
+
+  // Reuse SP129's first-party focus/scroll rules: the responsive navigation
+  // is a true dialog on phones and at zoomed desktop widths.
+  useEffect(() => {
+    if (!mobileNav || window.innerWidth > 850) return;
+    const panel = mobileMenuPanelRef.current;
+    const priorOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    mobileMenuCloseRef.current?.focus();
+    const focusable = () => Array.from(
+      panel?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+      ) ?? []
+    ).filter((element) => element.getClientRects().length > 0 &&
+      getComputedStyle(element).visibility !== "hidden");
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileNav(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = items[0], last = items[items.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !panel?.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !panel?.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    const onResize = () => {
+      if (window.innerWidth > 850) {
+        mobileMenuFocusMainRef.current = true;
+        setMobileNav(false);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onResize);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onResize);
+      document.body.style.overflow = priorOverflow;
+      if (mobileMenuFocusMainRef.current) {
+        mobileMenuFocusMainRef.current = false;
+        document.getElementById("smartploy-main")?.focus();
+      } else {
+        mobileMenuTriggerRef.current?.focus();
+      }
+    };
+  }, [mobileNav]);
+
   const [newFactType, setNewFactType] = useState("skill");
   const [newFactValue, setNewFactValue] = useState("");
   const [confirmFact, setConfirmFact] = useState(false);
@@ -311,6 +439,17 @@ export default function App() {
     if (savingSearchPreferences.current || savingAIConsent.current) return;
     const generation = ++loadGeneration.current;
     if (quiet) setRefreshing(true); else setLoading(true);
+    // A stalled session/search request must become an actionable error, not
+    // an endless loading screen. Old responses are invalidated before reset.
+    // Background refreshes leave the already mounted shell in place.
+    const connectionDeadline = quiet ? null : window.setTimeout(() => {
+      if (generation !== loadGeneration.current) return;
+      ++loadGeneration.current;
+      lastSessionIdentity.current = null;
+      clearPrivateWorkspace();
+      setLoading(false); setRefreshing(false);
+      setError("Workspace connection timed out. Check your connection and try again.");
+    }, 18000);
 
     try {
       // Establish a server-issued account identity BEFORE requesting private
@@ -348,6 +487,9 @@ export default function App() {
         throw new Error("Your signed-in account changed during refresh. Reload this workspace.");
       }
       lastSessionIdentity.current = identity;
+      // The essential account-bound workspace has arrived. Optional CV, AI
+      // and application reads must not keep the startup timeout active.
+      if (connectionDeadline !== null) window.clearTimeout(connectionDeadline);
       setDashboard(board); setPreferences(prefs); setDiscovery(results);
       setSession(verifiedWho);
       setLoading(false); setRefreshing(false); setError("");
@@ -394,6 +536,7 @@ export default function App() {
         setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
       }
     } finally {
+      if (connectionDeadline !== null) window.clearTimeout(connectionDeadline);
       if (generation === loadGeneration.current) {
         setLoading(false); setRefreshing(false);
       }
@@ -406,7 +549,10 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [load]);
 
-  const navigate = (target: Page) => { setPage(target); setMobileNav(false); setNotice(""); };
+  const navigate = (target: Page) => {
+    if (mobileNav) mobileMenuFocusMainRef.current = true;
+    setPage(target); setMobileNav(false); setNotice("");
+  };
 
   function startApplyFlow(chosen: ApplicationFlowMode, jobKey = "") {
     // A job-card shortcut never skips the CV-first gate. Creating a draft
@@ -1001,8 +1147,11 @@ export default function App() {
     }
   }
 
-  if (loading && !dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><span className="spinner" /><p>Preparing your workspace…</p></div>;
-  if (!dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><h1>SmartPloy isn't available</h1><p>{error}</p><button className="primary-btn" onClick={() => void load()} type="button">Try again</button></div>;
+  // Never hide navigation behind a rotating fullscreen loader. No applicant
+  // details are shown until the signed-in account is verified by the server.
+  if (!dashboard) return <StartupShell page={page} loading={loading}
+    error={error} theme={theme} onTheme={toggleTheme}
+    onNavigate={navigate} onRetry={() => void load()} />;
 
   const accountViewKey = session?.user_id || session?.profile_id || session?.subject_fingerprint || "unidentified";
   const approved = facts.filter((item) => item.approved);
@@ -1192,7 +1341,10 @@ export default function App() {
     <a className="skip-to-content" href="#smartploy-main">Skip to main content</a>
     <input ref={uploadRef} type="file" className="visually-hidden" aria-label="Select CV to upload" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => void onCVUpload(event)} />
     <button className={cx("sidebar-scrim", mobileNav && "visible")} type="button" onClick={() => setMobileNav(false)} aria-label="Close navigation" />
-    <aside id="smartploy-sidebar" aria-label="SmartPloy sidebar" className={cx("sidebar", mobileNav && "open")}>
+    <aside ref={mobileMenuPanelRef} id="smartploy-sidebar"
+      aria-label="SmartPloy sidebar" role={mobileNav ? "dialog" : undefined}
+      aria-modal={mobileNav ? "true" : undefined}
+      className={cx("sidebar", mobileNav && "open")}>
       <button className="site-brand" type="button" onClick={() => navigate("dashboard")} aria-label="SmartPloy dashboard">
         <BrandMark className="site-brand-mark" /><span><strong>SmartPloy</strong><small>Job intelligence for Finland</small></span>
       </button>
@@ -1203,7 +1355,7 @@ export default function App() {
         {sidebarCollapsed ? <PanelLeftOpen size={19} aria-hidden="true"/> :
           <PanelLeftClose size={19} aria-hidden="true"/>}
       </button>
-      <button type="button" className="sp126-mobile-close" onClick={() => setMobileNav(false)}
+      <button ref={mobileMenuCloseRef} type="button" className="sp126-mobile-close" onClick={() => setMobileNav(false)}
         aria-label="Close menu" aria-controls="smartploy-sidebar" aria-expanded={mobileNav}>
         <X size={19} aria-hidden="true"/>
       </button>
@@ -1218,7 +1370,12 @@ export default function App() {
     </aside>
     <div className="main-column">
       <header className="site-header">
-        <button className="icon-btn menu-toggle" aria-label="Open menu" aria-controls="smartploy-sidebar" aria-expanded={mobileNav} type="button" onClick={() => setMobileNav(true)}><Menu size={21} /></button>
+        <button ref={mobileMenuTriggerRef} className="icon-btn menu-toggle"
+          aria-label="Open menu" aria-controls="smartploy-sidebar" aria-expanded={mobileNav}
+          type="button" onClick={() => setMobileNav(true)}><Menu size={21} /></button>
+        <button type="button" className="sp-mobile-brand" onClick={() => navigate("dashboard")}
+          aria-label="Go to start page"><BrandMark className="sp-mobile-brand-mark" />
+          <strong>SmartPloy</strong></button>
         <div className="header-search"><Search size={19} /><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); if (event.target.value) setPage("jobs"); }} placeholder="Search jobs, companies or locations…" aria-label="Search jobs" /></div>
         <span className="header-country"><MapPin size={16} /> Finland</span>
         <div className="header-tools">
