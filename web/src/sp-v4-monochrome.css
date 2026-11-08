@@ -117,17 +117,14 @@ html[data-smartploy-theme="dark"] .sp-boot .sp-boot-progress{
   animation:none!important
 }
 /* Keep the useful job/applicant destinations, but stop duplicating their
-   entire content and redundant KPIs on the HOME surface. */
+   only repeated decorative prose on the HOME surface; keep result cards, real
+   dashboard actions and the working sidebar visible on desktop. */
 .smartploy-app .flow-start-masthead,
 .smartploy-app .sp125-career-steps,
-.smartploy-app .sp126-dashboard-aside,
-.smartploy-app .sp126-job-results,
-.smartploy-app .sp126-dashboard-main > .stats-grid,
 .smartploy-app .flow-start-method-heading .section-kicker,
 .smartploy-app .flow-start-method-heading p:last-child{
   display:none
 }
-.smartploy-app .sp126-dashboard-layout{grid-template-columns:minmax(0,1fr)}
 .smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card{
   min-height:152px;padding:15px;gap:7px
 }
