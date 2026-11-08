@@ -42,7 +42,7 @@ def _valid_png(data: bytes, expected_size: int) -> bool:
     """Reject corrupt image bytes: a PNG signature alone is insufficient."""
     import zlib
 
-    if data[:8] != b"\\x89PNG\\r\\n\\x1a\\n":
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
         return False
     index, width, height, idat, ended = 8, None, None, [], False
     try:
