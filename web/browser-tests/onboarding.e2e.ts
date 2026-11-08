@@ -1445,4 +1445,10 @@ test("SP156 Komplyint typography is self-hosted and banner has one clear heading
   expect(families.nav).toContain("Manrope");
   expect(families.loaded).toEqual([true, true, true]);
   expect(families.overflow).toBe(false);
+  // First-use light/mobile mode must never show invisible white-on-white text.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const cvAlternative = page.getByRole("button", { name: /Create CV from scratch/i });
+  await expect(cvAlternative).toBeVisible();
+  await expect(cvAlternative).toHaveCSS("color", "rgb(14, 38, 54)");
+  await expect(cvAlternative).toHaveCSS("background-color", "rgb(255, 255, 255)");
 });

@@ -335,3 +335,19 @@ html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
     width:100%;min-height:44px;
   }
 }
+
+/* SP156.2: high-contrast secondary CV action in light/mobile appearance.
+   Older SP128/126 outline-button styles left white text on white. */
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-how .outline-btn{
+  background:#fff;background-image:none;color:#0e2636;
+  border:1px solid #7894a3;box-shadow:none;
+}
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-how .outline-btn :is(svg,span){
+  color:inherit;
+}
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-how .outline-btn:hover{
+  background:#e9f8fa;border-color:#058797;color:#082d36;
+}
