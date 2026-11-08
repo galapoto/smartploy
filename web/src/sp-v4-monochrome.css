@@ -156,6 +156,17 @@ html[data-smartploy-theme="dark"] .sp-boot .sp-boot-progress{
   padding:9px 12px;margin:6px 0;background:#10212a;border-color:#29505b
 }
 .smartploy-app .sp126-dashboard-main .flow-start-method-heading{margin:12px 0 8px}
+/* New applicants need one clear task, not empty analytics and duplicate
+   "no matches" boxes. Keep each real destination in its existing navigation.
+   Once a CV or saved search preference exists, the same panels appear again. */
+.smartploy-app .sp126-dashboard-layout.sp-home-setup{
+  grid-template-columns:minmax(0,1fr)
+}
+.smartploy-app .sp126-dashboard-layout.sp-home-setup > .sp126-dashboard-aside,
+.smartploy-app .sp126-dashboard-layout.sp-home-setup > .sp126-dashboard-main > .stats-grid,
+.smartploy-app .sp126-dashboard-layout.sp-home-setup > .sp126-dashboard-main > .sp126-job-results{
+  display:none
+}
 @media(max-width:630px){
   .smartploy-app .sp125-career-cover{max-height:125px}
   .smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card{min-height:88px}
