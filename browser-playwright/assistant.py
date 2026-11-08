@@ -8,8 +8,10 @@ First-party reuse/adaptation (not a new general browser agent):
   employer hosts, ordinary-contact field matching and sensitive-field denial.
 
 The browser runs on the applicant's own computer. Only exact approved hosted
-Lever/Ashby/Greenhouse forms are supported. No file upload, submit/click,
-CAPTCHA bypass, credential collection, hidden browser or background actions.
+Lever/Ashby/Greenhouse forms are supported. The local CLI never uploads;
+the paired SP129 helper permits a single exact reviewed CV PDF attachment
+only after a separate applicant approval. No Submit/click, CAPTCHA bypass,
+credentials, hidden browser or background employer actions.
 """
 from __future__ import annotations
 
@@ -74,6 +76,7 @@ els => els.map((el, index) => {
     placeholder: el.getAttribute("placeholder") || "",
     label: label || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "",
     autocomplete: el.getAttribute("autocomplete") || "",
+    accept: el.getAttribute("accept") || "", multiple: Boolean(el.multiple),
     required: Boolean(el.required), disabled: Boolean(el.disabled),
     readonly: Boolean(el.readOnly), hasValue: Boolean(String(el.value || "").trim()),
     visible: Boolean(el.getClientRects().length),
@@ -305,6 +308,128 @@ def plan_fields(rows: list[dict[str, Any]], packet: dict[str, Any]) -> list[dict
     return [x for x in candidates if key_counts[x["key"]] == 1 and
             identity_counts[(x["row"].get("id"), x["row"].get("name"))] == 1]
 
+
+# Port the existing companion/upload.mjs chooseResumeField + validatePdf
+# into the already reused Python Playwright executor. Never infer an upload
+# grant from a matching name alone; there must be exactly one stable, visible
+# and PDF-compatible resume input on the exact reviewed ATS form.
+_CV_HINT = re.compile(
+    r"(?:^|\s)(?:cv|resume|curriculum vitae|ansioluettelo|meritforteckning)(?:\s|$)"
+)
+_NOT_CV = re.compile(
+    r"(?:^|\s)(?:cover letter|passport|photo|image|identity document|"
+    r"transcript|certificate)(?:\s|$)"
+)
+_PDF_ACCEPT = frozenset({".pdf", "application/pdf", "application/*", "*/*"})
+
+
+def choose_cv_attachment(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Adapted from SmartPloy Chrome companion chooseResumeField."""
+    if not isinstance(rows, list) or len(rows) > 250:
+        raise PacketError("Employer form is too large for reviewed attachment")
+    candidates = []
+    for row in rows:
+        if row.get("type") != "file" or row.get("tag") != "input":
+            continue
+        original = " ".join(str(row.get(k) or "") for k in ("label", "name", "id"))
+        normalized = unicodedata.normalize("NFKD", re.sub(
+            r"([a-z])([A-Z])", r"\1 \2", original
+        )).lower()
+        normalized = "".join(c for c in normalized if not unicodedata.combining(c))
+        normalized = re.sub(r"[^\w]+", " ", normalized).strip()
+        if not _CV_HINT.search(normalized):
+            continue
+        if (_NOT_CV.search(normalized) or not row.get("visible")
+                or not row.get("inForm") or row.get("disabled")
+                or row.get("readonly") or row.get("multiple")
+                or row.get("hasValue")):
+            return None  # Ambiguous/unsafe CV control: applicant must attach manually.
+        accept = str(row.get("accept") or "").strip().lower()
+        if accept and not any(part.strip() in _PDF_ACCEPT for part in accept.split(",")):
+            return None
+        if not (row.get("id") or row.get("name")):
+            return None
+        if type(row.get("index")) is not int or not 0 <= row["index"] < len(rows):
+            return None
+        candidates.append(row)
+    if len(candidates) != 1:
+        return None
+    chosen = candidates[0]
+    for other in rows:
+        if (other is not chosen and other.get("type") == "file" and
+                other.get("id") == chosen.get("id") and
+                other.get("name") == chosen.get("name")):
+            return None
+    return chosen
+
+
+def validate_reviewed_cv_pdf(data: bytes, packet: dict[str, Any]) -> None:
+    """Reuse the exact original CV SHA and PDF rules, without disk writes."""
+    validate_packet(packet)
+    if (not isinstance(data, bytes) or len(data) != packet["cv_pdf_size"]
+            or not 12 <= len(data) <= 2 * 1024 * 1024
+            or not data.startswith(b"%PDF-")
+            or b"%%EOF" not in data[-2048:]):
+        raise PacketError("The local CV is not the exact reviewed PDF")
+    if sha256(data).hexdigest() != packet["cv_pdf_sha256"]:
+        raise PacketError("The CV PDF does not match the saved reviewed revision")
+
+
+def attach_reviewed_cv_pdf(
+    page: Any, packet: dict[str, Any], expected_rows: list[dict[str, Any]],
+    reviewed_file_field: dict[str, Any], pdf: bytes, expected_url: str,
+) -> dict[str, Any]:
+    """One local FileList selection; employer may upload on input/change.
+
+    Caller must reserve the one-use attachment attempt before invoking this.
+    NEVER clicks Submit or claims an employer server accepted the upload.
+    """
+    validate_reviewed_cv_pdf(pdf, packet)
+    if page.url != expected_url or not same_reviewed_form(
+        packet["application_url"], page.url
+    ):
+        raise PacketError("The exact employer job changed before CV attachment")
+    rows = inspect_page(page)
+    identity = ("tag", "type", "id", "name", "label", "autocomplete", "accept", "multiple")
+    if len(rows) != len(expected_rows) or any(
+        any(old.get(key) != new.get(key) for key in identity)
+        for old, new in zip(expected_rows, rows)
+    ):
+        raise PacketError("Employer form fields changed; attach the CV manually")
+    current = choose_cv_attachment(rows)
+    if (current is None
+            or any(current.get(k) != reviewed_file_field.get(k)
+                   for k in ("index", *identity))
+            or current["type"] != "file"):
+        raise PacketError("The reviewed résumé upload input is unavailable")
+    for selector in _candidate_selectors(current):
+        element = page.locator(selector)
+        if element.count() != 1:
+            continue
+        # Verify the same input one final time, after all candidate queries.
+        observed = element.first.evaluate(READ_FIELDS_JS.replace(
+            "els => els.map((el, index) => {",
+            "el => [el].map((el, index) => {",
+        ))
+        if len(observed) != 1 or any(
+            observed[0].get(k) != current.get(k) for k in identity
+        ) or (observed[0].get("hasValue") or not observed[0].get("visible")
+              or not observed[0].get("inForm")):
+            raise PacketError("Employer résumé field changed during review")
+        # This actual Playwright call reuses ObumAI's live Chromium context,
+        # and follows the existing Chrome companion's exact CV-PDF policy.
+        # Does not store the CV to disk or submit the employer form.
+        element.first.set_input_files({
+            "name": "smartploy-reviewed-cv.pdf",
+            "mimeType": "application/pdf",
+            "buffer": pdf,
+        }, timeout=5000)
+        return {
+            "attached_locally": True,
+            "employer_upload_confirmed": False,
+            "submitted": False,
+        }
+    raise PacketError("No unique CV input; attach the reviewed PDF manually")
 
 def inspect_page(page: Any) -> list[dict[str, Any]]:
     return list(page.locator("input, textarea").evaluate_all(READ_FIELDS_JS))
