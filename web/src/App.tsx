@@ -367,7 +367,7 @@ export default function App() {
     setPage("dashboard"); setSearch(""); setExpandedJob("");
     setFlowMode(null); setFlowSelectedJob(""); setFlowQueueBusy(false);
     setStartSearchBusy(false); flowQueueInFlight.current = null;
-    setCVPreview(false); setJobDialog(false); setNewFactValue("");
+    setCVPreview(false); setJobDialog(false); setMobileNav(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
     setBusyCV(false); setBusyFact(""); setPreparing(""); setManualBusy(false);
     setAutoDraftBusy(false);
