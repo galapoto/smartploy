@@ -162,15 +162,58 @@ function switchableSession() {
 }
 
 describe("SP127: mobile-first persistent shell and nonblocking startup", () => {
+  it("aborts superseded private bootstrap reads on Retry and component teardown", () => {
+    const signals: AbortSignal[] = [];
+    vi.mocked(api.getSession).mockImplementation((signal) => {
+      if (signal) signals.push(signal);
+      return new Promise(() => {});
+    });
+    const view = render(<App />);
+    expect(screen.getByRole("button", { name: "Retry connection" })).toBeTruthy();
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
+    expect(signals).toHaveLength(2);
+    expect(signals[0].aborted).toBe(true);
+    expect(signals[1].aborted).toBe(false);
+    view.unmount();
+    expect(signals[1].aborted).toBe(true);
+  });
+
+  it("closes an open mobile dialog when a verified session fails", async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    try {
+      render(<App />);
+      expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+      expect(document.querySelector("#smartploy-sidebar")?.getAttribute("role")).toBe("dialog");
+      expect(document.body.style.overflow).toBe("hidden");
+      vi.mocked(api.getSession).mockRejectedValueOnce(new Error("Your session has expired"));
+      fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+      expect(await screen.findByRole("heading", { name: "SmartPloy isn't available" })).toBeTruthy();
+      await waitFor(() => expect(document.body.style.overflow).not.toBe("hidden"));
+      expect(document.querySelector("#smartploy-sidebar[role=dialog]")).toBeNull();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+      document.body.style.overflow = "";
+    }
+  });
+
   it("fails closed with a retry after 18 seconds when session never responds", async () => {
     vi.useFakeTimers();
     try {
-      vi.mocked(api.getSession).mockImplementation(() => new Promise(() => {}));
+      let timedOutSignal: AbortSignal | undefined;
+      vi.mocked(api.getSession).mockImplementation((signal) => {
+        timedOutSignal = signal;
+        return new Promise(() => {});
+      });
       render(<App />);
       expect(screen.getByRole("heading", { name: "Connecting to your workspace" })).toBeTruthy();
       await act(async () => { await vi.advanceTimersByTimeAsync(18005); });
       expect(screen.getByRole("heading", { name: "SmartPloy isn't available" })).toBeTruthy();
       expect(screen.getByText(/Workspace connection timed out/)).toBeTruthy();
+      expect(timedOutSignal?.aborted).toBe(true);
       expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
       expect(document.querySelector(".spinner")).toBeNull();
       expect(screen.queryByText("test@smartploy.invalid")).toBeNull();
