@@ -1001,7 +1001,7 @@ export default function App() {
     }
   }
 
-  if (loading && !dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><span className="spinner" /><p>Preparing your workspace…</p></div>;
+  if (loading && !dashboard) return <div className="loading-screen" role="status" aria-busy="true"><BrandMark className="loading-mark" /><p className="loading-status">Preparing your workspace…</p><div className="loading-progress-track" aria-hidden="true"><span className="loading-progress-fill" /></div></div>;
   if (!dashboard) return <div className="loading-screen"><BrandMark className="loading-mark" /><h1>SmartPloy isn't available</h1><p>{error}</p><button className="primary-btn" onClick={() => void load()} type="button">Try again</button></div>;
 
   const accountViewKey = session?.user_id || session?.profile_id || session?.subject_fingerprint || "unidentified";
@@ -1233,7 +1233,7 @@ export default function App() {
           </button>
           <a className="obumai-brand" href="https://app.obumai.com/" target="_self" title="Open ObumAI"><img src="/obumai-mark.svg" alt="" /> <strong>ObumAI</strong></a>
           <span className={cx("connection-status", obumReady ? "connected" : "disconnected")}><span />{localAI?.ready ? "Local AI ready" : health?.obumai_configured ? "ObumAI configured" : "AI optional"}</span>
-          <button className="icon-btn header-refresh" type="button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh workspace"><RefreshCw size={19} className={refreshing ? "rotate" : ""} /></button>
+          <button className="icon-btn header-refresh" type="button" onClick={() => void load(true)} disabled={refreshing} aria-label={refreshing ? "Refreshing workspace" : "Refresh workspace"}><RefreshCw size={19} /></button>
           <span className="avatar header-avatar" title={session?.email || "Your account"}>{avatar}</span>
         </div>
       </header>
