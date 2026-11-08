@@ -20,6 +20,9 @@ export default function MasterCVEditor(props: {
   onSave: (text: string, currentSha256: string) => Promise<CVEditorSaved>;
   onRestore: (digest: string, currentSha256: string) => Promise<CVEditorRestored>;
   onSaved: (cv: CVDocument) => void;
+  // Parent-level live mutation barrier; optional for standalone editor QA.
+  onWriteStarted?: () => symbol | null;
+  onWriteSettled?: (token: symbol) => void;
 }) {
   const { cv, expectedUserId, onSave, onRestore, onSaved } = props;
   const [snapshot, setSnapshot] = useState<CVEditorDocument | null>(null);
@@ -140,6 +143,11 @@ export default function MasterCVEditor(props: {
       "edited file will remain downloadable in the private version history. " +
       "No profile facts are approved and nothing is sent to an employer."
     )) return;
+    const writeToken = props.onWriteStarted?.();
+    if (writeToken === null) {
+      setError("Another CV update is already in progress. Review it before saving.");
+      return;
+    }
     inFlight.current = true;
     setSaving(true); setError(""); setNotice("");
     const token = ++requestGeneration.current;
@@ -175,6 +183,7 @@ export default function MasterCVEditor(props: {
       }
     } finally {
       inFlight.current = false;
+      if (writeToken) props.onWriteSettled?.(writeToken);
       if (token === requestGeneration.current) setSaving(false);
     }
   }
@@ -188,6 +197,11 @@ export default function MasterCVEditor(props: {
       (dirty ? "Your unsaved editor changes will be discarded. " : "") +
       "No employer will be contacted and no qualifications approved."
     )) return;
+    const writeToken = props.onWriteStarted?.();
+    if (writeToken === null) {
+      setError("Another CV update is already in progress. Review it before restoring.");
+      return;
+    }
     const current = snapshot;
     inFlight.current = true;
     setSaving(true); setError(""); setNotice("");
@@ -228,6 +242,7 @@ export default function MasterCVEditor(props: {
       }
     } finally {
       inFlight.current = false;
+      if (writeToken) props.onWriteSettled?.(writeToken);
       if (token === requestGeneration.current) setSaving(false);
     }
   }

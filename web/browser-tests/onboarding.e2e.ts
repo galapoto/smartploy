@@ -860,7 +860,7 @@ test("a same-email account change resets unsaved criteria and private CV details
     cvFilename: "PRIVATE-ACCOUNT-A.pdf",
   });
   await page.goto("/");
-  await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toBeVisible();
+  await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
   await page.getByPlaceholder(/Data analyst, Junior software tester/i).fill("UNSAVED ACCOUNT A ONLY");
@@ -881,7 +881,7 @@ test("a same-email account change resets unsaved criteria and private CV details
     .toHaveValue("Account B role");
   await page.getByRole("button", { name: "Start here", exact: true }).click();
   await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toHaveCount(0);
-  await expect(page.getByText("ACCOUNT-B.pdf")).toBeVisible();
+  await expect(page.getByText("ACCOUNT-B.pdf", { exact: true })).toBeVisible();
 });
 
 test("a delayed application-draft response is discarded after same-email account switch", async ({ page }) => {
