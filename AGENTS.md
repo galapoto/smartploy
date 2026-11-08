@@ -40,3 +40,13 @@ Prefer **action-oriented visual flows** and progressive disclosure to heavy expl
 
 Canonical: https://github.com/obumai/obum-delivery/blob/main/docs/LEAN_REA_FLOW_001_STANDARD.md
 Receipt: https://github.com/obumai/obum-delivery/blob/main/templates/LEAN_REA_FLOW_001_RUN_RECEIPT.md
+
+## GALAPOTO-INDEPENDENT-REVIEW-001 — mandatory independent-agent review assignment (8 Nov 2026)
+
+**For EVERY commit/PR/release that requires independent review, the project lead agent owns getting that review assigned in the same run.** Search capable, available, independent reviewers in this repository FIRST, then in authorized adjacent repositories under the same `galapoto/*` GitHub account. Assign an eligible reviewer instead of waiting for the owner to find one or accumulating CI-qualified work. Verify the reviewer is not the author, implementer or the same agent/session under another name; check expertise, availability and actual target-repository access.
+
+Request review using a real GitHub reviewer account/team when permitted. If an independent adjacent agent lacks such an account, create a linked, traceable PR/issue handoff (exact source SHA, review scope, reviewer identity, security/tests and outcome), **without pretending a GitHub review request or approval occurred**. Never grant cross-repo access by assumption, impersonate an account, expose secrets or substitute an AI review for a required human/security/owner approval. If no qualified reviewer is available, document `REVIEWER_UNAVAILABLE`, the repositories/people checked, and the smallest actionable escalation; keep required approvals and release holds intact.
+
+Record `REVIEW_REQUIRED`, `REVIEWER_ASSIGNED`, `REVIEWED`, `REQUIRED_APPROVALS_MET`, `MERGED_MAIN`, `CI_QUALIFIED_MAIN`, `RELEASED` and `USER_VERIFIED` as distinct evidence states. Once independently approved, ship each independently qualified user-visible feature promptly via the repository's approved **main** release route; never confuse a reviewer assignment, CI success or main merge with verified production usability. Preserve stricter project security, privacy, branch, legal and production controls.
+
+**Canonical owner policy + receipt:** [GALAPOTO-INDEPENDENT-REVIEW-001](https://github.com/galapoto/Projects/blob/main/docs/governance/GALAPOTO_INDEPENDENT_REVIEW_ASSIGNMENT_001.md).
