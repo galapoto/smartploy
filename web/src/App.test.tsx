@@ -1877,14 +1877,12 @@ describe("SP125: work-focused career banner, full logo and persistent theme", ()
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
     const cover = screen.getByRole("region", { name: "Career search and applications banner" });
-    const image = within(cover).getByRole("img", {
-      name: /CV beside a laptop showing job opportunities/,
-    }) as HTMLImageElement;
-    expect(image.getAttribute("src")).toBe("/smartploy-career-workflow-banner.svg");
     expect(within(cover).getByRole("heading", {
-      name: "Find your next role. Apply with confidence.",
+      name: "Apply with confidence",
     })).toBeTruthy();
-    expect(within(cover).getAllByRole("listitem")).toHaveLength(3);
+    expect(cover.textContent?.trim()).toBe("Apply with confidence");
+    expect(within(cover).queryByRole("img")).toBeNull();
+    expect(within(cover).queryAllByRole("listitem")).toHaveLength(0);
     const fullLogo = screen.getByRole("group", { name: "SmartPloy complete page logo" });
     expect(within(fullLogo).getByRole("img", {
       name: "SmartPloy turquoise and navy mark",

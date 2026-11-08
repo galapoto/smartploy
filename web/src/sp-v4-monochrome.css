@@ -177,3 +177,111 @@ html[data-smartploy-theme="dark"] .sp-boot .sp-boot-progress{
 @media(prefers-reduced-motion:reduce){
   .smartploy-app *, .sp-boot *{animation:none!important;transition:none!important}
 }
+
+/* SP-156 / Komplyint typography adoption, palette deliberately NOT copied.
+   Source: komplyint/komplyint-website@76c00948638cd2db699f78c58d6885117f676014
+   src/design/tokens.json, src/app/handbook.css, src/app/layout.tsx.
+   Fontsource Lato/Manrope/EB Garamond 5.3.0: OFL-1.1, locally bundled.
+   No transforms/filters on text; pixel-crisp, high-contrast body copy. */
+.smartploy-app, .sp-boot{
+  font-family:"Lato",Arial,sans-serif;
+  font-size:16px; line-height:1.5; font-synthesis:none;
+  text-rendering:optimizeLegibility;
+}
+.smartploy-app :is(button,input,select,textarea),
+.sp-boot :is(button,input,select,textarea){
+  font-family:"Lato",Arial,sans-serif;
+}
+.smartploy-app .sidebar-nav .nav-item,
+.smartploy-app .site-brand strong,
+.smartploy-app .flow-start-card strong,
+.smartploy-app .flow-start-method-heading h2,
+.smartploy-app .flow-start-browse-button strong{
+  font-family:"Manrope",Arial,sans-serif;
+  font-weight:700;
+  text-shadow:none;
+  filter:none;
+}
+.smartploy-app .sidebar-nav .nav-item{font-size:14px}
+.smartploy-app .sp125-career-cover,
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-cover{
+  min-height:clamp(134px,11.5vw,185px);
+  max-height:none;
+  margin-bottom:clamp(18px,2.4vw,30px);
+  border:1px solid #243444;
+  border-radius:20px;
+  background:linear-gradient(115deg,#080e16 0%,#101a29 100%);
+  box-shadow:inset 4px 0 0 #06d9e8,0 12px 28px -23px #000c;
+}
+.smartploy-app .sp125-career-cover::after{
+  background:none;pointer-events:none;
+}
+.smartploy-app .sp125-career-copy,
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-copy{
+  width:100%;max-width:none;
+  padding:clamp(25px,3.5vw,52px);
+}
+.smartploy-app .sp125-career-copy h2,
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-copy h2{
+  margin:0;max-width:none;
+  font-family:"EB Garamond",Georgia,serif;
+  font-weight:400;
+  font-size:clamp(38px,5.1vw,72px);
+  letter-spacing:-.018em;
+  line-height:1.05;
+  text-shadow:none;
+  color:#fff;
+}
+.smartploy-app .sp126-dashboard-main .flow-start-heading h1{
+  font-family:"EB Garamond",Georgia,serif;
+  font-weight:400;
+  font-size:clamp(37px,4.1vw,53px);
+  line-height:1.08;letter-spacing:-.016em;
+  text-shadow:none;
+  margin-bottom:10px;
+}
+.smartploy-app .sp126-dashboard-main .flow-start-heading > p:last-child{
+  display:block;
+  font-family:"Lato",Arial,sans-serif;
+  font-size:clamp(15px,1.25vw,17px);
+  font-weight:400;line-height:1.55;
+  color:#e6eef7;
+  max-width:68ch;
+  letter-spacing:0;
+  opacity:1;
+  text-shadow:none;
+}
+.smartploy-app .flow-start-heading{margin-bottom:clamp(16px,2vw,24px)}
+.smartploy-app .flow-start-method-heading h2{font-size:clamp(20px,2.1vw,26px);line-height:1.25}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card > strong{
+  font-size:16px;line-height:1.35
+}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card
+ > span:not(.flow-card-cta):not(.flow-start-index){
+  font-size:14px;line-height:1.5;color:#e8eef5;opacity:1
+}
+.smartploy-app .sp126-dashboard-main .flow-start-browse-button strong{
+  font-size:15px;line-height:1.35
+}
+.smartploy-app .flow-start-privacy{font-size:13px;line-height:1.5;color:#bfcbd8}
+@media(max-width:630px){
+  .smartploy-app .sp125-career-cover{
+    min-height:116px;max-height:none;margin-bottom:16px;
+  }
+  .smartploy-app .sp125-career-copy{max-width:none;padding:22px 24px}
+  .smartploy-app .sp125-career-copy h2{
+    font-size:clamp(34px,9vw,46px);
+  }
+  .smartploy-app .sp126-dashboard-main .flow-start-heading h1{
+    font-size:clamp(35px,9.5vw,45px);
+  }
+  .smartploy-app .sp126-dashboard-main .flow-start-heading > p:last-child{
+    display:block;
+    font-size:15px;line-height:1.5;
+    margin:0 0 10px;
+  }
+  .smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card
+    > span:not(.flow-card-cta):not(.flow-start-index){
+    font-size:13px;line-height:1.45;
+  }
+}

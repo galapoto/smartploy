@@ -1086,20 +1086,11 @@ test("SP125 career banner and complete logo preserve the actionable CV flow", as
   await page.goto("/");
   const panorama = page.getByRole("region", { name: "Career search and applications banner" });
   await expect(panorama).toBeVisible();
-  const image = panorama.getByRole("img", { name: /CV beside a laptop showing job opportunities/ });
-  await expect(image).toBeVisible();
-  const loaded = await image.evaluate((node) => {
-    const picture = node as HTMLImageElement;
-    return { complete: picture.complete, naturalWidth: picture.naturalWidth };
-  });
-  expect(loaded.complete).toBe(true);
-  expect(loaded.naturalWidth).toBeGreaterThan(100);
-  const svg = await page.request.get("/smartploy-career-workflow-banner.svg");
-  expect(svg.ok()).toBe(true);
-  expect(await svg.text()).toContain("Opportunities for you");
   await expect(panorama.getByRole("heading", {
-    name: "Find your next role. Apply with confidence.",
+    name: "Apply with confidence",
   })).toBeVisible();
+  await expect(panorama.locator("img, p, ul, ol")).toHaveCount(0);
+  expect((await panorama.innerText()).trim()).toBe("Apply with confidence");
   const fullLogo = page.locator(".sidebar .site-brand");
   await expect(fullLogo).toBeVisible();
   await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeHidden();
@@ -1198,29 +1189,30 @@ test("SP125 dark canvas, action rows and application descriptions remain legible
 });
 
 
-// Zoom-out and ultrawide should not create a narrow center column or crop the
-// working laptop illustration; matching remains a real CV-first action.
+// Zoom-out and ultrawide preserve full-width content without horizontal
+// overflow; the banner is live, sharp text rather than a raster illustration.
 test("SP125 zoom-out width preserves full-width work imagery and no sideways overflow", async ({ page }) => {
   await page.setViewportSize({ width: 2400, height: 950 });
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.locator(".flow-start")).toBeVisible();
-  await expect(page.locator(".sp125-career-art")).toBeVisible();
+  const hero = page.getByRole("region", { name: "Career search and applications banner" });
+  await expect(hero.getByRole("heading", { name: "Apply with confidence" })).toBeVisible();
   const measurements = await page.evaluate(() => {
     const main = document.querySelector(".content") as HTMLElement;
     const layout = document.querySelector(".sp126-dashboard-layout") as HTMLElement;
     const flow = document.querySelector(".flow-start") as HTMLElement;
-    const hero = document.querySelector(".sp125-career-art") as HTMLImageElement;
+    const hero = document.querySelector(".sp125-career-cover") as HTMLElement;
     return {
       ratio: flow.getBoundingClientRect().width / layout.getBoundingClientRect().width,
       used: layout.getBoundingClientRect().width / main.getBoundingClientRect().width,
-      imageFit: getComputedStyle(hero).objectFit,
+      heroHeight: hero.getBoundingClientRect().height,
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
   expect(measurements.ratio).toBeGreaterThan(.65);
   expect(measurements.used).toBeGreaterThan(.9);
-  expect(measurements.imageFit).toBe("contain");
+  expect(measurements.heroHeight).toBeLessThan(250);
   expect(measurements.overflow).toBe(false);
 });
 
@@ -1241,6 +1233,7 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   await expect(page.locator(".sidebar .site-brand-mark")).toBeVisible();
   await page.getByRole("button", { name: "Close navigation" }).click();
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  await expect(page.getByText("Upload or create a CV, then choose how to apply. You can browse jobs without a CV.")).toBeVisible();
   const horizontalOverflow = await page.evaluate(() =>
     document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(horizontalOverflow).toBe(false);
@@ -1421,4 +1414,29 @@ test("V4 new visitor sees the black SmartPloy loading shell without rotation", a
   }));
   expect(appearance.background).toBe("rgb(5, 7, 11)");
   expect(appearance.icon).toBe("none");
+});
+
+test("SP156 Komplyint typography is self-hosted and banner has one clear heading", async ({ page }) => {
+  await installSyntheticApi(page);
+  await page.goto("/");
+  const hero = page.getByRole("region", { name: "Career search and applications banner" });
+  await expect(hero).toBeVisible();
+  expect((await hero.innerText()).trim()).toBe("Apply with confidence");
+  const families = await page.evaluate(async () => {
+    await document.fonts.load('400 20px "Lato"');
+    await document.fonts.load('400 40px "EB Garamond"');
+    await document.fonts.load('700 15px "Manrope"');
+    return {
+      body: getComputedStyle(document.querySelector(".smartploy-app")!).fontFamily,
+      banner: getComputedStyle(document.querySelector(".sp125-career-copy h2")!).fontFamily,
+      nav: getComputedStyle(document.querySelector(".sidebar-nav .nav-item")!).fontFamily,
+      loaded: ["Lato", "EB Garamond", "Manrope"].map(name => document.fonts.check('400 20px "' + name + '"')),
+      overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
+  expect(families.body).toContain("Lato");
+  expect(families.banner).toContain("EB Garamond");
+  expect(families.nav).toContain("Manrope");
+  expect(families.loaded).toEqual([true, true, true]);
+  expect(families.overflow).toBe(false);
 });
