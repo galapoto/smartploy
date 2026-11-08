@@ -265,3 +265,32 @@ def test_sp112_resume_selector_rejects_hidden_duplicate_and_nonpdf_fields():
     assert assistant.choose_cv_attachment(rows) is None
     rows[1]["label"] = "Cover Letter"
     assert assistant.choose_cv_attachment(rows) == rows[0]
+
+
+def test_sp129_real_chromium_reactive_cv_clear_is_not_reported_as_attached():
+    """A provider may clear FileList during input/change; no invented success."""
+    target = "https://jobs.lever.co/example/position/apply"
+    p = _reviewed_pdf_packet()
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=SP112_HTML,
+            ))
+            page.goto(target)
+            # Simulated employer-side reactive reset; never touch Submit.
+            page.locator("#resume").evaluate("""el => el.addEventListener(
+                'change', () => { setTimeout(() => { el.value = ''; }, 0); }
+            )""")
+            rows = assistant.inspect_page(page)
+            chosen = assistant.choose_cv_attachment(rows)
+            assert chosen is not None
+            with pytest.raises(assistant.PacketError, match="did not retain"):
+                assistant.attach_reviewed_cv_pdf(
+                    page, p, rows, chosen, SP112_PDF, target,
+                )
+            assert page.locator("#resume").evaluate("el => el.files.length") == 0
+            assert page.evaluate("window.submissions") == 0
+        finally:
+            browser.close()

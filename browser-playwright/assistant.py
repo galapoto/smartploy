@@ -424,6 +424,40 @@ def attach_reviewed_cv_pdf(
             "mimeType": "application/pdf",
             "buffer": pdf,
         }, timeout=5000)
+        # A successful API call is not evidence the employer form retained
+        # the PDF. Reuse SP144's one-settle / no-retry observation rule:
+        # React may silently clear or replace an upload input on change.
+        page.wait_for_timeout(150)
+        if page.url != expected_url or element.count() != 1:
+            raise PacketError(
+                "Employer changed the form after CV input; attachment uncertain. "
+                "Inspect manually; do not retry."
+            )
+        settled = element.first.evaluate(READ_FIELDS_JS.replace(
+            "els => els.map((el, index) => {",
+            "el => [el].map((el, index) => {",
+        ))
+        if len(settled) != 1 or any(
+            settled[0].get(key) != current.get(key) for key in identity
+        ) or not settled[0].get("visible") or not settled[0].get("inForm"):
+            raise PacketError(
+                "Employer changed the CV control after attachment. "
+                "Inspect manually; do not retry."
+            )
+        files = element.first.evaluate(
+            "el => ({count:el.files?.length||0,"
+            "name:el.files?.[0]?.name||'',"
+            "size:el.files?.[0]?.size||0,"
+            "type:el.files?.[0]?.type||''})"
+        )
+        if (files.get("count") != 1 or
+                files.get("name") != "smartploy-reviewed-cv.pdf" or
+                files.get("size") != len(pdf) or
+                files.get("type") != "application/pdf"):
+            raise PacketError(
+                "Employer did not retain the exact reviewed CV file. "
+                "Upload outcome uncertain; inspect manually and never retry."
+            )
         return {
             "attached_locally": True,
             "employer_upload_confirmed": False,
