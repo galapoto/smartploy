@@ -153,6 +153,12 @@ def make_store_zip(output: Path) -> str:
     Store signing, publishing and updates require separate owner authorization
     and Web Store review. Neither public web assets nor credentials are touched.
     """
+    # Never replace the first-party public install ZIP or let a store-only
+    # artifact accidentally become a publicly served download.
+    target = output.resolve()
+    if (target.is_relative_to((ROOT / "web/public").resolve())
+            or target.is_relative_to((ROOT / "web/dist").resolve())):
+        raise ValueError("STORE_PACKAGE_MUST_NOT_REPLACE_PUBLIC_COMPANION")
     files, _version = reviewed_files()
     digest = _write_reviewed_archive(output, files)
     output.with_name(output.name + ".sha256").write_text(

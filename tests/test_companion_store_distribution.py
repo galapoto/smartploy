@@ -50,7 +50,9 @@ def test_store_zip_reuses_exact_audited_source_deterministically(tmp_path):
         manifest = json.loads(bundle.read("manifest.json"))
         assert manifest["manifest_version"] == 3
         assert manifest["permissions"] == ["activeTab", "scripting", "storage"]
-        assert manifest["version"] == "0.5.1"
+        assert manifest["version"] == json.loads(
+            (SOURCE / "manifest.json").read_text()
+        )["version"]
         assert not any(k in manifest for k in (
             "host_permissions", "background", "content_scripts",
             "externally_connectable", "update_url",
@@ -90,3 +92,11 @@ def test_store_packaging_fails_closed_on_unreviewed_change(tmp_path, monkeypatch
     with pytest.raises(ValueError):
         packager.make_store_zip(output)
     assert not output.exists()
+
+
+def test_store_draft_cannot_replace_live_first_party_zip_or_dist(tmp_path):
+    packager = packager_module()
+    with pytest.raises(ValueError, match="STORE_PACKAGE_MUST_NOT_REPLACE_PUBLIC_COMPANION"):
+        packager.make_store_zip(ROOT / "web/public/smartploy-apply-companion-store.zip")
+    with pytest.raises(ValueError, match="STORE_PACKAGE_MUST_NOT_REPLACE_PUBLIC_COMPANION"):
+        packager.make_store_zip(ROOT / "web/dist/smartploy-apply-companion-store.zip")
