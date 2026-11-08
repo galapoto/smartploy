@@ -1,5 +1,7 @@
 FROM node:22-alpine AS build
 ARG APP_VERSION=dev
+ARG CHROME_WEB_STORE_ID=""
+ENV VITE_SMARTPLOY_CHROME_WEB_STORE_ID=${CHROME_WEB_STORE_ID}
 # Embed only the public 12-character build identity in the compiled browser bundle.
 # The later release.json marker independently proves what Caddy is serving.
 ENV VITE_SMARTPLOY_BUILD_REVISION=${APP_VERSION}
