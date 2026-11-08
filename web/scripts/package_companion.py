@@ -39,40 +39,61 @@ HTML_ASSET = re.compile(r"""(?:src|href)=["']([^"']+)["']""")
 
 
 def _valid_png(data: bytes, expected_size: int) -> bool:
-    """Reject corrupt image bytes: a PNG signature alone is insufficient."""
+    """Admit only complete, bounded 8-bit RGBA PNGs with valid raster rows."""
     import zlib
 
-    if data[:8] != b"\x89PNG\r\n\x1a\n":
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or len(data) > MAX_SOURCE_BYTES:
         return False
-    index, width, height, idat, ended = 8, None, None, [], False
+    index, seen_header, seen_image, image_ended = 8, False, False, False
+    idat = bytearray()
     try:
         while index + 12 <= len(data):
             n = int.from_bytes(data[index:index + 4], "big")
             kind = data[index + 4:index + 8]
             start, stop = index + 8, index + 8 + n
-            if n > 10_000_000 or stop + 4 > len(data):
+            if n > MAX_SOURCE_BYTES or stop + 4 > len(data):
                 return False
             chunk = data[start:stop]
             crc = int.from_bytes(data[stop:stop + 4], "big")
             if zlib.crc32(kind + chunk) != crc:
                 return False
             if kind == b"IHDR":
-                width = int.from_bytes(chunk[:4], "big")
-                height = int.from_bytes(chunk[4:8], "big")
+                if seen_header or index != 8 or n != 13:
+                    return False
+                seen_header = True
+                if (int.from_bytes(chunk[:4], "big") != expected_size
+                    or int.from_bytes(chunk[4:8], "big") != expected_size
+                    or chunk[8:] != b"\x08\x06\x00\x00\x00"):
+                    return False
             elif kind == b"IDAT":
-                idat.append(chunk)
+                if not seen_header or image_ended:
+                    return False
+                seen_image = True
+                idat.extend(chunk)
             elif kind == b"IEND":
-                ended = True
-                if stop + 4 != len(data):
+                if n or not seen_image or stop + 4 != len(data):
                     return False
                 break
+            else:
+                if not seen_header or kind[0] & 0x20 == 0:
+                    return False
+                if seen_image:
+                    image_ended = True
             index = stop + 4
-        if not ended or width != expected_size or height != expected_size or not idat:
+        else:
             return False
-        return bool(zlib.decompress(b"".join(idat)))
-    except (ValueError, OverflowError, zlib.error):
+        # Bound decompression before inspecting scanlines; tiny compressed
+        # inputs can otherwise expand far beyond the reviewed icon size.
+        row_bytes = 1 + expected_size * 4
+        expected_bytes = expected_size * row_bytes
+        decoder = zlib.decompressobj()
+        raw = decoder.decompress(bytes(idat), expected_bytes + 1)
+        return (decoder.eof and not decoder.unused_data
+                and not decoder.unconsumed_tail
+                and len(raw) == expected_bytes
+                and all(raw[at] <= 4 for at in range(0, expected_bytes, row_bytes)))
+    except (ValueError, OverflowError, IndexError, zlib.error):
         return False
-
 
 def reviewed_files() -> tuple[dict[str, bytes], str]:
     manifest_path = SOURCE / "manifest.json"
@@ -102,12 +123,9 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
         if not item.is_file() or item.is_symlink() or item.stat().st_size > MAX_SOURCE_BYTES:
             raise ValueError(f"Unapproved, missing, symlinked or oversized asset: {name}")
         files[name] = item.read_bytes()
-    for size in (16, 32, 48):
-        icon = files[f"icon{size}.png"]
-        if len(icon) < 100 or not icon.startswith(b"\x89PNG\r\n\x1a\n") or int.from_bytes(icon[16:20], "big") != size or int.from_bytes(icon[20:24], "big") != size:
-            raise ValueError(f"The reviewed extension icon{size}.png is not a {size}x{size} PNG")
-    if not _valid_png(files["icon128.png"], 128):
-        raise ValueError("The reviewed extension icon128.png failed PNG integrity checks")
+    for size in (16, 32, 48, 128):
+        if not _valid_png(files[f"icon{size}.png"], size):
+            raise ValueError(f"The reviewed extension icon{size}.png failed PNG integrity checks")
     # Keep the extension lockup identical to the actual SmartPloy website source.
     if files["smartploy-mark-v2.svg"] != (ROOT / "web" / "public" / "smartploy-mark-v2.svg").read_bytes():
         raise ValueError("Extension mark differs from the approved SmartPloy website mark")
