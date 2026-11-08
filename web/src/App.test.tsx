@@ -70,7 +70,7 @@ let currentPrefs: SearchPreferences = initial;
 let personalJobs: PrivateSavedJob[] = [];
 
 beforeEach(() => {
-  window.localStorage.removeItem("smartploy-ui-theme-v1");
+  window.localStorage.setItem("smartploy-ui-theme-v1", "light");
   document.documentElement.removeAttribute("data-smartploy-theme");
   vi.resetAllMocks();
   currentPrefs = { ...initial };
@@ -161,6 +161,59 @@ function switchableSession() {
   return () => { account = "b"; };
 }
 
+describe("SP127: mobile-first persistent shell and nonblocking startup", () => {
+  it("fails closed with a retry after 18 seconds when session never responds", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(api.getSession).mockImplementation(() => new Promise(() => {}));
+      render(<App />);
+      expect(screen.getByRole("heading", { name: "Connecting to your workspace" })).toBeTruthy();
+      await act(async () => { await vi.advanceTimersByTimeAsync(18005); });
+      expect(screen.getByRole("heading", { name: "SmartPloy isn't available" })).toBeTruthy();
+      expect(screen.getByText(/Workspace connection timed out/)).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+      expect(document.querySelector(".spinner")).toBeNull();
+      expect(screen.queryByText("test@smartploy.invalid")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+
+  it("renders the real brand, navigation choices and retry without the circular loading overlay", () => {
+    vi.mocked(api.getSession).mockImplementation(() => new Promise(() => {}));
+    render(<App />);
+    expect(screen.getByRole("heading", { name: "Connecting to your workspace" })).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Workspace navigation while connecting" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry connection" })).toBeTruthy();
+    expect(document.querySelector(".loading-screen")).toBeNull();
+    expect(document.querySelector(".spinner")).toBeNull();
+    expect(document.querySelector(".sp-boot-header .sp-boot-logo")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(screen.getByText("Find jobs will open when ready")).toBeTruthy();
+    // Do not render private profile or employer actions before server identity.
+    expect(screen.queryByText("test@smartploy.invalid")).toBeNull();
+  });
+
+  it("exposes a useful retry after essential API failure without an infinite spinner", async () => {
+    vi.mocked(api.getDashboard).mockRejectedValueOnce(new Error("Server temporarily unavailable"));
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "SmartPloy isn't available" })).toBeTruthy();
+    expect(screen.getByText("Server temporarily unavailable")).toBeTruthy();
+    expect(document.querySelector(".spinner")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
+  });
+
+  it("preserves a working mobile header brand and theme button in loaded App", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
+    expect(document.querySelector(".site-header .sp-mobile-brand-mark")).toBeTruthy();
+    expect(document.querySelectorAll(".site-header .menu-toggle")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Switch to dark mode" })).toBeTruthy();
+  });
+});
+
 describe("actual SmartPloy App first-use and application handoff", () => {
   it("SP87 starts with a CV even when optional AI is unavailable; modes remain locked", async () => {
     vi.mocked(api.getLocalAIStatus).mockImplementation(
@@ -170,7 +223,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Upload CV first/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Create CV from scratch/i })).toBeTruthy();
-    expect(screen.getByText(/The three application paths are shown below/i)).toBeTruthy();
+    expect(screen.getByText(/Upload a CV to unlock these options/i)).toBeTruthy();
     const sidebar = screen.getByRole("navigation", { name: "Main navigation" });
     expect(sidebar).toBeTruthy();
     expect(screen.getByRole("button", { name: "Apply for jobs" })).toBeTruthy();
@@ -1824,14 +1877,12 @@ describe("SP125: work-focused career banner, full logo and persistent theme", ()
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
     const cover = screen.getByRole("region", { name: "Career search and applications banner" });
-    const image = within(cover).getByRole("img", {
-      name: /CV beside a laptop showing job opportunities/,
-    }) as HTMLImageElement;
-    expect(image.getAttribute("src")).toBe("/smartploy-career-workflow-banner.svg");
     expect(within(cover).getByRole("heading", {
-      name: "Find your next role. Apply with confidence.",
+      name: "Apply with confidence",
     })).toBeTruthy();
-    expect(within(cover).getAllByRole("listitem")).toHaveLength(3);
+    expect(cover.textContent?.trim()).toBe("Apply with confidence");
+    expect(within(cover).queryByRole("img")).toBeNull();
+    expect(within(cover).queryAllByRole("listitem")).toHaveLength(0);
     const fullLogo = screen.getByRole("group", { name: "SmartPloy complete page logo" });
     expect(within(fullLogo).getByRole("img", {
       name: "SmartPloy turquoise and navy mark",

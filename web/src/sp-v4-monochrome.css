@@ -1,0 +1,353 @@
+/* SP V4: one calm visual language. Layer AFTER first-party SP125-128 CSS.
+   Existing cards, routes, privileges and employer review remain unchanged. */
+:root{--sp-brand-black:#05070b;--sp-brand-surface:#0e141d;
+  --sp-brand-raised:#141c28;--sp-brand-navy:#021e3d;
+  --sp-brand-cyan:#06d9e8;--sp-brand-white:#f7faff;
+  --sp-brand-muted:#b6c3d2;--sp-brand-line:#293341}
+html[data-smartploy-theme="dark"],html[data-smartploy-theme="dark"] body,
+html[data-smartploy-theme="dark"] .smartploy-app,
+html[data-smartploy-theme="dark"] .sp-boot{
+  background:var(--sp-brand-black);color:var(--sp-brand-white)
+}
+html[data-smartploy-theme="dark"] .smartploy-app{
+  --sp125-bg:#05070b;--sp125-rail:#0a0e14;--sp125-card:#0e141d;
+  --sp125-raised:#141c28;--sp125-border:#293341;
+  --sp125-muted:#b6c3d2;--sp126-violet:#06d9e8;
+  --sp126-teal:#06d9e8;--sp126-blue:#06d9e8;
+  --blue:#06d9e8;--deep:#f7faff;--muted:#b6c3d2
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sidebar{
+  background:#090d13;border-color:#202a36
+}
+html[data-smartploy-theme="dark"] .smartploy-app .site-header,
+html[data-smartploy-theme="dark"] .sp-boot .sp-boot-header{
+  background:#080d14;border-color:#24303e
+}
+html[data-smartploy-theme="dark"] .sp-boot :is(.sp-boot-workspace,.sp-boot-theme,.sp-boot-nav-item),
+html[data-smartploy-theme="dark"] .smartploy-app :is(.panel,.stat-card,.job-item,.tool-tile,.action-card:not(.featured),.source-card,.cv-panel,.setup-card){
+  background:var(--sp-brand-surface);border-color:var(--sp-brand-line);
+  color:var(--sp-brand-white);box-shadow:0 12px 28px -23px #000c
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.site-brand,.site-brand strong,.page-intro h1,
+ .flow-start-heading h1,.flow-start-method-heading h2,.flow-start-card strong,
+ .small-heading h3,.panel h2,.panel h3){color:var(--sp-brand-white)}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.site-brand small,.nav-label,.page-intro p,
+ .flow-start-card > span:not(.flow-start-index):not(.flow-card-cta),.flow-start-ready,
+ .flow-start-privacy,.stat-copy small,.sp125-career-copy > p:not(.sp125-career-eyebrow)),
+html[data-smartploy-theme="dark"] .sp-boot :is(.sp-boot-brand small,.sp-boot-workspace > p){
+  color:var(--sp-brand-muted)
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.active{
+  background:#102331;border-color:#326475;color:var(--sp-brand-white);
+  box-shadow:0 6px 20px -18px #06d9e8
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item.active::before{
+  background:var(--sp-brand-cyan)
+}
+html[data-smartploy-theme="dark"] .smartploy-app .nav-item:hover,
+html[data-smartploy-theme="dark"] .smartploy-app :is(.sp126-desktop-collapse,.sp126-mobile-close):hover{
+  background:#16222e;color:#fff
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.sp126-desktop-collapse,.sp126-mobile-close,
+ .sp99-theme-toggle,.outline-btn,.icon-btn,.flow-start-browse-button){
+  background:#101923;border-color:#2b4051;color:var(--sp-brand-white)
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(.primary-btn,.flow-card-cta):not(:disabled){
+  background:var(--sp-brand-cyan);color:#04121a;border-color:var(--sp-brand-cyan);
+  box-shadow:none
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-card-cta{color:#04121a}
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-cover{
+  background:linear-gradient(115deg,#080e16,#0a1622);
+  border:1px solid #233243;box-shadow:0 10px 24px -21px #000
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-art{opacity:.46}
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-copy :is(h2,.sp125-career-eyebrow){color:#f7faff}
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-eyebrow::before{background:var(--sp-brand-cyan)}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li{
+  background:#121c28;border:1px solid #314050;color:#c4cfdd;box-shadow:none
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-progress li.current{
+  background:#102b38;background-image:none;border-color:#367b83;color:#f7faff;box-shadow:none
+}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-progress li.done{
+  background:#111e2b;border-color:#2c5664;color:#f7faff
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+ .flow-start-card[data-flow-mode]{
+  background:#0e1621;background-image:none;border:1px solid #2a3a4c;
+  color:var(--sp-brand-white);--flow-tone:#06d9e8;
+  box-shadow:0 14px 25px -22px #000e
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+ .flow-start-card[data-flow-mode]:not(:disabled):hover{
+  border-color:#06d9e8;background:#14202b
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+ .flow-start-card[data-flow-mode] > svg:first-child{
+  background:#122b3a;color:#06d9e8
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+ .flow-start-card[data-flow-mode] .flow-card-cta{
+  background:#102b38;border:1px solid #286977;color:#f7faff
+}
+/* Override older SP126 high-specificity lavender/pale-blue dashboard choices. */
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-browse-button,
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-workspaces .flow-start-browse-button {
+  background:#111e2a;background-image:none;border-color:#2c495b;
+  color:#f7faff;box-shadow:none
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main
+ .flow-start-browse-button :is(strong,small,svg){
+  color:#f7faff
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main
+ .flow-start-browse-button:hover{
+  background:#192d39;color:#f7faff;border-color:#06d9e8
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .stat-card,
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-aside .panel{
+  background:#0e141d;background-image:none;border-color:var(--sp-brand-line)
+}
+html[data-smartploy-theme="dark"] .smartploy-app .stat-icon{
+  background:#122b3a;color:var(--sp-brand-cyan)
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(input,select,textarea){
+  background:#0a1018;color:#f7faff;border-color:#344051
+}
+html[data-smartploy-theme="dark"] .smartploy-app :is(input,select,textarea):focus-visible,
+html[data-smartploy-theme="dark"] .smartploy-app :is(button,a):focus-visible{
+  outline:2px solid #06d9e8;outline-offset:3px
+}
+html[data-smartploy-theme="dark"] .sp-boot .sp-boot-nav-item.active{
+  background:#102b38;border-color:#367b83;color:#f7faff
+}
+html[data-smartploy-theme="dark"] .sp-boot .sp-boot-progress{
+  background:linear-gradient(90deg,#06d9e8 35%,#22303e 35%)
+}
+/* Do not rotate any branded or refresh control. Progress is static, and
+   status remains in the DOM for assistive technologies. */
+.smartploy-app .header-refresh svg,.sp-boot-progress,.loading-mark,.spinner{
+  animation:none!important
+}
+/* Keep the useful job/applicant destinations, but stop duplicating their
+   only repeated decorative prose on the HOME surface; keep result cards, real
+   dashboard actions and the working sidebar visible on desktop. */
+.smartploy-app .sp99-identity,
+.smartploy-app .flow-start-masthead,
+.smartploy-app .sp125-career-steps,
+.smartploy-app .flow-start-method-heading .section-kicker,
+.smartploy-app .flow-start-method-heading p:last-child{
+  display:none
+}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card{
+  min-height:152px;padding:15px;gap:7px
+}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card:disabled .flow-card-cta{
+  display:none
+}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card > small{
+  position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap
+}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card > span:not(.flow-card-cta):not(.flow-start-index){
+  font-size:13px;line-height:1.35
+}
+.smartploy-app .sp126-dashboard-main .flow-start-heading h1{
+  font-size:clamp(27px,3.4vw,42px);line-height:1.15
+}
+.smartploy-app .sp126-dashboard-main .flow-start-ready{
+  padding:9px 12px;margin:6px 0;background:#10212a;border-color:#29505b
+}
+.smartploy-app .sp126-dashboard-main .flow-start-method-heading{margin:12px 0 8px}
+/* New applicants need one clear task, not empty analytics and duplicate
+   "no matches" boxes. Keep each real destination in its existing navigation.
+   Once a CV or saved search preference exists, the same panels appear again. */
+.smartploy-app .sp126-dashboard-layout.sp-home-setup{
+  grid-template-columns:minmax(0,1fr)
+}
+.smartploy-app .sp126-dashboard-layout.sp-home-setup > .sp126-dashboard-aside,
+.smartploy-app .sp126-dashboard-layout.sp-home-setup > .sp126-dashboard-main > .stats-grid,
+.smartploy-app .sp126-dashboard-layout.sp-home-setup > .sp126-dashboard-main > .sp126-job-results{
+  display:none
+}
+@media(max-width:630px){
+  .smartploy-app .sp125-career-cover{max-height:125px}
+  .smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card{min-height:88px}
+}
+@media(prefers-reduced-motion:reduce){
+  .smartploy-app *, .sp-boot *{animation:none!important;transition:none!important}
+}
+
+/* SP-156 / Komplyint typography adoption, palette deliberately NOT copied.
+   Source: komplyint/komplyint-website@76c00948638cd2db699f78c58d6885117f676014
+   src/design/tokens.json, src/app/handbook.css, src/app/layout.tsx.
+   Fontsource Lato/Manrope/EB Garamond 5.3.0: OFL-1.1, locally bundled.
+   No transforms/filters on text; pixel-crisp, high-contrast body copy. */
+.smartploy-app, .sp-boot{
+  font-family:"Lato",Arial,sans-serif;
+  font-size:16px; line-height:1.5; font-synthesis:none;
+  text-rendering:optimizeLegibility;
+}
+.smartploy-app :is(button,input,select,textarea),
+.sp-boot :is(button,input,select,textarea){
+  font-family:"Lato",Arial,sans-serif;
+}
+.smartploy-app .sidebar-nav .nav-item,
+.smartploy-app .site-brand strong,
+.smartploy-app .flow-start-card strong,
+.smartploy-app .flow-start-method-heading h2,
+.smartploy-app .flow-start-browse-button strong{
+  font-family:"Manrope",Arial,sans-serif;
+  font-weight:700;
+  text-shadow:none;
+  filter:none;
+}
+.smartploy-app .sidebar-nav .nav-item{font-size:14px}
+.smartploy-app .sp125-career-cover,
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-cover{
+  min-height:clamp(134px,11.5vw,185px);
+  max-height:none;
+  margin-bottom:clamp(18px,2.4vw,30px);
+  border:1px solid #243444;
+  border-radius:20px;
+  background:linear-gradient(115deg,#080e16 0%,#101a29 100%);
+  box-shadow:inset 4px 0 0 #06d9e8,0 12px 28px -23px #000c;
+}
+.smartploy-app .sp125-career-cover::after{
+  background:none;pointer-events:none;
+}
+.smartploy-app .sp125-career-copy,
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-copy{
+  width:100%;max-width:none;
+  padding:clamp(25px,3.5vw,52px);
+}
+.smartploy-app .sp125-career-copy h2,
+html[data-smartploy-theme="dark"] .smartploy-app .sp125-career-copy h2{
+  margin:0;max-width:none;
+  font-family:"EB Garamond",Georgia,serif;
+  font-weight:400;
+  font-size:clamp(38px,5.1vw,72px);
+  letter-spacing:-.018em;
+  line-height:1.05;
+  text-shadow:none;
+  color:#fff;
+}
+.smartploy-app .sp126-dashboard-main .flow-start-heading h1{
+  font-family:"EB Garamond",Georgia,serif;
+  font-weight:400;
+  font-size:clamp(37px,4.1vw,53px);
+  line-height:1.08;letter-spacing:-.016em;
+  text-shadow:none;
+  margin-bottom:10px;
+}
+.smartploy-app .sp126-dashboard-main .flow-start-heading > p:last-child{
+  display:block;
+  font-family:"Lato",Arial,sans-serif;
+  font-size:clamp(15px,1.25vw,17px);
+  font-weight:400;line-height:1.55;
+  color:#253548;
+  max-width:68ch;
+  letter-spacing:0;
+  opacity:1;
+  text-shadow:none;
+}
+.smartploy-app .flow-start-heading{margin-bottom:clamp(16px,2vw,24px)}
+.smartploy-app .flow-start-method-heading h2{font-size:clamp(20px,2.1vw,26px);line-height:1.25}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card > strong{
+  font-size:16px;line-height:1.35
+}
+.smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card
+ > span:not(.flow-card-cta):not(.flow-start-index){
+  font-size:14px;line-height:1.5;color:#364759;opacity:1
+}
+.smartploy-app .sp126-dashboard-main .flow-start-browse-button strong{
+  font-size:15px;line-height:1.35
+}
+.smartploy-app .flow-start-privacy{font-size:13px;line-height:1.5;color:#46596b}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main
+ .flow-start-heading > p:last-child{color:#e6eef7}
+html[data-smartploy-theme="dark"] .smartploy-app .sp126-dashboard-main .flow-start-grid-methods
+ .flow-start-card > span:not(.flow-card-cta):not(.flow-start-index){color:#e8eef5}
+html[data-smartploy-theme="dark"] .smartploy-app .flow-start-privacy{color:#bfcbd8}
+@media(max-width:630px){
+  .smartploy-app .sp125-career-cover{
+    min-height:116px;max-height:none;margin-bottom:16px;
+  }
+  .smartploy-app .sp125-career-copy{max-width:none;padding:22px 24px}
+  .smartploy-app .sp125-career-copy h2{
+    font-size:clamp(34px,9vw,46px);
+  }
+  .smartploy-app .sp126-dashboard-main .flow-start-heading h1{
+    font-size:clamp(35px,9.5vw,45px);
+  }
+  .smartploy-app .sp126-dashboard-main .flow-start-heading > p:last-child{
+    display:block;
+    font-size:15px;line-height:1.5;
+    margin:0 0 10px;
+  }
+  .smartploy-app .sp126-dashboard-main .flow-start-grid-methods .flow-start-card
+    > span:not(.flow-card-cta):not(.flow-start-index){
+    font-size:13px;line-height:1.45;
+  }
+}
+
+/* SP156.1: Komplyint-inspired clarity is one heading + instruction + actions.
+   The full CV prerequisite remains in the accessible DOM via aria-describedby,
+   but duplicate mini-paragraphs do not crowd the desktop Home. */
+.smartploy-app .sp126-dashboard-main .flow-start-how{
+  padding:0;margin:0 0 16px;background:transparent;
+  background-image:none;border:0;box-shadow:none;
+}
+.smartploy-app .sp126-dashboard-main .flow-start-how .flow-start-cv-copy{
+  display:none;
+}
+.smartploy-app .sp126-dashboard-main .flow-start-how .row-actions{
+  display:flex;gap:10px;justify-content:flex-start;
+  align-items:center;flex-wrap:wrap;width:100%;margin:0;
+}
+.smartploy-app .sp126-dashboard-main .flow-start-locked{
+  position:absolute;width:1px;height:1px;overflow:hidden;
+  clip-path:inset(50%);white-space:nowrap;padding:0;margin:0;border:0;
+}
+/* Light mode retains the approved white/black contrast but NEVER introduces
+   unrelated purple, orange or green accents on the CV method cards. */
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode]{
+  --flow-tone:#088d9c;
+  background:#f8fbfc;background-image:none;
+  border:1px solid #cbdde4;border-top:3px solid #06b6c8;
+  box-shadow:0 12px 28px -22px rgba(3,25,47,.3);
+}
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:first-child{
+  color:#057a88;background:#dff7f9;border-color:#a8dce1;
+}
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:last-child{
+  color:#057a88;
+}
+@media(max-width:630px){
+  .smartploy-app .sp126-dashboard-main .flow-start-how .row-actions{
+    display:grid;grid-template-columns:minmax(0,1fr);
+    gap:8px;
+  }
+  .smartploy-app .sp126-dashboard-main .flow-start-how .row-actions > button{
+    width:100%;min-height:44px;
+  }
+}
+
+/* SP156.2: high-contrast secondary CV action in light/mobile appearance.
+   Older SP128/126 outline-button styles left white text on white. */
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-how .outline-btn{
+  background:#fff;background-image:none;color:#0e2636;
+  border:1px solid #7894a3;box-shadow:none;
+}
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-how .outline-btn :is(svg,span){
+  color:inherit;
+}
+html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
+ .flow-start-how .outline-btn:hover{
+  background:#e9f8fa;border-color:#058797;color:#082d36;
+}

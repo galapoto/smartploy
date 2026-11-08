@@ -91,6 +91,12 @@ async function installSyntheticApi(page: Page, options: {
   unavailableAI?: boolean;
   readyAI?: boolean;
 } = {}): Promise<MockState> {
+  // Preserve explicit legacy light-theme regression expectations in synthetic fixtures;
+  // a separate test below proves the fresh-visitor default is black.
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("smartploy-ui-theme-v1"))
+      localStorage.setItem("smartploy-ui-theme-v1", "light");
+  });
   const state: MockState = {
     userId: "synthetic-user-a",
     cvFilename: options.cvFilename || "",
@@ -641,7 +647,17 @@ test("SP93 production build shows all three CV-locked methods with the full side
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
-  const logo = page.locator(".sp99-identity .sp99-identity-mark");
+  // Empty CV-first Home is intentionally one focused task, not a dashboard
+  // of zero-value cards; Jobs/Applications/Profile remain reachable.
+  await expect(page.locator(".sp126-dashboard-layout.sp-home-setup")).toBeVisible();
+  await expect(page.locator(".sp126-dashboard-aside")).toBeHidden();
+  await expect(page.locator(".sp126-job-results")).toBeHidden();
+  await expect(page.locator(".sp126-dashboard-main > .stats-grid")).toBeHidden();
+  const logo = page.locator(".sidebar .site-brand-mark");
+  // Home still exposes its real browsing entry and result area on desktop.
+  // Job results themselves depend on explicitly saved search preferences.
+  await expect(page.getByRole("button", { name: /Just find jobs/i })).toBeVisible();
+  await expect(page.locator(".sp126-dashboard-layout.sp-home-setup .sp126-job-results")).toBeHidden();
   await expect(logo).toBeVisible();
   const bounds = await logo.boundingBox();
   expect(bounds?.width).toBeGreaterThan(20);
@@ -994,7 +1010,10 @@ test("mobile onboarding remains usable when the optional local AI endpoint fails
   await page.setViewportSize({ width: 390, height: 844 });
   await installSyntheticApi(page, { unavailableAI: true });
   await page.goto("/");
-  await expect(page.locator(".sp99-identity .sp99-identity-mark")).toBeVisible();
+  // The persistent phone header carries the full SmartPloy brand; the
+  // duplicate logo underneath the home banner is intentionally removed.
+  await expect(page.locator(".site-header .sp-mobile-brand-mark")).toBeVisible();
+  await expect(page.locator(".site-header .sp-mobile-brand")).toContainText("SmartPloy");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   await page.getByRole("button", { name: /Just find jobs/i }).click();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
@@ -1067,28 +1086,20 @@ test("SP125 career banner and complete logo preserve the actionable CV flow", as
   await page.goto("/");
   const panorama = page.getByRole("region", { name: "Career search and applications banner" });
   await expect(panorama).toBeVisible();
-  const image = panorama.getByRole("img", { name: /CV beside a laptop showing job opportunities/ });
-  await expect(image).toBeVisible();
-  const loaded = await image.evaluate((node) => {
-    const picture = node as HTMLImageElement;
-    return { complete: picture.complete, naturalWidth: picture.naturalWidth };
-  });
-  expect(loaded.complete).toBe(true);
-  expect(loaded.naturalWidth).toBeGreaterThan(100);
-  const svg = await page.request.get("/smartploy-career-workflow-banner.svg");
-  expect(svg.ok()).toBe(true);
-  expect(await svg.text()).toContain("Opportunities for you");
   await expect(panorama.getByRole("heading", {
-    name: "Find your next role. Apply with confidence.",
+    name: "Apply with confidence",
   })).toBeVisible();
-  const fullLogo = page.getByRole("group", { name: "SmartPloy complete page logo" });
+  await expect(panorama.locator("img, p, ul, ol")).toHaveCount(0);
+  expect((await panorama.innerText()).trim()).toBe("Apply with confidence");
+  const fullLogo = page.locator(".sidebar .site-brand");
   await expect(fullLogo).toBeVisible();
-  const brandMark = fullLogo.locator(".sp99-identity-mark");
+  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeHidden();
+  const brandMark = fullLogo.locator(".site-brand-mark");
   await expect(brandMark).toBeVisible();
   const logoRect = await brandMark.boundingBox();
-  expect(logoRect?.width).toBeGreaterThanOrEqual(48);
-  expect(logoRect?.height).toBeGreaterThanOrEqual(48);
-  const pageLogo = fullLogo.locator(".sp99-identity-text strong");
+  expect(logoRect?.width).toBeGreaterThanOrEqual(24);
+  expect(logoRect?.height).toBeGreaterThanOrEqual(24);
+  const pageLogo = fullLogo.locator("strong").first();
   await expect(pageLogo).toHaveText("SmartPloy");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
@@ -1110,7 +1121,8 @@ test("SP99 dark/light mode is usable, persists after reload, and does not remove
   const darkSurface = await panel.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(darkSurface).not.toBe(lightSurface);
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
-  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeVisible();
+  await expect(page.locator(".sidebar .site-brand-mark")).toBeVisible();
+  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeHidden();
   await evidence(page, "sp125-work-hero-cv-first-dark.png");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
@@ -1168,7 +1180,7 @@ test("SP125 dark canvas, action rows and application descriptions remain legible
       contentWidth: document.querySelector(".content")!.getBoundingClientRect().width,
     };
   });
-  expect(readings.canvas).toBe("rgb(6, 11, 23)");
+  expect(readings.canvas).toBe("rgb(5, 7, 11)");
   expect(readings.browse).toBeGreaterThanOrEqual(4.5);
   expect(readings.details).toBeGreaterThanOrEqual(4.5);
   expect(readings.card).toBeGreaterThanOrEqual(4.5);
@@ -1177,29 +1189,30 @@ test("SP125 dark canvas, action rows and application descriptions remain legible
 });
 
 
-// Zoom-out and ultrawide should not create a narrow center column or crop the
-// working laptop illustration; matching remains a real CV-first action.
+// Zoom-out and ultrawide preserve full-width content without horizontal
+// overflow; the banner is live, sharp text rather than a raster illustration.
 test("SP125 zoom-out width preserves full-width work imagery and no sideways overflow", async ({ page }) => {
   await page.setViewportSize({ width: 2400, height: 950 });
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.locator(".flow-start")).toBeVisible();
-  await expect(page.locator(".sp125-career-art")).toBeVisible();
+  const hero = page.getByRole("region", { name: "Career search and applications banner" });
+  await expect(hero.getByRole("heading", { name: "Apply with confidence" })).toBeVisible();
   const measurements = await page.evaluate(() => {
     const main = document.querySelector(".content") as HTMLElement;
     const layout = document.querySelector(".sp126-dashboard-layout") as HTMLElement;
     const flow = document.querySelector(".flow-start") as HTMLElement;
-    const hero = document.querySelector(".sp125-career-art") as HTMLImageElement;
+    const hero = document.querySelector(".sp125-career-cover") as HTMLElement;
     return {
       ratio: flow.getBoundingClientRect().width / layout.getBoundingClientRect().width,
       used: layout.getBoundingClientRect().width / main.getBoundingClientRect().width,
-      imageFit: getComputedStyle(hero).objectFit,
+      heroHeight: hero.getBoundingClientRect().height,
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
   expect(measurements.ratio).toBeGreaterThan(.65);
   expect(measurements.used).toBeGreaterThan(.9);
-  expect(measurements.imageFit).toBe("contain");
+  expect(measurements.heroHeight).toBeLessThan(250);
   expect(measurements.overflow).toBe(false);
 });
 
@@ -1208,7 +1221,10 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.getByRole("region", { name: "Career search and applications banner" })).toBeVisible();
-  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeVisible();
+  await expect(page.locator(".site-header .sp-mobile-brand")).toBeVisible();
+  await expect(page.locator(".site-header .sp-mobile-brand-mark")).toBeVisible();
+  // No second wordmark below the banner: the top header remains fully branded.
+  await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Switch to dark mode" })).toBeVisible();
   await page.getByRole("button", { name: "Switch to dark mode" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
@@ -1217,8 +1233,222 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   await expect(page.locator(".sidebar .site-brand-mark")).toBeVisible();
   await page.getByRole("button", { name: "Close navigation" }).click();
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  await expect(page.getByText("Upload or create a CV, then choose how to apply. You can browse jobs without a CV.")).toBeVisible();
   const horizontalOverflow = await page.evaluate(() =>
     document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(horizontalOverflow).toBe(false);
   await evidence(page, "sp125-work-hero-mobile-dark-logo.png");
+});
+
+
+test("SP127 mobile shell has an immediate brand and actions when session API stalls", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 690 });
+  await installSyntheticApi(page);
+  // Override the synthetic session endpoint with a never-resolving request.
+  // The visible shell must not depend on an authenticated private response.
+  await page.route("**/api/v1/session", async () => {
+    await new Promise<void>(() => {});
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Connecting to your workspace" })).toBeVisible();
+  await expect(page.locator(".sp-boot-logo")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry connection" })).toBeVisible();
+  await expect(page.locator(".spinner")).toHaveCount(0);
+  await page.getByRole("button", { name: "Find jobs" }).click();
+  await expect(page.getByText("Find jobs will open when ready")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+});
+
+test("SP127 Komplyint-structured mobile header and drawer survive 320/390/768px widths", async ({ page }) => {
+  await installSyntheticApi(page);
+  for (const width of [320, 390, 768]) {
+    await page.setViewportSize({ width, height: 740 });
+    await page.goto("/");
+    await expect(page.locator(".site-header .sp-mobile-brand")).toBeVisible();
+    await expect(page.locator(".site-header .header-search")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open menu" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+    const viewport = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth > innerWidth + 1,
+      headerBrand: !!document.querySelector(".sp-mobile-brand"),
+      layout: getComputedStyle(document.querySelector(".site-header")!).display,
+    }));
+    expect(viewport.overflow).toBe(false);
+    expect(viewport.headerBrand).toBe(true);
+    expect(viewport.layout).toBe("grid");
+    const trigger = page.getByRole("button", { name: "Open menu" });
+    await trigger.click();
+    await expect(page.getByRole("dialog", { name: "SmartPloy sidebar" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Close menu" })).toBeFocused();
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+    await page.keyboard.press("Escape");
+    await expect(trigger).toBeFocused();
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+    // A tap on the dimmed area to the RIGHT of the drawer must close it.
+    // Playwright clicks the scrim's centre; CSS must not let the drawer
+    // overlap that actionable portion.
+    await trigger.click();
+    await page.getByRole("button", { name: "Close navigation" }).click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await trigger.click();
+    await page.getByRole("dialog", { name: "SmartPloy sidebar" })
+      .getByRole("button", { name: "Find jobs" }).click();
+    await expect(page.locator("#smartploy-main")).toBeFocused();
+    await expect(page.getByRole("button", { name: "Open menu" }))
+      .toHaveAttribute("aria-expanded", "false");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+  }
+});
+
+
+test("SP128 phone home is CV-first with compact actionable methods and no duplicated secondary panels", async ({ page }) => {
+  await installSyntheticApi(page);
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 740 });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Upload CV first/i })).toBeVisible();
+    await expect(page.locator(".flow-start-card[data-flow-mode]")).toHaveCount(3);
+    await expect(page.locator(".sp126-dashboard-aside")).toBeHidden();
+    await expect(page.locator(".sp126-job-results")).toBeHidden();
+    await expect(page.locator(".sp126-dashboard-main > .stats-grid")).toBeHidden();
+    await expect(page.locator(".site-footer")).toBeHidden();
+    await expect(page.locator(".flow-start-locked")).toHaveCSS("width", "1px");
+    await expect(page.locator(".site-header .sp-mobile-brand")).toBeVisible();
+    const measurements = await page.evaluate(() => {
+      const height = (selector: string) =>
+        document.querySelector(selector)!.getBoundingClientRect().height;
+      return {
+        hero: height(".sp125-career-cover"),
+        cards: Array.from(document.querySelectorAll(".flow-start-card[data-flow-mode]"))
+          .map((el) => el.getBoundingClientRect().height),
+        columns: getComputedStyle(document.querySelector(".flow-start-card[data-flow-mode]")!).gridTemplateColumns,
+        overflow: document.documentElement.scrollWidth > innerWidth + 1,
+      };
+    });
+    expect(measurements.hero).toBeLessThanOrEqual(145);
+    expect(measurements.cards.every((height) => height <= 170)).toBe(true);
+    expect(measurements.columns.split(" ").length).toBe(3);
+    expect(measurements.overflow).toBe(false);
+    // Actual rendered screenshots, not a mockup; CI uploads these artifacts.
+    await evidence(page, "sp128-mobile-home-" + width + ".png");
+    if (width === 390) {
+      const fullHeight = await page.evaluate(() => document.documentElement.scrollHeight);
+      expect(fullHeight).toBeLessThan(1300);
+    }
+    await page.getByRole("button", { name: "Open menu" }).click();
+    await page.getByRole("dialog", { name: "SmartPloy sidebar" })
+      .getByRole("button", { name: "CV & AI tools" }).click();
+    await expect(page.getByRole("heading", { name: "Career tools" })).toBeVisible();
+    await page.getByRole("button", { name: "Open menu" }).click();
+    await page.getByRole("dialog", { name: "SmartPloy sidebar" })
+      .getByRole("button", { name: "My CV & documents" }).click();
+    await expect(page.locator(".cv-panel").getByRole("heading", { name: "Your CV" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+  }
+});
+
+test("SP128 phone home retains dark mode and actual release warning states", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installSyntheticApi(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  await expect(page.locator(".flow-start-card[data-flow-mode]")).toHaveCount(3);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+  await page.evaluate(() => {
+    const banner = document.querySelector(".release-status") as HTMLElement;
+    if (!banner) throw new Error("Release status missing");
+    banner.classList.remove("release-status-development", "release-status-checking", "release-status-aligned");
+    banner.classList.add("release-status-mixed");
+  });
+  await expect(page.locator(".release-status-mixed")).toBeVisible();
+});
+
+test("SP128 phone can open all job results from the compact home", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 740 });
+  await installSyntheticApi(page);
+  await page.goto("/");
+  await expect(page.locator(".sp126-job-results")).toBeHidden();
+  await page.getByRole("button", { name: /Just find jobs/ }).click();
+  await expect(page.getByRole("heading", { name: "Find jobs" })).toBeVisible();
+  await expect(page.getByText("Junior Data Analyst")).toBeVisible();
+  await expect(page.locator(".sp126-dashboard-aside")).toHaveCount(0);
+  const layout = await page.evaluate(() => {
+    const selectors = Array.from(document.querySelectorAll<HTMLSelectElement>(
+      ".job-filter-bar .filter-right select"));
+    const offenders = Array.from(document.querySelectorAll<HTMLElement>("body *"))
+      .filter((element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          rect.width > 0 && rect.right > window.innerWidth + 1;
+      }).slice(0, 12).map((element) => ({
+        tag: element.tagName, className: String(element.className).slice(0, 110),
+        right: Math.round(element.getBoundingClientRect().right),
+      }));
+    return {
+      overflow: document.documentElement.scrollWidth > innerWidth + 1,
+      filters: selectors.length,
+      inside: selectors.every((element) => element.getBoundingClientRect().right <= innerWidth + 1),
+      grid: getComputedStyle(document.querySelector(".job-filter-bar .filter-right")!).display,
+      offenders,
+    };
+  });
+  expect(layout.filters).toBe(4);
+  expect(layout.grid).toBe("grid");
+  expect(layout.inside, JSON.stringify(layout.offenders)).toBe(true);
+  expect(layout.overflow, JSON.stringify(layout.offenders)).toBe(false);
+});
+
+
+test("V4 new visitor sees the black SmartPloy loading shell without rotation", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
+  await expect(page.locator(".sp-boot-logo")).toBeVisible();
+  await expect(page.locator(".spinner")).toHaveCount(0);
+  const appearance = await page.evaluate(() => ({
+    background: getComputedStyle(document.querySelector(".sp-boot")!).backgroundColor,
+    icon: getComputedStyle(document.querySelector(".sp-boot-logo")!).animationName,
+  }));
+  expect(appearance.background).toBe("rgb(5, 7, 11)");
+  expect(appearance.icon).toBe("none");
+});
+
+test("SP156 Komplyint typography is self-hosted and banner has one clear heading", async ({ page }) => {
+  await installSyntheticApi(page);
+  await page.goto("/");
+  const hero = page.getByRole("region", { name: "Career search and applications banner" });
+  await expect(hero).toBeVisible();
+  expect((await hero.innerText()).trim()).toBe("Apply with confidence");
+  await expect(page.locator(".flow-start-heading .section-kicker")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  const families = await page.evaluate(async () => {
+    await document.fonts.load('400 20px "Lato"');
+    await document.fonts.load('400 40px "EB Garamond"');
+    await document.fonts.load('700 15px "Manrope"');
+    return {
+      body: getComputedStyle(document.querySelector(".smartploy-app")!).fontFamily,
+      banner: getComputedStyle(document.querySelector(".sp125-career-copy h2")!).fontFamily,
+      nav: getComputedStyle(document.querySelector(".sidebar-nav .nav-item")!).fontFamily,
+      loaded: [
+        document.fonts.check('400 20px "Lato"'),
+        document.fonts.check('400 40px "EB Garamond"'),
+        document.fonts.check('700 15px "Manrope"'),
+      ],
+      overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
+  expect(families.body).toContain("Lato");
+  expect(families.banner).toContain("EB Garamond");
+  expect(families.nav).toContain("Manrope");
+  expect(families.loaded).toEqual([true, true, true]);
+  expect(families.overflow).toBe(false);
+  // First-use light/mobile mode must never show invisible white-on-white text.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const cvAlternative = page.getByRole("button", { name: /Create CV from scratch/i });
+  await expect(cvAlternative).toBeVisible();
+  await expect(cvAlternative).toHaveCSS("color", "rgb(14, 38, 54)");
+  await expect(cvAlternative).toHaveCSS("background-color", "rgb(255, 255, 255)");
 });

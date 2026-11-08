@@ -14,10 +14,8 @@ export function savedSmartployTheme(): SmartployTheme | null {
 export function initialSmartployTheme(): SmartployTheme {
   const stored = savedSmartployTheme();
   if (stored) return stored;
-  try {
-    return typeof window !== "undefined" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  } catch { return "light"; }
+  // New visitors see the approved black SmartPloy palette; persisted light preference stays respected.
+  return "dark";
 }
 
 export function applySmartployTheme(theme: SmartployTheme): void {
@@ -25,7 +23,7 @@ export function applySmartployTheme(theme: SmartployTheme): void {
   document.documentElement.setAttribute("data-smartploy-theme", theme);
   document.documentElement.style.colorScheme = theme;
   document.querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", theme === "dark" ? "#080f1b" : "#f4f7fb");
+    ?.setAttribute("content", theme === "dark" ? "#05070b" : "#f4f7fb");
 }
 
 /** One explicit user preference for the entire app, not tied to applicant data. */

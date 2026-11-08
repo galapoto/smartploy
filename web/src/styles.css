@@ -79,8 +79,6 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .icon-btn.danger { color: #bb4655; }
 .menu-toggle { display: none; }
 .header-avatar { width: 36px; height: 36px; }
-.rotate { animation: spin .8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 .content { max-width: 1550px; margin: 0 auto; padding: 28px 30px 26px; }
 .welcome-banner { min-height: 227px; border-radius: 18px; border: 1px solid #d7e6f4; background: linear-gradient(103deg, #e7f5ff 0%, #f6fbff 58%, #deeffc 100%); position: relative; padding: 29px 37px; overflow: hidden; display: flex; }
@@ -303,7 +301,9 @@ h1, h2, h3, h4, p { margin-top: 0; }
 .loading-screen { min-height: 100vh; display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; color: #657d99; }
 .loading-screen img { width: 73px; height: 73px; object-fit: contain; }
 .loading-screen h1 { font-size: 22px; color: #192f4a; margin: 0; }
-.spinner { width: 24px; height: 24px; border: 3px solid #d9eafa; border-top-color: #146ec6; border-radius: 50%; animation: spin .8s linear infinite; }
+.loading-status { margin: 0; text-align: center; }
+.loading-progress-track { width: min(240px, 55vw); height: 4px; overflow: hidden; border-radius: 999px; background: #d9eafa; }
+.loading-progress-fill { display: block; width: 38%; height: 100%; border-radius: inherit; background: #06d9e8; }
 
 .modal-backdrop { position: fixed; inset: 0; background: #091c3ea8; z-index: 100; display: grid; place-items: center; padding: 20px; }
 .dialog { background: #fff; border-radius: 18px; max-width: 570px; width: 100%; max-height: calc(100vh - 40px); overflow: auto; box-shadow: 0 22px 70px #0c1b3b4a; padding: 26px; }
