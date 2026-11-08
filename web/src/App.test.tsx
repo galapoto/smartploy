@@ -808,6 +808,10 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByText(/1 current job listings/i)).toBeTruthy();
     expect(screen.queryByText(/90% search match/i)).toBeNull();
     expect(currentPrefs.mode).toBe("general");
+    // The preference save's post-write GETs must be independently abortable.
+    const lastSearchSignal = vi.mocked(api.getSearchResults).mock.calls.at(-1)?.[0];
+    expect(lastSearchSignal).toBeInstanceOf(AbortSignal);
+    expect(lastSearchSignal?.aborted).toBe(true); // released after save completes
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
     await waitFor(() => expect(api.getSearchPreferences).toHaveBeenCalledTimes(
@@ -1467,6 +1471,12 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       "consent-fixture", "usr-synthetic-1",
     ));
     await waitFor(() => expect(screen.getByText("Withdrawn")).toBeTruthy());
+    // Never leave follow-up consent reads alive after a completed mutation.
+    const lastConsentSignal = vi.mocked(api.getJobAIConsents).mock.calls.at(-1)?.[0];
+    const lastEventSignal = vi.mocked(api.getJobAIConsentEvents).mock.calls.at(-1)?.[0];
+    expect(lastConsentSignal).toBeInstanceOf(AbortSignal);
+    expect(lastEventSignal).toBe(lastConsentSignal);
+    expect(lastConsentSignal?.aborted).toBe(true);
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
