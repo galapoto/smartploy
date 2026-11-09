@@ -40,8 +40,9 @@ if [[ -e "$RECOVERY" || -L "$RECOVERY" ]]; then
     || fail 'existing recovery checkout has tracked edits'
   # Untracked nonignored files would be included by Dockerfile COPY . but
   # are absent from the approved commit; keep only ignored, Docker-excluded
-  # private env and generated artifacts.
-  [[ -z "$(git -C "$RECOVERY" ls-files --others --exclude-standard)" ]] \
+  # private env and generated artifacts. Local .git/info/exclude and global
+  # core.excludesFile are deliberately NOT trusted for release admission.
+  [[ -z "$(git -C "$RECOVERY" ls-files --others --exclude-per-directory=.gitignore)" ]] \
     || fail 'existing recovery checkout has untracked build-context files'
   [[ "$(git -C "$RECOVERY" rev-parse HEAD)" == "$SHA" ]] || fail 'existing recovery checkout is a different revision; inspect manually'
   [[ -f "$RECOVERY/deploy/personal/env" && ! -L "$RECOVERY/deploy/personal/env" ]] || fail 'existing checkout has no safe private env'
