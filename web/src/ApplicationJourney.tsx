@@ -100,13 +100,31 @@ export default function ApplicationJourney(props: {
   }, [filter]);
 
   useEffect(() => {
+    // A changed CV/account invalidates the entire private shortlist, including
+    // unfinished jobs. Parent-side job pin revocation does NOT change either.
     setSelected([]);
     setFocusedKey(props.cv.present ? props.selectedJobKey : "");
     setBatchResult(null);
     setBatchProgress(null);
     setStopRequested(false);
     stopRequestedRef.current = true; // old job loop must not continue on new CV
-  }, [props.cv.sha256, props.cv.present, props.userId, props.selectedJobKey]);
+  }, [props.cv.sha256, props.cv.present, props.userId]);
+
+  useEffect(() => {
+    // An explicit NEW Jobs-card pin resets the old selection. Removing a pin
+    // on deselect or successful preparation must preserve remaining job
+    // selections and failed-job retry receipts in this ongoing journey.
+    if (!props.selectedJobKey) {
+      setFocusedKey("");
+      return;
+    }
+    setSelected([]);
+    setFocusedKey(props.cv.present ? props.selectedJobKey : "");
+    setBatchResult(null);
+    setBatchProgress(null);
+    setStopRequested(false);
+    stopRequestedRef.current = true;
+  }, [props.selectedJobKey]);
 
   // A mode change must not silently re-use a previous AutoApply selection.
   // If a parent forces a mode change during a running batch, stop before
