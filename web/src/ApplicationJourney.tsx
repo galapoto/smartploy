@@ -596,6 +596,8 @@ export default function ApplicationJourney(props: {
             ? "Upload or create your CV"
             : !props.mode || showMethodPicker
               ? "Choose Manual, Assisted or Automatic"
+              : batchResult?.preparedKeys.length
+                ? "Review the CV and letter for your prepared applications"
               : !hasChosenJob
                 ? "Choose a real vacancy that fits your CV"
                 : props.mode === "automatic"
@@ -605,6 +607,8 @@ export default function ApplicationJourney(props: {
             ? "No employer receives your CV when you upload it."
             : !props.mode || showMethodPicker
               ? "Nothing is selected or sent until you decide."
+              : batchResult?.preparedKeys.length
+                ? "Your private drafts are ready. Review and save them before opening the employer form."
               : !hasChosenJob
                 ? "Matches come from stored job listings; no application is sent."
                 : "Your CV and cover letter remain private until a separately reviewed employer action."}</small>
@@ -614,7 +618,10 @@ export default function ApplicationJourney(props: {
           Upload CV <ArrowRight size={16} aria-hidden="true"/>
         </button> : (!props.mode || showMethodPicker) ? <a className="navy-btn" href="#smartploy-flow-choice">
           Choose application type <ArrowRight size={16} aria-hidden="true"/>
-        </a> : canContinuePinnedAutoJob ? <button className="navy-btn" type="button"
+        </a> : batchResult?.preparedKeys.length ? <button className="navy-btn" type="button"
+          onClick={() => props.onOpenApplications(batchResult.preparedWorkspaces?.[0]?.workspaceId)}>
+          Review prepared documents <ArrowRight size={16} aria-hidden="true"/>
+        </button> : canContinuePinnedAutoJob ? <button className="navy-btn" type="button"
           onClick={() => void queue([props.selectedJobKey])}
           disabled={accessInterrupted || blockedKeys.has(props.selectedJobKey) ||
             staleSelectionCount > 0}
