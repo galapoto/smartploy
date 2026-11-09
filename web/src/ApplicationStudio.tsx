@@ -1391,7 +1391,7 @@ export default function ApplicationStudio(props: {
             </button>
             {letterProposal && letterProposal.key === selectedDraftRef.current.key ?
               <a className="outline-btn compact" href="#smartploy-letter-proposal">
-                Review proposed {letterProposal.language === "fi" ? "Finnish" : "English"} letter above
+                Review proposed {letterProposal.language === "fi" ? "Finnish" : "English"} letter
               </a> : null}
           </div> : null}
           <textarea aria-label="Editable cover letter text" rows={13} maxLength={10000}
