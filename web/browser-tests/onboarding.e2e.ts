@@ -1575,3 +1575,25 @@ test("V4 surface system: real Chrome shows legible dark and light cards without 
   expect(light.pageOverflow).toBe(false);
   await evidence(page, "v4-light-next-action-card.png");
 });
+
+
+test("V4 method cards clearly show disabled state on touch screens", async ({ page }) => {
+  await installSyntheticApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  const methods = page.locator(".flow-start-card[data-flow-mode]");
+  await expect(methods).toHaveCount(3);
+  for (const mode of ["manual", "assisted", "automatic"]) {
+    const card = page.locator('.flow-start-card[data-flow-mode="' + mode + '"]');
+    await expect(card).toBeDisabled();
+    const state = await card.evaluate(element => {
+      const css = getComputedStyle(element);
+      return { opacity: css.opacity, shadow: css.boxShadow, cursor: css.cursor };
+    });
+    expect(state.opacity).toBe("0.68");
+    expect(state.shadow).toBe("none");
+    expect(state.cursor).toBe("not-allowed");
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+});
