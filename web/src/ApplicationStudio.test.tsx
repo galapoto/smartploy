@@ -801,9 +801,18 @@ describe("Application Studio private-read account boundary", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", {name:"A private role"})).toBeTruthy();
-    const button=screen.getByRole("button",{name:/Copy approved autofill packet/});
+    const button=screen.getByRole("button",{name:/Start AutoApply · prepare packet/});
     await waitFor(()=>expect((button as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(button);
+    const ready=await screen.findByLabelText("Browser AutoApply ready");
+    expect(ready.textContent).toContain("Browser packet ready");
+    expect(ready.textContent).toContain("Record exact CV and job review below");
+    expect(ready.textContent).toContain("Verify review");
+    expect(ready.textContent).toContain("Start AutoApply");
+    const employerLink=screen.getByRole("link", {name:/Open employer form/i});
+    expect(employerLink.getAttribute("href")).toBe("https://jobs.lever.co/synthetic-fi/job-A");
+    expect(employerLink.getAttribute("target")).toBe("_blank");
+    expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
     const record=await screen.findByRole("button",{name:/Record exact CV and job review/});
     await waitFor(()=>expect((record as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(record);
@@ -855,7 +864,7 @@ describe("Application Studio private-read account boundary", () => {
     });
     studio();
     expect(await screen.findByRole("heading",{name:"A private role"})).toBeTruthy();
-    const copy=screen.getByRole("button",{name:/Copy approved autofill packet/});
+    const copy=screen.getByRole("button",{name:/Start AutoApply · prepare packet/});
     await waitFor(()=>expect((copy as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(copy);
     const record=await screen.findByRole("button",{name:/Record exact CV and job review/});
@@ -876,7 +885,7 @@ describe("Application Studio private-read account boundary", () => {
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByText(/An attempt for this employer job is already reserved across devices/)).toBeTruthy();
-    expect((screen.getByRole("button", { name: /Copy approved autofill packet/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /Start AutoApply · prepare packet/ }) as HTMLButtonElement).disabled).toBe(true);
     expect(api.createBrowserHandoffPacket).not.toHaveBeenCalled();
   });
 
@@ -910,7 +919,7 @@ describe("Application Studio private-read account boundary", () => {
     expect(panel.textContent).toContain("import its observed receipt");
     expect((screen.getByRole("textbox", { name: "Editable CV text" }) as HTMLTextAreaElement).readOnly).toBe(true);
     expect((screen.getByRole("textbox", { name: "Editable cover letter text" }) as HTMLTextAreaElement).readOnly).toBe(true);
-    expect((screen.getByRole("button", { name: /Copy approved autofill packet/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /Start AutoApply · prepare packet/ }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: /Save changes/ }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: /Confirm outcome of previous attempt/ }) as HTMLButtonElement).disabled).toBe(true);
 
@@ -1163,7 +1172,7 @@ describe("Application Studio private-read account boundary", () => {
     expect(await screen.findByRole("heading", { name: "Account verification required" })).toBeTruthy();
     expect(screen.queryByRole("textbox", { name: "Editable CV text" })).toBeNull();
     expect(screen.queryByText("PRIVATE-LETTER-A")).toBeNull();
-    expect(screen.queryByRole("button", { name: /copy approved autofill packet/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /start autoapply · prepare packet/i })).toBeNull();
   });
 });
 
@@ -1296,7 +1305,7 @@ describe("Application Studio delayed mutation and private clipboard safeguards",
     vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
-    const button = screen.getByRole("button", { name: /Copy approved autofill packet/ });
+    const button = screen.getByRole("button", { name: /Start AutoApply · prepare packet/ });
     await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
     fireEvent.click(button);
     await waitFor(() => expect(api.createBrowserHandoffPacket).toHaveBeenCalledWith("workspace-A", 1, "usr-a"));
@@ -1327,7 +1336,7 @@ describe("Application Studio delayed mutation and private clipboard safeguards",
     vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
-    const button = screen.getByRole("button", { name: /Copy approved autofill packet/ });
+    const button = screen.getByRole("button", { name: /Start AutoApply · prepare packet/ });
     await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
     fireEvent.click(button);
     await waitFor(() => expect(copy).toHaveBeenCalledTimes(1));
@@ -1667,7 +1676,7 @@ describe("Application Studio per-draft result isolation", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     studio();
     expect(await screen.findByRole("heading", { name: "A private role" })).toBeTruthy();
-    const copyButton = screen.getByRole("button", { name: /Copy approved autofill packet/ });
+    const copyButton = screen.getByRole("button", { name: /Start AutoApply · prepare packet/ });
     await waitFor(() => expect(copyButton.hasAttribute("disabled")).toBe(false));
     fireEvent.click(copyButton);
     await waitFor(() => expect(api.createBrowserHandoffPacket).toHaveBeenCalledTimes(1));

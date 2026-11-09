@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SmartPloy Apply Companion",
   "version": "0.5.3",
-  "description": "SmartPloy Job intelligence: reviewed employer form help. No background sending; user approval is required.",
+  "description": "Reviewed Lever, Ashby and Greenhouse forms: Start AutoApply fills approved fields and requests question review. No unattended final send.",
   "permissions": [
     "activeTab",
     "scripting",
