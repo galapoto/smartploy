@@ -108,7 +108,7 @@ html[data-smartploy-theme] .smartploy-app .studio-ai-risks > strong {
   color:var(--sp-ui-warning);
 }
 html[data-smartploy-theme] .smartploy-app :is(
-  .studio-alert,.studio-ai-risks,.flow-start-method-status,
+  .studio-alert,.flow-start-method-status,
   .studio-resume-methods,.studio-resume-card,.studio-list-item
 ) :is(h2,h3,h4,strong,p,small) {
   color:var(--sp-ui-ink);
@@ -176,8 +176,7 @@ html[data-smartploy-theme] .smartploy-app :is(
   .studio-resume-card strong,.studio-automation-header h3,
   .welcome-banner h1,.welcome-banner h1 em,
   .flow-job h3,.search-result-card h3,
-  .studio-handoff-header h4,.studio-review-queue-heading h3,
-  .studio-ai-risks strong
+  .studio-handoff-header h4,.studio-review-queue-heading h3
 ) {
   color:var(--sp-ui-ink);
   text-shadow:none;
