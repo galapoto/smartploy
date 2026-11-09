@@ -190,3 +190,19 @@ def test_racing_recovery_path_is_not_replaced(stack):
     assert target.is_dir()
     assert not (target / ".git").exists()
     assert env.read_bytes() == private
+
+
+
+@pytest.mark.parametrize("index_flag", ("--assume-unchanged", "--skip-worktree"))
+def test_existing_checkout_rejects_hidden_tracked_script_changes(stack, index_flag):
+    _, target, env, _, _, _, _ = stack
+    assert run(stack).returncode == 0
+    script = target / "deploy/personal/scripts/deploy.sh"
+    git(target, "update-index", index_flag, "deploy/personal/scripts/deploy.sh")
+    script.write_text("#!/bin/bash\necho tampered\n")
+    assert git(target, "status", "--porcelain", "--untracked-files=no") == ""
+    result = run(stack)
+    assert result.returncode != 0
+    assert "hides tracked files with Git index flags" in result.stderr
+    assert "existing_checkout_verified" not in result.stdout
+    assert env.read_text().startswith("POSTGRES_PASSWORD=synthetic-secret")
