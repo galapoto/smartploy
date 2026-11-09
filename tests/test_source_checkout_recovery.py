@@ -151,3 +151,42 @@ def test_existing_checkout_with_different_env_requires_manual_reconciliation(sta
     result = run(stack)
     assert result.returncode != 0
     assert "private env differs" in result.stderr
+
+
+def test_existing_checkout_does_not_verify_unmerged_head(stack):
+    _, target, _, _, _, _, _ = stack
+    assert run(stack).returncode == 0
+    git(target, "config", "user.email", "fixture@invalid.example")
+    git(target, "config", "user.name", "Fixture")
+    (target / "unmerged.txt").write_text("not approved")
+    git(target, "add", "unmerged.txt")
+    git(target, "commit", "-m", "unmerged fixture")
+    outsider = git(target, "rev-parse", "HEAD")
+    result = run(stack, outsider)
+    assert result.returncode != 0
+    assert "not an ancestor of current first-party main" in result.stderr
+
+
+def test_existing_checkout_rejects_world_readable_copied_secrets(stack):
+    _, target, _, _, _, _, _ = stack
+    assert run(stack).returncode == 0
+    copied = target / "deploy/personal/env"
+    copied.chmod(0o644)
+    result = run(stack)
+    assert result.returncode != 0
+    assert "private env permissions" in result.stderr
+
+
+def test_racing_recovery_path_is_not_replaced(stack):
+    _, target, env, _, _, command, _ = stack
+    original = command.read_text()
+    needle = 'mv -nT -- "$TEMP/source" "$RECOVERY"'
+    assert original.count(needle) == 1
+    command.write_text(original.replace(needle, 'mkdir "$RECOVERY"\n' + needle))
+    private = env.read_bytes()
+    result = run(stack)
+    assert result.returncode != 0
+    assert "refused to overwrite" in result.stderr
+    assert target.is_dir()
+    assert not (target / ".git").exists()
+    assert env.read_bytes() == private
