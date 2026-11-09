@@ -32,9 +32,11 @@ if [[ -n "$TRACKED_CHANGES" ]]; then
 fi
 # Dockerfile COPY . also includes untracked nonignored files, which are not
 # identified by the approved SHA (e.g. a root-level sitecustomize.py).
+# Honor ONLY tracked .gitignore patterns: --exclude-standard would also
+# accept unreviewed .git/info/exclude or global core.excludesFile escapes.
 # Keep legitimate private env ignored and Docker-excluded; reject all other
 # untracked source before checkout, image build, backup or migration.
-UNTRACKED_FILES="$(git -C "${REPO_ROOT}" ls-files --others --exclude-standard)"
+UNTRACKED_FILES="$(git -C "${REPO_ROOT}" ls-files --others --exclude-per-directory=.gitignore)"
 if [[ -n "$UNTRACKED_FILES" ]]; then
   echo "SmartPloy release source: untracked build-context files present; reconcile before deployment" >&2
   exit 3
