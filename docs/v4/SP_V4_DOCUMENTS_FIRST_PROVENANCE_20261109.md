@@ -1,0 +1,11 @@
+# SmartPloy V4 — document-preparation-first workspace
+
+Date: 2026-11-09. Authority: `docs/v4/SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md` sections 1,4,6,7; `AGENTS.md` FEATURE-FIRST-001, REA-FIRST-001 and LEAN-REA-FLOW-001.
+
+**User outcome:** After opening a saved exact-job application, review the actual editable CV and cover letter first. Optional AI-writing and agent controls follow the documents rather than pushing the editors below technical content. Browser handoff remains after documents. The same drafts and safety checks are preserved.
+
+**Donor GitHub repository:** https://github.com/galapoto/smartploy, pinned original commit `ac08dbf05e8bb1bb8545e159d0f1a6dc030c9ff1`, original file `web/src/ApplicationStudio.tsx`. **Destination:** same file, branch `fix/v4-documents-first-editor-20261109`.
+
+**COPIED unchanged:** none across repositories; this is a first-party move of existing JSX blocks without changing their contents, handlers, local state, APIs, validations or source permissions. **PORTED/ADAPTED:** existing first-party `<ApplicationAgentCard>` and `studio-ai-card` sections were moved below existing job CV/cover-letter editors. **INTEGRATED:** native document review and downloads remain first, employer form next after the optional tools. **NEW:** a targeted JSDOM DOM-order test in existing `ApplicationStudio.test.tsx`. **SANITIZED:** no external network/credential code, new deps or third-party source. **REA:** `REA_NOT_APPLICABLE` because exact first-party readable source is available. Savings/performance `NOT_MEASURED`. Original source license status: same-owner permission for first-party edits; no outside license adoption.
+
+**Acceptance:** Real document textarea controls must precede optional AI and employer handoff in the DOM; selection, edit/save, downloads, optional AI and case-scoped employer form remain operational. Existing Application Studio integration tests must still pass. No automatic sending, no CV uploads to external employer without independent approval. GitHub Actions web/Chromium and native Woodpecker must qualify exact PR head and independent non-author review must complete before any merge or production promotion. Status at creation: SOURCE_READY; production and employer verification NOT VERIFIED.
