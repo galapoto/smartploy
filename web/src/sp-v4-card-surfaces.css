@@ -30,13 +30,18 @@ html[data-smartploy-theme="light"] .smartploy-app {
 /* One premium card recipe for existing application, document and tool surfaces.
    Never leave a mint/white gradient behind a dark-theme foreground. */
 html[data-smartploy-theme] .smartploy-app :is(
-  .flow-primary-next,.flow-uploaded,.flow-start-ready,.flow-boundary,
+  .flow-primary-next,.flow-uploaded,.flow-start-ready,.flow-start-method-status,
+  .flow-start-locked,.flow-boundary,
   .flow-decision,.flow-selection-confirmation,.flow-choice-gate,
   .flow-job-instruction,.flow-job-next,.flow-queue,.flow-quick-private-start,
   .flow-next-guidance,.flow-next-action,.flow-prepared-details,
   .studio-info,.studio-assisted-guide,.studio-next-action,
   .studio-journey,.studio-ai-card,.studio-ai-proof,.studio-ai-cv-comparison,
   .studio-letter-proposal,.studio-document-undo,.tools-ai-readiness,
+  .studio-resume-methods,.studio-resume-card,.studio-automation-panel,
+  .studio-alert,.studio-ai-risks,.studio-review-queue,.studio-list,
+  .studio-list-item,.profile-upload-placeholder,.uploaded-file,
+  .info-strip,.welcome-banner,.release-status,
   .document-coach,.document-comparison
 ) {
   background:var(--sp-ui-card);
@@ -55,6 +60,25 @@ html[data-smartploy-theme] .smartploy-app :is(
   border-color:var(--sp-ui-card-border);
   color:var(--sp-ui-ink);
 }
+
+/* Preserve selected/hover meaning without mint panels or hidden text. */
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-list-item.selected,.studio-list-item:hover,
+  .studio-resume-card.selected,.studio-resume-card:hover
+) {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:var(--sp-ui-accent);
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-alert,.studio-ai-risks,.flow-start-method-status,
+  .studio-resume-methods,.studio-resume-card,.studio-list-item
+) :is(h2,h3,h4,strong,p,small) {
+  color:var(--sp-ui-ink);
+}
+/* Grouped job items and existing card actions are still controlled by React;
+   this stylesheet never adds or makes non-actionable fake buttons. */
 
 /* The exact screenshot regression: the next-action panel is now an accessible
    dark/white card, never a mint banner with nearly invisible white text. */
