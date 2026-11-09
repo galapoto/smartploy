@@ -26,8 +26,17 @@ MODE="$(stat -c '%a' "$ENV")"
 if [[ -e "$RECOVERY" || -L "$RECOVERY" ]]; then
   [[ -d "$RECOVERY/.git" || -f "$RECOVERY/.git" ]] || fail 'recovery path exists but is not a Git checkout'
   [[ "$(git -C "$RECOVERY" remote get-url origin)" == "$REMOTE" ]] || fail 'recovery remote is not the expected first-party repository'
+  GIT_TERMINAL_PROMPT=0 git -C "$RECOVERY" fetch --no-tags origin main >/dev/null 2>&1 \
+    || fail 'cannot verify current first-party main for existing recovery checkout'
+  git -C "$RECOVERY" merge-base --is-ancestor "$SHA" refs/remotes/origin/main \
+    || fail 'existing recovery SHA is not an ancestor of current first-party main'
+  [[ -z "$(git -C "$RECOVERY" status --porcelain --untracked-files=no)" ]] \
+    || fail 'existing recovery checkout has tracked edits'
   [[ "$(git -C "$RECOVERY" rev-parse HEAD)" == "$SHA" ]] || fail 'existing recovery checkout is a different revision; inspect manually'
   [[ -f "$RECOVERY/deploy/personal/env" && ! -L "$RECOVERY/deploy/personal/env" ]] || fail 'existing checkout has no safe private env'
+  COPIED_MODE="$(stat -c '%a' "$RECOVERY/deploy/personal/env")"
+  [[ "$COPIED_MODE" =~ ^[0-7]{3,4}$ ]] && (( (8#$COPIED_MODE & 077) == 0 )) \
+    || fail 'existing recovery private env permissions are not restricted'
   cmp -s "$ENV" "$RECOVERY/deploy/personal/env" || fail 'private env differs; reconcile manually'
   printf 'recovery=existing_checkout_verified\nsource_sha=%s\nproduction_unchanged=true\n' "$SHA"
   exit 0
@@ -51,7 +60,9 @@ git -C "$TEMP/source" checkout --quiet --detach "$SHA"
 install -m 600 "$ENV" "$TEMP/source/deploy/personal/env"
 cmp -s "$ENV" "$TEMP/source/deploy/personal/env" || fail 'private env copy verification failed'
 [[ ! -e "$RECOVERY" && ! -L "$RECOVERY" ]] || fail 'recovery path appeared concurrently; refusing to overwrite'
-mv -T -- "$TEMP/source" "$RECOVERY"
+# GNU mv -nT never replaces a target created between the earlier check and rename.
+mv -nT -- "$TEMP/source" "$RECOVERY"
+[[ ! -e "$TEMP/source" ]] || fail 'recovery target appeared concurrently; refused to overwrite'
 [[ "$(git -C "$RECOVERY" rev-parse HEAD)" == "$SHA" ]] || fail 'staged revision mismatch'
 printf 'recovery=new_checkout_ready\nsource_sha=%s\nprivate_env=copied_mode_600\nproduction_unchanged=true\n' "$SHA"
 printf 'next=run_existing_exact_sha_deploy_after_release_approval\n'
