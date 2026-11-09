@@ -244,24 +244,24 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.getByRole("button", { name: "Apply for jobs" })).toBeTruthy();
     expect(document.querySelectorAll("button.flow-start-card[data-flow-mode]")).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
-    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Start with your CV" })).toBeTruthy();
     expect(document.querySelectorAll("button.flow-mode[data-flow-mode]")).toHaveLength(3);
     for (const button of document.querySelectorAll("button.flow-mode[data-flow-mode]")) {
       expect((button as HTMLButtonElement).disabled).toBe(true);
     }
-    expect(screen.getByText(/All three application methods are visible below/i)).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Choose application method" })).toBeNull();
     expect(api.getCVJobMatches).not.toHaveBeenCalled();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Create CV from scratch" }));
     expect(await screen.findByTestId("master-cv-editor")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Save synthetic created CV" }));
-    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Choose how to apply" })).toBeTruthy();
     for (const button of document.querySelectorAll("button.flow-mode[data-flow-mode]")) {
       expect((button as HTMLButtonElement).disabled).toBe(false);
     }
     fireEvent.click(screen.getByRole("button", { name: /Apply with AI help/i }));
-    expect(await screen.findByText(/Apply with AI help selected/i)).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /change method.*apply with AI help/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Apply for jobs" })).toBeTruthy();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
@@ -283,7 +283,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Create CV from scratch/i }));
     expect(await screen.findByTestId("master-cv-editor")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Save synthetic created CV" }));
-    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Choose how to apply" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "Choose application method" })).toBeTruthy();
     expect(screen.getByText("Your CV is connected. Choose a method to continue.")).toBeTruthy();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
@@ -299,8 +299,8 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       name: "CV connected. Choose how to apply.",
     })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Assisted · Apply with AI/i }));
-    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
-    expect(screen.getByText(/Apply with AI help selected/)).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Apply with confidence" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /change method.*apply with AI help/i })).toBeTruthy();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
@@ -983,7 +983,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     // canonical job key. SP70 must show that pinned choice, never create a
     // workspace until the separate Save application draft click.
     fireEvent.click(screen.getByRole("button", { name: /^Apply manually$/ }));
-    expect(await screen.findByRole("button", { name: "Selected job" })).toBeTruthy();
+    expect(await screen.findByLabelText("Next step for Junior Data Analyst")).toBeTruthy();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Save application draft" }));
     await waitFor(() => expect(api.startApplicationWorkspace).toHaveBeenCalledTimes(1));
@@ -1660,7 +1660,8 @@ describe("first opt-in creates private IT applications immediately", () => {
     await waitFor(() => expect(api.uploadCV).toHaveBeenCalledWith(
       expect.objectContaining({ name: "synthetic-CV.pdf" }), "usr-synthetic-1"
     ));
-    expect(await screen.findByRole("heading", { name: "Jobs from your CV" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Choose how to apply" })).toBeTruthy();
+    expect((document.getElementById("smartploy-flow-matches") as HTMLElement).hidden).toBe(true);
     expect(screen.getByText("Your CV is connected. Choose a method to continue.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /save application draft/i })).toBeNull();
     expect(screen.queryByRole("checkbox", { name: /select for preparation/i })).toBeNull();
@@ -1832,7 +1833,8 @@ describe("SP97: AI writing tools have an honest, working CV-first entry", () => 
     expect(ai).toBeTruthy();
     fireEvent.click(ai);
     expect(screen.getByText(/Step 1: upload or create your CV/i)).toBeTruthy();
-    expect(screen.getByRole("group", { name: "Choose application method" })).toBeTruthy();
+    expect((document.getElementById("smartploy-flow-cv") as HTMLElement).hidden).toBe(false);
+    expect(screen.queryByRole("group", { name: "Choose application method" })).toBeNull();
     expect(api.prepareMyMatchingDrafts).not.toHaveBeenCalled();
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
@@ -1909,7 +1911,7 @@ describe("SP125: work-focused career banner, full logo and persistent theme", ()
     const lightSwitch = screen.getByRole("button", { name: "Switch to light mode" });
     expect(lightSwitch.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Apply for jobs" }));
-    expect(await screen.findByRole("heading", { name: "How do you want to apply?" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Start with your CV" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "SmartPloy complete page logo" })).toBeTruthy();
     expect(document.documentElement.getAttribute("data-smartploy-theme")).toBe("dark");
     fireEvent.click(lightSwitch);
