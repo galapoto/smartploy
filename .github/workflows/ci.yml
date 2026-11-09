@@ -206,7 +206,7 @@ jobs:
           python -m pip install --disable-pip-version-check --no-cache-dir \
             'pytest==8.4.1' 'playwright==1.55.0'
           python -m playwright install chromium
-          python -m pytest -q tests/test_playwright_assistant_chromium.py
+          python -m pytest -q tests/test_playwright_assistant_chromium.py tests/test_playwright_https_loopback_browser.py
       - name: Upload synthetic screenshots and failure evidence
         if: always()
         uses: actions/upload-artifact@v4
