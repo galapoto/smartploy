@@ -198,3 +198,23 @@ def test_docker_context_excludes_all_ignored_local_artifacts():
     ):
         assert excluded in dockerignore, f"ignored local artifact can enter Docker COPY: {excluded}"
 
+
+
+def test_release_gate_ignores_untrusted_git_exclude_overrides(tmp_path):
+    for exclusion in ("info_exclude", "global_exclude"):
+        root = tmp_path / exclusion
+        root.mkdir()
+        repo, script, sha = source_sandbox(root)
+        (repo / "sitecustomize.py").write_text("raise RuntimeError('injected')\n")
+        if exclusion == "info_exclude":
+            (repo / ".git/info/exclude").write_text("sitecustomize.py\n")
+        else:
+            global_ignore = root / "untrusted-global-ignore"
+            global_ignore.write_text("sitecustomize.py\n")
+            git(repo, "config", "core.excludesFile", str(global_ignore))
+        assert git(repo, "ls-files", "--others", "--exclude-standard") == ""
+        result = run_gate(script, sha)
+        assert result.returncode == 3
+        assert "untracked build-context files present" in result.stderr
+        assert "release_source_gate=PASS" not in result.stdout
+
