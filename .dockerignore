@@ -14,3 +14,11 @@ dist
 *.egg-info
 deploy/personal/env
 config/public_ats_sources.json
+# Keep ALL ignored local outputs out of Python's COPY . build context.
+*.py[cod]
+web/browser-evidence
+web/playwright-report
+web/test-results
+.ci-out
+web/public/smartploy-apply-companion.zip
+web/public/smartploy-apply-companion.zip.sha256
