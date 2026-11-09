@@ -56,6 +56,9 @@ def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_pat
             assert zipfile_src.read(name) == (SOURCE / name).read_bytes()
         manifest = json.loads(zipfile_src.read("manifest.json"))
         assert manifest["manifest_version"] == 3
+        assert manifest["version"] == "0.5.2"
+        assert b'id="startAutoApply"' in zipfile_src.read("popup.html")
+        assert b"async function onStartAutoApply()" in zipfile_src.read("popup.mjs")
         assert manifest["permissions"] == ["activeTab", "scripting", "storage"]
         assert manifest["action"]["default_popup"] == "popup.html"
         for denied in (

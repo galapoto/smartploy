@@ -122,6 +122,18 @@ jobs:
       - name: Web build
         working-directory: web
         run: npm run build
+      # Review-only artifact: identical deterministic source archive used by
+      # the production web packaging path. Does not deploy or authorize sends.
+      - name: Attach Chrome companion review ZIP with exact SHA256
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-companion-REVIEW-v0.5.2-run-${{ github.run_id }}
+          path: |
+            web/public/smartploy-apply-companion.zip
+            web/public/smartploy-apply-companion.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
 
   browser:
     # Playwright 1.55.1 does not install its pinned Chromium on the hosted

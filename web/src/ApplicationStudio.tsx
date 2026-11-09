@@ -1579,8 +1579,8 @@ export default function ApplicationStudio(props: {
         {selected.status === "draft" ? <section className="studio-handoff" id="smartploy-employer-step"
           aria-label="Browser application assistant">
           <div className="studio-handoff-header">
-            <div><p className="section-kicker">EMPLOYER APPLICATION</p><h4>Fill the employer's form</h4>
-              <p>Use the optional SmartPloy companion for reviewed contact details, ordinary answers and PDF assistance on supported Lever, Ashby and hosted Greenhouse forms. Greenhouse submission remains manual; Ashby requires separately authorized partner API rights and your fresh final approval.</p></div>
+            <div><p className="section-kicker">EMPLOYER APPLICATION</p><h4>Start browser AutoApply</h4>
+              <p>Approve your packet → open the employer form → watch reviewed fields fill.</p></div>
             <ExternalLink size={18} />
           </div>
           {employerAttempt?.previous_attempt_reserved ? (
@@ -1626,7 +1626,8 @@ export default function ApplicationStudio(props: {
               disabled={!handoff?.ready || dirty || busy || handoffBusy || !!browserReceipt ||
                 employerAttempt?.previous_attempt_reserved === true}
               onClick={() => void copyBrowserPacket()}>
-              <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" : "Copy approved autofill packet"}
+              <ClipboardCopy size={16}/> {handoffBusy ? "Preparing…" :
+                handoffPacketText ? "Renew AutoApply packet" : "Start AutoApply · prepare packet"}
             </button>
             <a className="outline-btn" href="/smartploy-apply-companion.zip"
               download="smartploy-apply-companion.zip"
@@ -1644,13 +1645,29 @@ export default function ApplicationStudio(props: {
             runs only when you click it; it does not submit jobs in the background.
             It is not a Chrome Web Store install and does not update automatically.
           </p>
-          {handoffPacketText ? <div className="studio-packet-fallback">
-            <label htmlFor="smartploy-browser-packet">Private packet for your browser companion</label>
-            <textarea id="smartploy-browser-packet" readOnly rows={4}
-              value={handoffPacketText} spellCheck={false}
-              onFocus={(event) => event.currentTarget.select()}
-              aria-label="Select and copy the private short-lived browser packet" />
-            <p>Copied packets contain approved contact information. Never share them in chat or public issues.</p>
+          {handoffPacketText ? <div className="studio-packet-fallback"
+            aria-label="Browser AutoApply ready" role="status">
+            <strong><CheckCircle2 size={16}/> Browser packet ready</strong>
+            <ol aria-label="Browser AutoApply handoff steps">
+              <li>{finalReview?.review_recorded ? "Review recorded" :
+                "Record exact CV and job review below"}</li>
+              <li>On this SmartPloy tab, paste the packet into the companion and select Verify review</li>
+              <li>Open the employer form below, paste the same packet and select Start AutoApply</li>
+            </ol>
+            {safePostingLink(selected.application_url) ? <a className="navy-btn"
+              href={safePostingLink(selected.application_url)}
+              rel="noopener noreferrer" target="_blank">
+              Open employer form <ArrowUpRight size={16}/>
+            </a> : <p role="alert">Employer link unavailable; do not start browser filling.</p>}
+            <details>
+              <summary>Copy packet manually</summary>
+              <label htmlFor="smartploy-browser-packet">Private short-lived packet</label>
+              <textarea id="smartploy-browser-packet" readOnly rows={4}
+                value={handoffPacketText} spellCheck={false}
+                onFocus={(event) => event.currentTarget.select()}
+                aria-label="Select and copy the private short-lived browser packet" />
+              <small>Keep this packet private; it contains approved contact details.</small>
+            </details>
           </div> : null}
           {handoffPacketText ? <div className="studio-packet-fallback" aria-label="Exact application final review">
             <strong>Final review record · no application submitted</strong>
