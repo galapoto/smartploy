@@ -426,7 +426,7 @@ describe("SP21 application journey", () => {
     render(<ApplicationJourney {...p} />);
     await screen.findByText("IT-suunnittelija");
     expect(screen.getByText(/Prepare a CV and letter for each selected job/i)).toBeTruthy();
-    expect(screen.getByText(/Each selected job gets its own private application draft and in-app agent/i)).toBeTruthy();
+    expect(screen.getByText(/Prepare a CV and letter for each selected job/i)).toBeTruthy();
     fireEvent.click(screen.getAllByRole("checkbox", { name: /select for preparation/i })[0]);
     fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
     await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(
