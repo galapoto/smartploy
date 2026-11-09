@@ -639,6 +639,7 @@ export default function ApplicationJourney(props: {
         </details>
         {props.mode && !showMethodPicker ? <button type="button"
           className="outline-btn compact"
+          disabled={props.queueBusy || !!queueInFlight.current || !!batchProgress}
           onClick={() => setShowMethodPicker(true)}>
           Change method · {MODE_INFO[props.mode].title}
         </button> : null}
