@@ -425,7 +425,7 @@ describe("SP21 application journey", () => {
     const p = { ...props(), mode: "automatic" as const };
     render(<ApplicationJourney {...p} />);
     await screen.findByText("IT-suunnittelija");
-    expect(screen.getByText(/No email, call or employer application is sent/i)).toBeTruthy();
+    expect(screen.getByText(/Prepare a CV and letter for each selected job/i)).toBeTruthy();
     expect(screen.getByText(/Each selected job gets its own private application draft and in-app agent/i)).toBeTruthy();
     fireEvent.click(screen.getAllByRole("checkbox", { name: /select for preparation/i })[0]);
     fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
@@ -935,7 +935,7 @@ describe("SP96: the applicant has one obvious next action at each gate", () => {
     const p = { ...props(), cv: { present: false }, mode: null };
     render(<ApplicationJourney {...p} />);
     const current = screen.getByLabelText("Your next action");
-    expect(current.textContent).toContain("Connect your CV");
+    expect(current.textContent).toContain("Upload or create your CV");
     const upload = screen.getByRole("button", { name: /^Upload CV$/ });
     fireEvent.click(upload);
     expect(p.onUpload).toHaveBeenCalledOnce();
