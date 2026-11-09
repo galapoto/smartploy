@@ -22,6 +22,7 @@ import AuthorizedAutoApplyBatch from "./AuthorizedAutoApplyBatch";
 import DocumentCoach from "./DocumentCoach";
 import DocumentComparison from "./DocumentComparison";
 import { prepareAISummaryCV } from "./aiSummaryReview";
+import LocalPlaywrightAssist from "./LocalPlaywrightAssist";
 import type { ApplicationFlowMode, ApplicationWorkspace, LocalAIStatus, LocalAISuggestion, LocalAIInferenceProof, BrowserHandoffReadiness, BrowserObservedReceipt, BrowserReceiptImport } from "./types";
 import { safeExternalJobUrl } from "./lib";
 import { applicationNextStep } from "./applicationNextStep";
@@ -1638,13 +1639,12 @@ export default function ApplicationStudio(props: {
               href="https://github.com/galapoto/smartploy/blob/main/docs/BROWSER_APPLY_COMPANION.md"
               target="_blank" rel="noopener noreferrer">Installation instructions <ArrowUpRight size={15}/></a>
           </div>
-          <p className="muted">
-            Desktop Chrome or Chromium: download and extract the ZIP, open
-            chrome://extensions, enable Developer mode and choose Load unpacked.
-            Select the extracted folder containing manifest.json. The companion
-            runs only when you click it; it does not submit jobs in the background.
-            It is not a Chrome Web Store install and does not update automatically.
-          </p>
+          <details className="studio-browser-install">
+            <summary>Install Chrome companion</summary>
+            <p className="muted">Extract the ZIP, open chrome://extensions, enable Developer mode,
+              and choose Load unpacked. Select the folder with manifest.json.
+              This is not a Chrome Web Store install and does not update automatically.</p>
+          </details>
           {handoffPacketText ? <div className="studio-packet-fallback"
             aria-label="Browser AutoApply ready" role="status">
             <strong><CheckCircle2 size={16}/> Browser packet ready</strong>
@@ -1669,6 +1669,30 @@ export default function ApplicationStudio(props: {
               <small>Keep this packet private; it contains approved contact details.</small>
             </details>
           </div> : null}
+          {handoffPacketText && !browserReceipt && !partnerReceipt &&
+              !employerAttempt?.previous_attempt_reserved ? (
+            <details className="studio-browser-alternative"
+              aria-label="Visible Playwright browser alternative">
+              <summary>Use visible Playwright instead</summary>
+              <a className="outline-btn compact"
+                href="/smartploy-playwright-assistant.zip"
+                download="smartploy-playwright-assistant.zip"
+                aria-label="Download local Playwright browser ZIP">
+                <Download size={15}/> Download local Playwright helper
+              </a>
+              <LocalPlaywrightAssist
+                key={selected.workspace_id + ":" + selected.revision + ":" + props.expectedUserId}
+                packetText={handoffPacketText}
+                enabled={handoff?.ready === true && !dirty && !busy &&
+                  !handoffBusy && !accountBlocked &&
+                  !!employerAttempt && !employerAttempt.previous_attempt_reserved}
+                expectedUserId={props.expectedUserId}
+                expectedAuthSource={props.expectedAuthSource}
+                expectedWorkspaceId={selected.workspace_id}
+                expectedRevision={selected.revision}
+              />
+            </details>
+          ) : null}
           {handoffPacketText ? <div className="studio-packet-fallback" aria-label="Exact application final review">
             <strong>Final review record · no application submitted</strong>
             <p className="muted">This records only your review of the exact CV PDF and letter for 10 minutes.

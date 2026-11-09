@@ -1,0 +1,137 @@
+"""SP110 real Python Playwright + Chromium synthetic employer form acceptance.
+
+This fixture intercepts the entire employer request. No external employer,
+credentials, CV, file upload or submit action is ever sent.
+Run in browser CI after installing pinned Python Playwright + Chromium.
+"""
+from __future__ import annotations
+
+import pytest
+from test_playwright_assistant import assistant, packet
+
+sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
+
+
+SAFE_HTML = """<!doctype html><html><head><meta charset="utf-8"></head><body>
+<form id="application">
+  <label for="full">Full Name</label><input id="full" name="full_name" type="text">
+  <label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email">
+  <label for="salary">Salary</label><input id="salary" name="salary" type="text" autocomplete="email">
+  <label for="letter">Cover Letter</label><textarea id="letter" name="cover_letter"></textarea>
+  <label for="consent">GDPR Consent</label><input id="consent" type="checkbox">
+  <input id="password" type="password" name="password">
+  <button type="submit">Submit application</button>
+</form>
+<script>window.submissionCount=0;document.querySelector("form").addEventListener(
+  "submit", e => { e.preventDefault(); window.submissionCount++; }
+);</script>
+</body></html>"""
+
+
+def test_sp110_real_chromium_approved_fill_does_not_submit_upload_or_fill_sensitive():
+    target = "https://jobs.lever.co/example/position/apply"
+    p = packet("https://jobs.lever.co/example/position")
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=SAFE_HTML,
+            ))
+            page.goto(target, wait_until="domcontentloaded")
+            assert assistant.same_reviewed_form(p["application_url"], page.url)
+            rows = assistant.inspect_page(page)
+            plan = assistant.plan_fields(rows, p)
+            assert [item["key"] for item in plan] == ["full_name", "email", "cover_letter"]
+            result = assistant.fill_reviewed_page(page, p, plan, rows)
+            assert result == {"filled": 3, "planned": 3, "stopped_on_change": False,
+                              "submitted": False, "uploaded": False}
+            assert page.locator("#full").input_value() == "Applicant Example"
+            assert page.locator("#email").input_value() == "person@example.invalid"
+            assert page.locator("#letter").input_value() == p["fields"]["cover_letter"]
+            assert page.locator("#salary").input_value() == ""
+            assert page.locator("#password").input_value() == ""
+            assert page.evaluate("window.submissionCount") == 0
+        finally:
+            browser.close()
+
+
+def test_sp110_real_chromium_dynamic_form_change_stops_before_next_field():
+    target = "https://jobs.lever.co/example/position/apply"
+    p = packet("https://jobs.lever.co/example/position")
+    html = SAFE_HTML.replace(
+        "</body>",
+        """<script>
+        document.getElementById("full").addEventListener("input", () => {
+          if (!document.querySelector("#injected")) {
+            const input=document.createElement("input");
+            input.id="injected";input.name="new_required";input.required=true;
+            document.querySelector("form").append(input);
+          }
+        });
+        </script></body>""",
+    )
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=html,
+            ))
+            page.goto(target, wait_until="domcontentloaded")
+            rows = assistant.inspect_page(page)
+            plan = assistant.plan_fields(rows, p)
+            assert len(plan) == 3
+            result = assistant.fill_reviewed_page(page, p, plan, rows)
+            assert result["filled"] == 1
+            assert result["stopped_on_change"] is True
+            assert page.locator("#email").input_value() == ""
+            assert page.evaluate("window.submissionCount") == 0
+        finally:
+            browser.close()
+
+
+
+def test_sp111_chromium_informational_captcha_text_does_not_block_real_form():
+    from test_playwright_local_bridge import bridge
+    html = SAFE_HTML.replace(
+        '<form id="application">',
+        '<p>We may use CAPTCHA, security checks, or verify you are human '
+        'on suspicious sign-ins. This is informational only.</p>'
+        '<form id="application">',
+    )
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=html,
+            ))
+            page.goto("https://jobs.lever.co/example/position/apply")
+            assert bridge.active_security_challenge(page) is False
+            assert len(assistant.plan_fields(assistant.inspect_page(page),
+                                             packet("https://jobs.lever.co/example/position"))) == 3
+            assert page.evaluate("window.submissionCount") == 0
+        finally:
+            browser.close()
+
+
+def test_sp111_chromium_visible_challenge_or_interstitial_requires_human():
+    from test_playwright_local_bridge import bridge
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html",
+                body=SAFE_HTML.replace("</form>", '<div class="cf-turnstile">'
+                    'Human verification required</div></form>'),
+            ))
+            page.goto("https://jobs.lever.co/example/position/apply")
+            assert bridge.active_security_challenge(page) is True
+
+            page.set_content("<main><h1>Security check</h1>"
+                "<p>Verify you are human to continue.</p></main>")
+            assert bridge.active_security_challenge(page) is True
+        finally:
+            browser.close()

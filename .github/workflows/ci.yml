@@ -134,6 +134,18 @@ jobs:
             web/public/smartploy-apply-companion.zip.sha256
           if-no-files-found: error
           retention-days: 7
+      # Source-only candidate for applicant-installed visible local Chromium.
+      # Publish exactly the deterministic archive produced by npm prebuild.
+      - name: Attach visible Playwright review ZIP with exact SHA256
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-playwright-REVIEW-run-${{ github.run_id }}
+          path: |
+            web/public/smartploy-playwright-assistant.zip
+            web/public/smartploy-playwright-assistant.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
 
   browser:
     # Playwright 1.55.1 does not install its pinned Chromium on the hosted
@@ -186,6 +198,15 @@ jobs:
       - name: Browser acceptance against isolated synthetic API
         working-directory: web
         run: npm run test:e2e
+      # PR #277's original Python Chromium tests otherwise importorskip.
+      # Explicitly commission them here: approved, intercepted employer only.
+      - name: Real Python Playwright visible-helper Chromium acceptance
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            'pytest==8.4.1' 'playwright==1.55.0'
+          python -m playwright install chromium
+          python -m pytest -q tests/test_playwright_assistant_chromium.py tests/test_playwright_https_loopback_browser.py
       - name: Upload synthetic screenshots and failure evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -325,6 +346,7 @@ jobs:
           # SP45: compare current source ZIP to the real Caddy download before
           # considering this source artifact a verified release candidate.
           bash deploy/personal/scripts/assert-companion-release.sh smartploy.obumai.com 18091
+          bash deploy/personal/scripts/assert-playwright-release.sh smartploy.obumai.com 18091
           # Negative control: tag an unrelated existing image as a fake release;
           # the image-ID gate must detect that the running containers are stale.
           BAD_SHA="0000000000000000000000000000000000000000"

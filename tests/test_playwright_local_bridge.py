@@ -1,0 +1,302 @@
+"""SP111 local Playwright pairing security and offline HTTP contract.
+
+No real browser, employer network, credentials or user data is used here.
+The Python Chromium acceptance in test_playwright_assistant_chromium.py
+separately tests the actual ObumAI-derived DOM filling executor.
+"""
+from __future__ import annotations
+
+from contextlib import contextmanager
+from copy import deepcopy
+from http.client import HTTPConnection
+from http.server import HTTPServer
+import importlib.util
+import json
+from pathlib import Path
+import sys
+from threading import Thread
+
+import pytest
+
+from test_playwright_assistant import FakePage, assistant, field, packet
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "browser-playwright"))
+SPEC = importlib.util.spec_from_file_location(
+    "smartploy_sp111_bridge", ROOT / "browser-playwright/bridge.py"
+)
+assert SPEC and SPEC.loader
+bridge = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(bridge)
+
+SAFE_ORIGIN = "https://smartploy.komplyint.fi"
+PAIR_CODE = "this-is-a-synthetic-pairing-code-not-a-secret"
+
+
+class FakeActor:
+    instances = []
+
+    def __init__(self, value):
+        self.packet = value
+        self.page = FakePage([
+            field(0, "Full Name", "full"),
+            field(1, "Email", "mail", type="email", autocomplete="email"),
+            field(2, "Salary", "salary", autocomplete="email"),
+            field(3, "Cover Letter", "letter", tag="textarea", type="textarea"),
+            field(4, "Visa Status", "visa", autocomplete="name"),
+            field(5, "Password", "password", type="password"),
+        ])
+        self.closed = False
+        self.instances.append(self)
+
+    def inspect(self, p):
+        assert p is self.packet
+        rows = deepcopy(self.page.rows)
+        return self.page, rows, assistant.plan_fields(rows, p)
+
+    def fill(self, page, p, plan, rows):
+        assert page is self.page
+        return assistant.fill_reviewed_page(page, p, plan, rows)
+
+    def close(self):
+        self.closed = True
+
+
+def state():
+    FakeActor.instances.clear()
+    return bridge.BridgeState(pairing_code=PAIR_CODE, actor_factory=FakeActor)
+
+
+def test_sp111_pairing_and_single_reviewed_fill_no_submit_or_upload():
+    current = state()
+    with pytest.raises(bridge.BridgeError) as denied:
+        current.inspect()
+    assert denied.value.status == 409
+    with pytest.raises(bridge.BridgeError):
+        current.prepare("wrong", packet())
+    assert not FakeActor.instances
+    opened = current.prepare(PAIR_CODE, packet())
+    assert opened["stage"] == "opened"
+    assert opened["submitted"] is False and opened["uploaded"] is False
+    assert "fields" not in opened and "cv_text" not in opened
+    assert len(opened["token"]) >= 40
+    assert current.pairing_code == ""
+    current.authenticate("Bearer " + opened["token"])
+    with pytest.raises(bridge.BridgeError):
+        current.authenticate("Bearer " + "x" * 43)
+    with pytest.raises(bridge.BridgeError):
+        current.prepare(PAIR_CODE, packet())
+    view = current.inspect()
+    assert view["stage"] == "inspected"
+    assert [x["key"] for x in view["approved_fields"]] == [
+        "full_name", "email", "cover_letter"
+    ]
+    assert all("value" not in item for item in view["approved_fields"])
+    with pytest.raises(bridge.BridgeError):
+        current.fill("incorrect", "FILL REVIEWED FIELDS")
+    with pytest.raises(bridge.BridgeError):
+        current.fill(view["plan_id"], "SUBMIT")
+    assert FakeActor.instances[0].page.filled == []
+    done = current.fill(view["plan_id"], "FILL REVIEWED FIELDS")
+    assert done == {
+        "ok": True, "stage": "filled", "filled": 3, "planned": 3,
+        "stopped_on_change": False, "submitted": False, "uploaded": False,
+    }
+    assert FakeActor.instances[0].page.filled == [
+        ("full", "Applicant Example"),
+        ("mail", "person@example.invalid"),
+        ("letter", "Synthetic, reviewed, factual cover letter."),
+    ]
+    with pytest.raises(bridge.BridgeError) as reused:
+        current.fill(view["plan_id"], "FILL REVIEWED FIELDS")
+    assert reused.value.status == 409
+    stopped = current.stop()
+    assert stopped["stage"] == "stopped"
+    assert FakeActor.instances[0].closed is True
+    with pytest.raises(bridge.BridgeError):
+        current.authenticate("Bearer " + opened["token"])
+    with pytest.raises(bridge.BridgeError):
+        current.prepare(PAIR_CODE, packet())
+
+
+def test_sp111_stale_or_forged_packet_and_code_lockout():
+    current = state()
+    bad = packet()
+    bad["fields"]["email"] = "attacker@example.invalid"  # original hash mismatches
+    with pytest.raises(bridge.BridgeError) as blocked:
+        current.prepare(PAIR_CODE, bad)
+    assert blocked.value.status == 422
+    assert not FakeActor.instances
+
+    current = state()
+    for _ in range(bridge.MAX_BAD_CODES):
+        with pytest.raises(bridge.BridgeError):
+            current.prepare("wrong-code", packet())
+    with pytest.raises(bridge.BridgeError) as locked:
+        current.prepare(PAIR_CODE, packet())
+    assert locked.value.status == 403
+    assert not FakeActor.instances
+
+
+def test_sp111_expired_packet_rechecked_before_inspection_and_fill():
+    current = state()
+    _opened = current.prepare(PAIR_CODE, packet())
+    current.packet["expires_at"] = "2000-01-01T00:00:00+00:00"
+    with pytest.raises(bridge.BridgeError) as expired:
+        current.inspect()
+    assert expired.value.status == 410
+    current.stop()
+
+
+def test_sp111_dynamic_employer_form_blocks_further_actions_without_retry():
+    current = state()
+    current.prepare(PAIR_CODE, packet())
+    view = current.inspect()
+    actor = FakeActor.instances[-1]
+
+    def mutate_form(page):
+        page.rows.append(field(99, "Unexpected new requirement", "newField"))
+
+    actor.page.on_fill = mutate_form
+    result = current.fill(view["plan_id"], "FILL REVIEWED FIELDS")
+    assert result["filled"] == 1
+    assert result["stopped_on_change"] is True
+    with pytest.raises(bridge.BridgeError):
+        current.fill(view["plan_id"], "FILL REVIEWED FIELDS")
+    current.stop()
+
+
+@contextmanager
+def fake_local_http_server(current):
+    server = HTTPServer(("127.0.0.1", 0), bridge.make_handler(current))
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        yield server.server_address[1]
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=5)
+        current.stop()
+
+
+def http_request(port, path, payload=None, *, method="POST",
+                 origin=SAFE_ORIGIN, headers=None):
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    data = json.dumps(payload or {}).encode("utf-8")
+    request_headers = {"Origin": origin, "Content-Type": "application/json"}
+    request_headers.update(headers or {})
+    conn.request(method, path, body=data if method == "POST" else None,
+                 headers=request_headers)
+    result = conn.getresponse()
+    body = result.read()
+    answer = {}
+    if body:
+        answer = json.loads(body)
+    meta = dict(result.getheaders())
+    status = result.status
+    conn.close()
+    return status, meta, answer
+
+
+def test_sp111_http_rejects_untrusted_origin_wrong_host_and_missing_token():
+    current = state()
+    with fake_local_http_server(current) as port:
+        code = {"pairing_code": PAIR_CODE, "packet": packet()}
+        status, headers, _ = http_request(port, "/v1/prepare", code,
+                                          origin="https://evil.invalid")
+        assert status == 403
+        assert "Access-Control-Allow-Origin" not in headers
+        status, headers, _ = http_request(port, "/v1/prepare", code,
+                                          headers={"Host": "evil.invalid"})
+        assert status == 403
+        assert "Access-Control-Allow-Origin" not in headers
+        status, _, _ = http_request(port, "/v1/inspect")
+        assert status == 403
+        assert not FakeActor.instances
+
+
+def test_sp111_http_pair_inspect_fill_stop_and_no_credential_leakage():
+    current = state()
+    with fake_local_http_server(current) as port:
+        body = {"pairing_code": PAIR_CODE, "packet": packet()}
+        status, headers, opened = http_request(port, "/v1/prepare", body)
+        assert status == 200
+        assert headers["Access-Control-Allow-Origin"] == SAFE_ORIGIN
+        assert headers["Cache-Control"] == "no-store"
+        assert "pairing_code" not in opened
+        assert "fields" not in opened
+        token = opened["token"]
+        auth = {"Authorization": "Bearer " + token}
+        status, _, plan = http_request(port, "/v1/inspect", headers=auth)
+        assert status == 200
+        assert len(plan["approved_fields"]) == 3
+        status, _, done = http_request(port, "/v1/fill", {
+            "plan_id": plan["plan_id"], "confirmation": "FILL REVIEWED FIELDS",
+        }, headers=auth)
+        assert status == 200
+        assert done["filled"] == 3
+        assert done["submitted"] is False
+        status, _, _ = http_request(port, "/v1/fill", {
+            "plan_id": plan["plan_id"], "confirmation": "FILL REVIEWED FIELDS",
+        }, headers=auth)
+        assert status == 409
+        status, _, stopped = http_request(port, "/v1/stop", headers=auth)
+        assert status == 200
+        assert stopped["stage"] == "stopped"
+        status, _, _ = http_request(port, "/v1/inspect", headers=auth)
+        assert status == 403
+        assert FakeActor.instances[0].closed is True
+
+
+def test_sp111_cors_preflight_private_network_only_on_exact_approved_origin():
+    current = state()
+    with fake_local_http_server(current) as port:
+        conn = HTTPConnection("127.0.0.1", port, timeout=10)
+        conn.request("OPTIONS", "/v1/prepare", headers={
+            "Origin": SAFE_ORIGIN, "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Private-Network": "true",
+            "Access-Control-Request-Headers": "content-type",
+        })
+        response = conn.getresponse()
+        response.read()
+        assert response.status == 204
+        assert response.getheader("Access-Control-Allow-Origin") == SAFE_ORIGIN
+        assert response.getheader("Access-Control-Allow-Private-Network") == "true"
+        assert "Authorization" in response.getheader("Access-Control-Allow-Headers")
+        conn.close()
+
+        conn = HTTPConnection("127.0.0.1", port, timeout=10)
+        conn.request("OPTIONS", "/v1/prepare", headers={
+            "Origin": "https://evil.invalid",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Private-Network": "true",
+        })
+        response = conn.getresponse()
+        response.read()
+        assert response.status == 403
+        assert response.getheader("Access-Control-Allow-Origin") is None
+        assert response.getheader("Access-Control-Allow-Private-Network") is None
+        conn.close()
+
+
+def test_sp111_readonly_endpoint_and_unknown_methods_never_leak_data():
+    current = state()
+    with fake_local_http_server(current) as port:
+        conn = HTTPConnection("127.0.0.1", port, timeout=10)
+        conn.request("GET", "/v1/prepare", headers={"Origin": SAFE_ORIGIN})
+        result = conn.getresponse()
+        data = result.read().decode()
+        assert result.status == 405
+        assert PAIR_CODE not in data
+        conn.close()
+        status, _, _ = http_request(port, "/v1/submit")
+        assert status == 404
+
+
+def test_sp111_production_csp_permits_exact_loopback_bridge_only():
+    caddy = (ROOT / "deploy/personal/web.Caddyfile").read_text(encoding="utf-8")
+    assert "connect-src 'self' http://127.0.0.1:48741;" in caddy
+    assert "connect-src *" not in caddy
+    assert "http://localhost:*" not in caddy
+    assert "http://192.168." not in caddy
