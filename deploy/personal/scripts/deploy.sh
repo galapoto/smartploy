@@ -186,6 +186,7 @@ bash "${SCRIPT_DIR}/assert-web-release.sh" "${WEB_RELEASE_ARGS[@]}" >/dev/null
 # reviewed companion. The served first-party ZIP and SHA must match EXACT
 # checked-out source before deployment state may be committed.
 bash "${SCRIPT_DIR}/assert-companion-release.sh" "${PRODUCTION_HOST}" "${WEB_PORT}" >/dev/null
+bash "${SCRIPT_DIR}/assert-playwright-release.sh" "${PRODUCTION_HOST}" "${WEB_PORT}" >/dev/null
 # SP36: when operator opts in to local-only Agent Zero, require a REAL
 # in-app scheduler task run by this just-recreated worker before admitting
 # a production release SHA. When opted out, fail if an old task stays enabled.
