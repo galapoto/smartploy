@@ -34,6 +34,8 @@ describe("V4 shadcn-adapted surface system", () => {
       ".document-coach", ".document-comparison", ".document-coach-checks li",
       ".studio-ai-card", ".studio-ai-proof", ".studio-letter-proposal",
       ".studio-info", ".studio-document-undo", ".tools-ai-readiness",
+      ".studio-list-item.selected", ".studio-resume-card.selected",
+      ".flow-start-method-status", ".studio-ai-risks", ".studio-review-queue",
       ".flow-job", ".search-result-card", ".flow-mode[data-flow-mode]",
       ".flow-start-grid-methods .flow-start-card[data-flow-mode]",
     ]) expect(css, selector).toContain(selector);
