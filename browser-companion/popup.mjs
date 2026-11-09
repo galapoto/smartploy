@@ -541,8 +541,12 @@ async function onInspect() {
       throw new PacketError("The employer form is dynamic or too large. Please fill it manually.");
     }
     const candidate = planFields(result.result.elements, pkt);
-    if (!candidate.actions.length && !candidate.skippedUploads.length) {
-      throw new PacketError("No supported empty fields or file inputs were found. Fill this application manually.");
+    // Contact details may already be filled. A question-only application must
+    // still reach its review screen, without inventing any contact action.
+    const questions = planReviewedQuestions(result.result.elements);
+    if (!candidate.actions.length && !candidate.skippedUploads.length &&
+        !questions.questions.length && !questions.humanOnly.length) {
+      throw new PacketError("No supported fields, uploads or questions were found. Review this application manually.");
     }
     targetTabId = tab.id;
     currentPacket = pkt;
@@ -650,7 +654,9 @@ async function onStartAutoApply() {
     await onInspect();
     if (!currentPacket || !currentPlan || targetTabId === null ||
         receiptOnly || attemptReserved) return;
-    const filled = await onFill();
+    // On a question-only or upload-only form there are zero contacts to
+    // mutate. Skip the unnecessary fill prompt, then review real questions.
+    const filled = currentPlan.actions.length === 0 ? true : await onFill();
     if (!filled) return;
     await onReviewQuestions();
     // Attachment, reviewed answers and final send remain separate controls.
