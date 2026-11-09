@@ -627,7 +627,7 @@ describe("SP21 application journey", () => {
     await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /Select 1 CV-title matched job/i }));
     expect(screen.getByText("2 of 15 vacancies selected")).toBeTruthy();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Selected" }));
+    fireEvent.click(screen.getAllByRole("checkbox", { name: "Selected" })[0]);
     expect(onClearPinnedJob).toHaveBeenCalledTimes(1);
     view.rerender(<ApplicationJourney {...propsWithPin} selectedJobKey="" />);
     await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
