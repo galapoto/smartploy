@@ -35,8 +35,8 @@ describe("V4 shadcn-adapted surface system", () => {
     expect(css).toContain(".studio-alert.error");
     expect(css).toContain("border-left-color:var(--sp-ui-error)");
     expect(css).toContain(".studio-ai-risks > strong");
-    expect(css).toMatch(/\\.studio-ai-risks > strong\\s*\\{\\s*color:var\\(--sp-ui-warning\\)/);
-    expect(css).not.toContain(".studio-ai-risks strong\\n)");
+    expect(css).toMatch(/\.studio-ai-risks > strong\s*\{\s*color:var\(--sp-ui-warning\)/);
+    expect(css).not.toMatch(/\.studio-ai-risks strong\s*\)/);
     expect(css).not.toContain(".studio-alert,.studio-ai-risks,.flow-start-method-status");
     expect(css).toContain("border-left-color:var(--sp-ui-warning)");
     expect(css).toContain(".studio-list-item:hover:not(.selected)");
