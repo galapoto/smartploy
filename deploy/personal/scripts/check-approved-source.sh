@@ -18,6 +18,13 @@ fi
 
 # Deploy must never use a force checkout to erase local edits. Intentional
 # private/untracked deploy/personal/env stays untouched and is not printed.
+# Git status deliberately ignores assume-unchanged and skip-worktree entries.
+# Reject both hints before admitting the exact source as production-safe.
+if git -C "${REPO_ROOT}" ls-files -v |
+    awk 'substr($0,1,1) ~ /[a-zS]/ { hidden=1 } END { exit !hidden }'; then
+  echo "SmartPloy release source: tracked files hidden by Git index flags" >&2
+  exit 3
+fi
 TRACKED_CHANGES="$(git -C "${REPO_ROOT}" status --porcelain --untracked-files=no)"
 if [[ -n "$TRACKED_CHANGES" ]]; then
   echo "SmartPloy release source: tracked files changed; reconcile before deployment" >&2
