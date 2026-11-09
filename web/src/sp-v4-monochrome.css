@@ -387,6 +387,11 @@ html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
   border-color:#3b536a;
   color:#f7faff;
 }
+.smartploy-app .studio-assisted-guide h4,
+.smartploy-app .studio-journey h4,
+.smartploy-app .studio-next-action h4 {
+  color:#f7faff;
+}
 .smartploy-app .studio-journey ol li :is(strong,small) {color:#f1f7ff}
 .smartploy-app .studio-journey li > span {
   background:#07505c;
