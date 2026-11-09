@@ -71,8 +71,8 @@ function JobCard(props: {
         <button type="button" className="outline-btn compact"
           onClick={() => props.onChooseFlow?.("automatic")}
           disabled={!job.source_current || !postingUrl}
-          title="Opens exact private application preparation; no employer submission">
-          AutoApply <ArrowRight size={15}/>
+          title="Prepares the reviewed application; browser filling starts only after a verified executor is connected">
+          Prepare for AutoApply <ArrowRight size={15}/>
         </button>
       </> : <button type="button" className="outline-btn compact"
         aria-label={"Prepare documents for " + job.role_title}
