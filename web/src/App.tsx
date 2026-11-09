@@ -1307,7 +1307,11 @@ export default function App() {
             cv={cv} mode={flowMode}
             selectedJobKey={flowSelectedCVSha === (cv.sha256 || "") ? flowSelectedJob : ""}
             uploading={busyCV} preparing={preparing} queueBusy={flowQueueBusy}
-            onMode={setFlowMode} onUpload={onUploadClick}
+            onMode={(choice) => {
+              setFlowMode(choice); setFlowSelectedJob(""); setFlowSelectedCVSha("");
+            }}
+            onClearPinnedJob={() => { setFlowSelectedJob(""); setFlowSelectedCVSha(""); }}
+            onUpload={onUploadClick}
             onReviewCV={() => navigate("profile")}
             onFindJobs={() => void startGeneralBrowse()}
             onOpenApplications={(workspaceId) => {
