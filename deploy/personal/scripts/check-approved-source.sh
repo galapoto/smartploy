@@ -30,6 +30,15 @@ if [[ -n "$TRACKED_CHANGES" ]]; then
   echo "SmartPloy release source: tracked files changed; reconcile before deployment" >&2
   exit 3
 fi
+# Dockerfile COPY . also includes untracked nonignored files, which are not
+# identified by the approved SHA (e.g. a root-level sitecustomize.py).
+# Keep legitimate private env ignored and Docker-excluded; reject all other
+# untracked source before checkout, image build, backup or migration.
+UNTRACKED_FILES="$(git -C "${REPO_ROOT}" ls-files --others --exclude-standard)"
+if [[ -n "$UNTRACKED_FILES" ]]; then
+  echo "SmartPloy release source: untracked build-context files present; reconcile before deployment" >&2
+  exit 3
+fi
 
 # Refresh only the trusted main line, not arbitrary mutable release branches.
 # The reviewed exact SHA remains valid even if main advanced after approval.
