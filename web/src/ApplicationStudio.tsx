@@ -1337,6 +1337,80 @@ export default function ApplicationStudio(props: {
                   ? "The authorized employer ATS confirmed creation of this application. Your approved CV/letter were sent. This is not a hiring decision."
                   : "SmartPloy has not independently verified submission of this draft. Review every CV and cover-letter claim before sending."}</p></div>
         </div>
+        {documentUndo && documentUndo.key === selectedDraftRef.current.key &&
+          selected.status === "draft" &&
+          documentUndo.afterCV === cvText && documentUndo.afterLetter === letterText &&
+          !browserReceipt && !partnerReceipt &&
+          !employerAttempt?.previous_attempt_reserved ? <div
+            className="studio-document-undo" role="status">
+            <div>
+              <strong>Generated change not yet saved</strong>
+              <small>Restore your wording from before the last {documentUndo.kind} insertion.
+                This changes only the private editor, not the employer application.</small>
+            </div>
+            <button type="button" className="outline-btn compact"
+              disabled={busy || aiBusy || letterBusy}
+              onClick={() => void undoGeneratedEdit()}>
+              Undo last generated edit
+            </button>
+          </div> : null}
+        <div className="studio-document" id="smartploy-cv-review">
+          <div className="studio-document-head"><strong><FileText size={17}/> CV draft</strong><span>{cvText.length.toLocaleString()} / 30,000 characters</span></div>
+          <textarea aria-label="Editable CV text" rows={15} maxLength={30000}
+            readOnly={selected.status !== "draft" || !!browserReceipt ||
+              employerAttempt?.previous_attempt_reserved === true} value={cvText}
+            onChange={(event) => { ++editEpochRef.current; setDocumentUndo(null); setCvText(event.target.value); }}
+            placeholder="Your reviewed CV content" />
+          <small>Started from your uploaded CV, when available; otherwise only approved profile facts.</small>
+          <DocumentCoach kind="job_cv" text={cvText} roleTitle={selected.role_title}
+            company={selected.company} />
+          <div className="studio-export">
+            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "cv", "docx")}
+              className={"outline-btn compact" + (dirty ? " disabled" : "")}
+              aria-disabled={dirty}><Download size={15}/> Download CV · DOCX</a>
+            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "cv", "pdf")}
+              className={"outline-btn compact" + (dirty ? " disabled" : "")}
+              aria-disabled={dirty}><Download size={15}/> PDF</a>
+          </div>
+        </div>
+        <div className="studio-document" id="smartploy-letter-review">
+          <div className="studio-document-head"><strong><FileCheck2 size={17}/> Cover letter draft</strong><span>{letterText.length.toLocaleString()} / 10,000 characters</span></div>
+          {selected.status === "draft" ? <div className="studio-letter-language" aria-label="Cover letter language">
+            <span>Generate a complete letter from approved experience:</span>
+            <button className="outline-btn compact" type="button"
+              onClick={() => void redraftLetter("fi")}
+              disabled={busy || aiBusy || letterBusy || !!browserReceipt ||
+                !!partnerReceipt || !!employerAttempt?.previous_attempt_reserved}>
+              {letterBusy ? "Preparing…" : "Finnish draft"}
+            </button>
+            <button className="outline-btn compact" type="button"
+              onClick={() => void redraftLetter("en")}
+              disabled={busy || aiBusy || letterBusy || !!browserReceipt ||
+                !!partnerReceipt || !!employerAttempt?.previous_attempt_reserved}>
+              {letterBusy ? "Preparing…" : "English draft"}
+            </button>
+            {letterProposal && letterProposal.key === selectedDraftRef.current.key ?
+              <a className="outline-btn compact" href="#smartploy-letter-proposal">
+                Review proposed {letterProposal.language === "fi" ? "Finnish" : "English"} letter
+              </a> : null}
+          </div> : null}
+          <textarea aria-label="Editable cover letter text" rows={13} maxLength={10000}
+            readOnly={selected.status !== "draft" || !!browserReceipt ||
+              employerAttempt?.previous_attempt_reserved === true} value={letterText}
+            onChange={(event) => { ++editEpochRef.current; setDocumentUndo(null); setLetterText(event.target.value); }}
+            placeholder="Your reviewed cover letter" />
+          <DocumentCoach kind="cover_letter" text={letterText} roleTitle={selected.role_title}
+            company={selected.company} />
+          <small>New application drafts begin with real Finnish or English letter prose, not coaching placeholders. Only approved, job-matched facts are used. If your profile lacks a confirmed name or relevant experience, edit the letter or use a language button to see the missing-information report. Older saved drafts stay unchanged until you edit them. Review and save explicitly; no employer is contacted.</small>
+          <div className="studio-export">
+            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "letter", "docx")}
+              className={"outline-btn compact" + (dirty ? " disabled" : "")}
+              aria-disabled={dirty}><Download size={15}/> Download letter · DOCX</a>
+            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "letter", "pdf")}
+              className={"outline-btn compact" + (dirty ? " disabled" : "")}
+              aria-disabled={dirty}><Download size={15}/> PDF</a>
+          </div>
+        </div>
         <ApplicationAgentCard
           key={props.expectedUserId + ":" + selected.workspace_id + ":" + selected.revision}
           workspaceId={selected.workspace_id}
@@ -1502,80 +1576,6 @@ export default function ApplicationStudio(props: {
             </div> : null}
           </div> : null}
         </section>
-        {documentUndo && documentUndo.key === selectedDraftRef.current.key &&
-          selected.status === "draft" &&
-          documentUndo.afterCV === cvText && documentUndo.afterLetter === letterText &&
-          !browserReceipt && !partnerReceipt &&
-          !employerAttempt?.previous_attempt_reserved ? <div
-            className="studio-document-undo" role="status">
-            <div>
-              <strong>Generated change not yet saved</strong>
-              <small>Restore your wording from before the last {documentUndo.kind} insertion.
-                This changes only the private editor, not the employer application.</small>
-            </div>
-            <button type="button" className="outline-btn compact"
-              disabled={busy || aiBusy || letterBusy}
-              onClick={() => void undoGeneratedEdit()}>
-              Undo last generated edit
-            </button>
-          </div> : null}
-        <div className="studio-document" id="smartploy-cv-review">
-          <div className="studio-document-head"><strong><FileText size={17}/> CV draft</strong><span>{cvText.length.toLocaleString()} / 30,000 characters</span></div>
-          <textarea aria-label="Editable CV text" rows={15} maxLength={30000}
-            readOnly={selected.status !== "draft" || !!browserReceipt ||
-              employerAttempt?.previous_attempt_reserved === true} value={cvText}
-            onChange={(event) => { ++editEpochRef.current; setDocumentUndo(null); setCvText(event.target.value); }}
-            placeholder="Your reviewed CV content" />
-          <small>Started from your uploaded CV, when available; otherwise only approved profile facts.</small>
-          <DocumentCoach kind="job_cv" text={cvText} roleTitle={selected.role_title}
-            company={selected.company} />
-          <div className="studio-export">
-            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "cv", "docx")}
-              className={"outline-btn compact" + (dirty ? " disabled" : "")}
-              aria-disabled={dirty}><Download size={15}/> Download CV · DOCX</a>
-            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "cv", "pdf")}
-              className={"outline-btn compact" + (dirty ? " disabled" : "")}
-              aria-disabled={dirty}><Download size={15}/> PDF</a>
-          </div>
-        </div>
-        <div className="studio-document" id="smartploy-letter-review">
-          <div className="studio-document-head"><strong><FileCheck2 size={17}/> Cover letter draft</strong><span>{letterText.length.toLocaleString()} / 10,000 characters</span></div>
-          {selected.status === "draft" ? <div className="studio-letter-language" aria-label="Cover letter language">
-            <span>Generate a complete letter from approved experience:</span>
-            <button className="outline-btn compact" type="button"
-              onClick={() => void redraftLetter("fi")}
-              disabled={busy || aiBusy || letterBusy || !!browserReceipt ||
-                !!partnerReceipt || !!employerAttempt?.previous_attempt_reserved}>
-              {letterBusy ? "Preparing…" : "Finnish draft"}
-            </button>
-            <button className="outline-btn compact" type="button"
-              onClick={() => void redraftLetter("en")}
-              disabled={busy || aiBusy || letterBusy || !!browserReceipt ||
-                !!partnerReceipt || !!employerAttempt?.previous_attempt_reserved}>
-              {letterBusy ? "Preparing…" : "English draft"}
-            </button>
-            {letterProposal && letterProposal.key === selectedDraftRef.current.key ?
-              <a className="outline-btn compact" href="#smartploy-letter-proposal">
-                Review proposed {letterProposal.language === "fi" ? "Finnish" : "English"} letter above
-              </a> : null}
-          </div> : null}
-          <textarea aria-label="Editable cover letter text" rows={13} maxLength={10000}
-            readOnly={selected.status !== "draft" || !!browserReceipt ||
-              employerAttempt?.previous_attempt_reserved === true} value={letterText}
-            onChange={(event) => { ++editEpochRef.current; setDocumentUndo(null); setLetterText(event.target.value); }}
-            placeholder="Your reviewed cover letter" />
-          <DocumentCoach kind="cover_letter" text={letterText} roleTitle={selected.role_title}
-            company={selected.company} />
-          <small>New application drafts begin with real Finnish or English letter prose, not coaching placeholders. Only approved, job-matched facts are used. If your profile lacks a confirmed name or relevant experience, edit the letter or use a language button to see the missing-information report. Older saved drafts stay unchanged until you edit them. Review and save explicitly; no employer is contacted.</small>
-          <div className="studio-export">
-            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "letter", "docx")}
-              className={"outline-btn compact" + (dirty ? " disabled" : "")}
-              aria-disabled={dirty}><Download size={15}/> Download letter · DOCX</a>
-            <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "letter", "pdf")}
-              className={"outline-btn compact" + (dirty ? " disabled" : "")}
-              aria-disabled={dirty}><Download size={15}/> PDF</a>
-          </div>
-        </div>
         {selected.status === "draft" ? <section className="studio-handoff" id="smartploy-employer-step"
           aria-label="Browser application assistant">
           <div className="studio-handoff-header">
