@@ -111,11 +111,11 @@ describe("job discovery mode semantics", () => {
     render(<SearchResultsPanel {...common} data={general} onChooseFlow={onChooseFlow} />);
     expect(screen.getAllByRole("button", { name: /Apply manually/ })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: /Apply with AI/ })).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: /^AutoApply$/ })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /^Prepare for AutoApply$/ })).toHaveLength(2);
     expect(screen.queryByRole("button", { name: /Prepare documents/ })).toBeNull();
     fireEvent.click(screen.getAllByRole("button", { name: /Apply manually/ })[0]);
     fireEvent.click(screen.getAllByRole("button", { name: /Apply with AI/ })[0]);
-    fireEvent.click(screen.getAllByRole("button", { name: /^AutoApply$/ })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /^Prepare for AutoApply$/ })[0]);
     expect(onChooseFlow).toHaveBeenNthCalledWith(1, "lever-analyst", "manual");
     expect(onChooseFlow).toHaveBeenNthCalledWith(2, "lever-analyst", "assisted");
     expect(onChooseFlow).toHaveBeenNthCalledWith(3, "lever-analyst", "automatic");
@@ -131,7 +131,7 @@ describe("job discovery mode semantics", () => {
       }},
     ]};
     render(<SearchResultsPanel {...common} data={rows} onChooseFlow={onChooseFlow} />);
-    const controls = screen.getAllByRole("button", {name: /^AutoApply$/});
+    const controls = screen.getAllByRole("button", {name: /^Prepare for AutoApply$/});
     expect(controls).toHaveLength(2);
     expect(controls.every(button => (button as HTMLButtonElement).disabled)).toBe(true);
     controls.forEach(button => fireEvent.click(button));
