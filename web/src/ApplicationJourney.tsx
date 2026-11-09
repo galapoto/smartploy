@@ -45,6 +45,7 @@ export default function ApplicationJourney(props: {
   preparing: string;
   queueBusy: boolean;
   onMode: (mode: ApplicationFlowMode) => void;
+  onClearPinnedJob?: () => void;
   onUpload: () => void;
   onReviewCV: () => void;
   onFindJobs: () => void;
@@ -283,6 +284,7 @@ export default function ApplicationJourney(props: {
         loading || paging || queryPending || !!error ||
         !jobs.some((row) => row.canonical_key === key && row.job.source_current &&
           !!safeExternalJobUrl(row.job.application_url))) return;
+    if (selected.includes(key) && key === props.selectedJobKey) props.onClearPinnedJob?.();
     setBatchResult(null);
     setSelected((current) => current.includes(key)
       ? current.filter((row) => row !== key)
@@ -295,12 +297,14 @@ export default function ApplicationJourney(props: {
         batchResult?.accessInterrupted || staleSelectionCount > 0) return;
     const proposal = addCVShortlist(selected, results.recommended);
     if (!proposal.added.length) return;
+    props.onClearPinnedJob?.();
     setBatchResult(null);
     setSelected(proposal.selected);
   }
 
   function clearSelected() {
     if (props.queueBusy || queueInFlight.current) return;
+    props.onClearPinnedJob?.();
     setSelected([]);
     setBatchResult(null);
   }
@@ -309,6 +313,7 @@ export default function ApplicationJourney(props: {
     // Do not cancel a possibly committed backend request. Stop *after* the
     // current job and require a newly reviewed source-current selection.
     if (queueInFlight.current) stopRequestedRef.current = true;
+    props.onClearPinnedJob?.();
     setSelected([]);
     setBatchResult(null);
     setFilter(value);
@@ -316,6 +321,7 @@ export default function ApplicationJourney(props: {
 
   function changeOtherVisibility() {
     if (props.queueBusy || queueInFlight.current) return;
+    props.onClearPinnedJob?.();
     setShowOther((current) => !current);
     setSelected([]);
     setBatchResult(null);
