@@ -1,0 +1,346 @@
+/* SP V4 CARD-SURFACE-001
+   First-party, dependency-free adaptation of shadcn/ui Card composition:
+   https://github.com/shadcn-ui/ui/blob/8ab27715521cbd4f87ae6886cd989cbb678f6de7/apps/v4/registry/new-york-v4/ui/card.tsx
+   MIT (Copyright 2023 shadcn). Exact card source is Tailwind/cn based, so its
+   rounded border, quiet elevation, header/content hierarchy were translated to
+   existing SmartPloy classes; no code/dependencies copied unchanged.
+   This last-loaded sheet owns surface/foreground pairing in BOTH themes. */
+
+.smartploy-app {
+  --sp-ui-card:#101821;
+  --sp-ui-card-raised:#16232f;
+  --sp-ui-card-border:#334354;
+  --sp-ui-ink:#f7faff;
+  --sp-ui-muted:#c0d0de;
+  --sp-ui-accent:#06d9e8;
+  --sp-ui-ring:#06d9e8;
+  --sp-ui-error:#ff9fa9;
+  --sp-ui-warning:#f8d29a;
+  --sp-ui-shadow:0 15px 36px -25px rgba(0,0,0,.95), inset 0 1px 0 rgba(255,255,255,.045);
+}
+html[data-smartploy-theme="light"] .smartploy-app {
+  --sp-ui-card:#fff;
+  --sp-ui-card-raised:#f4f7fa;
+  --sp-ui-card-border:#c5d1dc;
+  --sp-ui-ink:#112334;
+  --sp-ui-muted:#43586e;
+  --sp-ui-accent:#086f82;
+  --sp-ui-ring:#087e95;
+  --sp-ui-error:#af3445;
+  --sp-ui-warning:#8b5914;
+  --sp-ui-shadow:0 12px 32px -23px rgba(17,36,56,.35), inset 0 1px 0 #fff;
+}
+
+/* One premium card recipe for existing application, document and tool surfaces.
+   Never leave a mint/white gradient behind a dark-theme foreground. */
+html[data-smartploy-theme] .smartploy-app :is(
+  .flow-primary-next,.flow-uploaded,.flow-start-ready,.flow-start-method-status,
+  .flow-start-locked,.flow-boundary,
+  .flow-decision,.flow-selection-confirmation,.flow-choice-gate,
+  .flow-job-instruction,.flow-job-next,.flow-queue,.flow-quick-private-start,
+  .flow-next-guidance,.flow-next-action,.flow-prepared-details,
+  .studio-info,.studio-assisted-guide,.studio-next-action,
+  .studio-journey,.studio-ai-card,.studio-ai-proof,.studio-ai-cv-comparison,
+  .studio-letter-proposal,.studio-document-undo,.tools-ai-readiness,
+  .studio-resume-methods,.studio-resume-card,.studio-automation-panel,
+  .studio-alert,.studio-ai-risks,.studio-review-queue,.studio-list,
+  .studio-list-item,.profile-upload-placeholder,.uploaded-file,
+  .info-strip,.welcome-banner,.release-status,
+  .document-coach,.document-comparison
+) {
+  background:var(--sp-ui-card);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+  color:var(--sp-ui-ink);
+  box-shadow:var(--sp-ui-shadow);
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .document-coach-checks li,.document-comparison-columns > div,
+  .document-coach-progress,.document-coach-mark,.studio-journey ol li,
+  .studio-journey-links a
+) {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+  color:var(--sp-ui-ink);
+}
+
+/* Hover is only a preview; the explicitly selected saved application has
+   a stronger cyan edge and inset marker. Never make two items look selected. */
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-list-item:hover:not(.selected),
+  .studio-resume-card:hover:not(.selected)
+) {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-list-item.selected,.studio-resume-card.selected
+) {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:var(--sp-ui-accent);
+  color:var(--sp-ui-ink);
+  box-shadow:inset 3px 0 0 var(--sp-ui-accent),var(--sp-ui-shadow);
+}
+
+/* Risk remains amber and failure remains red, without returning to pale
+   backgrounds that destroyed contrast in dark mode. */
+html[data-smartploy-theme] .smartploy-app .studio-alert.error {
+  background:var(--sp-ui-card);
+  border-left:4px solid var(--sp-ui-error);
+  border-color:var(--sp-ui-card-border);
+  border-left-color:var(--sp-ui-error);
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .studio-alert.error svg {
+  color:var(--sp-ui-error);
+}
+html[data-smartploy-theme] .smartploy-app .studio-ai-risks {
+  background:var(--sp-ui-card);
+  border-left:4px solid var(--sp-ui-warning);
+  border-color:var(--sp-ui-card-border);
+  border-left-color:var(--sp-ui-warning);
+}
+html[data-smartploy-theme] .smartploy-app .studio-ai-risks > strong {
+  color:var(--sp-ui-warning);
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-alert,.flow-start-method-status,
+  .studio-resume-methods,.studio-resume-card,.studio-list-item
+) :is(h2,h3,h4,strong,p,small) {
+  color:var(--sp-ui-ink);
+}
+/* Grouped job items and existing card actions are still controlled by React;
+   this stylesheet never adds or makes non-actionable fake buttons. */
+
+/* The exact screenshot regression: the next-action panel is now an accessible
+   dark/white card, never a mint banner with nearly invisible white text. */
+html[data-smartploy-theme] .smartploy-app .flow-primary-next {
+  border:1px solid var(--sp-ui-card-border);
+  border-left:3px solid var(--sp-ui-accent);
+  border-radius:16px;
+  padding:clamp(15px,1.6vw,23px);
+  box-shadow:var(--sp-ui-shadow);
+}
+html[data-smartploy-theme] .smartploy-app .flow-primary-next-copy,
+html[data-smartploy-theme] .smartploy-app .flow-primary-next-copy strong {
+  color:var(--sp-ui-ink);
+  opacity:1;
+  text-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .flow-primary-next-copy > span {
+  color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .flow-primary-next-copy > small {
+  color:var(--sp-ui-muted);
+}
+
+/* Keep muted explanations readable and headers crisp across the cards. */
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-ai-card,.studio-letter-proposal,.studio-info,.studio-assisted-guide,
+  .studio-next-action,.document-coach,.document-comparison,
+  .studio-document-undo,.tools-ai-readiness,.flow-uploaded,.flow-queue,
+  .flow-job-next,.flow-job-instruction,.flow-quick-private-start,
+  .flow-boundary,.flow-decision,.flow-choice-gate,.flow-next-guidance
+) :is(h2,h3,h4,strong,summary) {
+  color:var(--sp-ui-ink);
+  text-shadow:none;
+  opacity:1;
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-ai-heading p,.studio-letter-proposal p,
+  .studio-info p,.studio-assisted-guide p,.studio-next-action-copy p,
+  .studio-document-undo small,.tools-ai-readiness p,
+  .document-coach-title span,.document-coach-summary,.document-coach-disclosure,
+  .document-coach-checks li small,.document-comparison-heading small,
+  .document-comparison-boundary,.document-comparison-columns pre,
+  .studio-ai-proof p,.studio-ai-cv-boundary,.studio-ai-target-actions small,
+  .flow-uploaded small,.flow-job-instruction p,.flow-job-next-copy p,
+  .flow-queue p,.flow-quick-copy p,.flow-shortlist-note,
+  .flow-next-guidance,.flow-start-ready,.studio-journey-boundary,
+  .studio-letter-proposal ul,.document-coach-checks li strong,
+  .document-comparison-columns span,.studio-ai-review-notes
+) {
+  color:var(--sp-ui-muted);
+  opacity:1;
+  text-shadow:none;
+}
+
+/* Legacy headings in the saved-job and document workspaces had explicit
+   navy/green foregrounds. They must not stay dark on the new dark surfaces. */
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-list-copy strong,.studio-list-heading,.studio-resume-intro h3,
+  .studio-resume-card strong,.studio-automation-header h3,
+  .welcome-banner h1,.welcome-banner h1 em,
+  .flow-job h3,.search-result-card h3,
+  .studio-handoff-header h4,.studio-review-queue-heading h3
+) {
+  color:var(--sp-ui-ink);
+  text-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-list-copy small,.studio-list-empty,.studio-list-filter-note,
+  .studio-resume-intro p,.studio-resume-card span,
+  .studio-automation-header p,.studio-automation-case label,
+  .welcome-banner .welcome-copy > p:last-child,
+  .flow-job-heading p,.flow-job-heading small,.flow-job-why,
+  .studio-handoff-header p,.studio-ai-risks ul
+) {color:var(--sp-ui-muted)}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-resume-card small,.studio-list-icon,.studio-automation-header > svg
+) {color:var(--sp-ui-accent)}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-list-icon,.studio-automation-case
+) {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .flow-start-method-status,.flow-start-locked,.studio-alert
+) {color:var(--sp-ui-ink)}
+
+/* shadcn-style composable cards: meaningful hierarchy, premium quiet shadow,
+   subtle focus; keep existing real job actions and disabled states intact. */
+html[data-smartploy-theme] .smartploy-app :is(
+  .panel,.flow-job,.job-item,.search-result-card,.stat-card,
+  .tool-tile,.studio-document,.studio-handoff,.studio-list-item
+) {
+  border-radius:16px;
+  border-color:var(--sp-ui-card-border);
+  box-shadow:var(--sp-ui-shadow);
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .flow-job,.search-result-card,.tool-tile
+) {
+  background:var(--sp-ui-card);
+  background-image:none;
+  color:var(--sp-ui-ink);
+  transition:border-color .16s ease,box-shadow .16s ease;
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .flow-job,.search-result-card,.tool-tile
+):hover {
+  border-color:var(--sp-ui-accent);
+  box-shadow:0 15px 36px -23px rgba(0,0,0,.45);
+}
+html[data-smartploy-theme] .smartploy-app .flow-job.highlighted {
+  border-color:var(--sp-ui-accent);
+  box-shadow:0 0 0 1px var(--sp-ui-accent),var(--sp-ui-shadow);
+}
+html[data-smartploy-theme] .smartploy-app .application-flow .flow-mode[data-flow-mode] {
+  --flow-tone:var(--sp-ui-accent);
+  background:var(--sp-ui-card);
+  background-image:none;
+  border:1px solid var(--sp-ui-card-border);
+  border-top:2px solid var(--sp-ui-accent);
+  border-radius:16px;
+  color:var(--sp-ui-ink);
+  box-shadow:var(--sp-ui-shadow);
+}
+html[data-smartploy-theme] .smartploy-app .application-flow .flow-mode[data-flow-mode]:not(:disabled):hover,
+html[data-smartploy-theme] .smartploy-app .application-flow .flow-mode[data-flow-mode].selected {
+  background:var(--sp-ui-card-raised);
+  border-color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .application-flow .flow-mode[data-flow-mode]
+  :is(strong,small,.flow-mode-label,.flow-mode-responsibility) {
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .application-flow .flow-mode[data-flow-mode]
+  :is(svg,.flow-mode-choice) {
+  color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode] {
+  --flow-tone:var(--sp-ui-accent);
+  background:var(--sp-ui-card);
+  background-image:none;
+  border:1px solid var(--sp-ui-card-border);
+  border-top:2px solid var(--sp-ui-accent);
+  border-radius:16px;
+  color:var(--sp-ui-ink);
+  box-shadow:var(--sp-ui-shadow);
+}
+html[data-smartploy-theme] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode]:not(:disabled):hover {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode] :is(strong,span:not(.flow-card-cta):not(.flow-start-index)) {
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:first-child {
+  background:var(--sp-ui-card-raised);
+  color:var(--sp-ui-accent);
+}
+
+/* Explicitly disabled means visually disabled, even on touch screens.
+   Preserve the underlying React disabled attribute and browser semantics. */
+html[data-smartploy-theme] .smartploy-app .application-flow
+ .flow-mode[data-flow-mode]:disabled,
+html[data-smartploy-theme] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode]:disabled {
+  background:var(--sp-ui-card);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+  border-top-color:var(--sp-ui-card-border);
+  color:var(--sp-ui-muted);
+  opacity:.68;
+  box-shadow:none;
+  cursor:not-allowed;
+}
+
+/* Progress is a navigation aid, not another mint success banner. */
+html[data-smartploy-theme] .smartploy-app .application-flow .flow-steps li,
+html[data-smartploy-theme] .smartploy-app .flow-start-progress li {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+  color:var(--sp-ui-muted);
+}
+html[data-smartploy-theme] .smartploy-app .application-flow .flow-steps li.current,
+html[data-smartploy-theme] .smartploy-app .flow-start-progress li.current {
+  background:var(--sp-ui-card-raised);
+  border-color:var(--sp-ui-accent);
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .application-flow .flow-steps li.done,
+html[data-smartploy-theme] .smartploy-app .flow-start-progress li.done {
+  background:var(--sp-ui-card-raised);
+  color:var(--sp-ui-ink);
+}
+
+/* One accent color, accessible focus indicators, no gratuitous movement. */
+html[data-smartploy-theme] .smartploy-app :is(
+  .document-coach-mark,.document-comparison-heading > svg,.studio-info > svg,
+  .flow-uploaded > svg,.flow-job-instruction > svg
+) {
+  color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .flow-primary-next,.flow-mode,.flow-start-card,.flow-job,.document-coach
+) :is(a,button,input,summary):focus-visible {
+  outline:3px solid var(--sp-ui-ring);
+  outline-offset:3px;
+}
+@media(max-width:640px){
+  html[data-smartploy-theme] .smartploy-app .flow-primary-next {
+    gap:12px;
+    padding:15px;
+  }
+  html[data-smartploy-theme] .smartploy-app :is(
+    .document-coach,.document-comparison,.studio-ai-card
+  ) {padding:14px}
+}
+@media(prefers-reduced-motion:reduce){
+  html[data-smartploy-theme] .smartploy-app :is(
+    .flow-mode,.flow-start-card,.flow-job,.tool-tile,.search-result-card
+  ) {transition:none;transform:none}
+}
