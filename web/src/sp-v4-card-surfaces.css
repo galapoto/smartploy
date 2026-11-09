@@ -133,6 +133,41 @@ html[data-smartploy-theme] .smartploy-app :is(
   text-shadow:none;
 }
 
+/* Legacy headings in the saved-job and document workspaces had explicit
+   navy/green foregrounds. They must not stay dark on the new dark surfaces. */
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-list-copy strong,.studio-list-heading,.studio-resume-intro h3,
+  .studio-resume-card strong,.studio-automation-header h3,
+  .welcome-banner h1,.welcome-banner h1 em,
+  .flow-job h3,.search-result-card h3,
+  .studio-handoff-header h4,.studio-review-queue-heading h3,
+  .studio-ai-risks strong
+) {
+  color:var(--sp-ui-ink);
+  text-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-list-copy small,.studio-list-empty,.studio-list-filter-note,
+  .studio-resume-intro p,.studio-resume-card span,
+  .studio-automation-header p,.studio-automation-case label,
+  .welcome-banner .welcome-copy > p:last-child,
+  .flow-job-heading p,.flow-job-heading small,.flow-job-why,
+  .studio-handoff-header p,.studio-ai-risks ul
+) {color:var(--sp-ui-muted)}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-resume-card small,.studio-list-icon,.studio-automation-header > svg
+) {color:var(--sp-ui-accent)}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-list-icon,.studio-automation-case
+) {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .flow-start-method-status,.flow-start-locked,.studio-alert
+) {color:var(--sp-ui-ink)}
+
 /* shadcn-style composable cards: meaningful hierarchy, premium quiet shadow,
    subtle focus; keep existing real job actions and disabled states intact. */
 html[data-smartploy-theme] .smartploy-app :is(
