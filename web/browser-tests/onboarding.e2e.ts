@@ -1553,9 +1553,16 @@ test("V4 surface system: real Chrome shows legible dark and light cards without 
   await expect(page.locator(".flow-job").first()).toBeVisible();
   const jobSurface = await page.locator(".flow-job").first().evaluate(element => {
     const css = getComputedStyle(element);
-    return { background: css.backgroundColor, image: css.backgroundImage };
+    const title = element.querySelector("h3");
+    if (!title) throw new Error("Expected an actual job-card heading");
+    return {
+      background: css.backgroundColor,
+      image: css.backgroundImage,
+      titleColor: getComputedStyle(title).color,
+    };
   });
   expect(jobSurface.image).toBe("none");
+  expect(jobSurface.titleColor).toBe("rgb(247, 250, 255)");
   expect(jobSurface.background).not.toBe("rgb(234, 249, 246)");
   expect(state.applicationWorkspaceCreates).toEqual([]);
 
