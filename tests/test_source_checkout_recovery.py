@@ -221,3 +221,17 @@ def test_existing_checkout_rejects_untracked_python_payload(stack):
     assert payload.read_text().startswith("raise RuntimeError")
     assert env.is_file()
 
+
+
+def test_existing_recovery_rejects_payload_hidden_in_git_info_exclude(stack):
+    _, target, env, _, _, _, _ = stack
+    assert run(stack).returncode == 0
+    (target / "sitecustomize.py").write_text("raise RuntimeError('injected')\n")
+    (target / ".git/info/exclude").write_text("sitecustomize.py\n")
+    assert git(target, "ls-files", "--others", "--exclude-standard") == ""
+    result = run(stack)
+    assert result.returncode != 0
+    assert "untracked build-context files" in result.stderr
+    assert "existing_checkout_verified" not in result.stdout
+    assert env.is_file()
+
