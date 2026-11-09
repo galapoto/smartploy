@@ -22,6 +22,7 @@ import ApplicationStudio from "./ApplicationStudio";
 import MasterCVEditor from "./MasterCVEditor";
 import ApplicationJourney from "./ApplicationJourney";
 import { describeAutoApplyBatchIssue } from "./autoapply_batch_errors";
+import { pinnedJobForCV } from "./autoapplyShortlist";
 import StartChoices from "./StartChoices";
 import ReleaseStatus from "./ReleaseStatus";
 import SearchSetup from "./SearchSetup";
@@ -226,6 +227,9 @@ export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
   const [flowMode, setFlowMode] = useState<ApplicationFlowMode | null>(null);
   const [flowSelectedJob, setFlowSelectedJob] = useState("");
+  // A Jobs-card shortcut is valid only for the CV that was present when chosen.
+  // A cross-tab CV replacement cannot re-arm an older job on the next render.
+  const [flowSelectedCVSha, setFlowSelectedCVSha] = useState("");
   const [flowQueueBusy, setFlowQueueBusy] = useState(false);
   const [startSearchBusy, setStartSearchBusy] = useState(false);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -365,7 +369,7 @@ export default function App() {
     // A different account must not inherit an unsaved draft, editor, form,
     // selected job or cached navigation state belonging to its predecessor.
     setPage("dashboard"); setSearch(""); setExpandedJob("");
-    setFlowMode(null); setFlowSelectedJob(""); setFlowQueueBusy(false);
+    setFlowMode(null); setFlowSelectedJob(""); setFlowSelectedCVSha(""); setFlowQueueBusy(false);
     setStartSearchBusy(false); flowQueueInFlight.current = null;
     setCVPreview(false); setJobDialog(false); setNewFactValue("");
     setConfirmFact(false); setNotice("");
@@ -565,6 +569,7 @@ export default function App() {
     }
     setFlowMode(chosen);
     setFlowSelectedJob(jobKey);
+    setFlowSelectedCVSha(cv.sha256 || "");
     navigate("apply");
   }
 
@@ -1445,9 +1450,14 @@ export default function App() {
           </div>
           {page === "apply" ? <ApplicationJourney
             key={accountViewKey} userId={session?.user_id || ""}
-            cv={cv} mode={flowMode} selectedJobKey={flowSelectedJob}
+            cv={cv} mode={flowMode}
+            selectedJobKey={pinnedJobForCV(flowSelectedJob, flowSelectedCVSha, cv.sha256 || "")}
             uploading={busyCV} preparing={preparing} queueBusy={flowQueueBusy}
-            onMode={setFlowMode} onUpload={onUploadClick}
+            onMode={(choice) => {
+              setFlowMode(choice); setFlowSelectedJob(""); setFlowSelectedCVSha("");
+            }}
+            onClearPinnedJob={() => { setFlowSelectedJob(""); setFlowSelectedCVSha(""); }}
+            onUpload={onUploadClick}
             onReviewCV={() => navigate("profile")}
             onFindJobs={() => void startGeneralBrowse()}
             onOpenApplications={(workspaceId) => {

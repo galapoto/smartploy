@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { addCVShortlist, AUTOAPPLY_SELECTION_LIMIT,
-  isSafeCVShortlistMatch, visibleCurrentKeys } from "./autoapplyShortlist";
+import {addCVShortlist, AUTOAPPLY_SELECTION_LIMIT,
+  isSafeCVShortlistMatch, visibleCurrentKeys, pinnedJobForCV } from "./autoapplyShortlist";
 import type { SearchJobCard } from "./types";
 
 function vacancy(
@@ -89,4 +89,11 @@ describe("SP75 explicit CV-to-AutoApply shortlist", () => {
       ],
     )).toEqual(["visible"]);
   });
+  it("prevents reusing a pinned employer job after another tab replaces the CV", () => {
+    expect(pinnedJobForCV("job-selected", "cv-a", "cv-a")).toBe("job-selected");
+    expect(pinnedJobForCV("job-selected", "cv-a", "cv-b")).toBe("");
+    expect(pinnedJobForCV("", "cv-a", "cv-a")).toBe("");
+    expect(pinnedJobForCV("job-selected", "cv-a", "")).toBe("");
+  });
+
 });

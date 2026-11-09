@@ -501,6 +501,192 @@ describe("SP21 application journey", () => {
     });
   });
 
+
+  it("V4: Jobs-card Automatic pins one verified exact vacancy and continues to its private workspace", async () => {
+    const pinned: SearchJobCard = {
+      ...listing, canonical_key: "chosen-source-job", lane: "broader",
+      job: { ...listing.job, role_title: "Chosen source-verified employer role" },
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: pinned,
+    });
+    const p = { ...props(), mode: "automatic" as const, selectedJobKey: pinned.canonical_key };
+    render(<ApplicationJourney {...p} />);
+    await screen.findByText("Chosen source-verified employer role");
+    await waitFor(() => expect(
+      (screen.getByRole("checkbox", { name: "Selected" }) as HTMLInputElement).checked
+    ).toBe(true));
+    expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy();
+    expect(p.onPrepare).not.toHaveBeenCalled();
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+    // The primary next action now performs the same existing private batch
+    // preparation for exactly one selected job, never a browser send.
+    fireEvent.click(screen.getByRole("button", {
+      name: "Prepare and open the selected job application",
+    }));
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(
+      ["chosen-source-job"], expect.any(Function), expect.any(Function), false,
+    ));
+    expect(p.onPrepareSelected).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: /submit application to employer/i })).toBeNull();
+  });
+
+  it("V4: deselecting the Jobs-card vacancy or changing mode never reselects it silently", async () => {
+    const p = { ...props(), mode: "automatic" as const,
+      selectedJobKey: "current-planner" };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: listing,
+    });
+    const view = render(<ApplicationJourney {...p} />);
+    await screen.findByText("IT-suunnittelija");
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    fireEvent.click(screen.getByRole("checkbox", { name: "Selected" }));
+    expect(screen.getByText("0 of 15 vacancies selected")).toBeTruthy();
+    expect(screen.queryByRole("button", {
+      name: "Prepare and open the selected job application",
+    })).toBeNull();
+    view.rerender(<ApplicationJourney {...p} mode="manual" />);
+    view.rerender(<ApplicationJourney {...p} mode="automatic" />);
+    await waitFor(() => expect(screen.getByText("0 of 15 vacancies selected")).toBeTruthy());
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
+  it("V4: returning to Apply after deselect cannot rearm an already consumed job shortcut", async () => {
+    const onClearPinnedJob = vi.fn();
+    const p = { ...props(), mode: "automatic" as const,
+      selectedJobKey: "current-planner", onClearPinnedJob };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: listing,
+    });
+    const view = render(<ApplicationJourney {...p} />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    fireEvent.click(screen.getByRole("checkbox", { name: "Selected" }));
+    expect(onClearPinnedJob).toHaveBeenCalledOnce();
+    view.unmount();
+    render(<ApplicationJourney {...p} selectedJobKey="" />);
+    await waitFor(() => expect(screen.getByText("0 of 15 vacancies selected")).toBeTruthy());
+    expect(screen.queryByRole("button", {
+      name: "Prepare and open the selected job application",
+    })).toBeNull();
+  });
+
+  it("V4: adding CV-title matches keeps the selected shortlist and never resets it", async () => {
+    const second: SearchJobCard = {
+      ...listing, canonical_key: "another-title-match",
+      job: { ...listing.job, role_title: "Analyst role" },
+      reasons: ["Job title matches Analyst"],
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: listing, recommended: [listing, second],
+      recommended_count: 2,
+    });
+    const onClearPinnedJob = vi.fn();
+    const p = { ...props(), mode: "automatic" as const,
+      selectedJobKey: "current-planner", onClearPinnedJob };
+    render(<ApplicationJourney {...p} />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", {name: /Select 1 CV-title matched job/i}));
+    expect(screen.getByText("2 of 15 vacancies selected")).toBeTruthy();
+    expect(onClearPinnedJob).not.toHaveBeenCalled();
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
+  it("V4: a prepared pinned job is consumed so reopening Apply cannot rearm it", async () => {
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: listing,
+    });
+    const onClearPinnedJob = vi.fn();
+    const p = { ...props(), mode: "automatic" as const,
+      selectedJobKey: "current-planner", onClearPinnedJob };
+    render(<ApplicationJourney {...p} />);
+    const start = await screen.findByRole("button", {
+      name: "Prepare and open the selected job application",
+    });
+    fireEvent.click(start);
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onClearPinnedJob).toHaveBeenCalledOnce());
+    expect(p.onPrepareSelected).toHaveBeenCalledWith(
+      ["current-planner"], expect.any(Function), expect.any(Function), false,
+    );
+  });
+
+  it("V4: clearing a consumed pin keeps the remaining title-matched shortlist", async () => {
+    const second: SearchJobCard = {
+      ...listing, canonical_key: "other-title-match",
+      job: { ...listing.job, role_title: "Data Analyst" },
+      reasons: ["Job title matches Analyst"],
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: listing, recommended: [listing, second],
+      recommended_count: 2,
+    });
+    const onClearPinnedJob = vi.fn();
+    const propsWithPin = { ...props(), mode: "automatic" as const,
+      selectedJobKey: "current-planner", onClearPinnedJob };
+    const view = render(<ApplicationJourney {...propsWithPin} />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Select 1 CV-title matched job/i }));
+    expect(screen.getByText("2 of 15 vacancies selected")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("checkbox", { name: "Selected" })[0]);
+    expect(onClearPinnedJob).toHaveBeenCalledTimes(1);
+    view.rerender(<ApplicationJourney {...propsWithPin} selectedJobKey="" />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Prepare applications & start agents" })).toBeTruthy();
+    expect(propsWithPin.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
+  it("V4: a partially prepared pinned job keeps other jobs and their retry history", async () => {
+    const second: SearchJobCard = {
+      ...listing, canonical_key: "remaining-title-match",
+      job: { ...listing.job, role_title: "Data Analyst" },
+      reasons: ["Job title matches Analyst"],
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: listing, recommended: [listing, second],
+      recommended_count: 2,
+    });
+    const onClearPinnedJob = vi.fn();
+    const p = { ...props(), mode: "automatic" as const,
+      selectedJobKey: "current-planner", onClearPinnedJob,
+      onPrepareSelected: vi.fn(async (): Promise<AutoApplyBatchOutcome> => ({
+        preparedKeys: ["current-planner"], failedKeys: ["remaining-title-match"],
+        agentsActive: 1, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+      })),
+    };
+    const view = render(<ApplicationJourney {...p} />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", {name: /Select 1 CV-title matched job/i}));
+    expect(screen.getByText("2 of 15 vacancies selected")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Prepare applications & start agents" }));
+    await waitFor(() => expect(onClearPinnedJob).toHaveBeenCalledTimes(1));
+    view.rerender(<ApplicationJourney {...p} selectedJobKey="" />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    expect(screen.getByText(/1 private draft\(s\) ready;/)).toBeTruthy();
+    expect(screen.getByText(/1 job\(s\) need a retry/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry 1 failed job" })).toBeTruthy();
+    expect(p.onPrepareSelected).toHaveBeenCalledTimes(1);
+  });
+
+  it("V4: stale or invalid external Jobs-card links never enable the direct AutoApply action", async () => {
+    const pinned: SearchJobCard = {
+      ...listing, canonical_key: "stale-source", lane: "broader",
+      job: { ...listing.job, role_title: "Unverified external job",
+        source_current: false, application_url: "javascript:alert(1)" },
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: pinned,
+    });
+    const p = { ...props(), mode: "automatic" as const,
+      selectedJobKey: pinned.canonical_key };
+    render(<ApplicationJourney {...p} />);
+    await screen.findByText("Unverified external job");
+    expect(screen.getByText("0 of 15 vacancies selected")).toBeTruthy();
+    expect(screen.queryByRole("button", {
+      name: "Prepare and open the selected job application",
+    })).toBeNull();
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
   it("searches the complete backend ledger instead of filtering only already loaded rows", async () => {
     const hidden: SearchJobCard = {
       ...listing, canonical_key: "far-past-first-page",

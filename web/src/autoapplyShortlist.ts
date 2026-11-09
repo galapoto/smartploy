@@ -62,3 +62,10 @@ export function visibleCurrentKeys(
   ).map((row) => row.canonical_key));
   return [...new Set(selected)].filter((key) => current.has(key));
 }
+
+/** Keep a Jobs-card shortcut bound to the exact CV selected by the owner. */
+export function pinnedJobForCV(
+  selectedJobKey: string, selectedCVSha: string, activeCVSha: string,
+): string {
+  return selectedCVSha === activeCVSha ? selectedJobKey : "";
+}

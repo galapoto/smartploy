@@ -106,17 +106,36 @@ describe("job discovery mode semantics", () => {
     expect(screen.getByText(/Not verified from the posting:/i)).toBeTruthy();
   });
 
-  it("routes manual and AI application cards to the shared journey without creating drafts", () => {
+  it("routes all three job-card application methods with the exact job, without silently preparing", () => {
     const onChooseFlow = vi.fn();
     render(<SearchResultsPanel {...common} data={general} onChooseFlow={onChooseFlow} />);
     expect(screen.getAllByRole("button", { name: /Apply manually/ })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: /Apply with AI/ })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /^Prepare for AutoApply$/ })).toHaveLength(2);
     expect(screen.queryByRole("button", { name: /Prepare documents/ })).toBeNull();
     fireEvent.click(screen.getAllByRole("button", { name: /Apply manually/ })[0]);
     fireEvent.click(screen.getAllByRole("button", { name: /Apply with AI/ })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /^Prepare for AutoApply$/ })[0]);
     expect(onChooseFlow).toHaveBeenNthCalledWith(1, "lever-analyst", "manual");
     expect(onChooseFlow).toHaveBeenNthCalledWith(2, "lever-analyst", "assisted");
+    expect(onChooseFlow).toHaveBeenNthCalledWith(3, "lever-analyst", "automatic");
     expect(common.onPrepare).not.toHaveBeenCalled();
+  });
+
+  it("does not offer a runnable AutoApply shortcut for stale or unsafe employer links", () => {
+    const onChooseFlow = vi.fn();
+    const rows: SearchResults = {...general, all_jobs: [
+      {...job, job: {...baseJob, source_current: false}},
+      {...job, canonical_key: "unsafe-link", job: {
+        ...baseJob, application_url: "javascript:alert(1)",
+      }},
+    ]};
+    render(<SearchResultsPanel {...common} data={rows} onChooseFlow={onChooseFlow} />);
+    const controls = screen.getAllByRole("button", {name: /^Prepare for AutoApply$/});
+    expect(controls).toHaveLength(2);
+    expect(controls.every(button => (button as HTMLButtonElement).disabled)).toBe(true);
+    controls.forEach(button => fireEvent.click(button));
+    expect(onChooseFlow).not.toHaveBeenCalled();
   });
 
   it("requires an explicit action to prepare or change search mode", () => {
