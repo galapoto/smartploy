@@ -69,6 +69,7 @@ export default function ApplicationJourney(props: {
   // default, clearly distinguished from direct CV-text matches.
   const [showOther, setShowOther] = useState(true);
   const [assistance, setAssistance] = useState<ApplicationAssistanceLevel>("documents");
+  const [showMethodPicker, setShowMethodPicker] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   // An explicit Jobs-card AutoApply choice is offered once for this exact
   // account, CV and job. Deselecting or changing modes never reselects it.
@@ -521,12 +522,11 @@ export default function ApplicationJourney(props: {
               (!chosen && selected.length >= AUTOAPPLY_SELECTION_LIMIT)} />
           {chosen ? "Selected" : "Select for preparation"}
         </label> : null}
-        {props.mode && props.mode !== "automatic" ? <button type="button"
-          className={focused ? "navy-btn compact" : "secondary-btn compact"}
-          aria-pressed={focused} disabled={!job.source_current}
+        {props.mode && props.mode !== "automatic" && !focused ? <button type="button"
+          className="secondary-btn compact"
+          disabled={!job.source_current}
           onClick={() => setFocusedKey(row.canonical_key)}>
-          {focused ? "Selected job" : "Choose this job"}
-          {focused ? <CheckCircle2 size={14}/> : <ArrowRight size={14}/>}
+          Choose this job <ArrowRight size={14}/>
         </button> : null}
         {link && !focused ? <a className="outline-btn compact" href={link}
           target="_blank" rel="noopener noreferrer">
@@ -576,43 +576,25 @@ export default function ApplicationJourney(props: {
     <section className="panel flow-intro">
       <div className="panel-heading"><div>
         <p className="section-kicker">YOUR APPLICATION GUIDE</p>
-        <h2>Apply in four steps</h2>
-        <p>CV → Method → Job → Review. Nothing is sent without approval.</p>
+        <h2>Apply with confidence</h2>
+        <p>CV → Method → Job → Documents → Employer form.</p>
       </div></div>
       <ol className="flow-steps" aria-label="Application steps">
         <li className={props.cv.present ? "done" : "current"}
           aria-current={!props.cv.present ? "step" : undefined}>1 · Your CV</li>
         <li className={props.mode ? "done" : props.cv.present ? "current" : ""}
           aria-current={props.cv.present && !props.mode ? "step" : undefined}>2 · Choose method</li>
-        <li className={hasChosenJob ? "done" : props.mode && props.cv.present ? "current" : ""}
-          aria-current={props.mode && props.cv.present && !hasChosenJob ? "step" : undefined}>3 · Choose job & prepare</li>
-        <li className={hasChosenJob ? "current" : ""}
-          aria-current={hasChosenJob ? "step" : undefined}>4 · Review & submit</li>
+        <li className={batchResult?.preparedKeys.length ? "done" : props.mode && props.cv.present ? "current" : ""}
+          aria-current={props.mode && props.cv.present && !batchResult?.preparedKeys.length ? "step" : undefined}>3 · Choose job</li>
+        <li className={batchResult?.preparedKeys.length ? "current" : ""}
+          aria-current={batchResult?.preparedKeys.length ? "step" : undefined}>4 · Review documents</li>
       </ol>
-      <div className="flow-next-action" role="status">
-        {props.cv.present ? <CheckCircle2 size={24} aria-hidden="true"/> :
-          <UploadCloud size={24} aria-hidden="true"/>}
-        <div>
-          <strong>{!props.cv.present ? "First: connect your CV." :
-            !props.mode ? "CV connected. Now choose Manual, Assisted or Automatic." :
-              hasChosenJob ? "Job choice recorded. Follow its next action below." :
-                "Next: choose a current job from the matches."}</strong>
-          <p>{!props.cv.present ? "Upload a PDF/DOCX or create a CV in Step 1. The Manual, Assisted and Automatic choices unlock only after a CV is connected." :
-            !props.mode ? "The three paths are explained in Step 2 below. Nothing will be applied for until you take the appropriate next action." :
-              hasChosenJob ? (props.mode === "automatic" ?
-                selected.length + " jobs selected for private preparation. Use the preparation button below; no employer send has occurred." :
-                "Selected: " + focusedJob!.job.role_title + " · " + focusedJob!.job.company +
-                ". Follow the highlighted job's next action. No employer send has occurred.") :
-                "Your chosen method is " + MODE_INFO[props.mode].title +
-                ". Pick an exact current vacancy in Step 3 to continue."}</p>
-        </div>
-      </div>
       <div className="flow-primary-next" aria-label="Your next action">
         <div className="flow-primary-next-copy">
           <span>Do this next</span>
           <strong>{!props.cv.present
-            ? "Connect your CV to unlock the three application methods"
-            : !props.mode
+            ? "Upload or create your CV"
+            : !props.mode || showMethodPicker
               ? "Choose Manual, Assisted or Automatic"
               : !hasChosenJob
                 ? "Choose a real vacancy that fits your CV"
@@ -621,7 +603,7 @@ export default function ApplicationJourney(props: {
                   : "Continue with your selected employer vacancy"}</strong>
           <small>{!props.cv.present
             ? "No employer receives your CV when you upload it."
-            : !props.mode
+            : !props.mode || showMethodPicker
               ? "Nothing is selected or sent until you decide."
               : !hasChosenJob
                 ? "Matches come from stored job listings; no application is sent."
@@ -630,7 +612,7 @@ export default function ApplicationJourney(props: {
         {!props.cv.present ? <button className="primary-btn" type="button"
           onClick={props.onUpload} disabled={props.uploading}>
           Upload CV <ArrowRight size={16} aria-hidden="true"/>
-        </button> : !props.mode ? <a className="navy-btn" href="#smartploy-flow-choice">
+        </button> : (!props.mode || showMethodPicker) ? <a className="navy-btn" href="#smartploy-flow-choice">
           Choose application type <ArrowRight size={16} aria-hidden="true"/>
         </a> : canContinuePinnedAutoJob ? <button className="navy-btn" type="button"
           onClick={() => void queue([props.selectedJobKey])}
@@ -645,12 +627,28 @@ export default function ApplicationJourney(props: {
             : "Choose matching jobs"} <ArrowRight size={16} aria-hidden="true"/>
         </a>}
       </div>
+      {props.cv.present ? <div className="flow-session-tools" aria-label="Current application setup">
+        <details>
+          <summary><CheckCircle2 size={16} aria-hidden="true"/> CV ready · {props.cv.filename || "Your CV"}</summary>
+          <div className="row-actions">
+            <button className="outline-btn compact" type="button"
+              onClick={props.onReviewCV}>Review CV</button>
+            <button className="outline-btn compact" type="button"
+              disabled={props.uploading} onClick={props.onUpload}>Replace CV</button>
+          </div>
+        </details>
+        {props.mode && !showMethodPicker ? <button type="button"
+          className="outline-btn compact"
+          onClick={() => setShowMethodPicker(true)}>
+          Change method · {MODE_INFO[props.mode].title}
+        </button> : null}
+      </div> : null}
     </section>
-    <section className="panel flow-cv" id="smartploy-flow-cv">
+    <section className="panel flow-cv" id="smartploy-flow-cv" hidden={props.cv.present}>
       <div className="panel-heading"><div>
         <p className="section-kicker">STEP 1 OF 4</p>
-        <h2>Your CV</h2>
-        <p>One CV for searching and application preparation. PDF or DOCX up to 5 MB.</p>
+        <h2>Start with your CV</h2>
+        <p>Upload PDF/DOCX (up to 5 MB) or create a CV here.</p>
       </div></div>
       {props.cv.present ? <div className="flow-uploaded">
         <CheckCircle2 size={23} aria-hidden="true"/>
@@ -669,14 +667,13 @@ export default function ApplicationJourney(props: {
       </div>
     </section>
 
-    <section id="smartploy-flow-choice" className={"panel flow-choice" +
+    <section id="smartploy-flow-choice" hidden={!props.cv.present || (!!props.mode && !showMethodPicker)} className={"panel flow-choice" +
       (!props.cv.present ? " flow-choice-locked" : !props.mode ? " flow-choice-needed" : "")}
       aria-labelledby="flow-choice-title">
       <div className="panel-heading"><div>
         <p className="section-kicker">STEP 2 OF 4 · YOUR DECISION</p>
-        <h2 id="flow-choice-title">How do you want to apply?</h2>
-        <p>This choice controls the next job actions. You can switch methods anytime;
-          selecting a method never authorizes an employer submission.</p>
+        <h2 id="flow-choice-title">Choose how to apply</h2>
+        <p>Select one. You remain in control of submission.</p>
       </div></div>
       {!props.cv.present ? <div className="flow-decision flow-cv-required" role="status">
         <CircleHelp size={20} aria-hidden="true"/>
@@ -702,7 +699,7 @@ export default function ApplicationJourney(props: {
             aria-pressed={props.mode === choice}
             disabled={!props.cv.present || props.queueBusy || !!queueInFlight.current}
             aria-describedby={!props.cv.present ? "flow-choose-require-cv" : undefined}
-            onClick={() => props.onMode(choice)}>
+            onClick={() => { props.onMode(choice); setShowMethodPicker(false); }}>
             <span className="flow-mode-head">
               <Icon size={23} aria-hidden="true"/>
               <span className="flow-mode-label">{choice.toUpperCase()}</span>
@@ -710,8 +707,7 @@ export default function ApplicationJourney(props: {
             </span>
             <strong>{MODE_INFO[choice].title}</strong>
             <small>{MODE_INFO[choice].summary}</small>
-            <span className="flow-mode-responsibility">{MODE_INFO[choice].responsibility}</span>
-            <span className="flow-mode-next">{MODE_INFO[choice].next}</span>
+
           </button>;
         })}
       </div>
@@ -729,18 +725,17 @@ export default function ApplicationJourney(props: {
       </fieldset> : null}
       {props.cv.present && props.mode === "automatic" ? <div className="flow-boundary" role="note">
         <ShieldCheck size={20} aria-hidden="true"/>
-        <p><strong>AutoApply prepares selected jobs first.</strong>{" "}
-          It saves a CV and letter for review, with an in-app tracking agent per job.
-          After reviewing the exact drafts, My applications offers a one-action
-          batch of up to three employer-authorized Lever/Ashby submissions.
-          Jobs without rights remain Assisted/Manual. No automatic background
-          employer send, unknown-form answers or retries occur here.</p>
+        <p><strong>Prepare first, apply after review.</strong>{" "}
+          SmartPloy saves a CV and letter for each selected job.
+          Review documents in My applications, then fill the employer form.
+          Nothing is submitted automatically.</p>
       </div> : null}
     </section>
-    <section className="panel flow-matches" id="smartploy-flow-matches">
+    <section className="panel flow-matches" id="smartploy-flow-matches"
+      hidden={!props.cv.present || !props.mode || showMethodPicker}>
       <div className="panel-heading"><div>
         <p className="section-kicker">STEP 3 OF 4</p><h2>Jobs from your CV</h2>
-        <p>These are current jobs in SmartPloy's own database, not web results invented for your CV.</p>
+        <p>Choose a current vacancy to prepare its application.</p>
       </div></div>
       {props.cv.present && !props.mode ? <div className="flow-choice-gate" role="note">
         <CircleHelp size={19} aria-hidden="true"/>
@@ -791,7 +786,7 @@ export default function ApplicationJourney(props: {
                 "Choose jobs for AutoApply preparation"
               : focusedJob ? "Selected: " + focusedJob.job.role_title + " at " +
                 focusedJob.job.company : "Choose one job to continue"}</strong>
-              <p>{props.mode === "automatic" ? "Tick up to 15 current vacancies, then select Prepare applications & start agents below. No employer is contacted." :
+              <p>{props.mode === "automatic" ? "Select jobs, then prepare and review their documents." :
                 focusedJob ? "Use the buttons inside the highlighted job to take the next step. Choosing a job did not create or send an application." :
                 "Click Choose this job on a vacancy. SmartPloy then shows the next action for your chosen method; choosing alone does not create a draft or submit."}</p>
             </div>
@@ -839,8 +834,7 @@ export default function ApplicationJourney(props: {
         ) : null}
         {props.mode === "automatic" ? <div className="flow-queue" id="smartploy-flow-queue">
           <strong>{selected.length} of {AUTOAPPLY_SELECTION_LIMIT} vacancies selected</strong>
-          <p>Each selected job gets its own private application draft and in-app agent.
-            No email, call or employer application is sent. You can pause or close an agent later.</p>
+          <p>Prepare a CV and letter for each selected job. Review before applying.</p>
           <div className="flow-shortlist-actions" role="group" aria-label="CV-matched AutoApply shortlist">
             <button className="navy-btn compact" type="button"
               disabled={!shortlistSuggestion.added.length || !results || loading ||
@@ -854,11 +848,7 @@ export default function ApplicationJourney(props: {
               disabled={!selected.length || props.queueBusy || !!queueInFlight.current}
               onClick={clearSelected}>Clear selected jobs</button>
           </div>
-          <p className="flow-shortlist-note">
-            This selects only loaded, current vacancies with a direct role-title match
-            and a valid employer link. Weaker skill-only matches and unrelated jobs
-            require individual review. No selection starts an application automatically.
-          </p>
+          <p className="flow-shortlist-note">Only current, linked CV-title matches are selected. Review each before preparing.</p>
           {results && results.recommended_count > results.recommended.length ?
             <p className="flow-shortlist-note">Only currently loaded recommendations are eligible.
               Use Load more current jobs to include later matches.</p> : null}
@@ -964,11 +954,11 @@ export default function ApplicationJourney(props: {
         </div> : null}
       </> : null}
     </section>
-    <section className="panel flow-next" id="smartploy-flow-next">
+    <section className="panel flow-next" id="smartploy-flow-next"
+      hidden={!batchResult?.preparedKeys.length}>
       <div className="panel-heading"><div>
         <p className="section-kicker">STEP 4 OF 4</p><h2>Continue your applications</h2>
-        <p>Only an independently confirmed employer submission counts as submitted.
-          Return here to review documents, resolve blocked forms, and track the outcome.</p>
+        <p>Your private documents are ready for review. Nothing has been sent.</p>
       </div></div>
       <p className="flow-next-guidance" role="note">
         {!props.mode ? "First choose an application method in Step 2. Matching jobs can be browsed without submitting." :
