@@ -1540,6 +1540,13 @@ test("V4 surface system: real Chrome shows legible dark and light cards without 
   expect(dark.helpContrast).toBeGreaterThanOrEqual(4.5);
   expect(dark.pageOverflow).toBe(false);
   await evidence(page, "v4-dark-next-action-card.png");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const phone = await measure();
+  expect(phone.luminance).toBeLessThan(.045);
+  expect(phone.titleContrast).toBeGreaterThanOrEqual(7);
+  expect(phone.helpContrast).toBeGreaterThanOrEqual(4.5);
+  expect(phone.pageOverflow).toBe(false);
+  await evidence(page, "v4-dark-next-action-card-phone.png");
 
   // Existing, real selection actions remain operable; this is not a mock card.
   await page.locator('.flow-mode[data-flow-mode="manual"]').click();
