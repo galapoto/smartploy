@@ -61,6 +61,49 @@ test("question-only and upload-only applications continue to review without a fa
     assert.equal(button.disabled,false);
   }
 });
+test("successful zero-write real fill continues, while cancelled fill does not",async()=>{
+  const start=popup.indexOf("async function onFill() {");
+  const finish=popup.indexOf("\n/** One AutoApply action",start);
+  assert.ok(start>0&&finish>start);
+  const fragment=popup.slice(start,finish);
+  function mountFill(approve) {
+    const nodes=new Map(),writes=[];
+    const url="https://jobs.lever.co/fictional/one/apply";
+    const scope={
+      receiptOnly:false,
+      currentPacket:{application_url:url},
+      currentPlan:{actions:[{key:"email"}]},
+      targetTabId:7,inspectedUrl:url,
+      currentQuestionPlan:null,
+      preflightPassed:false,
+      window:{confirm:()=>approve},
+      activeTab:async()=>({id:7,url}),
+      validatePacket:()=>{},
+      currentPacketToJSON:()=>({application_url:url}),
+      requireVerifiedReview:async()=>{},
+      exactAssistedForm:()=>true,
+      chrome:{storage:{session:{}},scripting:{executeScript:async()=> {
+        writes.push("execute");
+        return [{result:{filled:0,skipped:1,blocker:""}}];
+      }}},
+      $:id=>{
+        if(!nodes.has(id))nodes.set(id,{
+          hidden:false,disabled:false,replaceChildren:()=>{}
+        });
+        return nodes.get(id);
+      },
+      status:()=>{},normalizeError:()=> "Safe failure",
+    };
+    runInNewContext(fragment+"\nthis.fillActual=onFill;",scope);
+    return {scope,writes};
+  }
+  const accepted=mountFill(true);
+  assert.equal(await accepted.scope.fillActual(),true);
+  assert.deepEqual(accepted.writes,["execute"]);
+  const declined=mountFill(false);
+  assert.equal(await declined.scope.fillActual(),false);
+  assert.deepEqual(declined.writes,[]);
+});
 test("failed or changed form inspection cannot reuse a previous plan",async()=>{
   const {launch,calls,context,button}=mount({
     onInspect:async()=>{calls.push("inspect-blocked");}
