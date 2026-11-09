@@ -155,3 +155,43 @@ def test_deploy_rejects_mutable_main_without_loading_private_configuration():
     assert result.returncode == 2
     assert "immutable 40-character Git SHA" in result.stderr
     assert "Missing" not in result.stderr
+
+
+
+def test_release_gate_rejects_untracked_python_before_deploy(tmp_path):
+    repo, script, sha = source_sandbox(tmp_path)
+    (repo / "sitecustomize.py").write_text("raise RuntimeError('unreviewed')\n")
+    result = run_gate(script, sha)
+    assert result.returncode == 3
+    assert "untracked build-context files present" in result.stderr
+    assert "release_source_gate=PASS" not in result.stdout
+    assert (repo / "sitecustomize.py").is_file()
+
+
+def test_docker_context_excludes_all_ignored_local_artifacts():
+    dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    # Every known .gitignore output needs a matching Docker build exclusion.
+    for excluded in (
+        "deploy/personal/env",
+        "config/public_ats_sources.json",
+        ".venv",
+        "__pycache__",
+        "*.py[cod]",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".env",
+        ".env.*",
+        "dist",
+        "build",
+        "*.egg-info",
+        "web/node_modules",
+        "web/dist",
+        "web/browser-evidence",
+        "web/playwright-report",
+        "web/test-results",
+        ".ci-out",
+        "web/public/smartploy-apply-companion.zip",
+        "web/public/smartploy-apply-companion.zip.sha256",
+    ):
+        assert excluded in dockerignore, f"ignored local artifact can enter Docker COPY: {excluded}"
+
