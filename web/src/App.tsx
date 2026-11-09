@@ -22,6 +22,7 @@ import ApplicationStudio from "./ApplicationStudio";
 import MasterCVEditor from "./MasterCVEditor";
 import ApplicationJourney from "./ApplicationJourney";
 import { describeAutoApplyBatchIssue } from "./autoapply_batch_errors";
+import { pinnedJobForCV } from "./autoapplyShortlist";
 import StartChoices from "./StartChoices";
 import ReleaseStatus from "./ReleaseStatus";
 import SearchSetup from "./SearchSetup";
@@ -1305,7 +1306,7 @@ export default function App() {
           {page === "apply" ? <ApplicationJourney
             key={accountViewKey} userId={session?.user_id || ""}
             cv={cv} mode={flowMode}
-            selectedJobKey={flowSelectedCVSha === (cv.sha256 || "") ? flowSelectedJob : ""}
+            selectedJobKey={pinnedJobForCV(flowSelectedJob, flowSelectedCVSha, cv.sha256 || "")}
             uploading={busyCV} preparing={preparing} queueBusy={flowQueueBusy}
             onMode={(choice) => {
               setFlowMode(choice); setFlowSelectedJob(""); setFlowSelectedCVSha("");
