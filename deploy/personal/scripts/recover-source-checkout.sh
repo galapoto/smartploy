@@ -30,6 +30,12 @@ if [[ -e "$RECOVERY" || -L "$RECOVERY" ]]; then
     || fail 'cannot verify current first-party main for existing recovery checkout'
   git -C "$RECOVERY" merge-base --is-ancestor "$SHA" refs/remotes/origin/main \
     || fail 'existing recovery SHA is not an ancestor of current first-party main'
+  # Git status skips tracked bytes marked assume-unchanged / skip-worktree.
+  # Reject those index hints before trusting its clean-worktree verdict.
+  if git -C "$RECOVERY" ls-files -v |
+      awk 'substr($0,1,1) ~ /[a-zS]/ { hidden=1 } END { exit !hidden }'; then
+    fail 'existing checkout hides tracked files with Git index flags'
+  fi
   [[ -z "$(git -C "$RECOVERY" status --porcelain --untracked-files=no)" ]] \
     || fail 'existing recovery checkout has tracked edits'
   [[ "$(git -C "$RECOVERY" rev-parse HEAD)" == "$SHA" ]] || fail 'existing recovery checkout is a different revision; inspect manually'
@@ -61,7 +67,8 @@ install -m 600 "$ENV" "$TEMP/source/deploy/personal/env"
 cmp -s "$ENV" "$TEMP/source/deploy/personal/env" || fail 'private env copy verification failed'
 [[ ! -e "$RECOVERY" && ! -L "$RECOVERY" ]] || fail 'recovery path appeared concurrently; refusing to overwrite'
 # GNU mv -nT never replaces a target created between the earlier check and rename.
-mv -nT -- "$TEMP/source" "$RECOVERY"
+mv -nT -- "$TEMP/source" "$RECOVERY" \
+  || fail 'recovery target appeared concurrently; refused to overwrite'
 [[ ! -e "$TEMP/source" ]] || fail 'recovery target appeared concurrently; refused to overwrite'
 [[ "$(git -C "$RECOVERY" rev-parse HEAD)" == "$SHA" ]] || fail 'staged revision mismatch'
 printf 'recovery=new_checkout_ready\nsource_sha=%s\nprivate_env=copied_mode_600\nproduction_unchanged=true\n' "$SHA"
