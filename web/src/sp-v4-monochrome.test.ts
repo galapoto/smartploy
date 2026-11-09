@@ -12,6 +12,15 @@ describe("SmartPloy brand focus",()=>{
     expect(css).toContain(".flow-start-card[data-flow-mode]");
     expect(css).toContain(".sp126-dashboard-aside");
   });
+
+  it("fixes low-contrast guidance and hides inactive stages without losing handlers",()=>{
+    expect(css).toContain("SP V4 FLOW-CLARITY-001");
+    expect(css).toContain(".flow-boundary,.flow-decision,.flow-selection-confirmation");
+    expect(css).toContain("background:#101c2a");
+    expect(css).toContain("color:#f1f7ff");
+    expect(css).toContain(".application-flow [hidden] {display:none!important}");
+    expect(css).toContain(".flow-session-tools");
+  });
   it("uses a nonrotating loading state and short brand tagline",()=>{
     expect(app).not.toContain('className="spinner"');
     expect(app).not.toContain('className={refreshing ? "rotate" : ""}');
