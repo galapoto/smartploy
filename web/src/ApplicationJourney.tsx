@@ -375,6 +375,7 @@ export default function ApplicationJourney(props: {
     const previous = batchResult; // preserve earlier review-required job failures
     const scope = queueScope.current;
     const batchToken = Symbol("one-private-autoapply-selection");
+    let preparedPinnedJob = false;
     queueInFlight.current = batchToken;
     stopRequestedRef.current = false;
     setStopRequested(false);
@@ -386,13 +387,12 @@ export default function ApplicationJourney(props: {
         if (queueScope.current === scope) setBatchProgress({ completed, total });
       }, () => stopRequestedRef.current || queueScope.current !== scope,
       blockedKeys.size > 0);
-      // The owner-scoped preparer may already have navigated to Applications
-      // and unmounted this journey. Consume a successful exact Jobs shortcut
-      // in the still-mounted parent before a later Apply remount can rearm it.
-      if (props.selectedJobKey &&
-          outcome.preparedKeys.includes(props.selectedJobKey) &&
-          keys.includes(props.selectedJobKey)) props.onClearPinnedJob?.();
       if (queueScope.current !== scope) return;
+      // Do not consume the parent pin before recording the remaining jobs:
+      // changing selectedJobKey changes queueScope and can drop retry receipts.
+      preparedPinnedJob = !!props.selectedJobKey &&
+        outcome.preparedKeys.includes(props.selectedJobKey) &&
+        keys.includes(props.selectedJobKey);
       // A successful private draft is durable. Never retry it just because
       // another exact job failed or the user stopped the remaining batch.
       const succeeded = new Set(outcome.preparedKeys);
@@ -443,6 +443,10 @@ export default function ApplicationJourney(props: {
         if (queueScope.current === scope) {
           setBatchProgress(null);
           setStopRequested(false);
+          // After the full result and retries are recorded, consume the
+          // successful shortcut in parent state, including if this view was
+          // unmounted by its own preparer navigating to My applications.
+          if (preparedPinnedJob) props.onClearPinnedJob?.();
         }
       }
     }
