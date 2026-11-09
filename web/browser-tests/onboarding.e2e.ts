@@ -1555,14 +1555,25 @@ test("V4 surface system: real Chrome shows legible dark and light cards without 
     const css = getComputedStyle(element);
     const title = element.querySelector("h3");
     if (!title) throw new Error("Expected an actual job-card heading");
+    const luminosity = (rgb: string) => {
+      const values = rgb.match(/\\d+/g)?.slice(0, 3).map(Number);
+      if (!values || values.length !== 3) throw new Error("Invalid color " + rgb);
+      const linear = values.map(n => {
+        const c = n / 255;
+        return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4;
+      });
+      return linear[0] * .2126 + linear[1] * .7152 + linear[2] * .0722;
+    };
+    const ink = luminosity(getComputedStyle(title).color);
+    const bg = luminosity(css.backgroundColor);
     return {
       background: css.backgroundColor,
       image: css.backgroundImage,
-      titleColor: getComputedStyle(title).color,
+      headingContrast: (Math.max(ink, bg) + .05) / (Math.min(ink, bg) + .05),
     };
   });
   expect(jobSurface.image).toBe("none");
-  expect(jobSurface.titleColor).toBe("rgb(247, 250, 255)");
+  expect(jobSurface.headingContrast).toBeGreaterThanOrEqual(7);
   expect(jobSurface.background).not.toBe("rgb(234, 249, 246)");
   expect(state.applicationWorkspaceCreates).toEqual([]);
 
