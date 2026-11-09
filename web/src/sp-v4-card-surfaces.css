@@ -14,6 +14,8 @@
   --sp-ui-muted:#c0d0de;
   --sp-ui-accent:#06d9e8;
   --sp-ui-ring:#06d9e8;
+  --sp-ui-error:#ff9fa9;
+  --sp-ui-warning:#f8d29a;
   --sp-ui-shadow:0 15px 36px -25px rgba(0,0,0,.95), inset 0 1px 0 rgba(255,255,255,.045);
 }
 html[data-smartploy-theme="light"] .smartploy-app {
@@ -24,6 +26,8 @@ html[data-smartploy-theme="light"] .smartploy-app {
   --sp-ui-muted:#43586e;
   --sp-ui-accent:#086f82;
   --sp-ui-ring:#087e95;
+  --sp-ui-error:#af3445;
+  --sp-ui-warning:#8b5914;
   --sp-ui-shadow:0 12px 32px -23px rgba(17,36,56,.35), inset 0 1px 0 #fff;
 }
 
@@ -61,15 +65,47 @@ html[data-smartploy-theme] .smartploy-app :is(
   color:var(--sp-ui-ink);
 }
 
-/* Preserve selected/hover meaning without mint panels or hidden text. */
+/* Hover is only a preview; the explicitly selected saved application has
+   a stronger cyan edge and inset marker. Never make two items look selected. */
 html[data-smartploy-theme] .smartploy-app :is(
-  .studio-list-item.selected,.studio-list-item:hover,
-  .studio-resume-card.selected,.studio-resume-card:hover
+  .studio-list-item:hover:not(.selected),
+  .studio-resume-card:hover:not(.selected)
+) {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-list-item.selected,.studio-resume-card.selected
 ) {
   background:var(--sp-ui-card-raised);
   background-image:none;
   border-color:var(--sp-ui-accent);
   color:var(--sp-ui-ink);
+  box-shadow:inset 3px 0 0 var(--sp-ui-accent),var(--sp-ui-shadow);
+}
+
+/* Risk remains amber and failure remains red, without returning to pale
+   backgrounds that destroyed contrast in dark mode. */
+html[data-smartploy-theme] .smartploy-app .studio-alert.error {
+  background:var(--sp-ui-card);
+  border-left:4px solid var(--sp-ui-error);
+  border-color:var(--sp-ui-card-border);
+  border-left-color:var(--sp-ui-error);
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .studio-alert.error svg {
+  color:var(--sp-ui-error);
+}
+html[data-smartploy-theme] .smartploy-app .studio-ai-risks {
+  background:var(--sp-ui-card);
+  border-left:4px solid var(--sp-ui-warning);
+  border-color:var(--sp-ui-card-border);
+  border-left-color:var(--sp-ui-warning);
+}
+html[data-smartploy-theme] .smartploy-app .studio-ai-risks > strong {
+  color:var(--sp-ui-warning);
 }
 html[data-smartploy-theme] .smartploy-app :is(
   .studio-alert,.studio-ai-risks,.flow-start-method-status,
@@ -244,6 +280,22 @@ html[data-smartploy-theme] .smartploy-app .sp126-dashboard-main
  .flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:first-child {
   background:var(--sp-ui-card-raised);
   color:var(--sp-ui-accent);
+}
+
+/* Explicitly disabled means visually disabled, even on touch screens.
+   Preserve the underlying React disabled attribute and browser semantics. */
+html[data-smartploy-theme] .smartploy-app .application-flow
+ .flow-mode[data-flow-mode]:disabled,
+html[data-smartploy-theme] .smartploy-app .sp126-dashboard-main
+ .flow-start-grid-methods .flow-start-card[data-flow-mode]:disabled {
+  background:var(--sp-ui-card);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+  border-top-color:var(--sp-ui-card-border);
+  color:var(--sp-ui-muted);
+  opacity:.68;
+  box-shadow:none;
+  cursor:not-allowed;
 }
 
 /* Progress is a navigation aid, not another mint success banner. */
