@@ -610,6 +610,63 @@ describe("SP21 application journey", () => {
     );
   });
 
+  it("V4: clearing a consumed pin keeps the remaining title-matched shortlist", async () => {
+    const second: SearchJobCard = {
+      ...listing, canonical_key: "other-title-match",
+      job: { ...listing.job, role_title: "Data Analyst" },
+      reasons: ["Job title matches Analyst"],
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: listing, recommended: [listing, second],
+      recommended_count: 2,
+    });
+    const onClearPinnedJob = vi.fn();
+    const propsWithPin = { ...props(), mode: "automatic" as const,
+      selectedJobKey: "current-planner", onClearPinnedJob };
+    const view = render(<ApplicationJourney {...propsWithPin} />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Select 1 CV-title matched job/i }));
+    expect(screen.getByText("2 of 15 vacancies selected")).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Selected" }));
+    expect(onClearPinnedJob).toHaveBeenCalledTimes(1);
+    view.rerender(<ApplicationJourney {...propsWithPin} selectedJobKey="" />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Prepare applications & start agents" })).toBeTruthy();
+    expect(propsWithPin.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
+  it("V4: a partially prepared pinned job keeps other jobs and their retry history", async () => {
+    const second: SearchJobCard = {
+      ...listing, canonical_key: "remaining-title-match",
+      job: { ...listing.job, role_title: "Data Analyst" },
+      reasons: ["Job title matches Analyst"],
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: listing, recommended: [listing, second],
+      recommended_count: 2,
+    });
+    const onClearPinnedJob = vi.fn();
+    const p = { ...props(), mode: "automatic" as const,
+      selectedJobKey: "current-planner", onClearPinnedJob,
+      onPrepareSelected: vi.fn(async (): Promise<AutoApplyBatchOutcome> => ({
+        preparedKeys: ["current-planner"], failedKeys: ["remaining-title-match"],
+        agentsActive: 1, agentsPaused: 0, agentsClosed: 0, agentsUnavailable: 0,
+      })),
+    };
+    const view = render(<ApplicationJourney {...p} />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", {name: /Select 1 CV-title matched job/i}));
+    expect(screen.getByText("2 of 15 vacancies selected")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Prepare applications & start agents" }));
+    await waitFor(() => expect(onClearPinnedJob).toHaveBeenCalledTimes(1));
+    view.rerender(<ApplicationJourney {...p} selectedJobKey="" />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    expect(screen.getByText(/1 private draft\(s\) ready;/)).toBeTruthy();
+    expect(screen.getByText(/1 job\(s\) need a retry/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry 1 failed job" })).toBeTruthy();
+    expect(p.onPrepareSelected).toHaveBeenCalledTimes(1);
+  });
+
   it("V4: stale or invalid external Jobs-card links never enable the direct AutoApply action", async () => {
     const pinned: SearchJobCard = {
       ...listing, canonical_key: "stale-source", lane: "broader",
