@@ -391,7 +391,7 @@ test("SP69: first-use Upload CV first is a working button and leads to explicit 
     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     buffer: Buffer.from("IN-TEST CV BLOB; no personal data"),
   });
-  await expect(page.getByText("Newcomer-Synthetic-CV.docx is ready")).toBeVisible();
+  await expect(page.locator(".flow-session-tools summary")).toContainText("Newcomer-Synthetic-CV.docx");
   await expect(page.getByText("Your CV is connected. Choose a method to continue.")).toBeVisible();
   await expect(page.locator(".flow-mode.selected")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Save application draft/i })).toHaveCount(0);
@@ -407,9 +407,9 @@ test("SP87 CV-less job-card shortcut cannot bypass upload and choose Manual", as
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   const card = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
   await card.getByRole("button", { name: /Apply manually/i }).click();
-  await expect(page.getByRole("heading", { name: "Apply in four steps" })).toBeVisible();
-  await expect(page.getByText(/All three application methods are visible below/)).toBeVisible();
-  await expect(page.getByRole("group", { name: "Choose application method" })).toBeVisible();
+  await expect(page.locator(".application-flow").getByRole("heading", { name: "Apply with confidence" })).toBeVisible();
+  await expect(page.locator("#smartploy-flow-choice")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Upload CV & find jobs" })).toBeVisible();
   for (const mode of ["manual", "assisted", "automatic"]) {
     await expect(page.locator(`.flow-mode[data-flow-mode="${mode}"]`)).toBeDisabled();
   }
@@ -427,11 +427,11 @@ test("CV-first manual application goes from upload to real matching and selected
     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     buffer: Buffer.from("IN-TEST CV BLOB; no real CV"),
   });
-  await expect(page.getByText("Synthetic-IT-CV.docx is ready")).toBeVisible();
+  await expect(page.locator(".flow-session-tools summary")).toContainText("Synthetic-IT-CV.docx");
   await expect(page.getByRole("group", { name: "Choose application method" })).toBeVisible();
   await page.getByRole("button", { name: /Apply manually/i }).click();
-  await expect(page.getByRole("heading", {
-    name: "Apply in four steps",
+  await expect(page.locator(".application-flow").getByRole("heading", {
+    name: "Apply with confidence",
   })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
@@ -488,9 +488,10 @@ test("SP69: direct CV upload requires an explicit Manual, Assisted or Automatic 
     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     buffer: Buffer.from("IN-TEST CV BLOB; no applicant data"),
   });
-  await expect(page.getByText("Synthetic-IT-CV.docx is ready")).toBeVisible();
+  await expect(page.locator(".flow-session-tools summary")).toContainText("Synthetic-IT-CV.docx");
   await expect(page.getByText("Your CV is connected. Choose a method to continue.")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Jobs from your CV" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Choose how to apply" })).toBeVisible();
+  await expect(page.locator("#smartploy-flow-matches")).toBeHidden();
   await expect(page.locator(".flow-mode.selected")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /save application draft/i })).toHaveCount(0);
   await expect(page.getByRole("checkbox", { name: /select for preparation/i })).toHaveCount(0);
@@ -501,6 +502,7 @@ test("SP69: direct CV upload requires an explicit Manual, Assisted or Automatic 
   await page.getByRole("button", { name: "Choose this job" }).first().click();
   await expect(page.getByRole("button", { name: /prepare CV & application/i })).toBeVisible();
   expect(state.applicationWorkspaceCreates).toEqual([]);
+  await page.getByRole("button", { name: /Change method/i }).click();
   await page.getByRole("button", { name: /AutoApply/i }).click();
   await expect(page.locator(".flow-mode.selected")).toContainText("AutoApply");
   await expect(page.getByRole("checkbox", { name: /select for preparation/i }).first()).toBeVisible();
@@ -515,7 +517,7 @@ test("SP70: Manual, Assisted and AutoApply explain and preserve distinct job act
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Apply for jobs" }).click();
-  await expect(page.getByRole("heading", { name: "How do you want to apply?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Choose how to apply" })).toBeVisible();
   await page.getByRole("button", { name: /Apply manually/i }).last().click();
   await expect(page.getByText("Choose one job to continue")).toBeVisible();
   await page.getByRole("button", { name: "Choose this job" }).first().click();
@@ -523,8 +525,10 @@ test("SP70: Manual, Assisted and AutoApply explain and preserve distinct job act
   await expect(page.getByRole("link", { name: /Apply on employer site/i })).toBeVisible();
   expect(state.applicationWorkspaceCreates).toEqual([]);
   await evidence(page, "sp70-selected-manual-next-action.png");
+  await page.getByRole("button", { name: /Change method/i }).click();
   await page.getByRole("button", { name: /Apply with AI help/i }).click();
   await expect(page.getByRole("button", { name: /Prepare CV & application/i })).toBeVisible();
+  await page.getByRole("button", { name: /Change method/i }).click();
   await page.getByRole("button", { name: /AutoApply/i }).click();
   await expect(page.getByRole("checkbox", { name: /Select for preparation/i }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Prepare applications & start agents/i })).toBeDisabled();
@@ -637,7 +641,7 @@ test("existing job-search cards open the requested assisted journey without crea
   await page.getByRole("button", { name: "Find jobs", exact: true }).click();
   const analystCard = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
   await analystCard.getByRole("button", { name: /Apply with AI/i }).click();
-  await expect(page.getByRole("heading", { name: "Apply in four steps" })).toBeVisible();
+  await expect(page.locator(".application-flow").getByRole("heading", { name: "Apply with confidence" })).toBeVisible();
   await expect(page.locator(".flow-mode.selected")).toContainText("Apply with AI help");
   await expect(page.locator(".flow-job.highlighted")).toContainText("Junior Data Analyst");
   expect(state.applicationWorkspaceCreates).toEqual([]);
@@ -653,7 +657,7 @@ test("V4: Jobs-card AutoApply prepares and opens ONLY the selected private appli
   const card = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
   await expect(card.getByRole("button", { name: "AutoApply" })).toBeEnabled();
   await card.getByRole("button", { name: "AutoApply" }).click();
-  await expect(page.getByRole("heading", { name: "Apply in four steps" })).toBeVisible();
+  await expect(page.locator(".application-flow").getByRole("heading", { name: "Apply with confidence" })).toBeVisible();
   await expect(page.locator(".flow-mode.selected")).toContainText("AutoApply");
   await expect(page.getByText("1 of 15 vacancies selected")).toBeVisible();
   expect(state.applicationWorkspaceCreates).toEqual([]); // selecting mode is not preparing
@@ -1067,11 +1071,11 @@ test("SP97: Career tools provides a truthful private AI entry but never bypasses
   await expect(readiness).toBeVisible();
   await expect(readiness).toContainText("Complete English/Finnish letters");
   await page.getByRole("button", { name: /AI writing assistant/i }).click();
-  await expect(page.getByRole("heading", {
-    name: "Apply in four steps",
+  await expect(page.locator(".application-flow").getByRole("heading", {
+    name: "Apply with confidence",
   })).toBeVisible();
   await expect(page.getByRole("button", { name: "Upload CV & find jobs" })).toBeVisible();
-  await expect(page.getByRole("group", { name: "Choose application method" })).toBeVisible();
+  await expect(page.locator("#smartploy-flow-choice")).toBeHidden();
   await expect(page.locator(".flow-mode.selected")).toHaveCount(0);
   expect(state.applicationWorkspaceCreates).toEqual([]);
   expect(aiGenerations).toEqual([]);

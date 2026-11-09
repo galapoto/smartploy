@@ -80,6 +80,37 @@ describe("SP21 application journey", () => {
     expect(api.getCVJobMatches).toHaveBeenCalledTimes(1);
   });
 
+  it("SP V4: only the current application step is visible, but completed setup can be reopened", async () => {
+    const p = props();
+    const view = render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    expect((document.getElementById("smartploy-flow-cv") as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById("smartploy-flow-choice") as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById("smartploy-flow-matches") as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById("smartploy-flow-next") as HTMLElement).hidden).toBe(true);
+    expect(screen.queryByRole("button", { name: /selected job/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /change method/i }));
+    expect((document.getElementById("smartploy-flow-choice") as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById("smartploy-flow-matches") as HTMLElement).hidden).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /apply with AI help/i }));
+    expect(p.onMode).toHaveBeenCalledWith("assisted");
+    view.rerender(<ApplicationJourney {...p} mode="assisted"/>);
+    expect((document.getElementById("smartploy-flow-matches") as HTMLElement).hidden).toBe(false);
+    expect(p.onPrepare).not.toHaveBeenCalled();
+  });
+
+  it("keeps Stop and progress visible when AutoApply preparation is busy", async () => {
+    const p = { ...props(), mode: "automatic" as const, queueBusy: true };
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    const change = screen.getByRole("button", { name: /change method/i }) as HTMLButtonElement;
+    expect(change.disabled).toBe(true);
+    fireEvent.click(change);
+    expect((document.getElementById("smartploy-flow-choice") as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById("smartploy-flow-matches") as HTMLElement).hidden).toBe(false);
+    expect(p.onMode).not.toHaveBeenCalled();
+  });
+
   it("SP69: an already connected CV does not silently select Manual or unlock application actions", async () => {
     const p = { ...props(), mode: null };
     const view = render(<ApplicationJourney {...p}/>);
@@ -95,7 +126,9 @@ describe("SP21 application journey", () => {
     fireEvent.click(screen.getByRole("button", { name: /apply with AI help/i }));
     expect(p.onMode).toHaveBeenCalledWith("assisted");
     view.rerender(<ApplicationJourney {...p} mode="assisted"/>);
+    fireEvent.click(screen.getByRole("button", { name: /change method/i }));
     expect(screen.getByRole("radio", { name: /match \+ tailored documents/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /apply with AI help/i }));
     expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
     fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[0]);
     expect(screen.getByRole("button", { name: /prepare CV & application/i })).toBeTruthy();
@@ -120,22 +153,18 @@ describe("SP21 application journey", () => {
     expect(onMode).toHaveBeenCalledTimes(1);
   });
 
-  it("SP87 requires a connected CV before method selection, while upload, CV creator and browsing work", () => {
+  it("SP V4 hides future steps until the CV is ready; upload and CV creator remain working", () => {
     const p = { ...props(), cv: { present: false }, mode: null };
     render(<ApplicationJourney {...p} />);
-    expect(screen.getByRole("heading", { name: /matching jobs appear here/i })).toBeTruthy();
-    expect(screen.getByText(/All three application methods are visible below/i)).toBeTruthy();
-    expect(screen.getByRole("group", { name: "Choose application method" })).toBeTruthy();
-    for (const card of document.querySelectorAll("button.flow-mode[data-flow-mode]")) {
-      expect((card as HTMLButtonElement).disabled).toBe(true);
-    }
-    expect(document.querySelectorAll("button.flow-mode[data-flow-mode]")).toHaveLength(3);
+    expect(screen.getByRole("heading", { name: "Start with your CV" })).toBeTruthy();
+    expect((document.getElementById("smartploy-flow-choice") as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById("smartploy-flow-matches") as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById("smartploy-flow-next") as HTMLElement).hidden).toBe(true);
+    expect(screen.queryByRole("group", { name: "Choose application method" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /upload CV & find jobs/i }));
-    expect(p.onUpload).toHaveBeenCalledTimes(1);
+    expect(p.onUpload).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: /Create CV from scratch/i }));
-    expect(p.onReviewCV).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: /browse all jobs/i }));
-    expect(p.onFindJobs).toHaveBeenCalledTimes(1);
+    expect(p.onReviewCV).toHaveBeenCalledOnce();
     expect(p.onMode).not.toHaveBeenCalled();
     expect(api.getCVJobMatches).not.toHaveBeenCalled();
   });
@@ -144,12 +173,16 @@ describe("SP21 application journey", () => {
     const p = { ...props(), mode: "assisted" as const };
     render(<ApplicationJourney {...p} />);
     await screen.findByText("IT-suunnittelija");
+    fireEvent.click(screen.getByRole("button", { name: /change method/i }));
     fireEvent.click(screen.getByRole("radio", { name: /filter jobs only/i }));
+    fireEvent.click(screen.getByRole("button", { name: /apply with AI help/i }));
     fireEvent.click(screen.getAllByRole("button", { name: /choose this job/i })[0]);
     expect(screen.queryByRole("button", { name: /prepare CV & application/i })).toBeNull();
     expect(screen.getAllByRole("link", { name: /apply on employer site/i })[0]).toBeTruthy();
     expect(screen.getByText(/it does not create an application case or track a submission/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /change method/i }));
     fireEvent.click(screen.getByRole("radio", { name: /match \+ tailored documents/i }));
+    fireEvent.click(screen.getByRole("button", { name: /apply with AI help/i }));
     fireEvent.click(screen.getAllByRole("button", { name: /prepare CV & application/i })[0]);
     await waitFor(() => expect(p.onPrepare).toHaveBeenCalledWith("current-planner"));
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
@@ -167,7 +200,7 @@ describe("SP21 application journey", () => {
     expect(screen.getByRole("link", { name: /apply on employer site/i }).getAttribute("href"))
       .toBe("https://employer.example.invalid/planner");
     expect(screen.getByText(/opening the website alone does not create a case/i)).toBeTruthy();
-    expect(screen.getByRole("list", { name: "Application steps" }).textContent).toContain("4 · Review & submit");
+    expect(screen.getByRole("list", { name: "Application steps" }).textContent).toContain("4 · Review documents");
     expect(p.onPrepare).not.toHaveBeenCalled();
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
   });
@@ -404,12 +437,17 @@ describe("SP21 application journey", () => {
     const p = { ...props(), mode: "automatic" as const };
     render(<ApplicationJourney {...p} />);
     await screen.findByText("IT-suunnittelija");
-    expect(screen.getByText(/No email, call or employer application is sent/i)).toBeTruthy();
-    expect(screen.getByText(/Each selected job gets its own private application draft and in-app agent/i)).toBeTruthy();
+    expect(screen.getByText(/Prepare a CV and letter for each selected job/i)).toBeTruthy();
+    expect(document.getElementById("smartploy-flow-queue")).toBeTruthy();
     fireEvent.click(screen.getAllByRole("checkbox", { name: /select for preparation/i })[0]);
     fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
     await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(
       ["current-planner"], expect.any(Function), expect.any(Function), false));
+    const review = await screen.findByRole("button", { name: "Review prepared documents" });
+    expect((document.getElementById("smartploy-flow-next") as HTMLElement).hidden).toBe(false);
+    expect(screen.getByLabelText("Your next action").textContent).toContain("Review the CV and letter");
+    fireEvent.click(review);
+    expect(p.onOpenApplications).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: /submit application/i })).toBeNull();
   });
 
@@ -914,7 +952,7 @@ describe("SP96: the applicant has one obvious next action at each gate", () => {
     const p = { ...props(), cv: { present: false }, mode: null };
     render(<ApplicationJourney {...p} />);
     const current = screen.getByLabelText("Your next action");
-    expect(current.textContent).toContain("Connect your CV");
+    expect(current.textContent).toContain("Upload or create your CV");
     const upload = screen.getByRole("button", { name: /^Upload CV$/ });
     fireEvent.click(upload);
     expect(p.onUpload).toHaveBeenCalledOnce();
