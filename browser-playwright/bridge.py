@@ -31,6 +31,34 @@ TRUSTED_ORIGINS = frozenset({
 CHALLENGES = (
     "captcha", "verify you are human", "security check", "i am not a robot",
 )
+# Presence of words in ordinary application copy is NOT an active challenge.
+# Only visible interactive challenges or standalone interstitials stop filling.
+CHALLENGE_SELECTORS = (
+    'iframe[src*="recaptcha" i]', 'iframe[src*="hcaptcha" i]',
+    'iframe[src*="turnstile" i]', '[data-sitekey]:not([hidden])',
+    'div[class*="cf-turnstile"]', '[role="dialog"][aria-label*="captcha" i]',
+)
+
+
+def active_security_challenge(page: Any) -> bool:
+    from urllib.parse import urlsplit
+    import re
+
+    path = urlsplit(str(page.url)).path.casefold()
+    if re.search(r"/(?:captcha|challenge|verify-human|security-check)(?:/|$)", path):
+        return True
+    for selector in CHALLENGE_SELECTORS:
+        matches = page.locator(selector)
+        for index in range(min(matches.count(), 8)):
+            if matches.nth(index).is_visible():
+                return True
+    # A page without a form can be a challenge interstitial; don't mistake
+    # explanatory legal/cookie text inside a real application for one.
+    if page.locator("form").count() == 0:
+        body = page.locator("body").inner_text(timeout=5000).casefold()
+        if any(term in body for term in CHALLENGES):
+            return True
+    return False
 
 
 class BridgeError(Exception):
@@ -75,11 +103,10 @@ class ChromiumActor:
                 "in the visible Playwright browser, then inspect again.", 409
             )
         page = matching[0]
-        if any(term in page.locator("body").inner_text(timeout=5000).lower()
-               for term in CHALLENGES):
+        if active_security_challenge(page):
             raise BridgeError(
-                "The employer page may contain a security challenge. "
-                "Finish it manually; form filling is blocked.", 409
+                "The employer page has an active security challenge. "
+                "Finish it manually before form filling.", 409
             )
         rows = assistant.inspect_page(page)
         plan = assistant.plan_fields(rows, packet)
