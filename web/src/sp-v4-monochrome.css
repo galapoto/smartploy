@@ -413,3 +413,38 @@ html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
     gap:9px;
   }
 }
+
+
+/* Only the current user-action stage is displayed. Hidden panels preserve
+   existing React state/handlers but leave layout and the accessibility tree. */
+.smartploy-app .application-flow [hidden] {display:none!important}
+.smartploy-app .application-flow .flow-session-tools {
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:9px;padding:10px 1px 0;
+  border-top:1px solid #33485b;margin-top:12px;
+}
+.smartploy-app .application-flow .flow-session-tools details {
+  flex:1 1 220px;min-width:0;
+}
+.smartploy-app .application-flow .flow-session-tools summary {
+  display:flex;align-items:center;gap:8px;cursor:pointer;
+  font-size:13px;font-weight:700;color:inherit;
+  overflow-wrap:anywhere;
+}
+.smartploy-app .application-flow .flow-session-tools summary svg {
+  color:#06d9e8;flex-shrink:0;
+}
+.smartploy-app .application-flow .flow-session-tools .row-actions{
+  margin:9px 0 4px;
+}
+.smartploy-app .application-flow .flow-session-tools > button{
+  min-height:40px;
+}
+@media(max-width:630px){
+  .smartploy-app .application-flow .flow-session-tools{
+    flex-direction:column;align-items:stretch;
+  }
+  .smartploy-app .application-flow .flow-session-tools > button{
+    width:100%;
+  }
+}
