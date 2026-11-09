@@ -351,3 +351,65 @@ html[data-smartploy-theme="light"] .smartploy-app .sp126-dashboard-main
  .flow-start-how .outline-btn:hover{
   background:#e9f8fa;border-color:#058797;color:#082d36;
 }
+
+
+/* SP V4 FLOW-CLARITY-001 — legible next-action and safety surfaces.
+   The previous light-blue .flow-boundary retained near-white dark-theme text.
+   Reuse the existing SP V4 black/cyan tokens; no new palette or component. */
+.smartploy-app .application-flow :is(
+  .flow-boundary,.flow-decision,.flow-selection-confirmation,.flow-choice-gate,
+  .flow-job-instruction,.flow-job-next,.flow-next-guidance,.flow-next-action
+),
+.smartploy-app :is(.studio-journey,.studio-next-action,.studio-assisted-guide) {
+  background:#101c2a;
+  border-color:#33485b;
+  color:#f7faff;
+  box-shadow:0 10px 25px -22px #000a;
+}
+.smartploy-app .application-flow :is(
+  .flow-boundary,.flow-decision,.flow-selection-confirmation,.flow-choice-gate,
+  .flow-job-instruction,.flow-job-next,.flow-next-guidance,.flow-next-action
+) :is(p,strong,small,span),
+.smartploy-app :is(.studio-journey,.studio-next-action,.studio-assisted-guide)
+  :is(p,strong,small,span) {
+  color:#f1f7ff;
+  opacity:1;
+}
+.smartploy-app .application-flow :is(
+  .flow-boundary,.flow-decision,.flow-selection-confirmation,.flow-choice-gate,
+  .flow-job-instruction,.flow-job-next,.flow-next-action
+) > svg,
+.smartploy-app .application-flow .flow-job-next-copy > strong svg {
+  color:#06d9e8;
+}
+.smartploy-app .studio-journey ol li {
+  background:#182636;
+  border-color:#3b536a;
+  color:#f7faff;
+}
+.smartploy-app .studio-journey ol li :is(strong,small) {color:#f1f7ff}
+.smartploy-app .studio-journey li > span {
+  background:#07505c;
+  color:#fff;
+}
+.smartploy-app .studio-journey-links a {
+  background:#192c3e;
+  border-color:#446178;
+  color:#f7faff;
+}
+.smartploy-app .studio-journey-links a:hover {
+  background:#234459;
+  border-color:#06d9e8;
+  color:#fff;
+}
+.smartploy-app .application-flow :is(button,a,input):focus-visible,
+.smartploy-app .studio-journey-links a:focus-visible {
+  outline:3px solid #06d9e8;
+  outline-offset:3px;
+}
+@media (max-width:630px) {
+  .smartploy-app .application-flow .flow-boundary {
+    padding:13px 14px;
+    gap:9px;
+  }
+}
