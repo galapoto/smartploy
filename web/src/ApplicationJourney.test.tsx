@@ -443,6 +443,11 @@ describe("SP21 application journey", () => {
     fireEvent.click(screen.getByRole("button", { name: /prepare applications & start agents/i }));
     await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledWith(
       ["current-planner"], expect.any(Function), expect.any(Function), false));
+    const review = await screen.findByRole("button", { name: "Review prepared documents" });
+    expect((document.getElementById("smartploy-flow-next") as HTMLElement).hidden).toBe(false);
+    expect(screen.getByLabelText("Your next action").textContent).toContain("Review the CV and letter");
+    fireEvent.click(review);
+    expect(p.onOpenApplications).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: /submit application/i })).toBeNull();
   });
 
