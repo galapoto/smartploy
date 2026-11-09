@@ -102,7 +102,9 @@ def test_dirty_tracked_checkout_is_refused_without_changing_content(tmp_path):
 
 def test_hidden_tracked_bytes_are_refused_in_real_release_gate(tmp_path):
     for hint in ("--assume-unchanged", "--skip-worktree"):
-        repo, script, sha = source_sandbox(tmp_path / hint.lstrip("-"))
+        case_root = tmp_path / hint.lstrip("-")
+        case_root.mkdir()
+        repo, script, sha = source_sandbox(case_root)
         original = git(repo, "rev-parse", "HEAD")
         git(repo, "update-index", hint, "README.md")
         (repo / "README.md").write_text("hidden unreviewed deploy payload\n")
