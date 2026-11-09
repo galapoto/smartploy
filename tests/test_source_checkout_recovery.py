@@ -206,3 +206,18 @@ def test_existing_checkout_rejects_hidden_tracked_script_changes(stack, index_fl
     assert "hides tracked files with Git index flags" in result.stderr
     assert "existing_checkout_verified" not in result.stdout
     assert env.read_text().startswith("POSTGRES_PASSWORD=synthetic-secret")
+
+
+
+def test_existing_checkout_rejects_untracked_python_payload(stack):
+    _, target, env, _, _, _, _ = stack
+    assert run(stack).returncode == 0
+    payload = target / "sitecustomize.py"
+    payload.write_text("raise RuntimeError('UNREVIEWED_SOURCE_EXECUTED')\n")
+    result = run(stack)
+    assert result.returncode != 0
+    assert "untracked build-context files" in result.stderr
+    assert "existing_checkout_verified" not in result.stdout
+    assert payload.read_text().startswith("raise RuntimeError")
+    assert env.is_file()
+
