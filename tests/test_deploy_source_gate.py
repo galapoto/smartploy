@@ -98,6 +98,21 @@ def test_dirty_tracked_checkout_is_refused_without_changing_content(tmp_path):
     assert git(repo, "rev-parse", "HEAD") == original_head
 
 
+
+
+def test_hidden_tracked_bytes_are_refused_in_real_release_gate(tmp_path):
+    for hint in ("--assume-unchanged", "--skip-worktree"):
+        repo, script, sha = source_sandbox(tmp_path / hint.lstrip("-"))
+        original = git(repo, "rev-parse", "HEAD")
+        git(repo, "update-index", hint, "README.md")
+        (repo / "README.md").write_text("hidden unreviewed deploy payload\n")
+        assert git(repo, "status", "--porcelain", "--untracked-files=no") == ""
+        result = run_gate(script, sha)
+        assert result.returncode == 3
+        assert "tracked files hidden by Git index flags" in result.stderr
+        assert "release_source_gate=PASS" not in result.stdout
+        assert git(repo, "rev-parse", "HEAD") == original
+
 def test_commit_outside_remote_main_is_refused(tmp_path):
     repo, script, _ = source_sandbox(tmp_path)
     git(repo, "checkout", "-b", "unreviewed")
