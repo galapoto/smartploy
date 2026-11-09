@@ -38,6 +38,11 @@ if [[ -e "$RECOVERY" || -L "$RECOVERY" ]]; then
   fi
   [[ -z "$(git -C "$RECOVERY" status --porcelain --untracked-files=no)" ]] \
     || fail 'existing recovery checkout has tracked edits'
+  # Untracked nonignored files would be included by Dockerfile COPY . but
+  # are absent from the approved commit; keep only ignored, Docker-excluded
+  # private env and generated artifacts.
+  [[ -z "$(git -C "$RECOVERY" ls-files --others --exclude-standard)" ]] \
+    || fail 'existing recovery checkout has untracked build-context files'
   [[ "$(git -C "$RECOVERY" rev-parse HEAD)" == "$SHA" ]] || fail 'existing recovery checkout is a different revision; inspect manually'
   [[ -f "$RECOVERY/deploy/personal/env" && ! -L "$RECOVERY/deploy/personal/env" ]] || fail 'existing checkout has no safe private env'
   COPIED_MODE="$(stat -c '%a' "$RECOVERY/deploy/personal/env")"
