@@ -99,6 +99,18 @@ describe("SP21 application journey", () => {
     expect(p.onPrepare).not.toHaveBeenCalled();
   });
 
+  it("keeps Stop and progress visible when AutoApply preparation is busy", async () => {
+    const p = { ...props(), mode: "automatic" as const, queueBusy: true };
+    render(<ApplicationJourney {...p}/>);
+    await screen.findByText("IT-suunnittelija");
+    const change = screen.getByRole("button", { name: /change method/i }) as HTMLButtonElement;
+    expect(change.disabled).toBe(true);
+    fireEvent.click(change);
+    expect((document.getElementById("smartploy-flow-choice") as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById("smartploy-flow-matches") as HTMLElement).hidden).toBe(false);
+    expect(p.onMode).not.toHaveBeenCalled();
+  });
+
   it("SP69: an already connected CV does not silently select Manual or unlock application actions", async () => {
     const p = { ...props(), mode: null };
     const view = render(<ApplicationJourney {...p}/>);
