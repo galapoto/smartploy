@@ -297,7 +297,8 @@ export default function ApplicationJourney(props: {
         batchResult?.accessInterrupted || staleSelectionCount > 0) return;
     const proposal = addCVShortlist(selected, results.recommended);
     if (!proposal.added.length) return;
-    props.onClearPinnedJob?.();
+    // Clearing the parent pin here would trigger the CV/job selection reset
+    // effect and discard the newly added shortlist before it can be used.
     setBatchResult(null);
     setSelected(proposal.selected);
   }
@@ -367,6 +368,12 @@ export default function ApplicationJourney(props: {
         if (queueScope.current === scope) setBatchProgress({ completed, total });
       }, () => stopRequestedRef.current || queueScope.current !== scope,
       blockedKeys.size > 0);
+      // The owner-scoped preparer may already have navigated to Applications
+      // and unmounted this journey. Consume a successful exact Jobs shortcut
+      // in the still-mounted parent before a later Apply remount can rearm it.
+      if (props.selectedJobKey &&
+          outcome.preparedKeys.includes(props.selectedJobKey) &&
+          keys.includes(props.selectedJobKey)) props.onClearPinnedJob?.();
       if (queueScope.current !== scope) return;
       // A successful private draft is durable. Never retry it just because
       // another exact job failed or the user stopped the remaining batch.
