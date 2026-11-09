@@ -259,11 +259,13 @@ describe("Application Studio private-read account boundary", () => {
     const cv = screen.getByRole("textbox", { name: "Editable CV text" });
     const letter = screen.getByRole("textbox", { name: "Editable cover letter text" });
     const ai = document.getElementById("smartploy-ai-writer");
+    const agent = screen.getByRole("region", { name: "Your job application agent" });
     const employer = document.getElementById("smartploy-employer-step");
     expect(ai).toBeTruthy();
     expect(employer).toBeTruthy();
     expect(Boolean(cv.compareDocumentPosition(letter) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-    expect(Boolean(letter.compareDocumentPosition(ai!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(letter.compareDocumentPosition(agent) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(Boolean(agent.compareDocumentPosition(ai!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(Boolean(ai!.compareDocumentPosition(employer!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(api.editApplicationWorkspace).not.toHaveBeenCalled();
     expect(api.sendLeverPartnerApplication).not.toHaveBeenCalled();
