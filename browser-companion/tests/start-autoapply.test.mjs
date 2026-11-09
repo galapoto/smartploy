@@ -82,6 +82,7 @@ test("successful zero-write real fill continues, while cancelled fill does not",
       currentPacketToJSON:()=>({application_url:url}),
       requireVerifiedReview:async()=>{},
       exactAssistedForm:()=>true,
+      fillPlanned:()=>{},
       chrome:{storage:{session:{}},scripting:{executeScript:async()=> {
         writes.push("execute");
         return [{result:{filled:0,skipped:1,blocker:""}}];
