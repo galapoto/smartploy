@@ -89,3 +89,49 @@ def test_sp110_real_chromium_dynamic_form_change_stops_before_next_field():
             assert page.evaluate("window.submissionCount") == 0
         finally:
             browser.close()
+
+
+
+def test_sp111_chromium_informational_captcha_text_does_not_block_real_form():
+    from test_playwright_local_bridge import bridge
+    html = SAFE_HTML.replace(
+        '<form id="application">',
+        '<p>We may use CAPTCHA, security checks, or verify you are human '
+        'on suspicious sign-ins. This is informational only.</p>'
+        '<form id="application">',
+    )
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html", body=html,
+            ))
+            page.goto("https://jobs.lever.co/example/position/apply")
+            assert bridge.active_security_challenge(page) is False
+            assert len(assistant.plan_fields(assistant.inspect_page(page),
+                                             packet("https://jobs.lever.co/example/position"))) == 3
+            assert page.evaluate("window.submissionCount") == 0
+        finally:
+            browser.close()
+
+
+def test_sp111_chromium_visible_challenge_or_interstitial_requires_human():
+    from test_playwright_local_bridge import bridge
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route("**/*", lambda route: route.fulfill(
+                status=200, content_type="text/html",
+                body=SAFE_HTML.replace("</form>", '<div class="cf-turnstile">'
+                    'Human verification required</div></form>'),
+            ))
+            page.goto("https://jobs.lever.co/example/position/apply")
+            assert bridge.active_security_challenge(page) is True
+
+            page.set_content("<main><h1>Security check</h1>"
+                "<p>Verify you are human to continue.</p></main>")
+            assert bridge.active_security_challenge(page) is True
+        finally:
+            browser.close()
