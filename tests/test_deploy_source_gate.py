@@ -34,8 +34,11 @@ def source_sandbox(tmp_path: Path) -> tuple[Path, Path, str]:
     script_dir = repo / "deploy/personal/scripts"
     script_dir.mkdir(parents=True)
     shutil.copyfile(GATE, script_dir / GATE.name)
+    # Mirror the real repository: the release gate is tracked, and the
+    # private production env is intentionally Git-ignored and Docker-excluded.
+    (repo / ".gitignore").write_text("deploy/personal/env\n", encoding="utf-8")
     (repo / "README.md").write_text("reviewed source\n", encoding="utf-8")
-    git(repo, "add", "README.md")
+    git(repo, "add", "README.md", ".gitignore", "deploy/personal/scripts/check-approved-source.sh")
     git(repo, "commit", "-m", "synthetic reviewed source")
     git(repo, "push", "-u", "origin", "main")
     return repo, script_dir / GATE.name, git(repo, "rev-parse", "HEAD")
