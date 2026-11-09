@@ -45,6 +45,22 @@ test("one visible Start chains observed exact-job inspect, consented fill, then 
   assert.match(popup,/await requireVerifiedReview\(chrome\.storage\?\.session, currentPacket\)/);
   assert.match(popup,/if \(!window\.confirm\(/);
 });
+test("question-only and upload-only applications continue to review without a fake contact fill",async()=>{
+  for (const plan of [{actions:[],skippedUploads:[]},{actions:[],skippedUploads:[{key:"cv"}]}]) {
+    const {launch,calls,context,button}=mount({
+      onInspect:async()=>{
+        calls.push("inspect");
+        context.currentPlan=plan;
+        context.currentPacket={application_url:"https://jobs.ashbyhq.com/example/job"};
+        context.targetTabId=7;
+      },
+      onFill:async()=>{calls.push("unexpected-fill");return false;},
+    });
+    await launch();
+    assert.deepEqual(calls,["inspect","questions"]);
+    assert.equal(button.disabled,false);
+  }
+});
 test("failed or changed form inspection cannot reuse a previous plan",async()=>{
   const {launch,calls,context,button}=mount({
     onInspect:async()=>{calls.push("inspect-blocked");}
