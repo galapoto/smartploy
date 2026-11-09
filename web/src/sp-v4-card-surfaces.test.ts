@@ -27,6 +27,20 @@ describe("V4 shadcn-adapted surface system", () => {
     expect(css).toContain("border-left:3px solid var(--sp-ui-accent)");
   });
 
+  it("preserves disabled method cards, warning/error meaning and unambiguous selection", () => {
+    expect(css).toContain(".flow-mode[data-flow-mode]:disabled");
+    expect(css).toContain(".flow-start-card[data-flow-mode]:disabled");
+    expect(css).toContain("opacity:.68");
+    expect(css).toContain("cursor:not-allowed");
+    expect(css).toContain(".studio-alert.error");
+    expect(css).toContain("border-left-color:var(--sp-ui-error)");
+    expect(css).toContain(".studio-ai-risks > strong");
+    expect(css).toContain("border-left-color:var(--sp-ui-warning)");
+    expect(css).toContain(".studio-list-item:hover:not(.selected)");
+    expect(css).toContain(".studio-list-item.selected");
+    expect(css).toContain("inset 3px 0 0 var(--sp-ui-accent)");
+  });
+
   it("covers the formerly mint-tinted document and application cards", () => {
     for (const selector of [
       ".flow-primary-next", ".flow-uploaded", ".flow-start-ready",
