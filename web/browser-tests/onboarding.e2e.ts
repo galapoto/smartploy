@@ -1556,7 +1556,7 @@ test("V4 surface system: real Chrome shows legible dark and light cards without 
     const title = element.querySelector("h3");
     if (!title) throw new Error("Expected an actual job-card heading");
     const luminosity = (rgb: string) => {
-      const values = rgb.match(/\\d+/g)?.slice(0, 3).map(Number);
+      const values = rgb.match(/\d+/g)?.slice(0, 3).map(Number);
       if (!values || values.length !== 3) throw new Error("Invalid color " + rgb);
       const linear = values.map(n => {
         const c = n / 255;
