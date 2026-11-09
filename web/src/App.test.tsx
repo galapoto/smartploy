@@ -946,6 +946,48 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect((await screen.findByTestId("application-editor")).getAttribute("data-workspace")).toBe("");
   });
 
+  it("drops a Jobs-card pinned Automatic selection after an external CV replacement", async () => {
+    currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
+    let currentCV = {
+      present: true, filename: "OWNER-ORIGINAL.pdf", sha256: "cv-sha-original",
+    };
+    vi.mocked(api.getCV).mockImplementation(async () => ({ ...currentCV }));
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      cv_present: true, cv_filename: "OWNER-ORIGINAL.pdf",
+      match_mode: "cv_text_signals", detected_roles: [], detected_topics: [],
+      selected_job: tailored.recommendations[0],
+      recommended: [tailored.recommendations[0]], other_jobs: [],
+      current_jobs_count: 1, recommended_count: 1,
+      matched_from: "local_cv_text_not_approved_evidence",
+      qualifications_verified: false, employer_actions_performed: false,
+    } as never);
+    let refresh: (() => void) | null = null;
+    const clock = vi.spyOn(window, "setInterval").mockImplementation((callback) => {
+      refresh = typeof callback === "function" ? () => callback() : null;
+      return 813;
+    });
+    try {
+      render(<App />);
+      expect(await screen.findByText("OWNER-ORIGINAL.pdf")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: /^Prepare for AutoApply$/ }));
+      await waitFor(() => expect(
+        screen.getByRole("button", { name: "Prepare and open the selected job application" })
+      ).toBeTruthy());
+      expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+      currentCV = {
+        present: true, filename: "OWNER-REPLACEMENT.pdf", sha256: "cv-sha-replacement",
+      };
+      await act(async () => { refresh?.(); });
+      expect(await screen.findByText("OWNER-REPLACEMENT.pdf")).toBeTruthy();
+      await waitFor(() => expect(screen.queryByRole("button", {
+        name: "Prepare and open the selected job application",
+      })).toBeNull());
+      expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("clears an old-account fact entry when a save finishes after account switching", async () => {
     currentPrefs = { ...initial, completed: true, mode: "general", revision: 1 };
     const switchToB = switchableSession();
