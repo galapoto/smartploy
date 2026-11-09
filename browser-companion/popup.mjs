@@ -26,6 +26,7 @@ let preflightPassed = false;
 let attemptReserved = false;
 let receiptOnly = false;
 let receiptCheckSequence = 0;
+let startAutoApplyInFlight = false;
 
 function clearReceiptObservation() {
   receiptCheckSequence++;
@@ -540,8 +541,12 @@ async function onInspect() {
       throw new PacketError("The employer form is dynamic or too large. Please fill it manually.");
     }
     const candidate = planFields(result.result.elements, pkt);
-    if (!candidate.actions.length && !candidate.skippedUploads.length) {
-      throw new PacketError("No supported empty fields or file inputs were found. Fill this application manually.");
+    // Contact details may already be filled. A question-only application must
+    // still reach its review screen, without inventing any contact action.
+    const questions = planReviewedQuestions(result.result.elements);
+    if (!candidate.actions.length && !candidate.skippedUploads.length &&
+        !questions.questions.length && !questions.humanOnly.length) {
+      throw new PacketError("No supported fields, uploads or questions were found. Review this application manually.");
     }
     targetTabId = tab.id;
     currentPacket = pkt;
@@ -598,11 +603,11 @@ async function onInspect() {
 }
 
 async function onFill() {
-  if (receiptOnly || !currentPacket || !currentPlan) return;
+  if (receiptOnly || !currentPacket || !currentPlan) return false;
   if (!window.confirm(
     "Fill only the displayed approved fields on the selected employer page? " +
     "No documents will be uploaded and no application will be submitted."
-  )) return;
+  )) return false;
   try {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
@@ -627,7 +632,40 @@ async function onFill() {
       "Filled " + result.result.filled + " fields (" + result.result.skipped +
       " skipped). Review every value. Select a reviewed PDF for explicit attachment or attach manually.", true
     );
-  } catch (error) { status(normalizeError(error)); }
+    return result.result.filled > 0;
+  } catch (error) { status(normalizeError(error)); return false; }
+}
+
+/** One AutoApply action built from the existing verified inspection and fill
+ * primitives. Consent is still checked inside onFill(). No automatic PDF
+ * attachment, inferred answer, final click, or employer submission.
+ */
+async function onStartAutoApply() {
+  if (startAutoApplyInFlight) return;
+  startAutoApplyInFlight = true;
+  $("startAutoApply").disabled = true;
+  // Failed scans cannot reuse approval or indices from an earlier form.
+  currentPlan = null;
+  currentQuestionPlan = null;
+  currentPacket = null;
+  targetTabId = null;
+  inspectedUrl = "";
+  try {
+    await onInspect();
+    if (!currentPacket || !currentPlan || targetTabId === null ||
+        receiptOnly || attemptReserved) return;
+    // On a question-only or upload-only form there are zero contacts to
+    // mutate. Skip the unnecessary fill prompt, then review real questions.
+    const filled = currentPlan.actions.length === 0 ? true : await onFill();
+    if (!filled) return;
+    await onReviewQuestions();
+    // Attachment, reviewed answers and final send remain separate controls.
+  } catch (error) {
+    status(normalizeError(error));
+  } finally {
+    startAutoApplyInFlight = false;
+    $("startAutoApply").disabled = false;
+  }
 }
 
 async function onAttach() {
@@ -1064,6 +1102,7 @@ async function onReceipt() {
 $("verifyReview").addEventListener("click", () => void onVerifySmartPloyReview());
 $("reserveFinal").addEventListener("click", () => void onReserveFinalAttempt());
 $("inspect").addEventListener("click", () => void onInspect());
+$("startAutoApply").addEventListener("click", () => void onStartAutoApply());
 $("resume").addEventListener("click", () => void onResumeReceipt());
 $("fill").addEventListener("click", () => void onFill());
 $("attach").addEventListener("click", () => void onAttach());
