@@ -632,7 +632,10 @@ async function onFill() {
       "Filled " + result.result.filled + " fields (" + result.result.skipped +
       " skipped). Review every value. Select a reviewed PDF for explicit attachment or attach manually.", true
     );
-    return result.result.filled > 0;
+    // A no-blocker result is a completed attempt even when browser autofill
+    // already supplied every value and the executor wrote zero fields. Keep
+    // later question inspection available; this never authorizes final send.
+    return true;
   } catch (error) { status(normalizeError(error)); return false; }
 }
 
