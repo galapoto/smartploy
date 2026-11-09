@@ -37,3 +37,28 @@ high-contrast crisp text. Run npm ci, Vitest, TypeScript/Vite build, Playwright,
 server Python suite, Woodpecker and production health + release-sha checks.
 A successful synthetic test is NOT production verification. Deployment
 and independent review remain separately gated.
+
+## REA-FIRST execution decision and reproducibility (review follow-up)
+**Status: REA_NOT_APPLICABLE; REA_NOT_RUN.** The actual authorized first-party
+Komplyint source at `komplyint/komplyint-website@76c00948638cd2db699f78c58d6885117f676014`
+was directly readable at the three original modules listed above. The original
+pinned Fontsource npm distributions, exact package versions, lockfile integrity
+and OFL-1.1 license evidence were also available. No REA behavior reconstruction
+or proprietary source recovery was needed, attempted or adopted; therefore an
+REA tool revision, recovered artifact and recovered-code comparison are **not
+applicable / none**. The authorized adaptation is direct first-party source
+inspection and published, license-compatible font package reuse; this is not a
+claim of a successful REA extraction. Direct reuse must remain pinned to the
+donor/source modules and destination paths above.
+
+## Runtime footprint and performance receipt
+**NOT_MEASURED:** independent before/after built JS/CSS/font transfer bytes,
+compressed payload, network requests, font render delay and LCP were not
+measured against the deployed baseline. Three additional font packages and
+multiple explicit subset/weight imports were introduced, so a build PASS is
+not evidence of zero runtime cost. Verify actual build size and mobile font
+loading on the exact release image; preserve the locally hosted/locked fonts
+and allow only needed font faces if a measured regression appears. Runtime
+performance impact and development-time saving: **NOT_MEASURED**. The public
+site was still at release `cee0017091e5` when inspected on 8 Nov 2026; its
+speed cannot be compared to an unreleased candidate by assumption.

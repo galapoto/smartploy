@@ -1482,3 +1482,80 @@ test("SP156 Komplyint typography is self-hosted and banner has one clear heading
   await expect(cvAlternative).toHaveCSS("color", "rgb(14, 38, 54)");
   await expect(cvAlternative).toHaveCSS("background-color", "rgb(255, 255, 255)");
 });
+
+
+test("SP156 aborts the previous session GET before retrying the startup shell", async ({ page }) => {
+  await installSyntheticApi(page);
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    let sessionCalls = 0;
+    let aborted = 0;
+    Object.defineProperty(window, "__smartployAbortedStartupReads", {
+      get: () => aborted, configurable: true,
+    });
+    window.fetch = (input, init) => {
+      const url = typeof input === "string" ? input :
+        input instanceof Request ? input.url : String(input);
+      if (url.includes("/api/v1/session") && ++sessionCalls === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          const cancel = () => {
+            aborted += 1;
+            reject(new DOMException("Synthetic superseded request", "AbortError"));
+          };
+          if (signal?.aborted) cancel();
+          else signal?.addEventListener("abort", cancel, { once: true });
+        });
+      }
+      return original(input, init);
+    };
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Connecting to your workspace" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry connection" }).click();
+  await expect.poll(() => page.evaluate(() =>
+    (window as Window & { __smartployAbortedStartupReads?: number })
+      .__smartployAbortedStartupReads ?? 0)).toBe(1);
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+});
+
+test("SP156 session switch closes the phone drawer and restores keyboard scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.clock.install();
+  const state = await installSyntheticApi(page);
+  await page.goto("/");
+  const trigger = page.getByRole("button", { name: "Open menu" });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await expect(page.getByRole("dialog", { name: "SmartPloy sidebar" })).toBeVisible();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+  state.userId = "synthetic-switched-account";
+  await page.clock.fastForward(60_000);
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("");
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("");
+});
+
+test("SP156 phone keeps actionable development warnings while hiding routine release badges", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installSyntheticApi(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  const display = await page.evaluate(() => {
+    const root = document.querySelector(".smartploy-app")!;
+    const styles = (status: string) => {
+      const element = document.createElement("div");
+      element.className = "release-status release-status-" + status;
+      element.textContent = status;
+      root.appendChild(element);
+      const value = getComputedStyle(element).display;
+      element.remove();
+      return value;
+    };
+    return { development: styles("development"), aligned: styles("aligned"), checking: styles("checking") };
+  });
+  expect(display.development).not.toBe("none");
+  expect(display.aligned).toBe("none");
+  expect(display.checking).toBe("none");
+});
