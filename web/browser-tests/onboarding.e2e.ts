@@ -1486,3 +1486,78 @@ test("SP156 Komplyint typography is self-hosted and banner has one clear heading
   await expect(cvAlternative).toHaveCSS("color", "rgb(14, 38, 54)");
   await expect(cvAlternative).toHaveCSS("background-color", "rgb(255, 255, 255)");
 });
+
+
+test("V4 surface system: real Chrome shows legible dark and light cards without mint panels", async ({ page }) => {
+  const state = await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Synthetic-CV.pdf",
+  });
+  await page.setViewportSize({ width: 1365, height: 860 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Apply for jobs" }).click();
+  const next = page.locator(".flow-primary-next");
+  await expect(next).toBeVisible();
+
+  const measure = () => page.evaluate(() => {
+    const query = (selector: string) => {
+      const el = document.querySelector(selector);
+      if (!el) throw new Error("Missing UI card " + selector);
+      const css = getComputedStyle(el);
+      return { bg: css.backgroundColor, fg: css.color, image: css.backgroundImage };
+    };
+    const lum = (rgb: string) => {
+      const values = rgb.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number);
+      if (!values || values.length !== 3) throw new Error("Unsupported CSS color " + rgb);
+      const linear = values.map(value => {
+        const normalized = value / 255;
+        return normalized <= .04045 ? normalized / 12.92 : ((normalized + .055) / 1.055) ** 2.4;
+      });
+      return linear[0] * .2126 + linear[1] * .7152 + linear[2] * .0722;
+    };
+    const nextPanel = query(".flow-primary-next");
+    const nextTitle = query(".flow-primary-next-copy strong");
+    const nextText = query(".flow-primary-next-copy small");
+    const contrast = (foreground: string) => {
+      const f = lum(foreground), b = lum(nextPanel.bg);
+      return (Math.max(f, b) + .05) / (Math.min(f, b) + .05);
+    };
+    return {
+      panel: nextPanel,
+      titleContrast: contrast(nextTitle.fg),
+      helpContrast: contrast(nextText.fg),
+      luminance: lum(nextPanel.bg),
+      pageOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+    };
+  });
+
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
+  const dark = await measure();
+  expect(dark.panel.image).toBe("none");
+  expect(dark.luminance).toBeLessThan(.045);
+  expect(dark.titleContrast).toBeGreaterThanOrEqual(7);
+  expect(dark.helpContrast).toBeGreaterThanOrEqual(4.5);
+  expect(dark.pageOverflow).toBe(false);
+  await evidence(page, "v4-dark-next-action-card.png");
+
+  // Existing, real selection actions remain operable; this is not a mock card.
+  await page.locator('.flow-mode[data-flow-mode="manual"]').click();
+  await expect(page.locator(".flow-job").first()).toBeVisible();
+  const jobSurface = await page.locator(".flow-job").first().evaluate(element => {
+    const css = getComputedStyle(element);
+    return { background: css.backgroundColor, image: css.backgroundImage };
+  });
+  expect(jobSurface.image).toBe("none");
+  expect(jobSurface.background).not.toBe("rgb(234, 249, 246)");
+  expect(state.applicationWorkspaceCreates).toEqual([]);
+
+  await page.getByRole("button", { name: "Switch to light mode" }).click();
+  const light = await measure();
+  expect(light.panel.image).toBe("none");
+  expect(light.panel.bg).toBe("rgb(255, 255, 255)");
+  expect(light.titleContrast).toBeGreaterThanOrEqual(7);
+  expect(light.helpContrast).toBeGreaterThanOrEqual(4.5);
+  expect(light.pageOverflow).toBe(false);
+  await evidence(page, "v4-light-next-action-card.png");
+});
