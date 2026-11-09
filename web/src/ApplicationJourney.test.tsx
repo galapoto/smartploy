@@ -551,6 +551,25 @@ describe("SP21 application journey", () => {
     expect(p.onPrepareSelected).not.toHaveBeenCalled();
   });
 
+  it("V4: returning to Apply after deselect cannot rearm an already consumed job shortcut", async () => {
+    const onClearPinnedJob = vi.fn();
+    const p = { ...props(), mode: "automatic" as const,
+      selectedJobKey: "current-planner", onClearPinnedJob };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: listing,
+    });
+    const view = render(<ApplicationJourney {...p} />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    fireEvent.click(screen.getByRole("checkbox", { name: "Selected" }));
+    expect(onClearPinnedJob).toHaveBeenCalledOnce();
+    view.unmount();
+    render(<ApplicationJourney {...p} selectedJobKey="" />);
+    await waitFor(() => expect(screen.getByText("0 of 15 vacancies selected")).toBeTruthy());
+    expect(screen.queryByRole("button", {
+      name: "Prepare and open the selected job application",
+    })).toBeNull();
+  });
+
   it("V4: stale or invalid external Jobs-card links never enable the direct AutoApply action", async () => {
     const pinned: SearchJobCard = {
       ...listing, canonical_key: "stale-source", lane: "broader",
