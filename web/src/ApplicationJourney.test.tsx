@@ -570,6 +570,46 @@ describe("SP21 application journey", () => {
     })).toBeNull();
   });
 
+  it("V4: adding CV-title matches keeps the selected shortlist and never resets it", async () => {
+    const second: SearchJobCard = {
+      ...listing, canonical_key: "another-title-match",
+      job: { ...listing.job, role_title: "Analyst role" },
+      reasons: ["Job title matches Analyst"],
+    };
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: listing, recommended: [listing, second],
+      recommended_count: 2,
+    });
+    const onClearPinnedJob = vi.fn();
+    const p = { ...props(), mode: "automatic" as const,
+      selectedJobKey: "current-planner", onClearPinnedJob };
+    render(<ApplicationJourney {...p} />);
+    await waitFor(() => expect(screen.getByText("1 of 15 vacancies selected")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", {name: /Select 1 CV-title matched job/i}));
+    expect(screen.getByText("2 of 15 vacancies selected")).toBeTruthy();
+    expect(onClearPinnedJob).not.toHaveBeenCalled();
+    expect(p.onPrepareSelected).not.toHaveBeenCalled();
+  });
+
+  it("V4: a prepared pinned job is consumed so reopening Apply cannot rearm it", async () => {
+    vi.mocked(api.getCVJobMatches).mockResolvedValue({
+      ...data, selected_job: listing,
+    });
+    const onClearPinnedJob = vi.fn();
+    const p = { ...props(), mode: "automatic" as const,
+      selectedJobKey: "current-planner", onClearPinnedJob };
+    render(<ApplicationJourney {...p} />);
+    const start = await screen.findByRole("button", {
+      name: "Prepare and open the selected job application",
+    });
+    fireEvent.click(start);
+    await waitFor(() => expect(p.onPrepareSelected).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onClearPinnedJob).toHaveBeenCalledOnce());
+    expect(p.onPrepareSelected).toHaveBeenCalledWith(
+      ["current-planner"], expect.any(Function), expect.any(Function), false,
+    );
+  });
+
   it("V4: stale or invalid external Jobs-card links never enable the direct AutoApply action", async () => {
     const pinned: SearchJobCard = {
       ...listing, canonical_key: "stale-source", lane: "broader",
