@@ -962,8 +962,8 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       qualifications_verified: false, employer_actions_performed: false,
     } as never);
     let refresh: (() => void) | null = null;
-    const clock = vi.spyOn(window, "setInterval").mockImplementation((callback) => {
-      refresh = typeof callback === "function" ? () => callback() : null;
+    const clock = vi.spyOn(window, "setInterval").mockImplementation((callback, interval) => {
+      if (interval === 60000) refresh = typeof callback === "function" ? () => callback() : null;
       return 813;
     });
     try {
@@ -977,8 +977,11 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       currentCV = {
         present: true, filename: "OWNER-REPLACEMENT.pdf", sha256: "cv-sha-replacement",
       };
+      const priorReads = vi.mocked(api.getCV).mock.calls.length;
+      expect(refresh).not.toBeNull();
       await act(async () => { refresh?.(); });
-      expect(await screen.findByText("OWNER-REPLACEMENT.pdf")).toBeTruthy();
+      await waitFor(() => expect(vi.mocked(api.getCV).mock.calls.length).toBeGreaterThan(priorReads));
+      await waitFor(() => expect(screen.getByText("OWNER-REPLACEMENT.pdf")).toBeTruthy());
       await waitFor(() => expect(screen.queryByRole("button", {
         name: "Prepare and open the selected job application",
       })).toBeNull());
