@@ -15,7 +15,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "browser-playwright"
 DEFAULT_OUTPUT = ROOT / "web/public/smartploy-playwright-assistant.zip"
-FILES = ("INSTALL.txt", "assistant.py", "bridge.py")
+FILES = ("INSTALL.txt", "PROVENANCE.txt", "assistant.py", "bridge.py")
 ZIP_TIMESTAMP = (2026, 10, 1, 0, 0, 0)
 MAX_SOURCE_BYTES = 100_000
 
@@ -38,6 +38,7 @@ def reviewed_files() -> dict[str, bytes]:
         or b"def main(" not in files["bridge.py"]
         or b"127.0.0.1" not in files["bridge.py"]
         or b"Playwright" not in files["INSTALL.txt"]
+        or b"d682da2582ebfa3f013cf37dc542384fe605f303" not in files["PROVENANCE.txt"]
     ):
         raise ValueError("The reviewed browser assistant safety entrypoints are missing")
     return files
