@@ -14,14 +14,18 @@
     </header>
 
     <section>
-      <label for="packet">1. Verify your reviewed SmartPloy packet</label>
-      <textarea id="packet" rows="5" placeholder="Paste the short-lived packet copied from My applications." spellcheck="false"></textarea>
-      <p class="muted">First record a final review in My applications. While on the signed-in
-        smartploy.komplyint.fi tab, paste your approved packet and click Verify review.
-        The extension stores only a hash and expiry in temporary Chrome memory, never
-        your session cookie, CV, approved contact details or application text.</p>
+      <label for="packet">1 · Paste your reviewed SmartPloy packet</label>
+      <textarea id="packet" rows="3" placeholder="Paste the short-lived packet copied from My applications." spellcheck="false"></textarea>
+      <p class="muted">Verify on your signed-in SmartPloy tab, then open the exact employer form.</p>
       <button id="verifyReview" type="button" class="secondary">Verify review on signed-in SmartPloy</button>
       <p id="reviewInfo" role="status"></p>
+      <button id="startAutoApply" type="button" class="start-autoapply">
+        Start AutoApply · fill reviewed fields
+      </button>
+      <p class="muted">Inspects the exact form, asks before filling, and shows remaining questions.
+        No PDF is uploaded or application submitted automatically.</p>
+      <details class="sp-advanced">
+        <summary>Manual controls &amp; safety details</summary>
       <p class="muted">Only for an independently authorized <strong>Lever</strong> posting:
         after reviewing the complete form, return to the signed-in SmartPloy tab
         to reserve ONE server-controlled attempt. Ashby and hosted Greenhouse jobs
@@ -41,6 +45,7 @@
         SmartPloy tab, then return to the employer confirmation. A visible reference
         and the exact job address are required. If either is missing, keep the
         employer's email and use I applied on employer site in SmartPloy.</p>
+      </details>
     </section>
 
     <section id="plan" hidden>
