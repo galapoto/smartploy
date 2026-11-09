@@ -20,6 +20,7 @@ describe("SmartPloy brand focus",()=>{
     expect(css).toContain("color:#f1f7ff");
     expect(css).toContain(".application-flow [hidden] {display:none!important}");
     expect(css).toContain(".flow-session-tools");
+    expect(css).toContain(".studio-assisted-guide h4");
   });
   it("uses a nonrotating loading state and short brand tagline",()=>{
     expect(app).not.toContain('className="spinner"');
