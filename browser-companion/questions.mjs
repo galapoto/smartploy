@@ -15,6 +15,11 @@ export const MAX_QUESTION_ITEMS = 12;
 export const SENSITIVE_QUESTION =
   /\b(?:voluntary self identification|self identification|self id|equal employment opportunity|equal opportunity|demographic|reasonable accommodation|immigration|legal|visa|citizenship|citizen|nationality|sponsor|sponsorship|work permit|right to work|work authori[sz]ation|authori[sz]ed to work|legally eligible to work|eligible to work|employment eligibility|salary|compensation|wage|expected pay|pay range|eeo|race|ethnic|gender|sex|sexual|religion|politic|union membership|disability|health condition|medical|veteran|military|criminal|felony|convict|background check|privacy|consent|gdpr|agree|agreement|attest|certif(?:y|ication)|signature|passport|social security|government id|tax id|birth date|date of birth|age|bank account|start date|notice period|työlupa|oleskelulupa|kansalaisuus|palkka|henkilötunnus|sukupuoli|uskonto|rikosrekisteri|suostumus|allekirjoitus|arbetstillstånd|medborgarskap|personnummer|samtycke|underskrift|lön|födelsetid|kön)\b/iu;
 
+// Conservative, human-only answer vocabulary. Generic employer labels such as
+// "Choose an option" must not turn demographic disclosures into ordinary answers.
+// This policy is mirrored in the self-contained MV3 page executor.
+const PROTECTED_SELECT_OPTION = /\b(?:male|female|non binary|nonbinary|genderfluid|genderqueer|transgender|cisgender|intersex|two spirit|man|woman|asian|black|african american|white|caucasian|hispanic|latino|latina|latinx|native american|american indian|alaska native|pacific islander|middle eastern|north african|indigenous|aboriginal|first nations|gay|lesbian|bisexual|pansexual|asexual|heterosexual|straight|queer|mies|nainen|muunsukupuolinen)\b/iu;
+
 function tidy(value) {
   return String(value || "").normalize("NFKC")
     // Browser form attributes may be camelCase: visaStatus, salaryExpectation,
@@ -71,11 +76,14 @@ export function planReviewedQuestions(elements) {
           // The employer's question may have a generic label while a single
           // option discloses disability, nationality or another protected fact.
           // Never shrink a sensitive list to apparently ordinary options.
-          row.options.some(x => x && isSensitiveQuestion({
-            label: String(x.label || ""),
-            id: String(x.value || ""),
-            name: "", placeholder: ""
-          }))) {
+          row.options.some(x => x && (
+            isSensitiveQuestion({
+              label: [x.label, x.group].join(" "),
+              id: String(x.value || ""),
+              name: "", placeholder: ""
+            }) ||
+            PROTECTED_SELECT_OPTION.test(tidy([x.label, x.group, x.value].join(" ")))
+          ))) {
         humanOnly.push(label); continue;
       }
       choices = row.options.filter(x =>
@@ -84,7 +92,10 @@ export function planReviewedQuestions(elements) {
         typeof x.label === "string" && x.label.trim().length >= 1 &&
         x.label.length <= 150 &&
         !SENSITIVE_QUESTION.test(tidy(x.label))
-      ).map(x => ({value:x.value, label:x.label.trim()}));
+      ).map(x => ({
+        value:x.value, label:x.label.trim(),
+        group:String(x.group || "").trim()
+      }));
       if (!choices.length || choices.length > 24 ||
           new Set(choices.map(x => x.value)).size !== choices.length ||
           new Set(choices.map(x => tidy(x.label))).size !== choices.length) {
@@ -132,6 +143,18 @@ export function validateReviewedAnswers(plan, values) {
     if (!value.trim()) continue;
     if (isSensitiveQuestion(question)) {
       throw new QuestionError("A sensitive question must be answered manually.");
+    }
+    // Revalidate all planned options before accepting a user choice;
+    // an altered or stale plan must not make protected disclosures fillable.
+    if (question.type === "select" &&
+        (!Array.isArray(question.options) ||
+         question.options.some(o => !o ||
+           isSensitiveQuestion({
+             label:[o.label,o.group].join(" "), id:String(o.value || ""),
+             name:"", placeholder:""
+           }) ||
+           PROTECTED_SELECT_OPTION.test(tidy([o.label,o.group,o.value].join(" ")))))) {
+      throw new QuestionError("A protected dropdown must be answered manually.");
     }
     if (question.type === "select" &&
         !uniqueApprovedOption(value, question.options)) {
