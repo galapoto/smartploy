@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from smartploy.api import create_app
 from smartploy.application_workspace import new_workspace, render_document
 from smartploy.browser_handoff import HandoffError, approved_fields_sha256, make_browser_packet, review_handoff
+from smartploy.obumbrowser_handoff import SCHEMA as OBUMBROWSER_INTENT_SCHEMA, reviewed_navigation_intent
 from smartploy.domain import SourceObservation, SourcePolicy, normalize_observation
 from smartploy.profile import CandidateProfile, ProfileFact
 from smartploy.service import SmartployService
@@ -105,6 +106,47 @@ def test_review_ready_packet_is_bounded_and_never_contains_original_cv():
     assert "Secret uploaded CV" not in json.dumps(packet)
     assert packet["privacy"]["employer_submit_allowed_without_new_approval"] is False
     assert "browser_form_fill_allowed_after_user_click" in packet["privacy"]
+
+
+def test_obumbrowser_navigation_intent_reuses_review_gate_without_disclosing_candidate_data():
+    """Future hosted navigation contains only the public job URL, never a CV."""
+    intent = reviewed_navigation_intent(ready_workspace(), candidate(), profile())
+    assert intent == {
+        "schema": OBUMBROWSER_INTENT_SCHEMA,
+        "target_url": APPLICATION_URL,
+        "transport": "obumbrowser",
+        "scope": "navigation_only",
+        "applicant_data_included": False,
+        "browser_session_created": False,
+        "external_action_authorized": False,
+        "document_upload_authorized": False,
+        "employer_submit_authorized": False,
+    }
+    raw = json.dumps(intent)
+    for forbidden in ("test.candidate@example.com", "Test Candidate",
+                      "This is an uploaded CV", "+358 40", "Kind regards"):
+        assert forbidden not in raw
+    assert "session_id" not in intent and "access_token" not in intent
+
+
+def test_obumbrowser_intent_rejects_unreviewed_wrong_owner_and_changed_job():
+    fresh = new_workspace(candidate(), profile())
+    with pytest.raises(HandoffError, match="not ready"):
+        reviewed_navigation_intent(fresh, candidate(), profile())
+    with pytest.raises(HandoffError, match="not owned"):
+        reviewed_navigation_intent(ready_workspace(), candidate(), profile("other-person"))
+    with pytest.raises(HandoffError, match="not ready"):
+        reviewed_navigation_intent(ready_workspace(), replace(candidate(), source_current=False), profile())
+
+
+def test_obumbrowser_intent_refuses_url_query_tokens_without_looser_job_policy():
+    url = APPLICATION_URL + "?token=private"
+    c = candidate()
+    updated = replace(c, job=replace(c.job, application_url=url))
+    case = replace(ready_workspace(), application_url=url)
+    assert review_handoff(case, updated, profile())["ready"] is True
+    with pytest.raises(HandoffError, match="clean, exact"):
+        reviewed_navigation_intent(case, updated, profile())
 
 
 def test_missing_contact_or_unreviewed_letter_prevents_handoff():
