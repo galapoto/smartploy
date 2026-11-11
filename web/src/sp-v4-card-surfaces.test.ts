@@ -44,6 +44,32 @@ describe("V4 shadcn-adapted surface system", () => {
     expect(css).toContain("inset 3px 0 0 var(--sp-ui-accent)");
   });
 
+  it("closes remaining pale status, automation, handoff and editor surfaces", () => {
+    for (const selector of [
+      ".flow-signal-summary", ".flow-choice-locked", ".flow-error",
+      ".studio-automation", ".studio-automation-approval",
+      ".studio-handoff", ".studio-handoff-blockers", ".studio-attempt-reserved",
+      ".studio-receipt", ".studio-ai-preview",
+      ".studio-list-heading span", ".studio-review-queue-filters button",
+      ".sp126-dashboard-main .flow-start-browse-button",
+      ".studio-document textarea", ".studio-packet-fallback textarea",
+      ".studio-receipt-import textarea",
+    ]) expect(css, selector).toContain(selector);
+    expect(css).toContain("SP V4 / M1 CONTRAST-CLOSURE-002");
+    expect(css).toContain("background:var(--sp-ui-card)");
+    expect(css).toContain("background:var(--sp-ui-card-raised)");
+    expect(css).toContain(".studio-packet-fallback label");
+    expect(css).toContain(".studio-ai-preview pre");
+    expect(css).toContain(".studio-receipt-import label");
+    expect(css).toContain(".studio-review-queue-filters button span");
+    expect(css).toContain('.studio-review-queue-filters button:not([aria-pressed="true"]):hover:not(:disabled)');
+    expect(css).toContain('.studio-review-queue-filters button[aria-pressed="true"] span');
+    expect(css).toContain("border-left:3px solid var(--sp-ui-warning)");
+    expect(css).toContain("border-left:3px solid var(--sp-ui-error)");
+    expect(css).not.toContain("!important");
+    expect(css).not.toContain("@import");
+  });
+
   it("covers the formerly mint-tinted document and application cards", () => {
     for (const selector of [
       ".flow-primary-next", ".flow-uploaded", ".flow-start-ready",
