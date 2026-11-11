@@ -65,6 +65,33 @@ test("reactive employer form clearing input after dispatch is not a successful A
   expect(outside()).toBe(0);
 });
 
+test("a later field clearing an earlier reviewed contact does not report full success",async ({page})=>{
+  const outside=await setup(page);
+  await page.evaluate(()=>{
+    const form=document.querySelector("form")!;
+    const label=document.createElement("label");
+    label.htmlFor="phone";label.textContent="Phone";
+    const input=document.createElement("input");
+    input.id="phone";input.name="phone";input.type="tel";
+    form.append(label,input);
+    input.addEventListener("input",()=>{
+      setTimeout(()=>{
+        (document.querySelector("#contact") as HTMLInputElement).value="";
+      },25);
+    },{once:true});
+  });
+  const result=await run(page,[action(),{
+    index:2,key:"phone",value:"+358 40 000 0000",label:"Phone",
+    expected_id:"phone",expected_name:"phone",expected_type:"tel"
+  }]);
+  expect(result.filled).toBe(1);
+  expect(result.blocker).toMatch(/earlier reviewed employer field changed/i);
+  expect(await page.locator("#contact").inputValue()).toBe("");
+  expect(await page.locator("#phone").inputValue()).toBe("+358 40 000 0000");
+  expect(await page.evaluate(()=>(window as any).submitted)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
 test("changed visible question label with same element identity is rejected",async ({page})=>{
   await setup(page);
   await page.locator('label[for="contact"]').evaluate(el=>el.textContent="Work authorization");
