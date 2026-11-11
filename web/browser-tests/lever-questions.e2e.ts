@@ -112,6 +112,23 @@ test("V4 exact selected employer option persists, never answers protected fields
   expect(outside()).toBe(0);
 });
 
+test("V4 native dropdown cannot report success after erasing earlier approved text",async ({page})=>{
+  const outside=await setup(page);
+  await page.locator("#source").evaluate(el=>{
+    el.addEventListener("change",()=>{
+      setTimeout(()=>{(document.querySelector("#why") as HTMLTextAreaElement).value="";},25);
+    },{once:true});
+  });
+  const result=await act(page,[why(),sourceOption()]);
+  expect(result.status).toBe("partial_needs_review");
+  expect(result.filled).toBe(1);
+  expect(result.reason).toMatch(/earlier approved answer changed/i);
+  expect(await page.locator("#why").inputValue()).toBe("");
+  expect(await page.locator("#source").inputValue()).toBe("job-board");
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
 test("V4 dynamic native dropdown reset fails closed without a repeat write",async ({page})=>{
   const outside=await setup(page);
   await page.locator("#source").evaluate(el=>{
