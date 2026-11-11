@@ -375,6 +375,7 @@ html[data-smartploy-theme] .smartploy-app :is(
   .studio-automation-approval p,.studio-automation-approval label,
   .studio-receipt-header > strong,.studio-receipt-import label,
   .studio-receipt-record,.studio-receipt > p,
+  .studio-packet-fallback label,.studio-ai-preview pre,
   .studio-ai-preview h4,.studio-ai-preview p,
   .flow-signal-summary,.flow-signal-summary span,
   .studio-list-heading span,.studio-attempt-details,
