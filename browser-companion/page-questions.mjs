@@ -58,7 +58,7 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
         .join(" ").normalize("NFKC")
         .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
         .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
-        .toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, " ").trim();
+        .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
       const identifier = String(o.value || "");
       return sensitive.test(material) || restrictedIdentifiers.test(identifier);
     };
