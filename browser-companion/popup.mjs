@@ -114,7 +114,7 @@ function inspectForm() {
 
 /* Strictly fill only elements originally inspected and matching the same job.
    Use page-native value setters so React-controlled forms observe edits. */
-function fillPlanned(actions, exactUrl) {
+async function fillPlanned(actions, exactUrl) {
   function visible(el) {
     if (!el || !el.isConnected ||
         el.closest("[hidden],[aria-hidden='true'],[inert]")) return false;
@@ -168,11 +168,12 @@ function fillPlanned(actions, exactUrl) {
         x.pathname.startsWith(prefix + "/");
     } catch { return false; }
   }
-  if (!sameJob(location.href, exactUrl)) {
-    return { filled: 0, skipped: actions.length, blocker: "Employer page changed since packet approval." };
-  }
   if (!Array.isArray(actions) || actions.length > 120) {
     return { filled: 0, skipped: 0, blocker: "Too many fields to fill safely." };
+  }
+  const originalUrl = location.href;
+  if (!sameJob(originalUrl, exactUrl)) {
+    return { filled: 0, skipped: actions.length, blocker: "Employer page changed since packet approval." };
   }
   const all = Array.from(document.querySelectorAll("input,textarea,select"));
   let filled = 0, skipped = 0;
@@ -180,7 +181,31 @@ function fillPlanned(actions, exactUrl) {
     return {filled:0,skipped:actions.length,blocker:"Employer form is too large; inspect manually."};
   }
   const seen = new Set();
+  const verified = [];
+  // A later field can trigger React to clear an earlier, already checked one.
+  // Each candidate success must remain valid throughout the entire batch.
+  function persistedCount() {
+    const rows = Array.from(document.querySelectorAll("input,textarea,select"));
+    if (location.href !== originalUrl || !sameJob(location.href, exactUrl) ||
+        rows.length !== all.length) return 0;
+    return verified.filter(({ element, action }) => {
+      const kind = element.tagName === "TEXTAREA" ? "textarea" :
+        element.tagName === "SELECT" ? "select" :
+        (element.type || "text").toLowerCase();
+      return element.isConnected && rows[action.index] === element &&
+        visible(element) && !element.disabled && !element.readOnly &&
+        kind === action.expected_type &&
+        (element.id || "") === action.expected_id &&
+        (element.name || "") === action.expected_name &&
+        labelFor(element) === action.label && !unsafeMetadata(element) &&
+        element.value === action.value;
+    }).length;
+  }
   for (const action of actions) {
+    if (verified.length && persistedCount() !== verified.length) {
+      return {filled:persistedCount(),skipped,
+        blocker:"A previously filled employer field changed. Review manually without retry."};
+    }
     if (!action || !Number.isInteger(action.index) || action.index < 0 ||
         action.index >= all.length || seen.has(action.index)) {
       return {filled,skipped,blocker:"Employer form or approved field indices changed. Reinspect manually."};
@@ -216,18 +241,32 @@ function fillPlanned(actions, exactUrl) {
       setter.call(el, action.value);
       el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
       el.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-      if (el.value !== action.value) { skipped++; continue; }
-      filled++;
+      // Reuse PR #317's verified-settled-value invariant in the deployed
+      // extension. React employer forms can erase an input AFTER dispatch.
+      // Never count a write until the page has had time to react.
+      await new Promise(resolve => setTimeout(resolve, 150));
       const after = Array.from(document.querySelectorAll("input,textarea,select"));
-      if (!el.isConnected || after.length !== all.length ||
-          after[action.index] !== el || labelFor(el) !== action.label ||
+      if (location.href !== originalUrl || !sameJob(location.href, exactUrl) ||
+          !el.isConnected || after.length !== all.length ||
+          after[action.index] !== el || !visible(el) ||
+          el.disabled || el.readOnly || labelFor(el) !== action.label ||
           unsafeMetadata(el) || (el.id || "") !== action.expected_id ||
-          (el.name || "") !== action.expected_name) {
-        return {filled,skipped,blocker:"Employer form changed after contact field input. Review manually without retry."};
+          (el.name || "") !== action.expected_name ||
+          el.value !== action.value) {
+        return {filled,skipped,blocker:"Employer form changed or cleared a reviewed value. Check it manually without retry."};
+      }
+      verified.push({element:el,action});
+      filled = persistedCount();
+      if (filled !== verified.length) {
+        return {filled,skipped,blocker:"An earlier reviewed employer field changed. Check manually without retry."};
       }
     } catch {
       return {filled,skipped,blocker:"Contact field fill outcome is uncertain. Review manually without retry."};
     }
+  }
+  filled = persistedCount();
+  if (filled !== verified.length) {
+    return {filled,skipped,blocker:"A reviewed employer value changed after filling. Check manually without retry."};
   }
   return { filled, skipped, blocker: "" };
 }

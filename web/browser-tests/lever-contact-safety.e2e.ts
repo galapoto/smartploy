@@ -22,7 +22,7 @@ async function setup(page:Page) {
   });
   await page.goto(JOB);
   const source=await readFile(new URL("../../browser-companion/popup.mjs",import.meta.url),"utf8");
-  const start=source.indexOf("function fillPlanned(actions, exactUrl) {");
+  const start=source.indexOf("async function fillPlanned(actions, exactUrl) {");
   const end=source.indexOf("\nfunction inspectFinalSubmit(",start);
   if(start<0||end<=start)throw Error("Original browser contact executor not found");
   await page.addScriptTag({content:source.slice(start,end)+"\nwindow.fillPlanned=fillPlanned;"});
@@ -46,6 +46,48 @@ test("reviewed ordinary email fills through original native setter without submi
   expect(await page.locator("#contact").inputValue()).toBe("person@example.invalid");
   expect(await page.locator("#legal").inputValue()).toBe("");
   expect(await page.evaluate(()=>(window as any).changed)).toBe(1);
+  expect(await page.evaluate(()=>(window as any).submitted)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
+test("reactive employer form clearing input after dispatch is not a successful AutoApply fill",async ({page})=>{
+  const outside=await setup(page);
+  await page.locator("#contact").evaluate(el=>{
+    el.addEventListener("input",()=>{
+      setTimeout(()=>{(el as HTMLInputElement).value="";},25);
+    },{once:true});
+  });
+  const result=await run(page);
+  expect(result.filled).toBe(0);
+  expect(result.blocker).toMatch(/cleared a reviewed value/i);
+  expect(await page.locator("#contact").inputValue()).toBe("");
+  expect(await page.evaluate(()=>(window as any).submitted)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
+test("a later field clearing an earlier reviewed contact does not report full success",async ({page})=>{
+  const outside=await setup(page);
+  await page.evaluate(()=>{
+    const form=document.querySelector("form")!;
+    const label=document.createElement("label");
+    label.htmlFor="phone";label.textContent="Phone";
+    const input=document.createElement("input");
+    input.id="phone";input.name="phone";input.type="tel";
+    form.append(label,input);
+    input.addEventListener("input",()=>{
+      setTimeout(()=>{
+        (document.querySelector("#contact") as HTMLInputElement).value="";
+      },25);
+    },{once:true});
+  });
+  const result=await run(page,[action(),{
+    index:2,key:"phone",value:"+358 40 000 0000",label:"Phone",
+    expected_id:"phone",expected_name:"phone",expected_type:"tel"
+  }]);
+  expect(result.filled).toBe(1);
+  expect(result.blocker).toMatch(/earlier reviewed employer field changed/i);
+  expect(await page.locator("#contact").inputValue()).toBe("");
+  expect(await page.locator("#phone").inputValue()).toBe("+358 40 000 0000");
   expect(await page.evaluate(()=>(window as any).submitted)).toBe(0);
   expect(outside()).toBe(0);
 });
@@ -91,7 +133,7 @@ test("React detachment after input is reported as uncertain, not successful subm
     },{once:true});
   });
   const verdict=await run(page);
-  expect(verdict.blocker).toMatch(/changed after contact field input/i);
+  expect(verdict.blocker).toMatch(/changed or cleared a reviewed value/i);
   expect(await page.evaluate(()=>(window as any).submitted)).toBe(0);
 });
 
@@ -104,8 +146,8 @@ test("new required field inserted on last input is a blocked partial fill",async
     },{once:true});
   });
   const verdict=await run(page);
-  expect(verdict.filled).toBe(1);
-  expect(verdict.blocker).toMatch(/changed after contact field input/i);
+  expect(verdict.filled).toBe(0);
+  expect(verdict.blocker).toMatch(/changed or cleared a reviewed value/i);
   expect(await page.evaluate(()=>(window as any).submitted)).toBe(0);
   expect(outside()).toBe(0);
 });

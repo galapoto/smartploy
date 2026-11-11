@@ -43,7 +43,7 @@ async function setup(page:Page) {
   const popup=await readFile(
     new URL("../../browser-companion/popup.mjs",import.meta.url),"utf8"
   );
-  const first=popup.indexOf("function fillPlanned(actions, exactUrl) {");
+  const first=popup.indexOf("async function fillPlanned(actions, exactUrl) {");
   const last=popup.indexOf("\nfunction inspectFinalSubmit(",first);
   if (first<0 || last<=first) throw Error("Existing reviewed contact executor not found");
   await page.addScriptTag({content:popup.slice(first,last)+"\nwindow.fillPlanned=fillPlanned;"});
@@ -172,8 +172,8 @@ test("Greenhouse dynamic form re-render stops the original contact executor with
     ({actions,url})=>(window as any).fillPlanned(actions,url),
     {actions:[nameField,emailField],url:APPROVED}
   );
-  expect(result.filled).toBe(1);
-  expect(result.blocker).toMatch(/changed after contact field input/i);
+  expect(result.filled).toBe(0);
+  expect(result.blocker).toMatch(/changed or cleared a reviewed value/i);
   expect(await page.locator("#email").inputValue()).toBe("");
   expect(await page.evaluate(()=>(window as any).employerSubmissions)).toBe(0);
 });
