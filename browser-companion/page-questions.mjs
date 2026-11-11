@@ -41,6 +41,9 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
   const sensitive = /\b(?:voluntary self identification|self identification|self id|equal employment opportunity|equal opportunity|demographic|reasonable accommodation|immigration|legal|visa|citizenship|citizen|nationality|sponsor|sponsorship|work permit|right to work|work authori[sz]ation|authori[sz]ed to work|legally eligible to work|eligible to work|employment eligibility|salary|compensation|wage|expected pay|pay range|eeo|race|ethnic|gender|sex|sexual|religion|politic|union membership|disability|health condition|medical|veteran|military|criminal|felony|convict|background check|privacy|consent|gdpr|agree|agreement|attest|certif(?:y|ication)|signature|passport|social security|government id|tax id|birth date|date of birth|age|bank account|start date|notice period|työlupa|oleskelulupa|kansalaisuus|palkka|henkilötunnus|sukupuoli|uskonto|rikosrekisteri|suostumus|allekirjoitus|arbetstillstånd|medborgarskap|personnummer|samtycke|underskrift|lön|födelsetid|kön)\b/iu;
   const restrictedIdentifiers =
     /(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|workeligib|legallyeligible|authorizedtowork|authorisedtowork|citizen|nationality|gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|immigrat|taxid|nationalid|henkilötunnus|sukupuol|kansalaisuu|oleskelulup|työlup|palkka|arbetstillstånd|medborgarskap|personnummer|samtycke)/i;
+  // Keep this demographic-answer filter aligned with questions.mjs;
+  // Chrome serializes this function into the employer page without imports.
+  const protectedSelectOption = /\b(?:male|female|non binary|nonbinary|genderfluid|genderqueer|transgender|cisgender|intersex|two spirit|man|woman|asian|black|african american|white|caucasian|hispanic|latino|latina|latinx|native american|american indian|alaska native|pacific islander|middle eastern|north african|indigenous|aboriginal|first nations|gay|lesbian|bisexual|pansexual|asexual|heterosexual|straight|queer|mies|nainen|muunsukupuolinen)\b/iu;
   function labelFor(el) {
     const raw = el.labels?.[0]?.innerText || el.getAttribute("aria-label") ||
       (el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.innerText : "") ||
@@ -54,13 +57,16 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
     // No partial filtering: a SPA may mutate an unselected option to a
     // protected disclosure after the applicant reviewed this dropdown.
     const sensitiveOption = o => {
-      const material = [o.label || o.textContent || "", o.value || ""]
-        .join(" ").normalize("NFKC")
+      const material = [
+        o.label || o.textContent || "", o.value || "",
+        o.closest("optgroup")?.label || ""
+      ].join(" ").normalize("NFKC")
         .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
         .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
         .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
       const identifier = String(o.value || "");
-      return sensitive.test(material) || restrictedIdentifiers.test(identifier);
+      return sensitive.test(material) || protectedSelectOption.test(material) ||
+        restrictedIdentifiers.test(identifier);
     };
     if (current.some(sensitiveOption)) return false;
     const enabled = current.filter(o =>
@@ -68,11 +74,16 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       !o.closest("optgroup[disabled]")
     ).map(o => ({
       value:o.value,
-      label:String(o.label || o.textContent || "").trim()
+      label:String(o.label || o.textContent || "").trim(),
+      group:String(o.closest("optgroup")?.label || "").trim()
     }));
+    // A changed optgroup heading is a changed reviewed question, even if
+    // the chosen option's value/label remained identical.
     return enabled.length === a.options.length &&
       enabled.every((o,i) =>
-        a.options[i]?.value === o.value && a.options[i]?.label === o.label);
+        a.options[i]?.value === o.value &&
+        a.options[i]?.label === o.label &&
+        String(a.options[i]?.group || "") === o.group);
   }
   function valid(a) {
     if (!a || !Number.isInteger(a.index) || a.index < 0 || a.index >= all.length ||
