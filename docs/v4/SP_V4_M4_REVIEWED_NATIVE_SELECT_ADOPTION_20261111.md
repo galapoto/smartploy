@@ -45,3 +45,15 @@ These fixes supersede preliminary green CI, and require fresh exact-head GitHub 
 **Provenance:** `https://github.com/galapoto/smartploy` at initial candidate `daa82f023414e7ea4f0148db55933b088d273580`, same function and same Chromium fixture. Copied unchanged: **none** in this R2 hardening. Sanitized: not required (authorized first-party source). Adapted: source guards. Integrated: existing v0.5.5 companion. New: two browser regressions. REA_NOT_APPLICABLE to a focused correction of accessible owned source; time savings not measured.
 
 **Evidence at coding time:** branch commits `5b3582b2e57e4ce61776f778be2f7a33f47e052e` and `bb804ba3a7666bdc6d26e37c111af55df671f817`; exact new-head CI, independent review, merge, main CI, OVH deployment, online evidence, and real signed-in employer acceptance remain **NOT VERIFIED** until independently observed.
+
+## R3 — Exact-head P1 protected-option semantics (11 Nov 2026 EET)
+
+**Independent Codex source finding on `9ee2cf163cbaab19b06654a3c993ccea7d7fb419`:** a generic dropdown with option label **Immigration status** or **Legal status**, but generic option value, could still be classified ordinary because the label-sensitive word-boundary expression omitted `immigration` and `legal`.
+
+**ADAPTED:** `browser-companion/questions.mjs::SENSITIVE_QUESTION` and `browser-companion/page-questions.mjs::fillReviewedAnswers` now deny both option labels, at initial plan and live pre-/post-write verification. The separate identifier denylist remains unchanged. No new host permissions, automatic final submission or dependencies.
+
+**NEW tests:** `browser-companion/tests/questions.test.mjs` proves both labels make the *entire* generic select human-only; `web/browser-tests/lever-questions.e2e.ts` exercises both labels as 25 ms post-change option mutations in actual synthetic Chromium and expects blocked/zero submit.
+
+**Pinned provenance:** original source and baseline `galapoto/smartploy@9ee2cf163cbaab19b06654a3c993ccea7d7fb419`; source commits `f60c54139eefd7be004d35ac845fc917784f1f21`, `a0ed4f58c28fbfb7eeca4e74f900cfff2b7664e0`, `d9d70fc4b1e4b185a74b96b4a939e8705f99b20c`, `81edaf96c043525fc380b8c4dbc4809e8fed7741`. COPIED unchanged **none** in R3; SANITIZED not applicable to already-owned source; ADAPTED two deny lists; INTEGRATED existing extension; NEW three regressions (one Node unit test, two Chromium test cases). REA_NOT_APPLICABLE; savings NOT_MEASURED.
+
+**Release status:** source committed on the existing M4 branch; fresh exact-head CI, independent review, main merge, production SHA, verified signed-in real employer observation all pending until evidence confirms.
