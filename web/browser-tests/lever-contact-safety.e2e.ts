@@ -22,7 +22,7 @@ async function setup(page:Page) {
   });
   await page.goto(JOB);
   const source=await readFile(new URL("../../browser-companion/popup.mjs",import.meta.url),"utf8");
-  const start=source.indexOf("function fillPlanned(actions, exactUrl) {");
+  const start=source.indexOf("async function fillPlanned(actions, exactUrl) {");
   const end=source.indexOf("\nfunction inspectFinalSubmit(",start);
   if(start<0||end<=start)throw Error("Original browser contact executor not found");
   await page.addScriptTag({content:source.slice(start,end)+"\nwindow.fillPlanned=fillPlanned;"});
@@ -91,7 +91,7 @@ test("React detachment after input is reported as uncertain, not successful subm
     },{once:true});
   });
   const verdict=await run(page);
-  expect(verdict.blocker).toMatch(/changed after contact field input/i);
+  expect(verdict.blocker).toMatch(/changed or cleared a reviewed value/i);
   expect(await page.evaluate(()=>(window as any).submitted)).toBe(0);
 });
 
@@ -104,8 +104,8 @@ test("new required field inserted on last input is a blocked partial fill",async
     },{once:true});
   });
   const verdict=await run(page);
-  expect(verdict.filled).toBe(1);
-  expect(verdict.blocker).toMatch(/changed after contact field input/i);
+  expect(verdict.filled).toBe(0);
+  expect(verdict.blocker).toMatch(/changed or cleared a reviewed value/i);
   expect(await page.evaluate(()=>(window as any).submitted)).toBe(0);
   expect(outside()).toBe(0);
 });
