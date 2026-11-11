@@ -1,0 +1,104 @@
+/* SP111 — local Playwright pairing; readable in both SP99 themes.
+   The UI never renders packet content or the local bearer token. */
+.local-playwright-panel {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 18px 20px;
+  border: 1px solid #c9deee;
+  border-radius: 15px;
+  background: #f4faff;
+  color: #153452;
+  box-shadow: 0 8px 24px rgba(12, 44, 86, .075);
+}
+.local-playwright-panel > p { margin: 0; line-height: 1.5; }
+.local-playwright-heading {
+  display: flex; gap: 12px; align-items: flex-start;
+}
+.local-playwright-heading > svg { color: #145dce; flex: none; margin-top: 3px; }
+.local-playwright-heading strong {
+  display: block; font-size: 16px; font-weight: 800; letter-spacing: -.01em;
+}
+.local-playwright-heading p {
+  color: #526b86; margin: 5px 0 0; font-size: 12px; line-height: 1.6;
+}
+.local-playwright-notice {
+  display: inline-flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px; border-radius: 10px;
+  background: #e3f5f0; color: #14674e;
+  font-size: 12px; font-weight: 750;
+}
+.local-playwright-notice svg { flex: none; }
+.local-playwright-panel code {
+  font: 700 12px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+  padding: 2px 5px; border-radius: 4px; background: #e1edf9; color: #123e6e;
+}
+.local-playwright-actions { display: grid; gap: 10px; justify-items: start; }
+.local-playwright-actions label {
+  width: min(100%, 430px);
+  display: grid; gap: 7px; color: #1b436a; font-size: 12px; font-weight: 750;
+}
+.local-playwright-actions input {
+  display: block; min-height: 42px; width: 100%;
+  border: 1px solid #a6c3e0; border-radius: 9px;
+  padding: 9px 11px; background: #fff; color: #102c4d;
+  font-size: 13px; font-weight: 500; letter-spacing: .02em;
+}
+.local-playwright-actions input::placeholder { color: #5e7690; letter-spacing: 0; }
+.local-playwright-actions .navy-btn { min-height: 40px; }
+.local-playwright-fields {
+  display: grid; gap: 6px; width: 100%; padding: 0; margin: 0; list-style: none;
+}
+.local-playwright-fields li {
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;
+  gap: 9px; border: 1px solid #d6e5f2; background: #fff;
+  border-radius: 8px; padding: 8px 10px;
+  color: #173955; font-size: 12px; font-weight: 700;
+}
+.local-playwright-fields small { font-size: 11px; color: #5b738e; }
+.local-playwright-result {
+  display: inline-flex; gap: 9px; align-items: flex-start;
+  color: #126248; font-size: 12px; font-weight: 650;
+}
+.local-playwright-result svg { flex: none; }
+.local-playwright-error {
+  display: inline-flex; gap: 9px; align-items: flex-start;
+  color: #a42a3a; font-size: 12px; font-weight: 700;
+}
+.local-playwright-error svg { flex: none; }
+html[data-smartploy-theme="dark"] .local-playwright-panel {
+  background: #16283f; color: #e4f2ff;
+  border-color: #3d5b78; box-shadow: 0 8px 24px #0003;
+}
+html[data-smartploy-theme="dark"] .local-playwright-heading > svg { color: #83c5ff; }
+html[data-smartploy-theme="dark"] .local-playwright-heading p,
+html[data-smartploy-theme="dark"] .local-playwright-panel .muted { color: #b4c9dc; }
+html[data-smartploy-theme="dark"] .local-playwright-notice {
+  background: #173e37; color: #b2f5db;
+}
+html[data-smartploy-theme="dark"] .local-playwright-panel code {
+  background: #273e56; color: #dceffe;
+}
+html[data-smartploy-theme="dark"] .local-playwright-actions label { color: #d0e9fc; }
+html[data-smartploy-theme="dark"] .local-playwright-actions input,
+html[data-smartploy-theme="dark"] .local-playwright-fields li {
+  background: #213750; border-color: #52718e; color: #ebf7ff;
+}
+html[data-smartploy-theme="dark"] .local-playwright-actions input::placeholder,
+html[data-smartploy-theme="dark"] .local-playwright-fields small { color: #b7cce1; }
+html[data-smartploy-theme="dark"] .local-playwright-result { color: #aff0d7; }
+html[data-smartploy-theme="dark"] .local-playwright-error { color: #ffabb3; }
+@media (max-width: 600px) {
+  .local-playwright-panel { padding: 14px 12px; }
+  .local-playwright-panel button { width: 100%; }
+}
+
+/* SP129: only the action and required privacy boundary stay expanded. */
+.local-playwright-help { width:100%; font-size:12px; color:inherit; }
+.local-playwright-help summary {
+  display:inline-block; cursor:pointer; min-height:36px;
+  padding:8px 2px; font-weight:700; text-decoration:underline;
+  text-underline-offset:3px;
+}
+.local-playwright-help summary:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
+.local-playwright-help p { margin:3px 0 2px; max-width:60ch; line-height:1.5; }
