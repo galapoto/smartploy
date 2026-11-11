@@ -1,0 +1,650 @@
+"""SmartPloy SP110: local, review-gated Playwright application form filling.
+
+First-party reuse/adaptation (not a new general browser agent):
+* obumai/obumellm@d682da2582ebfa3f013cf37dc542384fe605f303
+  obumellm/browser/fill.py: candidate selectors, field matching, safe fill.
+  obumellm/browser/live_session.py: visible persistent Chromium context.
+* galapoto/smartploy browser-companion/logic.mjs: packet identity, allowlisted
+  employer hosts, ordinary-contact field matching and sensitive-field denial.
+
+The browser runs on the applicant's own computer. Only exact approved hosted
+Lever/Ashby/Greenhouse forms are supported. The local CLI never uploads;
+the paired SP129 helper permits a single exact reviewed CV PDF attachment
+only after a separate applicant approval. No Submit/click, CAPTCHA bypass,
+credentials, hidden browser or background employer actions.
+"""
+from __future__ import annotations
+
+import getpass
+from hashlib import sha256
+import json
+import re
+import sys
+import tempfile
+import unicodedata
+from datetime import datetime, timedelta, timezone
+from typing import Any
+from urllib.parse import SplitResult, urlsplit
+
+
+SCHEMA = "smartploy.browser_handoff.v2"
+FIELD_NAMES = (
+    "full_name", "first_name", "last_name", "email", "phone",
+    "location", "linkedin", "github", "cover_letter",
+)
+UNSAFE_INPUT_TYPES = {
+    "hidden", "file", "password", "submit", "button", "reset", "image",
+    "checkbox", "radio", "select", "number", "date",
+}
+SAFE_INPUT_TYPES = {"text", "email", "tel", "url", "search", "textarea"}
+UNSAFE_METADATA = re.compile(
+    r"\b(?:visa|sponsorship|sponsor|immigration|work authorization|work permit|"
+    r"salary|compensation|wage|expected pay|eeo|race|ethnic|gender|sex|sexual|"
+    r"religion|disability|veteran|military|medical|health|criminal|background|"
+    r"citizenship|nationality|passport|birth|age|social security|ssn|gdpr|"
+    r"privacy|consent|agreement|attest|signature|certification|legal|bank|tax|"
+    r"employer|organization|organisation|referee|recommender|palkka|työlupa|"
+    r"oleskelulupa|kansalaisuus|sukupuoli|uskonto|syntym|henkilötunnus|"
+    r"suostumus|tietosuoja|arbetstillstand|medborgarskap|personnummer|samtycke|lön)\b",
+    re.IGNORECASE,
+)
+UNSAFE_COMPACT = re.compile(
+    r"(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|citizen|nationality|"
+    r"gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|"
+    r"consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|"
+    r"immigrat|taxid|nationalid|gdpr|henkilotunnus|sukupuol|kansalaisuu|"
+    r"oleskelulup|tyolup|palkka|arbetstillstand|medborgarskap|personnummer|samtycke)",
+    re.IGNORECASE,
+)
+WORKSPACE_ID = re.compile(r"kit-[a-f0-9]{30}\Z")
+HEXDIGEST = re.compile(r"[a-f0-9]{64}\Z")
+EMPLOYER_TOKEN = r"[A-Za-z0-9_-]+"
+LEVER_PATH = re.compile(rf"/{EMPLOYER_TOKEN}/{EMPLOYER_TOKEN}(?:/apply/?)?\Z")
+ASHBY_PATH = re.compile(
+    rf"/[A-Za-z0-9_-]{{1,100}}/[A-Za-z0-9_-]{{1,160}}(?:/application/?)?\Z"
+)
+GH_PATH = re.compile(r"/[A-Za-z0-9_-]{1,100}/jobs/[0-9]{1,20}/?\Z")
+
+READ_FIELDS_JS = """
+els => els.map((el, index) => {
+  const label = el.labels && el.labels.length ? el.labels[0].textContent.trim() : "";
+  const type = el.tagName.toLowerCase() === "textarea" ? "textarea" :
+    String(el.getAttribute("type") || "text").toLowerCase();
+  return {
+    index, tag: el.tagName.toLowerCase(), type,
+    id: el.id || "", name: el.getAttribute("name") || "",
+    placeholder: el.getAttribute("placeholder") || "",
+    label: label || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "",
+    autocomplete: el.getAttribute("autocomplete") || "",
+    accept: el.getAttribute("accept") || "", multiple: Boolean(el.multiple),
+    required: Boolean(el.required), disabled: Boolean(el.disabled),
+    readonly: Boolean(el.readOnly), hasValue: Boolean(String(el.value || "").trim()),
+    visible: Boolean(el.getClientRects().length),
+    inForm: Boolean(el.closest("form")),
+    maxLength: el.maxLength || -1
+  };
+})
+"""
+
+
+class PacketError(ValueError):
+    """Refuse unsupported/stale packets, changed forms and unsafe actions."""
+
+
+def _url_parts(raw: str) -> SplitResult:
+    if not isinstance(raw, str) or len(raw) > 1500 or not raw.startswith("https://"):
+        raise PacketError("A reviewed HTTPS employer URL is required")
+    try:
+        parsed = urlsplit(raw)
+        _ = parsed.port  # Reject malformed ports rather than accepting them.
+    except ValueError as exc:
+        raise PacketError("Malformed employer URL") from exc
+    if (
+        parsed.scheme != "https" or parsed.username or parsed.password
+        or parsed.port not in (None, 443) or parsed.query or parsed.fragment
+        or not parsed.hostname or parsed.hostname != parsed.netloc.lower().removesuffix(":443")
+        or "\\" in raw
+    ):
+        raise PacketError("Employer URL has credentials, tracking, an unsafe port or fragment")
+    return parsed
+
+
+def same_reviewed_form(posting_url: str, current_url: str) -> bool:
+    """Reuse the extension's exact-job/host boundary, NOT generic URL allowlisting."""
+    try:
+        p, c = _url_parts(posting_url), _url_parts(current_url)
+    except PacketError:
+        return False
+    if p.hostname in {"jobs.lever.co", "jobs.eu.lever.co"}:
+        if c.hostname != p.hostname or not LEVER_PATH.fullmatch(p.path):
+            return False
+        base = re.sub(r"/apply/?$", "", p.path).rstrip("/")
+        return c.path.rstrip("/") == base + "/apply"
+    if p.hostname == "jobs.ashbyhq.com":
+        if c.hostname != p.hostname or not ASHBY_PATH.fullmatch(p.path):
+            return False
+        base = re.sub(r"/application/?$", "", p.path).rstrip("/")
+        return c.path.rstrip("/") == base + "/application"
+    if p.hostname in {"boards.greenhouse.io", "job-boards.greenhouse.io"}:
+        return (
+            c.hostname in {"boards.greenhouse.io", "job-boards.greenhouse.io"}
+            and GH_PATH.fullmatch(p.path) is not None
+            and c.path.rstrip("/") == p.path.rstrip("/")
+        )
+    return False
+
+
+def _approved_fields_sha256(fields: dict[str, str]) -> str:
+    """Copy SmartPloy's original length-prefixed, canonical fields fingerprint."""
+    parts = [str(len(fields[key].encode("utf-8"))) + ":" + fields[key]
+             for key in FIELD_NAMES]
+    return sha256(("smartploy.fields.v1\0" + "\0".join(parts)).encode("utf-8")).hexdigest()
+
+
+def _parse_time(value: str) -> datetime:
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            raise ValueError("timezone missing")
+        return stamp.astimezone(timezone.utc)
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise PacketError("Invalid application packet expiry") from exc
+
+
+def validate_packet(raw: Any, *, now: datetime | None = None) -> dict[str, Any]:
+    """Fail closed on packet shape/owner-bound revision/time and supported hosts.
+
+    A packet is private content, not an employer-submission credential. It must
+    originate from a personally reviewed and saved SmartPloy workspace.
+    """
+    if not isinstance(raw, dict) or raw.get("schema") != SCHEMA:
+        raise PacketError("Use the current SmartPloy reviewed autofill packet")
+    if (
+        not isinstance(raw.get("workspace_id"), str)
+        or not WORKSPACE_ID.fullmatch(raw["workspace_id"])
+        or type(raw.get("revision")) is not int or raw["revision"] < 2
+        or not isinstance(raw.get("document_sha256"), str)
+        or not HEXDIGEST.fullmatch(raw["document_sha256"])
+        or not isinstance(raw.get("cv_pdf_sha256"), str)
+        or not HEXDIGEST.fullmatch(raw["cv_pdf_sha256"])
+        or type(raw.get("cv_pdf_size")) is not int
+        or not 12 <= raw["cv_pdf_size"] <= 2 * 1024 * 1024
+    ):
+        raise PacketError("The reviewed application revision or PDF identity is invalid")
+    issued, expires = _parse_time(raw.get("issued_at")), _parse_time(raw.get("expires_at"))
+    clock = now or datetime.now(timezone.utc)
+    if (
+        issued > clock + timedelta(minutes=2) or expires <= clock
+        or expires <= issued or expires - issued > timedelta(minutes=15)
+    ):
+        raise PacketError("The application packet has expired. Copy a new one.")
+    url = raw.get("application_url")
+    if not isinstance(url, str) or not any(
+        same_reviewed_form(url, url.rstrip("/") + suffix)
+        for suffix in ("/apply", "/application", "")
+    ):
+        # Greenhouse form URL is its original exact job URL.
+        raise PacketError("Only exact hosted Lever, Ashby and Greenhouse forms are supported")
+    f = raw.get("fields")
+    if not isinstance(f, dict) or set(f) != set(FIELD_NAMES) or any(
+        not isinstance(f[name], str) for name in FIELD_NAMES
+    ):
+        raise PacketError("The packet must contain approved text fields only")
+    if (
+        raw.get("approved_fields_sha256") != _approved_fields_sha256(f)
+        or not f["full_name"].strip()
+        or re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", f["email"]) is None
+        or any(len(f[k]) > maximum for k, maximum in {
+            "full_name": 160, "first_name": 160, "last_name": 160,
+            "email": 254, "phone": 40, "location": 160, "linkedin": 350,
+            "github": 350, "cover_letter": 10000,
+        }.items())
+        or raw.get("privacy") != {
+            "approved_contact_only": True,
+            "original_cv_included": False,
+            "browser_form_fill_allowed_after_user_click": True,
+            "employer_submit_allowed_without_new_approval": False,
+        }
+    ):
+        raise PacketError("The packet does not meet reviewed contact/privacy rules")
+    return raw
+
+
+def _tidy(value: Any) -> str:
+    return re.sub(
+        r"\s+", " ",
+        re.sub(r"[()_.:*/\-]+", " ", str(value or "").lower()),
+    ).strip()
+
+
+def _unsafe_metadata(row: dict[str, Any]) -> bool:
+    values = [row.get(key, "") for key in (
+        "label", "name", "id", "placeholder", "autocomplete",
+    )]
+    material = " ".join(str(v) for v in values)
+    material = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", material)
+    material = unicodedata.normalize("NFKC", material).lower()
+    material = re.sub(r"[^\w]+", " ", material, flags=re.UNICODE)
+    compact = unicodedata.normalize("NFKD", "".join(
+        str(row.get(k) or "") for k in ("name", "id", "placeholder")
+    ))
+    compact = "".join(ch for ch in compact if not unicodedata.combining(ch))
+    return bool(UNSAFE_METADATA.search(material) or UNSAFE_COMPACT.search(compact))
+
+
+def _identify_field(row: dict[str, Any]) -> str | None:
+    """Port of SmartPloy companion identifyField; fail closed on sensitive hints."""
+    kind = _tidy(row.get("type"))
+    if (
+        _unsafe_metadata(row) or not row.get("inForm") or not row.get("visible")
+        or row.get("disabled") or row.get("readonly") or row.get("hasValue")
+        or kind not in SAFE_INPUT_TYPES
+    ):
+        return None
+    auto = _tidy(row.get("autocomplete"))
+    known_autos = {
+        "given name": "first_name", "family name": "last_name",
+        "email": "email", "tel": "phone", "name": "full_name",
+        "address level2": "location",
+    }
+    if auto in known_autos:
+        return known_autos[auto]
+    label = _tidy(row.get("label") or row.get("placeholder"))
+    attr = _tidy(row.get("name") or row.get("id"))
+    if re.search(r"(company|employer|organization|organisation|referral|referee)", label+" "+attr):
+        return None
+    aliases = {
+        "first_name": {"first name", "given name", "etunimi", "fornamn", "firstname"},
+        "last_name": {"last name", "surname", "family name", "sukunimi", "efternamn", "lastname"},
+        "email": {"email", "e mail", "email address", "sähköposti", "sähköpostiosoite", "e post"},
+        "phone": {"phone", "phone number", "telephone", "mobile", "puhelin", "puhelinnumero", "telefon"},
+        "linkedin": {"linkedin", "linkedin url", "linkedin profile", "linkedin profile url"},
+        "github": {"github", "github url", "github profile", "github profile url"},
+        "full_name": {"full name", "your name", "applicant name", "koko nimi", "nimi", "namn"},
+        "location": {"current location", "location", "city", "sijainti", "paikkakunta", "ort"},
+        "cover_letter": {"cover letter", "cover letter text", "motivation", "motivation letter",
+                         "motivation message", "saatekirje", "personligt brev"},
+        "additional_information": {"additional information", "additional comments", "lisätiedot"},
+    }
+    for key, names in aliases.items():
+        if label in names or attr in names:
+            return key
+    return None
+
+
+def plan_fields(rows: list[dict[str, Any]], packet: dict[str, Any]) -> list[dict[str, Any]]:
+    """Plan only visible, blank, uniquely identified ordinary application inputs."""
+    if not isinstance(rows, list) or len(rows) > 250:
+        raise PacketError("Employer form is too large or cannot be inspected safely")
+    recognized = [_identify_field(row) for row in rows]
+    dedicated_letter = "cover_letter" in recognized
+    candidates = []
+    for row, key in zip(rows, recognized):
+        if key == "additional_information":
+            key = None if dedicated_letter else "cover_letter"
+        if not key:
+            continue
+        value = packet["fields"][key]
+        if not value.strip() or row.get("maxLength", -1) not in (None, -1):
+            maximum = row["maxLength"]
+            if maximum is None or (maximum >= 0 and len(value) > maximum):
+                continue
+        if not value.strip():
+            continue
+        if not any(row.get(k) for k in ("id", "name")):
+            # Plain labels alone are not a stable identity if React rerenders.
+            continue
+        candidates.append({"index": row["index"], "key": key, "row": row})
+    # Duplicate fields and duplicate field identities are ambiguous; skip all.
+    key_counts = {key: sum(1 for x in candidates if x["key"] == key)
+                  for key in {x["key"] for x in candidates}}
+    identity_counts = {
+        (x["row"].get("id"), x["row"].get("name")):
+        sum(1 for y in candidates if (
+            y["row"].get("id"), y["row"].get("name")
+        ) == (x["row"].get("id"), x["row"].get("name")))
+        for x in candidates
+    }
+    return [x for x in candidates if key_counts[x["key"]] == 1 and
+            identity_counts[(x["row"].get("id"), x["row"].get("name"))] == 1]
+
+
+# Port the existing companion/upload.mjs chooseResumeField + validatePdf
+# into the already reused Python Playwright executor. Never infer an upload
+# grant from a matching name alone; there must be exactly one stable, visible
+# and PDF-compatible resume input on the exact reviewed ATS form.
+_CV_HINT = re.compile(
+    r"(?:^|\s)(?:cv|resume|curriculum vitae|ansioluettelo|meritforteckning)(?:\s|$)"
+)
+_NOT_CV = re.compile(
+    r"(?:^|\s)(?:cover letter|passport|photo|image|identity document|"
+    r"transcript|certificate)(?:\s|$)"
+)
+_PDF_ACCEPT = frozenset({".pdf", "application/pdf", "application/*", "*/*"})
+
+
+def choose_cv_attachment(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Adapted from SmartPloy Chrome companion chooseResumeField."""
+    if not isinstance(rows, list) or len(rows) > 250:
+        raise PacketError("Employer form is too large for reviewed attachment")
+    candidates = []
+    for row in rows:
+        if row.get("type") != "file" or row.get("tag") != "input":
+            continue
+        original = " ".join(str(row.get(k) or "") for k in ("label", "name", "id"))
+        normalized = unicodedata.normalize("NFKD", re.sub(
+            r"([a-z])([A-Z])", r"\1 \2", original
+        )).lower()
+        normalized = "".join(c for c in normalized if not unicodedata.combining(c))
+        normalized = re.sub(r"[^\w]+", " ", normalized).strip()
+        if not _CV_HINT.search(normalized):
+            continue
+        if (_NOT_CV.search(normalized) or not row.get("visible")
+                or not row.get("inForm") or row.get("disabled")
+                or row.get("readonly") or row.get("multiple")
+                or row.get("hasValue")):
+            return None  # Ambiguous/unsafe CV control: applicant must attach manually.
+        accept = str(row.get("accept") or "").strip().lower()
+        if accept and not any(part.strip() in _PDF_ACCEPT for part in accept.split(",")):
+            return None
+        if not (row.get("id") or row.get("name")):
+            return None
+        if type(row.get("index")) is not int or not 0 <= row["index"] < len(rows):
+            return None
+        candidates.append(row)
+    if len(candidates) != 1:
+        return None
+    chosen = candidates[0]
+    for other in rows:
+        if (other is not chosen and other.get("type") == "file" and
+                other.get("id") == chosen.get("id") and
+                other.get("name") == chosen.get("name")):
+            return None
+    return chosen
+
+
+def validate_reviewed_cv_pdf(data: bytes, packet: dict[str, Any]) -> None:
+    """Reuse the exact original CV SHA and PDF rules, without disk writes."""
+    validate_packet(packet)
+    if (not isinstance(data, bytes) or len(data) != packet["cv_pdf_size"]
+            or not 12 <= len(data) <= 2 * 1024 * 1024
+            or not data.startswith(b"%PDF-")
+            or b"%%EOF" not in data[-2048:]):
+        raise PacketError("The local CV is not the exact reviewed PDF")
+    if sha256(data).hexdigest() != packet["cv_pdf_sha256"]:
+        raise PacketError("The CV PDF does not match the saved reviewed revision")
+
+
+def attach_reviewed_cv_pdf(
+    page: Any, packet: dict[str, Any], expected_rows: list[dict[str, Any]],
+    reviewed_file_field: dict[str, Any], pdf: bytes, expected_url: str,
+) -> dict[str, Any]:
+    """One local FileList selection; employer may upload on input/change.
+
+    Caller must reserve the one-use attachment attempt before invoking this.
+    NEVER clicks Submit or claims an employer server accepted the upload.
+    """
+    validate_reviewed_cv_pdf(pdf, packet)
+    if page.url != expected_url or not same_reviewed_form(
+        packet["application_url"], page.url
+    ):
+        raise PacketError("The exact employer job changed before CV attachment")
+    rows = inspect_page(page)
+    identity = ("tag", "type", "id", "name", "label", "autocomplete", "accept", "multiple")
+    if len(rows) != len(expected_rows) or any(
+        any(old.get(key) != new.get(key) for key in identity)
+        for old, new in zip(expected_rows, rows)
+    ):
+        raise PacketError("Employer form fields changed; attach the CV manually")
+    current = choose_cv_attachment(rows)
+    if (current is None
+            or any(current.get(k) != reviewed_file_field.get(k)
+                   for k in ("index", *identity))
+            or current["type"] != "file"):
+        raise PacketError("The reviewed résumé upload input is unavailable")
+    for selector in _candidate_selectors(current):
+        element = page.locator(selector)
+        if element.count() != 1:
+            continue
+        # Verify the same input one final time, after all candidate queries.
+        observed = element.first.evaluate(READ_FIELDS_JS.replace(
+            "els => els.map((el, index) => {",
+            "el => [el].map((el, index) => {",
+        ))
+        if len(observed) != 1 or any(
+            observed[0].get(k) != current.get(k) for k in identity
+        ) or (observed[0].get("hasValue") or not observed[0].get("visible")
+              or not observed[0].get("inForm")):
+            raise PacketError("Employer résumé field changed during review")
+        # This actual Playwright call reuses ObumAI's live Chromium context,
+        # and follows the existing Chrome companion's exact CV-PDF policy.
+        # Does not store the CV to disk or submit the employer form.
+        element.first.set_input_files({
+            "name": "smartploy-reviewed-cv.pdf",
+            "mimeType": "application/pdf",
+            "buffer": pdf,
+        }, timeout=5000)
+        # A successful API call is not evidence the employer form retained
+        # the PDF. Reuse SP144's one-settle / no-retry observation rule:
+        # React may silently clear or replace an upload input on change.
+        page.wait_for_timeout(150)
+        if page.url != expected_url or element.count() != 1:
+            raise PacketError(
+                "Employer changed the form after CV input; attachment uncertain. "
+                "Inspect manually; do not retry."
+            )
+        settled = element.first.evaluate(READ_FIELDS_JS.replace(
+            "els => els.map((el, index) => {",
+            "el => [el].map((el, index) => {",
+        ))
+        if len(settled) != 1 or any(
+            settled[0].get(key) != current.get(key) for key in identity
+        ) or not settled[0].get("visible") or not settled[0].get("inForm"):
+            raise PacketError(
+                "Employer changed the CV control after attachment. "
+                "Inspect manually; do not retry."
+            )
+        files = element.first.evaluate(
+            "el => ({count:el.files?.length||0,"
+            "name:el.files?.[0]?.name||'',"
+            "size:el.files?.[0]?.size||0,"
+            "type:el.files?.[0]?.type||''})"
+        )
+        if (files.get("count") != 1 or
+                files.get("name") != "smartploy-reviewed-cv.pdf" or
+                files.get("size") != len(pdf) or
+                files.get("type") != "application/pdf"):
+            raise PacketError(
+                "Employer did not retain the exact reviewed CV file. "
+                "Upload outcome uncertain; inspect manually and never retry."
+            )
+        return {
+            "attached_locally": True,
+            "employer_upload_confirmed": False,
+            "submitted": False,
+        }
+    raise PacketError("No unique CV input; attach the reviewed PDF manually")
+
+def inspect_page(page: Any) -> list[dict[str, Any]]:
+    return list(page.locator("input, textarea").evaluate_all(READ_FIELDS_JS))
+
+
+def _candidate_selectors(field: dict[str, Any]) -> list[str]:
+    """Adapted from ObumAI browser/fill.py: source selectors, never broad guesses."""
+    selectors: list[str] = []
+    tag = field["tag"]
+    def css_quote(value: str) -> str:
+        return value.replace("\\", "\\\\").replace('"', '\\"')
+    if field.get("id"):
+        selectors.append(f'{tag}[id="{css_quote(field["id"])}"]')
+    if field.get("name"):
+        selectors.append(f'{tag}[name="{css_quote(field["name"])}"]')
+    return selectors
+
+
+def _field_matches(locator: Any, field: dict[str, Any]) -> tuple[bool, str]:
+    """Adapted from ObumAI: exactly one element, plus original DOM identity."""
+    try:
+        if locator.count() != 1:
+            return False, "selector must match exactly one field"
+        current = locator.first.evaluate(READ_FIELDS_JS.replace(
+            "els => els.map((el, index) => {",
+            "el => [el].map((el, index) => {",
+        ))
+        if len(current) != 1:
+            return False, "element inspection failed"
+        actual = current[0]
+        for key in ("tag", "type", "id", "name", "label", "autocomplete"):
+            if actual.get(key) != field.get(key):
+                return False, "employer field identity changed"
+        if (
+            not actual.get("visible") or not actual.get("inForm")
+            or actual.get("disabled") or actual.get("readonly") or actual.get("hasValue")
+            or _unsafe_metadata(actual) or actual["type"] not in SAFE_INPUT_TYPES
+        ):
+            return False, "target changed or is not an empty, safe text field"
+        return True, "same reviewed empty field"
+    except Exception:
+        return False, "element could not be verified"
+
+
+def _fill_one(page: Any, field: dict[str, Any], value: str) -> bool:
+    """Adapted from ObumAI _fill_one: use Playwright.locator.fill, never click."""
+    for selector in _candidate_selectors(field):
+        locator = page.locator(selector)
+        ok, _ = _field_matches(locator, field)
+        if not ok:
+            continue
+        try:
+            original_url = page.url
+            locator.first.fill(value, timeout=5000)
+            # SP144: A successful Playwright fill call does NOT prove the
+            # applicant's value survived a reactive employer form. Some
+            # inputs clear or replace it in an async input/change handler.
+            # Observe once after the UI settles; never retry a write.
+            page.wait_for_timeout(150)
+            if page.url != original_url or locator.count() != 1:
+                return False
+            inspected = locator.first.evaluate(READ_FIELDS_JS.replace(
+                "els => els.map((el, index) => {",
+                "el => [el].map((el, index) => {",
+            ))
+            if len(inspected) != 1:
+                return False
+            actual = inspected[0]
+            identity = ("tag", "type", "id", "name", "label",
+                        "autocomplete", "accept", "multiple")
+            if (any(actual.get(k) != field.get(k) for k in identity)
+                    or not actual.get("visible") or not actual.get("inForm")
+                    or actual.get("disabled") or actual.get("readonly")
+                    or _unsafe_metadata(actual)):
+                return False
+            return locator.first.input_value(timeout=2000) == value
+        except Exception:
+            return False  # No alternate retry after an uncertain form input.
+    return False
+
+
+def fill_reviewed_page(page: Any, packet: dict[str, Any], plan: list[dict[str, Any]],
+                       expected_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Guard every write against URL/DOM changes. No submission/upload path."""
+    validate_packet(packet)
+    initial_url = page.url
+    if not same_reviewed_form(packet["application_url"], initial_url):
+        raise PacketError("Open the exact approved employer application form")
+    completed = 0
+    for item in plan:
+        validate_packet(packet)
+        if page.url != initial_url:
+            break
+        fresh = inspect_page(page)
+        if len(fresh) != len(expected_rows) or any(
+            any(fresh[i].get(k) != expected_rows[i].get(k)
+                for k in ("tag", "type", "id", "name", "label", "autocomplete"))
+            for i in range(len(fresh))
+        ):
+            break  # Dynamic/replaced form requires a new applicant review.
+        if _fill_one(page, item["row"], packet["fields"][item["key"]]):
+            completed += 1
+        else:
+            break
+    return {"filled": completed, "planned": len(plan),
+            "stopped_on_change": completed != len(plan),
+            "submitted": False, "uploaded": False}
+
+
+def start_visible_browser(playwright: Any, profile_dir: str) -> Any:
+    """Reuse ObumAI live_session.py's persistent visible Chromium start."""
+    return playwright.chromium.launch_persistent_context(
+        user_data_dir=profile_dir, headless=False,
+        viewport={"width": 1440, "height": 950},
+        accept_downloads=False,
+    )
+
+
+def run_local() -> int:
+    """Run entirely on the applicant's desktop in a temporary browser profile."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print("Interactive applicant terminal required; never pipe private packets into logs.")
+        return 2
+    try:
+        packet = validate_packet(json.loads(getpass.getpass(
+            "Paste your short-lived SmartPloy autofill packet (input hidden): "
+        )))
+        print("SmartPloy reviewed Playwright assistant. It will NEVER submit or upload files.")
+        print("The employer page may transmit entered data immediately on field changes.")
+        print("Install using: pip install playwright==1.55.0 && python -m playwright install chromium")
+        from playwright.sync_api import sync_playwright  # type: ignore[import-not-found]
+
+        # Reuses ObumAI's launch_persistent_context, scoped to a throwaway
+        # private directory so credentials/cookies are not shared across jobs.
+        with tempfile.TemporaryDirectory(prefix="smartploy-local-browser-") as profile:
+            with sync_playwright() as playwright:
+                context = start_visible_browser(playwright, profile)
+                try:
+                    page = context.pages[0] if context.pages else context.new_page()
+                    page.goto(packet["application_url"], wait_until="domcontentloaded",
+                              timeout=45000)
+                    input("Navigate to this job's exact application form in the visible browser. "
+                          "Complete login/MFA manually, then press Enter to inspect: ")
+                    matches = [p for p in context.pages if
+                               same_reviewed_form(packet["application_url"], p.url)]
+                    if len(matches) != 1:
+                        raise PacketError("No single exact supported employer application form is open")
+                    page = matches[0]
+                    if "captcha" in page.locator("body").inner_text(timeout=5000).lower():
+                        raise PacketError("Security challenge detected; complete the form manually")
+                    rows = inspect_page(page)
+                    plan = plan_fields(rows, packet)
+                    print(f"Found {len(rows)} controls; {len(plan)} safe, empty reviewed fields.")
+                    for item in plan:
+                        print(f"  - {item['key']}: {str(item['row'].get('label') or '')[:70]}")
+                    print("Never enter passwords, identity, salary, immigration or legal answers here.")
+                    if not plan:
+                        print("No safe fields to fill. Complete this job manually.")
+                        return 0
+                    if input("Type FILL REVIEWED FIELDS to enter these values: ").strip() != (
+                        "FILL REVIEWED FIELDS"
+                    ):
+                        print("Cancelled. No fields were filled.")
+                        return 0
+                    result = fill_reviewed_page(page, packet, plan, rows)
+                    print(f"Filled {result['filled']} of {result['planned']} reviewed fields.")
+                    if result["stopped_on_change"]:
+                        print("Form changed or field became uncertain. Review remaining fields manually.")
+                    print("No PDF uploaded and NO application submitted. "
+                          "Inspect all values and complete the employer's form personally.")
+                    input("Finish your work in this visible browser, then press Enter to close: ")
+                    return 0
+                finally:
+                    context.close()
+    except (PacketError, ValueError, json.JSONDecodeError) as exc:
+        print("Assisted fill stopped: " + str(exc))
+        return 2
+    except (ImportError, OSError) as exc:
+        print("Playwright/Chromium is unavailable. Follow INSTALL.txt: " + type(exc).__name__)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_local())
