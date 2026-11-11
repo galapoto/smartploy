@@ -150,7 +150,8 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       labelFor(el) === action.label && !el.matches(":disabled") && !el.readOnly &&
       el.value === action.value &&
       (action.type !== "select" ||
-        (el.selectedOptions.length === 1 &&
+        (sameReviewedOptions(el, action) &&
+         el.selectedOptions.length === 1 &&
          !el.selectedOptions[0].disabled && !el.selectedOptions[0].matches(":disabled") &&
          !el.selectedOptions[0].closest("optgroup[disabled]") &&
          action.options.some(o =>
@@ -187,6 +188,11 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
           el.name !== action.expected_name || labelFor(el) !== action.label ||
           el.matches(":disabled") || el.readOnly) {
         return stop("Employer form rerendered after input; re-inspect manually.", filled);
+      }
+      // Reactive employer code can alter even an unselected option after
+      // onchange; the complete applicant-reviewed option set must still match.
+      if (action.type === "select" && !sameReviewedOptions(el, action)) {
+        return stop("Employer changed the reviewed dropdown options; re-inspect manually.", persistentCount());
       }
       if (el.value !== action.value ||
           (action.type === "select" && (el.selectedOptions.length !== 1 ||
