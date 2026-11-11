@@ -185,6 +185,85 @@ for (const restrictedLabel of ["Immigration status", "Legal status"]) {
   });
 }
 
+for (const protectedAnswer of ["Male", "Female", "Non-binary", "Asian", "White"]) {
+  test(`V4 generic native select cannot fill protected answer ${protectedAnswer}`,async ({page})=>{
+    const outside=await setup(page);
+    await page.locator("#source").evaluate((el,label)=>{
+      const option=(el as HTMLSelectElement).querySelector('option[value="referral"]');
+      if(option) option.textContent=label;
+    },protectedAnswer);
+    const initial=sourceOption();
+    const action={...initial,options:initial.options.map(o=>
+      o.value==="referral" ? {...o,label:protectedAnswer} : o)};
+    const result=await act(page,[action]);
+    expect(result.status).toBe("blocked");
+    expect(result.filled).toBe(0);
+    expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+    expect(outside()).toBe(0);
+  });
+}
+
+test("V4 optgroup explicitly marked Disability status never becomes ordinary yes/no",async ({page})=>{
+  const outside=await setup(page);
+  await page.locator("#source").evaluate(el=>{
+    const select=el as HTMLSelectElement;
+    const group=document.createElement("optgroup");
+    group.label="Disability status";
+    const answers=Array.from(select.options).filter(o=>o.value);
+    answers.forEach(o=>group.appendChild(o));
+    select.appendChild(group);
+  });
+  const action=sourceOption();
+  const result=await act(page,[{
+    ...action,options:action.options.map(o=>({...o,group:"Disability status"}))
+  }]);
+  expect(result.status).toBe("blocked");
+  expect(result.filled).toBe(0);
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
+test("V4 benign optgroup accepted only while exact visible heading stays unchanged",async ({page})=>{
+  const outside=await setup(page);
+  await page.locator("#source").evaluate(el=>{
+    const select=el as HTMLSelectElement;
+    const group=document.createElement("optgroup");
+    group.label="Job sources";
+    Array.from(select.options).filter(o=>o.value).forEach(o=>group.appendChild(o));
+    select.appendChild(group);
+  });
+  const a=sourceOption();
+  const action={...a,options:a.options.map(o=>({...o,group:"Job sources"}))};
+  const result=await act(page,[action]);
+  expect(result.status).toBe("filled_for_review");
+  expect(result.filled).toBe(1);
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
+test("V4 25ms optgroup heading mutation after selection fails closed",async ({page})=>{
+  const outside=await setup(page);
+  await page.locator("#source").evaluate(el=>{
+    const select=el as HTMLSelectElement;
+    const group=document.createElement("optgroup");
+    group.label="Job sources";
+    Array.from(select.options).filter(o=>o.value).forEach(o=>group.appendChild(o));
+    select.appendChild(group);
+    select.addEventListener("change",()=>{
+      setTimeout(()=>{group.label="Disability status";},25);
+    },{once:true});
+  });
+  const a=sourceOption();
+  const result=await act(page,[{
+    ...a,options:a.options.map(o=>({...o,group:"Job sources"}))
+  }]);
+  expect(result.status).toBe("blocked");
+  expect(result.filled).toBe(0);
+  expect(result.reason).toMatch(/changed the reviewed dropdown options/i);
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
 test("V4 disabled fieldset makes inherited native dropdown ineligible",async ({page})=>{
   const outside=await setup(page);
   await page.locator("#source").evaluate(el=>{
