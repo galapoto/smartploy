@@ -188,6 +188,51 @@ test("V4 rejects entire voluntary disclosure dropdown if even one choice is sens
   assert.equal(isSensitiveQuestion(row({label:"Voluntary self-identification"})),true);
 });
 
+test("V4 rejects entire demographic option dropdown, even with an ordinary heading", () => {
+  for(const optionLabel of [
+    "Male", "Female", "Non-binary", "Asian",
+    "Black or African American", "White", "Hispanic"
+  ]) {
+    const candidate=row({
+      type:"select", label:"Choose an option", id:"field",
+      name:"field", maxLength:-1, options:[
+        {value:"answer",label:optionLabel,disabled:false},
+        {value:"other",label:"Other",disabled:false}
+      ]
+    });
+    const plan=planReviewedQuestions([candidate]);
+    assert.equal(plan.questions.length,0,optionLabel);
+    assert.deepEqual(plan.humanOnly,["Choose an option"],optionLabel);
+  }
+});
+
+test("V4 optgroup heading remains protected, but ordinary group preserves full review context", () => {
+  const options=[
+    {value:"source-1",label:"Job board",group:"Job sources",disabled:false},
+    {value:"source-2",label:"Referral",group:"Job sources",disabled:false}
+  ];
+  const candidate=row({
+    type:"select",label:"Choose an option",id:"where",name:"where",
+    maxLength:-1,options
+  });
+  const allowed=planReviewedQuestions([candidate]);
+  assert.equal(allowed.questions.length,1);
+  assert.deepEqual(allowed.questions[0].options.map(o=>o.group),["Job sources","Job sources"]);
+  assert.deepEqual(validateReviewedAnswers(allowed,["source-1"]).map(o=>o.value),["source-1"]);
+
+  const protectedGroup=row({
+    ...candidate,
+    options:options.map(o=>({...o,group:"Disability status"}))
+  });
+  const denied=planReviewedQuestions([protectedGroup]);
+  assert.equal(denied.questions.length,0);
+  assert.deepEqual(denied.humanOnly,["Choose an option"]);
+
+  // Revalidation still fails if an already reviewed plan changes later.
+  allowed.questions[0].options[1].label="Female";
+  assert.throws(()=>validateReviewedAnswers(allowed,["source-1"]),QuestionError);
+});
+
 test("V4 option labels with immigration or legal semantics stay fully manual", () => {
   for(const label of ["Immigration status","Legal status"]) {
     const candidate=row({
