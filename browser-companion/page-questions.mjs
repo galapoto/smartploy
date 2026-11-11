@@ -89,7 +89,7 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       const approved = a.options.filter(o => o.value === a.value);
       if (approved.length !== 1) return false;
       const actual = Array.from(el.options).filter(o =>
-        !o.disabled && o.value === a.value &&
+        !o.disabled && !o.closest("optgroup[disabled]") && o.value === a.value &&
         String(o.label || o.textContent || "").trim() === approved[0].label
       );
       if (actual.length !== 1) return false;
