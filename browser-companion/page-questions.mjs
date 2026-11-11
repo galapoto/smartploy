@@ -86,7 +86,7 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
     const type = el?.tagName === "TEXTAREA" ? "textarea" :
       el?.tagName === "INPUT" ? (el.type || "text").toLowerCase() :
       el?.tagName === "SELECT" ? "select" : "";
-    if (type !== a.type || !el.closest("form") || el.disabled || el.readOnly ||
+    if (type !== a.type || !el.closest("form") || el.matches(":disabled") || el.readOnly ||
         !(el.required || el.getAttribute("aria-required") === "true") ||
         String(el.value || "").trim() ||
         el.id !== a.expected_id || el.name !== a.expected_name ||
@@ -117,7 +117,7 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       const approved = a.options.filter(o => o.value === a.value);
       if (approved.length !== 1) return false;
       const actual = Array.from(el.options).filter(o =>
-        !o.disabled && !o.closest("optgroup[disabled]") && o.value === a.value &&
+        !o.disabled && !o.matches(":disabled") && !o.closest("optgroup[disabled]") && o.value === a.value &&
         String(o.label || o.textContent || "").trim() === approved[0].label
       );
       if (actual.length !== 1) return false;
@@ -147,11 +147,11 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
     return verified.filter(({action,el}) =>
       el.isConnected && live[action.index] === el &&
       el.id === action.expected_id && el.name === action.expected_name &&
-      labelFor(el) === action.label && !el.disabled && !el.readOnly &&
+      labelFor(el) === action.label && !el.matches(":disabled") && !el.readOnly &&
       el.value === action.value &&
       (action.type !== "select" ||
         (el.selectedOptions.length === 1 &&
-         !el.selectedOptions[0].disabled &&
+         !el.selectedOptions[0].disabled && !el.selectedOptions[0].matches(":disabled") &&
          !el.selectedOptions[0].closest("optgroup[disabled]") &&
          action.options.some(o =>
            o.value === el.selectedOptions[0].value &&
@@ -185,12 +185,12 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       if (!el.isConnected || current.length !== all.length ||
           current[action.index] !== el || el.id !== action.expected_id ||
           el.name !== action.expected_name || labelFor(el) !== action.label ||
-          el.disabled || el.readOnly) {
+          el.matches(":disabled") || el.readOnly) {
         return stop("Employer form rerendered after input; re-inspect manually.", filled);
       }
       if (el.value !== action.value ||
           (action.type === "select" && (el.selectedOptions.length !== 1 ||
-            el.selectedOptions[0].disabled ||
+            el.selectedOptions[0].disabled || el.selectedOptions[0].matches(":disabled") ||
             el.selectedOptions[0].closest("optgroup[disabled]") ||
             !action.options.some(approved => approved.value === el.selectedOptions[0].value &&
               approved.label === String(el.selectedOptions[0].label ||
