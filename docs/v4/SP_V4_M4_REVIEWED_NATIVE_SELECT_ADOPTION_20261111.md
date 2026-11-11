@@ -33,3 +33,15 @@ Preliminary exact head `891acd966710aab817ac05fda0819a70308ed826` passed five Gi
 - **P2:** disabled `<optgroup>` options remained incorrectly available because `option.disabled` can be false when the parent group is disabled. Correction: original native inspection, eligibility enforcement and all post-fill confirmations inspect inherited `closest("optgroup[disabled]")` state. Actual synthetic Chromium Lever test ensures no select, no submit.
 
 These fixes supersede preliminary green CI, and require fresh exact-head GitHub Actions, Woodpecker and non-author review. No release until then.
+
+## R2 — Post-write option-drift safety closure (11 Nov 2026 EET)
+
+**Observed source risk:** The current DOM was already checked against the entire applicant-reviewed select-option set *before* the write, but a reactive employer form could change an **unselected option** during the existing 150 ms wait and the settled-value check could still report success. The protection must apply both before writing and when reporting completion.
+
+**ADAPTED / INTEGRATED (existing first-party code, no new engine):** `browser-companion/page-questions.mjs::fillReviewedAnswers` reuses `sameReviewedOptions` during settled verification and in the all-previous-answer persistence check. An asynchronously modified option, including a newly sensitive one, fails closed without replaying the write or initiating employer submission.
+
+**NEW tests:** `web/browser-tests/lever-questions.e2e.ts` includes a real synthetic Chromium scenario changing an unselected option to a sensitive disclosure 25 ms after `change`, and a disabled-ancestor `fieldset` scenario. Both must remain blocked, with no final submit.
+
+**Provenance:** `https://github.com/galapoto/smartploy` at initial candidate `daa82f023414e7ea4f0148db55933b088d273580`, same function and same Chromium fixture. Copied unchanged: **none** in this R2 hardening. Sanitized: not required (authorized first-party source). Adapted: source guards. Integrated: existing v0.5.5 companion. New: two browser regressions. REA_NOT_APPLICABLE to a focused correction of accessible owned source; time savings not measured.
+
+**Evidence at coding time:** branch commits `5b3582b2e57e4ce61776f778be2f7a33f47e052e` and `bb804ba3a7666bdc6d26e37c111af55df671f817`; exact new-head CI, independent review, merge, main CI, OVH deployment, online evidence, and real signed-in employer acceptance remain **NOT VERIFIED** until independently observed.
