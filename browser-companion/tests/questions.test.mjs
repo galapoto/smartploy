@@ -187,3 +187,19 @@ test("V4 rejects entire voluntary disclosure dropdown if even one choice is sens
   assert.equal(isSensitiveQuestion(row({label:"Equal employment opportunity"})),true);
   assert.equal(isSensitiveQuestion(row({label:"Voluntary self-identification"})),true);
 });
+
+test("V4 option labels with immigration or legal semantics stay fully manual", () => {
+  for(const label of ["Immigration status","Legal status"]) {
+    const candidate=row({
+      type:"select",label:"Choose an option",id:"ordinary_choice",
+      name:"ordinary_choice",maxLength:-1,options:[
+        {value:"option-1",label,disabled:false},
+        {value:"option-2",label:"Other",disabled:false},
+      ]
+    });
+    const result=planReviewedQuestions([candidate]);
+    assert.equal(result.questions.length,0,label);
+    assert.deepEqual(result.humanOnly,["Choose an option"],label);
+    assert.equal(isSensitiveQuestion(row({label})),true,label);
+  }
+});
