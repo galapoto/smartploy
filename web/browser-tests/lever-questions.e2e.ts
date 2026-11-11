@@ -165,6 +165,26 @@ test("V4 reactive sensitive option mutation after selection never reports succes
   expect(outside()).toBe(0);
 });
 
+for (const restrictedLabel of ["Immigration status", "Legal status"]) {
+  test(`V4 reactive option label ${restrictedLabel} becomes manual after change`,async ({page})=>{
+    const outside=await setup(page);
+    await page.locator("#source").evaluate((el,label)=>{
+      el.addEventListener("change",()=>{
+        setTimeout(()=>{
+          const option=(el as HTMLSelectElement).querySelector('option[value="referral"]');
+          if(option) option.textContent=label;
+        },25);
+      },{once:true});
+    },restrictedLabel);
+    const result=await act(page,[sourceOption()]);
+    expect(result.status).toBe("blocked");
+    expect(result.filled).toBe(0);
+    expect(result.reason).toMatch(/changed the reviewed dropdown options/i);
+    expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+    expect(outside()).toBe(0);
+  });
+}
+
 test("V4 disabled fieldset makes inherited native dropdown ineligible",async ({page})=>{
   const outside=await setup(page);
   await page.locator("#source").evaluate(el=>{
