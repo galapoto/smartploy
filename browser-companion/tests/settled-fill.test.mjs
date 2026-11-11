@@ -85,6 +85,24 @@ test("employer React handler clearing an input after dispatch stops with zero ve
   assert.equal(f.inputs[0].events.filter(x=>x==="input").length,1);
 });
 
+test("later contact write clearing an earlier verified field can never return success",async()=>{
+  let clearEarlier=false;
+  const f=simulate({
+    onInput:el=>{if(el.id==="email") clearEarlier=true},
+    onSettle:({inputs})=>{
+      if(clearEarlier)inputs[0].value="";
+      clearEarlier=false;
+    },
+  });
+  const result=await f.fill();
+  assert.equal(result.filled,1); // only the second approved value persisted
+  assert.match(result.blocker,/earlier reviewed employer field changed/i);
+  assert.equal(f.inputs[0].value,"");
+  assert.equal(f.inputs[1].value,"person@example.org");
+  assert.equal(f.inputs[0].events.filter(x=>x==="input").length,1);
+  assert.equal(f.settles(),2);
+});
+
 test("navigation after a single input invalidates the attempt without retry or next field",async()=>{
   const f=simulate({onSettle:({location})=>{location.href="https://evil.invalid/other"}});
   const result=await f.fill();
