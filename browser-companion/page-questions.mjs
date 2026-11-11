@@ -38,7 +38,7 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
   }
   const all = Array.from(document.querySelectorAll("input,textarea,select"));
   if (all.length > 250) return stop("The employer form is too large.");
-  const sensitive = /\b(?:visa|citizenship|citizen|nationality|sponsor|sponsorship|work permit|right to work|work authori[sz]ation|authori[sz]ed to work|legally eligible to work|eligible to work|employment eligibility|salary|compensation|wage|expected pay|pay range|eeo|race|ethnic|gender|sex|sexual|religion|politic|union membership|disability|health condition|medical|veteran|military|criminal|felony|convict|background check|privacy|consent|gdpr|agree|agreement|attest|certif(?:y|ication)|signature|passport|social security|government id|tax id|birth date|date of birth|age|bank account|start date|notice period|työlupa|oleskelulupa|kansalaisuus|palkka|henkilötunnus|sukupuoli|uskonto|rikosrekisteri|suostumus|allekirjoitus|arbetstillstånd|medborgarskap|personnummer|samtycke|underskrift|lön|födelsetid|kön)\b/iu;
+  const sensitive = /\b(?:voluntary self identification|self identification|self id|equal employment opportunity|equal opportunity|demographic|reasonable accommodation|visa|citizenship|citizen|nationality|sponsor|sponsorship|work permit|right to work|work authori[sz]ation|authori[sz]ed to work|legally eligible to work|eligible to work|employment eligibility|salary|compensation|wage|expected pay|pay range|eeo|race|ethnic|gender|sex|sexual|religion|politic|union membership|disability|health condition|medical|veteran|military|criminal|felony|convict|background check|privacy|consent|gdpr|agree|agreement|attest|certif(?:y|ication)|signature|passport|social security|government id|tax id|birth date|date of birth|age|bank account|start date|notice period|työlupa|oleskelulupa|kansalaisuus|palkka|henkilötunnus|sukupuoli|uskonto|rikosrekisteri|suostumus|allekirjoitus|arbetstillstånd|medborgarskap|personnummer|samtycke|underskrift|lön|födelsetid|kön)\b/iu;
   const restrictedIdentifiers =
     /(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|workeligib|legallyeligible|authorizedtowork|authorisedtowork|citizen|nationality|gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|immigrat|taxid|nationalid|henkilötunnus|sukupuol|kansalaisuu|oleskelulup|työlup|palkka|arbetstillstånd|medborgarskap|personnummer|samtycke)/i;
   function labelFor(el) {
@@ -46,6 +46,33 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       (el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]')?.innerText : "") ||
       el.getAttribute("placeholder") || el.getAttribute("name") || el.id || "";
     return String(raw).trim().slice(0, 150);
+  }
+  function sameReviewedOptions(el, a) {
+    if (!Array.isArray(a.options) || a.options.length > 24 ||
+        el.options.length > 30) return false;
+    const current = Array.from(el.options);
+    // No partial filtering: a SPA may mutate an unselected option to a
+    // protected disclosure after the applicant reviewed this dropdown.
+    const sensitiveOption = o => {
+      const material = [o.label || o.textContent || "", o.value || ""]
+        .join(" ").normalize("NFKC")
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+        .toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, " ").trim();
+      const identifier = String(o.value || "");
+      return sensitive.test(material) || restrictedIdentifiers.test(identifier);
+    };
+    if (current.some(sensitiveOption)) return false;
+    const enabled = current.filter(o =>
+      o.value && !o.disabled && !o.matches(":disabled") &&
+      !o.closest("optgroup[disabled]")
+    ).map(o => ({
+      value:o.value,
+      label:String(o.label || o.textContent || "").trim()
+    }));
+    return enabled.length === a.options.length &&
+      enabled.every((o,i) =>
+        a.options[i]?.value === o.value && a.options[i]?.label === o.label);
   }
   function valid(a) {
     if (!a || !Number.isInteger(a.index) || a.index < 0 || a.index >= all.length ||
@@ -82,6 +109,7 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
     // A select option is allowed only when the applicant explicitly chose its
     // exact current employer-provided value. No fuzzy aliases or implicit yes.
     if (a.type === "select") {
+      if (!sameReviewedOptions(el,a)) return false;
       if (!Array.isArray(a.options) || a.options.length < 1 ||
           a.options.length > 24 || !a.options.every(o =>
             o && typeof o.value === "string" && o.value.length > 0 &&
