@@ -25,3 +25,11 @@
 5. **Review and delivery:** exact-head independent code review, GitHub Actions and Woodpecker; merge as one qualified feature only after M1 independent merge, main push success, deploy exact main SHA using first-party OIDC backup/migration guard, compare public `release.json` and `/healthz`, SHA of public ZIP and real signed-in supported employer form-to-review. No employer final submission for acceptance tests.
 
 **At authorship:** SOURCE_READY only; CI_QUALIFIED, MERGED_MAIN, DEPLOYED, USER_VERIFIED and real employer E2E all **NOT VERIFIED**. **No candidate data, credentials, or actual employer application transferred by this development run.**
+
+## Independent review corrections
+
+Preliminary exact head `891acd966710aab817ac05fda0819a70308ed826` passed five GitHub Actions tests but independent Codex review found:
+- **P1:** a sensitive option (e.g. “Yes, I have a disability”) was silently omitted from a generic native dropdown while remaining “No/Decline” choices were exposed as ordinary. Correction: reject the **entire** select if its heading or ANY option label/value indicates self-identification, protected traits or legal topics; never merely filter the sensitive option and offer the others. Unit tests include generic “Choose an option” with visa sponsorship, and voluntary self-identification.
+- **P2:** disabled `<optgroup>` options remained incorrectly available because `option.disabled` can be false when the parent group is disabled. Correction: original native inspection, eligibility enforcement and all post-fill confirmations inspect inherited `closest("optgroup[disabled]")` state. Actual synthetic Chromium Lever test ensures no select, no submit.
+
+These fixes supersede preliminary green CI, and require fresh exact-head GitHub Actions, Woodpecker and non-author review. No release until then.
