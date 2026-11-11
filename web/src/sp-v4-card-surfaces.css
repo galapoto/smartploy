@@ -421,6 +421,34 @@ html[data-smartploy-theme] .smartploy-app .studio-list-heading span {
   border:1px solid var(--sp-ui-card-border);
   color:var(--sp-ui-ink);
 }
+/* Neutral, hovered, selected and numeric-count states MUST all be legible.
+   An active-only override left three actual filter buttons white in dark mode. */
+html[data-smartploy-theme] .smartploy-app
+ .studio-review-queue-filters button {
+  background:var(--sp-ui-card);
+  background-image:none;
+  color:var(--sp-ui-ink);
+  border-color:var(--sp-ui-card-border);
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app
+ .studio-review-queue-filters button:not([aria-pressed="true"]):hover:not(:disabled) {
+  background:var(--sp-ui-card-raised);
+  border-color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app
+ .studio-review-queue-filters button span {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  color:var(--sp-ui-ink);
+  border:1px solid var(--sp-ui-card-border);
+  opacity:1;
+}
+html[data-smartploy-theme] .smartploy-app
+ .studio-review-queue-filters button[aria-pressed="true"] span {
+  background:var(--sp-ui-card);
+  color:var(--sp-ui-ink);
+}
 html[data-smartploy-theme] .smartploy-app
  .studio-review-queue-filters button[aria-pressed="true"] {
   background:var(--sp-ui-card-raised);
