@@ -13,7 +13,7 @@ export const MAX_QUESTION_ITEMS = 12;
 // citizenship, protected traits, legal attestations, salary and authorization
 // remain manual even if a user has typed a possible answer.
 export const SENSITIVE_QUESTION =
-  /\b(?:visa|citizenship|citizen|nationality|sponsor|sponsorship|work permit|right to work|work authori[sz]ation|authori[sz]ed to work|legally eligible to work|eligible to work|employment eligibility|salary|compensation|wage|expected pay|pay range|eeo|race|ethnic|gender|sex|sexual|religion|politic|union membership|disability|health condition|medical|veteran|military|criminal|felony|convict|background check|privacy|consent|gdpr|agree|agreement|attest|certif(?:y|ication)|signature|passport|social security|government id|tax id|birth date|date of birth|age|bank account|start date|notice period|työlupa|oleskelulupa|kansalaisuus|palkka|henkilötunnus|sukupuoli|uskonto|rikosrekisteri|suostumus|allekirjoitus|arbetstillstånd|medborgarskap|personnummer|samtycke|underskrift|lön|födelsetid|kön)\b/iu;
+  /\b(?:voluntary self identification|self identification|self id|equal employment opportunity|equal opportunity|demographic|reasonable accommodation|visa|citizenship|citizen|nationality|sponsor|sponsorship|work permit|right to work|work authori[sz]ation|authori[sz]ed to work|legally eligible to work|eligible to work|employment eligibility|salary|compensation|wage|expected pay|pay range|eeo|race|ethnic|gender|sex|sexual|religion|politic|union membership|disability|health condition|medical|veteran|military|criminal|felony|convict|background check|privacy|consent|gdpr|agree|agreement|attest|certif(?:y|ication)|signature|passport|social security|government id|tax id|birth date|date of birth|age|bank account|start date|notice period|työlupa|oleskelulupa|kansalaisuus|palkka|henkilötunnus|sukupuoli|uskonto|rikosrekisteri|suostumus|allekirjoitus|arbetstillstånd|medborgarskap|personnummer|samtycke|underskrift|lön|födelsetid|kön)\b/iu;
 
 function tidy(value) {
   return String(value || "").normalize("NFKC")
@@ -67,7 +67,15 @@ export function planReviewedQuestions(elements) {
     // a bounded set observed on this employer form. No fuzzy/default choice.
     let choices;
     if (row.type === "select") {
-      if (!Array.isArray(row.options) || row.options.length > 30) {
+      if (!Array.isArray(row.options) || row.options.length > 30 ||
+          // The employer's question may have a generic label while a single
+          // option discloses disability, nationality or another protected fact.
+          // Never shrink a sensitive list to apparently ordinary options.
+          row.options.some(x => x && isSensitiveQuestion({
+            label: String(x.label || ""),
+            id: String(x.value || ""),
+            name: "", placeholder: ""
+          }))) {
         humanOnly.push(label); continue;
       }
       choices = row.options.filter(x =>
