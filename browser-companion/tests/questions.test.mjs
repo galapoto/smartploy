@@ -38,6 +38,8 @@ test("legal, protected, privacy, salary, immigration, availability questions rem
     "Do you need visa sponsorship?",
     "What is your expected salary?",
     "Are you a citizen of Finland?",
+    "Are you legally eligible to work in Finland?",
+    "Are you authorized to work in this country?",
     "I consent to data retention",
     "Please certify that you can legally work here",
     "Gender identity",
@@ -123,4 +125,126 @@ test("known ordinary question metadata remains eligible after identifier hardeni
   const ordinary = row({id:"roleMotivation",name:"questions[role_motivation]"});
   assert.equal(isSensitiveQuestion(ordinary),false);
   assert.equal(planReviewedQuestions([ordinary]).questions.length,1);
+});
+
+test("V4 ordinary native select has applicant-visible exact options only", () => {
+  const rowSelect = row({
+    type:"select", label:"Where did you find this job?",
+    id:"job_source", name:"job_source", maxLength:-1,
+    options:[
+      {value:"",label:"Choose",disabled:true},
+      {value:"job-board",label:"Job board",disabled:false},
+      {value:"referral",label:"Referral",disabled:false}
+    ]
+  });
+  const plan = planReviewedQuestions([rowSelect]);
+  assert.equal(plan.questions.length,1);
+  assert.equal(plan.questions[0].type,"select");
+  assert.deepEqual(plan.questions[0].options.map(o=>o.value),["job-board","referral"]);
+  assert.deepEqual(validateReviewedAnswers(plan,["referral"]).map(x=>x.value),["referral"]);
+  for(const bad of ["ref","Referral","", "job-board ", "JOB-BOARD"]) {
+    assert.throws(()=>validateReviewedAnswers(plan,[bad]),QuestionError);
+  }
+});
+test("V4 sensitive, duplicate or overflowing native select options remain manual", () => {
+  const ordinary = { type:"select", label:"Choose a source", id:"source",
+    name:"source", maxLength:-1,
+    options:[{value:"yes",label:"Yes"},{value:"yes",label:"Yes again"}]};
+  assert.equal(planReviewedQuestions([row(ordinary)]).questions.length,0);
+  const sensitive = {...ordinary, label:"Do you consent to GDPR processing?",
+    options:[{value:"yes",label:"Yes"},{value:"no",label:"No"}]};
+  assert.equal(planReviewedQuestions([row(sensitive)]).questions.length,0);
+  const tooMany = {...ordinary, options:Array.from({length:31},(_,i)=>({
+    value:"value-"+i,label:"Label "+i
+  }))};
+  assert.equal(planReviewedQuestions([row(tooMany)]).questions.length,0);
+});
+
+test("V4 rejects entire voluntary disclosure dropdown if even one choice is sensitive", () => {
+  const rows = [
+    {
+      type:"select",label:"Voluntary self-identification",id:"demographic",
+      name:"demographic",maxLength:-1,
+      options:[
+        {value:"yes",label:"Yes, I have a disability",disabled:false},
+        {value:"no",label:"No, I do not have one",disabled:false},
+        {value:"decline",label:"I prefer not to say",disabled:false},
+      ],
+    },
+    {
+      type:"select",label:"Choose an option",id:"optional",name:"optional",
+      maxLength:-1,options:[
+        {value:"yes",label:"I require visa sponsorship",disabled:false},
+        {value:"no",label:"No",disabled:false}
+      ],
+    },
+  ];
+  for (const candidate of rows) {
+    const result = planReviewedQuestions([row(candidate)]);
+    assert.equal(result.questions.length,0,candidate.label);
+    assert.deepEqual(result.humanOnly,[candidate.label],candidate.label);
+  }
+  assert.equal(isSensitiveQuestion(row({label:"Equal employment opportunity"})),true);
+  assert.equal(isSensitiveQuestion(row({label:"Voluntary self-identification"})),true);
+});
+
+test("V4 rejects entire demographic option dropdown, even with an ordinary heading", () => {
+  for(const optionLabel of [
+    "Male", "Female", "Non-binary", "Asian",
+    "Black or African American", "White", "Hispanic"
+  ]) {
+    const candidate=row({
+      type:"select", label:"Choose an option", id:"field",
+      name:"field", maxLength:-1, options:[
+        {value:"answer",label:optionLabel,disabled:false},
+        {value:"other",label:"Other",disabled:false}
+      ]
+    });
+    const plan=planReviewedQuestions([candidate]);
+    assert.equal(plan.questions.length,0,optionLabel);
+    assert.deepEqual(plan.humanOnly,["Choose an option"],optionLabel);
+  }
+});
+
+test("V4 optgroup heading remains protected, but ordinary group preserves full review context", () => {
+  const options=[
+    {value:"source-1",label:"Job board",group:"Job sources",disabled:false},
+    {value:"source-2",label:"Referral",group:"Job sources",disabled:false}
+  ];
+  const candidate=row({
+    type:"select",label:"Choose an option",id:"where",name:"where",
+    maxLength:-1,options
+  });
+  const allowed=planReviewedQuestions([candidate]);
+  assert.equal(allowed.questions.length,1);
+  assert.deepEqual(allowed.questions[0].options.map(o=>o.group),["Job sources","Job sources"]);
+  assert.deepEqual(validateReviewedAnswers(allowed,["source-1"]).map(o=>o.value),["source-1"]);
+
+  const protectedGroup=row({
+    ...candidate,
+    options:options.map(o=>({...o,group:"Disability status"}))
+  });
+  const denied=planReviewedQuestions([protectedGroup]);
+  assert.equal(denied.questions.length,0);
+  assert.deepEqual(denied.humanOnly,["Choose an option"]);
+
+  // Revalidation still fails if an already reviewed plan changes later.
+  allowed.questions[0].options[1].label="Female";
+  assert.throws(()=>validateReviewedAnswers(allowed,["source-1"]),QuestionError);
+});
+
+test("V4 option labels with immigration or legal semantics stay fully manual", () => {
+  for(const label of ["Immigration status","Legal status"]) {
+    const candidate=row({
+      type:"select",label:"Choose an option",id:"ordinary_choice",
+      name:"ordinary_choice",maxLength:-1,options:[
+        {value:"option-1",label,disabled:false},
+        {value:"option-2",label:"Other",disabled:false},
+      ]
+    });
+    const result=planReviewedQuestions([candidate]);
+    assert.equal(result.questions.length,0,label);
+    assert.deepEqual(result.humanOnly,["Choose an option"],label);
+    assert.equal(isSensitiveQuestion(row({label})),true,label);
+  }
 });
