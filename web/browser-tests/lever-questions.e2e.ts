@@ -112,6 +112,24 @@ test("V4 exact selected employer option persists, never answers protected fields
   expect(outside()).toBe(0);
 });
 
+test("V4 disabled optgroup cannot be selected despite matching exact reviewed option",async ({page})=>{
+  const outside=await setup(page);
+  await page.locator("#source").evaluate(el=>{
+    const select=el as HTMLSelectElement;
+    const option=select.querySelector('option[value="job-board"]')!;
+    const optgroup=document.createElement("optgroup");
+    optgroup.label="No longer available";
+    optgroup.disabled=true;
+    option.replaceWith(optgroup);
+    optgroup.appendChild(option);
+  });
+  const result=await act(page,[sourceOption()]);
+  expect(result.status).toBe("blocked");
+  expect(result.filled).toBe(0);
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
 test("V4 native dropdown cannot report success after erasing earlier approved text",async ({page})=>{
   const outside=await setup(page);
   await page.locator("#source").evaluate(el=>{
