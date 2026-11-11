@@ -50,6 +50,21 @@ test("reviewed ordinary email fills through original native setter without submi
   expect(outside()).toBe(0);
 });
 
+test("reactive employer form clearing input after dispatch is not a successful AutoApply fill",async ({page})=>{
+  const outside=await setup(page);
+  await page.locator("#contact").evaluate(el=>{
+    el.addEventListener("input",()=>{
+      setTimeout(()=>{(el as HTMLInputElement).value="";},25);
+    },{once:true});
+  });
+  const result=await run(page);
+  expect(result.filled).toBe(0);
+  expect(result.blocker).toMatch(/cleared a reviewed value/i);
+  expect(await page.locator("#contact").inputValue()).toBe("");
+  expect(await page.evaluate(()=>(window as any).submitted)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
 test("changed visible question label with same element identity is rejected",async ({page})=>{
   await setup(page);
   await page.locator('label[for="contact"]').evaluate(el=>el.textContent="Work authorization");
