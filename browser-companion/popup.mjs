@@ -181,7 +181,31 @@ async function fillPlanned(actions, exactUrl) {
     return {filled:0,skipped:actions.length,blocker:"Employer form is too large; inspect manually."};
   }
   const seen = new Set();
+  const verified = [];
+  // A later field can trigger React to clear an earlier, already checked one.
+  // Each candidate success must remain valid throughout the entire batch.
+  function persistedCount() {
+    const rows = Array.from(document.querySelectorAll("input,textarea,select"));
+    if (location.href !== originalUrl || !sameJob(location.href, exactUrl) ||
+        rows.length !== all.length) return 0;
+    return verified.filter(({ element, action }) => {
+      const kind = element.tagName === "TEXTAREA" ? "textarea" :
+        element.tagName === "SELECT" ? "select" :
+        (element.type || "text").toLowerCase();
+      return element.isConnected && rows[action.index] === element &&
+        visible(element) && !element.disabled && !element.readOnly &&
+        kind === action.expected_type &&
+        (element.id || "") === action.expected_id &&
+        (element.name || "") === action.expected_name &&
+        labelFor(element) === action.label && !unsafeMetadata(element) &&
+        element.value === action.value;
+    }).length;
+  }
   for (const action of actions) {
+    if (verified.length && persistedCount() !== verified.length) {
+      return {filled:persistedCount(),skipped,
+        blocker:"A previously filled employer field changed. Review manually without retry."};
+    }
     if (!action || !Number.isInteger(action.index) || action.index < 0 ||
         action.index >= all.length || seen.has(action.index)) {
       return {filled,skipped,blocker:"Employer form or approved field indices changed. Reinspect manually."};
@@ -231,11 +255,18 @@ async function fillPlanned(actions, exactUrl) {
           el.value !== action.value) {
         return {filled,skipped,blocker:"Employer form changed or cleared a reviewed value. Check it manually without retry."};
       }
-      // Only persisted, identity-matched values count as successfully filled.
-      filled++;
+      verified.push({element:el,action});
+      filled = persistedCount();
+      if (filled !== verified.length) {
+        return {filled,skipped,blocker:"An earlier reviewed employer field changed. Check manually without retry."};
+      }
     } catch {
       return {filled,skipped,blocker:"Contact field fill outcome is uncertain. Review manually without retry."};
     }
+  }
+  filled = persistedCount();
+  if (filled !== verified.length) {
+    return {filled,skipped,blocker:"A reviewed employer value changed after filling. Check manually without retry."};
   }
   return { filled, skipped, blocker: "" };
 }
