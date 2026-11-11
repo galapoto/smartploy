@@ -1646,6 +1646,29 @@ test("V4 M1: remaining pale workflow panels and editors contrast in real Chromiu
       editor.value = "Current approved candidate CV";
       studio.appendChild(editor);
       fixture.appendChild(studio);
+      const packet = document.createElement("section");
+      packet.className = "studio-packet-fallback";
+      const packetLabel = document.createElement("label");
+      packetLabel.textContent = "Copy reviewed packet manually";
+      const packetEditor = document.createElement("textarea");
+      packetEditor.value = "Reviewed application packet";
+      packet.append(packetLabel, packetEditor);
+      fixture.appendChild(packet);
+      const receipt = fixture.querySelector(".studio-receipt");
+      if (!receipt) throw new Error("Missing receipt fixture");
+      const importBox = document.createElement("section");
+      importBox.className = "studio-receipt-import";
+      const receiptLabel = document.createElement("label");
+      receiptLabel.textContent = "Import verified receipt";
+      const receiptEditor = document.createElement("textarea");
+      receiptEditor.value = "Observed receipt";
+      importBox.append(receiptLabel, receiptEditor);
+      receipt.appendChild(importBox);
+      const preview = fixture.querySelector(".studio-ai-preview");
+      if (!preview) throw new Error("Missing AI-preview fixture");
+      const explanation = document.createElement("pre");
+      explanation.textContent = "Reviewed evidence without private applicant data";
+      preview.appendChild(explanation);
       const filters = document.createElement("div");
       filters.className = "studio-review-queue-filters";
       const selected = document.createElement("button");
@@ -1678,10 +1701,20 @@ test("V4 M1: remaining pale workflow panels and editors contrast in real Chromiu
       ".studio-attempt-reserved,.studio-receipt,.studio-ai-preview," +
       ".studio-ai-icon,.studio-empty-icon,.flow-start-browse-button," +
       ".studio-document textarea,.studio-review-queue-filters button," +
-      ".studio-review-queue-filters button span"
+      ".studio-review-queue-filters button span,.studio-packet-fallback," +
+      ".studio-packet-fallback label,.studio-packet-fallback textarea," +
+      ".studio-receipt-import,.studio-receipt-import label," +
+      ".studio-receipt-import textarea,.studio-ai-preview pre"
     )].map(el => {
       const css = getComputedStyle(el);
-      const result = contrast(css.color, css.backgroundColor);
+      let bgNode: Element | null = el;
+      let backing = "rgba(0, 0, 0, 0)";
+      while (bgNode) {
+        backing = getComputedStyle(bgNode).backgroundColor;
+        if (backing !== "rgba(0, 0, 0, 0)" && backing !== "transparent") break;
+        bgNode = bgNode.parentElement;
+      }
+      const result = contrast(css.color, backing);
       return {
         selector: (el as HTMLElement).className || el.tagName,
         gradient: css.backgroundImage,
@@ -1693,7 +1726,7 @@ test("V4 M1: remaining pale workflow panels and editors contrast in real Chromiu
   await page.getByRole("button", {name: "Switch to dark mode"}).click();
   await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
   const dark = await snapshot();
-  expect(dark).toHaveLength(18);
+  expect(dark).toHaveLength(25);
   for (const surface of dark) {
     expect(surface.gradient, surface.selector).toBe("none");
     expect(surface.backgroundLightness, surface.selector).toBeLessThan(.06);
