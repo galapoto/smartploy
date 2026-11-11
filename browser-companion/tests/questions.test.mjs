@@ -159,3 +159,31 @@ test("V4 sensitive, duplicate or overflowing native select options remain manual
   }))};
   assert.equal(planReviewedQuestions([row(tooMany)]).questions.length,0);
 });
+
+test("V4 rejects entire voluntary disclosure dropdown if even one choice is sensitive", () => {
+  const rows = [
+    {
+      type:"select",label:"Voluntary self-identification",id:"demographic",
+      name:"demographic",maxLength:-1,
+      options:[
+        {value:"yes",label:"Yes, I have a disability",disabled:false},
+        {value:"no",label:"No, I do not have one",disabled:false},
+        {value:"decline",label:"I prefer not to say",disabled:false},
+      ],
+    },
+    {
+      type:"select",label:"Choose an option",id:"optional",name:"optional",
+      maxLength:-1,options:[
+        {value:"yes",label:"I require visa sponsorship",disabled:false},
+        {value:"no",label:"No",disabled:false}
+      ],
+    },
+  ];
+  for (const candidate of rows) {
+    const result = planReviewedQuestions([row(candidate)]);
+    assert.equal(result.questions.length,0,candidate.label);
+    assert.deepEqual(result.humanOnly,[candidate.label],candidate.label);
+  }
+  assert.equal(isSensitiveQuestion(row({label:"Equal employment opportunity"})),true);
+  assert.equal(isSensitiveQuestion(row({label:"Voluntary self-identification"})),true);
+});
