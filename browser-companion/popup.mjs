@@ -114,7 +114,7 @@ function inspectForm() {
 
 /* Strictly fill only elements originally inspected and matching the same job.
    Use page-native value setters so React-controlled forms observe edits. */
-function fillPlanned(actions, exactUrl) {
+async function fillPlanned(actions, exactUrl) {
   function visible(el) {
     if (!el || !el.isConnected ||
         el.closest("[hidden],[aria-hidden='true'],[inert]")) return false;
@@ -168,11 +168,12 @@ function fillPlanned(actions, exactUrl) {
         x.pathname.startsWith(prefix + "/");
     } catch { return false; }
   }
-  if (!sameJob(location.href, exactUrl)) {
-    return { filled: 0, skipped: actions.length, blocker: "Employer page changed since packet approval." };
-  }
   if (!Array.isArray(actions) || actions.length > 120) {
     return { filled: 0, skipped: 0, blocker: "Too many fields to fill safely." };
+  }
+  const originalUrl = location.href;
+  if (!sameJob(originalUrl, exactUrl)) {
+    return { filled: 0, skipped: actions.length, blocker: "Employer page changed since packet approval." };
   }
   const all = Array.from(document.querySelectorAll("input,textarea,select"));
   let filled = 0, skipped = 0;
@@ -216,15 +217,22 @@ function fillPlanned(actions, exactUrl) {
       setter.call(el, action.value);
       el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
       el.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-      if (el.value !== action.value) { skipped++; continue; }
-      filled++;
+      // Reuse PR #317's verified-settled-value invariant in the deployed
+      // extension. React employer forms can erase an input AFTER dispatch.
+      // Never count a write until the page has had time to react.
+      await new Promise(resolve => setTimeout(resolve, 150));
       const after = Array.from(document.querySelectorAll("input,textarea,select"));
-      if (!el.isConnected || after.length !== all.length ||
-          after[action.index] !== el || labelFor(el) !== action.label ||
+      if (location.href !== originalUrl || !sameJob(location.href, exactUrl) ||
+          !el.isConnected || after.length !== all.length ||
+          after[action.index] !== el || !visible(el) ||
+          el.disabled || el.readOnly || labelFor(el) !== action.label ||
           unsafeMetadata(el) || (el.id || "") !== action.expected_id ||
-          (el.name || "") !== action.expected_name) {
-        return {filled,skipped,blocker:"Employer form changed after contact field input. Review manually without retry."};
+          (el.name || "") !== action.expected_name ||
+          el.value !== action.value) {
+        return {filled,skipped,blocker:"Employer form changed or cleared a reviewed value. Check it manually without retry."};
       }
+      // Only persisted, identity-matched values count as successfully filled.
+      filled++;
     } catch {
       return {filled,skipped,blocker:"Contact field fill outcome is uncertain. Review manually without retry."};
     }
