@@ -20,7 +20,7 @@ ObumBrowser's independent browser service is specified under https://github.com/
 
 ## Acceptance / release truth
 
-- Synthetic VM tests: stable values persist, delayed React clear fails closed, redirect/DOM/metadata mutation stops before next field, no blind retry, no automatic send, zero-contact form remains valid.
+- Synthetic VM tests: stable values persist, delayed React clear fails closed, a later field clearing an earlier verified value blocks full success, redirect/DOM/metadata mutation stops before next field, no blind retry, no automatic send, zero-contact form remains valid. Real Chromium Lever/Ashby/Greenhouse harnesses run the actual Promise-returning extension executor.
 - Full SmartPloy GitHub Actions + Woodpecker exact SHA and qualified independent non-author review required before merge. Source review and CI success are not real employer completion.
 - After merge main CI, deploy exact approved SHA to existing OIDC OVH stack, verify release/health and reproducible extension ZIP against source; candidate still needs to reinstall/update unpacked extension (not Chrome Web Store auto-update).
 - Signed-in real employer fill to `ready_for_review` and employer-issued receipt remain **NOT VERIFIED** unless separately observed. Never send a real application for a test.
