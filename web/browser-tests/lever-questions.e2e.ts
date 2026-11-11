@@ -147,6 +147,39 @@ test("V4 native dropdown cannot report success after erasing earlier approved te
   expect(outside()).toBe(0);
 });
 
+test("V4 reactive sensitive option mutation after selection never reports successful fill",async ({page})=>{
+  const outside=await setup(page);
+  await page.locator("#source").evaluate(el=>{
+    el.addEventListener("change",()=>{
+      setTimeout(()=>{
+        const option=(el as HTMLSelectElement).querySelector('option[value="referral"]');
+        if(option) option.textContent="Yes, I have a disability";
+      },25);
+    },{once:true});
+  });
+  const result=await act(page,[sourceOption()]);
+  expect(result.status).toBe("blocked");
+  expect(result.filled).toBe(0);
+  expect(result.reason).toMatch(/changed the reviewed dropdown options/i);
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
+test("V4 disabled fieldset makes inherited native dropdown ineligible",async ({page})=>{
+  const outside=await setup(page);
+  await page.locator("#source").evaluate(el=>{
+    const fieldset=document.createElement("fieldset");
+    fieldset.disabled=true;
+    el.parentElement!.insertBefore(fieldset,el);
+    fieldset.appendChild(el);
+  });
+  const result=await act(page,[sourceOption()]);
+  expect(result.status).toBe("blocked");
+  expect(result.filled).toBe(0);
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
 test("V4 dynamic native dropdown reset fails closed without a repeat write",async ({page})=>{
   const outside=await setup(page);
   await page.locator("#source").evaluate(el=>{
