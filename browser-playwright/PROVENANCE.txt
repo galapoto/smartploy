@@ -1,0 +1,71 @@
+SmartPloy SP110/SP111 — browser helper source provenance (2026-11-09)
+=========================================================================
+Product destination: https://github.com/galapoto/smartploy
+Package destination: web/public/smartploy-playwright-assistant.zip
+Authority: SmartPloy V4 Production-First Contract sections 4-7; project owner
+authorized first-party code reuse on 2026-11-09. Do not infer third-party rights.
+
+Donor A: PRIVATE first-party https://github.com/obumai/obumellm
+Pinned commit: d682da2582ebfa3f013cf37dc542384fe605f303
+A1 original: obumellm/browser/fill.py (blob
+    c95cbc33145ab7b0202c4d983cb6b024a8e16621)
+    Exact originals: _candidate_selectors, _field_matches, _fill_one.
+    Destination: browser-playwright/assistant.py.
+    Label: PORTED/ADAPTED, not copied unchanged.
+    Changes: port safe candidate selector and exact field-metadata matching;
+    replace ObumAI generic proposals with validated, short-lived, exact-job
+    approved SmartPloy packet fields; prevent sensitive fields and all final
+    submit actions; bind one local form to reviewed origin; verify actual
+    settled input and stop on React-controlled form changes.
+A2 original: obumellm/browser/live_session.py (blob
+    901da9295118fc3e609ee455e11bc7c94558cb2a)
+    Exact original: LiveBrowserSession.start with visible Chromium persistent
+    context and temporary user-data path.
+    Destination: browser-playwright/assistant.py start_visible_browser;
+    browser-playwright/bridge.py ChromiumActor.
+    Label: ADAPTED, not copied unchanged.
+    Changes: isolated temporary browser profile per helper instance, no shared
+    authenticated ObumAI session, no generic browser console/controller, no
+    headless remote employer actions, no API tokens.
+
+Donor B: first-party https://github.com/galapoto/smartploy
+Source branch for helper: feature/v4-visible-local-playwright-mainline-20261107
+B1 original: browser-companion/logic.mjs (blob
+    164f7a1aba14f7da21238a8577803b187a8d77ff).
+    Destination: browser-playwright/assistant.py packet validator/URL matching
+    and browser-playwright/bridge.py.
+    Label: ADAPTED, not copied unchanged.
+    Changes: Python implementation of existing hashed approved fields,
+    explicit job URL and review/expiry checks; deny unreviewed contacts or
+    ambiguous fields; one-use pairing and localhost-only transport.
+
+NEW first-party code (not claimed copied):
+- browser-playwright/assistant.py packet validation, local CLI, SmartPloy
+  field policy, exact-job safeguards.
+- browser-playwright/bridge.py stdlib loopback HTTP handler, one-time pairing,
+  origin checks, rate bound, one-fill semantics, active challenge detection.
+- web/src/LocalPlaywrightAssist.tsx and web/src/localPlaywrightBridge.ts
+  user click flow and temporary client connection.
+- web/scripts/package_playwright_assistant.py deterministic zip allowlist.
+- tests/test_playwright_assistant.py,
+  tests/test_playwright_assistant_chromium.py,
+  tests/test_playwright_local_bridge.py,
+  web/src/LocalPlaywrightAssist.test.tsx and browser e2e tests.
+Tests are source/fixture evidence only; real signed-in employer acceptance
+must be separately demonstrated on the approved website.
+
+License/authorization statement:
+The inspected private donor A tree at the pinned commit has NO separately
+declared LICENSE/NOTICE file. Do not invent an MIT/Apache license.
+The first-party owner has expressly authorized cross-repository reuse for this
+project, but public redistribution is an additional release review decision.
+This notice preserves source attribution rather than silently asserting
+third-party permission. Verify ownership/distribution scope before releasing
+the public ZIP; do not import any unrelated proprietary dependencies.
+
+COPIED unchanged: none (adaptations above).
+REA: not used; transparent first-party source already existed.
+Measured code-reuse percentage or time saving: NOT VERIFIED.
+External browser automation authority: NOT GRANTED by the code package.
+This ZIP does not submit employer applications and is not a remotely hosted
+browser service. User-specific reviewed application approval remains required.
