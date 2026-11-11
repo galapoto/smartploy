@@ -125,7 +125,7 @@ jobs:
       # Reviewable, source-built Chrome package. The actual deployment still
       # requires independent approval and a live release receipt.
       - name: Upload reviewed extension ZIP (not a production release)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 pinned upstream verified
         with:
           name: smartploy-extension-review-v0.5.3
           path: |
@@ -187,7 +187,7 @@ jobs:
         run: npm run test:e2e
       - name: Upload synthetic screenshots and failure evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 pinned upstream verified
         with:
           name: smartploy-synthetic-browser-evidence
           path: |
@@ -573,7 +573,7 @@ jobs:
         working-directory: ${{ runner.temp }}/smartploy-ci-receipt
         run: sha256sum -c SHA256SUMS
       - name: Upload review-only receipt (no secrets)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 pinned upstream verified
         with:
           name: smartploy-ci-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/smartploy-ci-receipt/

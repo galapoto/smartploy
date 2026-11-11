@@ -1,6 +1,10 @@
 // @ts-expect-error Node-only source reading in Vitest.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+
+// Browser tests cover the actual release indicator. This source test ensures
+// mobile CSS cannot silently hide the critical development-build warning.
+const mobileCSS = readFileSync(new URL("./sp128-mobile-workflow.css", import.meta.url), "utf8");
 const css=readFileSync(new URL("./sp-v4-monochrome.css",import.meta.url),"utf8");
 const app=readFileSync(new URL("./App.tsx",import.meta.url),"utf8");
 describe("SmartPloy brand focus",()=>{
@@ -28,5 +32,12 @@ describe("SmartPloy brand focus",()=>{
     expect(app).toContain("Job intelligence");
     expect(app).not.toContain("Job intelligence for Finland");
     expect(css).toContain("animation:none!important");
+  });
+});
+
+describe("release-status safety on mobile", () => {
+  it("hides only routine version badges, not the development-build warning", () => {
+    expect(mobileCSS).toContain(".release-status-aligned,.release-status-checking");
+    expect(mobileCSS).not.toContain(".release-status-aligned,.release-status-development");
   });
 });

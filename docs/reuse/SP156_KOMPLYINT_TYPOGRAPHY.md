@@ -28,6 +28,33 @@ SmartPloy colors, branding and navigation stay. No employer submissions added.
 - No new application logic; App CV→method navigation, retries and employer
   authorization boundaries remain unchanged.
 
+## REA-FIRST-001 outcome and footprint evidence
+- **REA decision: REA_NOT_APPLICABLE.** The source is the original, readable
+  first-party Komplyint repository, not an inaccessible binary or behavior
+  being reverse-engineered. Direct source inspection and audited npm packages
+  are safer and more accurate than behavior reconstruction.
+- **Target permission:** read-only owner-authorized public first-party
+  `komplyint/komplyint-website` repository and its
+  `76c00948638cd2db699f78c58d6885117f676014` files.
+  No access to proprietary source or production resources was requested.
+- **REA tool revision:** NOT_RUN / NOT_APPLICABLE (no REA process invoked).
+  **Observed evidence:** original `src/app/layout.tsx`,
+  `src/design/tokens.json`, `src/app/handbook.css`; pinned
+  Fontsource OFL-1.1 packages and lockfile integrity; synthetic
+  Lato/Manrope/EB Garamond font-load and responsive Chromium checks.
+- **Unknowns/limits:** browser-rendered measured layout is not proof of
+  identical production GPU rasterization; no private Komplyint assets or
+  inferred architecture were reproduced.
+- **Bundle footprint: NOT_MEASURED.** The three self-hosted font packages add
+  runtime font resources. No measured before/after JS+CSS+WOFF2 byte totals,
+  transfer size, cache hit ratio, layout shift, or page speed is claimed.
+  Before release, measure build artifact output and 390px/1440px loaded
+  pages against the previous stable production build, then record actual
+  deltas; do not fabricate download-time or development-time savings.
+- **Release authority:** V4 paper and the user-approved simplified branding.
+  Exact first-party source is PORTED/ADAPTED, not claimed COPIED unchanged;
+  no unreviewed external source or REA reconstruction was adopted.
+
 ## Acceptance gates
 Exact source: heading == "Apply with confidence", exactly one text-bearing banner
 node, no img/other copy, CV instruction visible on 390px and desktop, original

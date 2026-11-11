@@ -353,6 +353,11 @@ export default function App() {
 
   // Old in-flight requests must not repopulate another account's workspace.
   const loadGeneration = useRef(0);
+  // Actively cancel stale private GETs; a generation guard alone leaves open connections.
+  const activeLoadController = useRef<AbortController | null>(null);
+  // Mutation-related verification GETs have a bounded, abortable lifetime;
+  // the actual POST/PUT remains separate and is never silently retried.
+  const privateVerificationControllers = useRef<Set<AbortController>>(new Set());
   const lastSessionIdentity = useRef<string | null>(null);
   const savingSearchPreferences = useRef(false);
   const savingAIConsent = useRef(false);
@@ -360,6 +365,12 @@ export default function App() {
   // Different account identities must never inherit the old in-flight lock.
   const autoDraftInFlight = useRef<string | null>(null);
   const clearPrivateWorkspace = useCallback(() => {
+    // A session expiry/account switch must release the mobile modal focus trap.
+    if (mobileMenuPanelRef.current?.classList.contains("open")) {
+      mobileMenuFocusMainRef.current = true;
+    }
+    setMobileNav(false);
+    privateVerificationControllers.current.forEach((controller) => controller.abort());
     setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
     setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
     setPrivateSavedJobs([]);
@@ -390,7 +401,8 @@ export default function App() {
    * Backend authorization remains mandatory for each operation.
    */
   const runPrivateMutation = useCallback(async <T,>(
-    action: (expectedUserId: string) => Promise<T>
+    action: (expectedUserId: string) => Promise<T>,
+    readSignal?: AbortSignal,
   ): Promise<T> => {
     // Capture the initiating account synchronously, *before* the preflight
     // await. The server must reject if a later browser cookie belongs to B.
@@ -398,6 +410,7 @@ export default function App() {
     const expectedUserId = session?.user_id?.trim() || "";
     const denyStaleAction = (): never => {
       ++loadGeneration.current; // invalidate private GET responses in flight
+      activeLoadController.current?.abort();
       lastSessionIdentity.current = null;
       clearPrivateWorkspace();
       setLoading(false);
@@ -410,7 +423,7 @@ export default function App() {
     const verifyIdentity = async () => {
       let currentIdentity: string | null = null;
       try {
-        currentIdentity = sessionIdentity(await getSession());
+        currentIdentity = sessionIdentity(await getSession(readSignal));
       } catch {
         // A missing/expired session fails closed, even when email is unchanged.
       }
@@ -442,6 +455,11 @@ export default function App() {
   const load = useCallback(async (quiet = false) => {
     if (savingSearchPreferences.current || savingAIConsent.current) return;
     const generation = ++loadGeneration.current;
+    // Abort previous session/dashboard/profile reads before a new Retry or refresh.
+    activeLoadController.current?.abort();
+    const controller = new AbortController();
+    activeLoadController.current = controller;
+    const signal = controller.signal;
     if (quiet) setRefreshing(true); else setLoading(true);
     // A stalled session/search request must become an actionable error, not
     // an endless loading screen. Old responses are invalidated before reset.
@@ -449,6 +467,7 @@ export default function App() {
     const connectionDeadline = quiet ? null : window.setTimeout(() => {
       if (generation !== loadGeneration.current) return;
       ++loadGeneration.current;
+      controller.abort();
       lastSessionIdentity.current = null;
       clearPrivateWorkspace();
       setLoading(false); setRefreshing(false);
@@ -459,7 +478,7 @@ export default function App() {
       // Establish a server-issued account identity BEFORE requesting private
       // preferences, CVs, drafts or other tenant-scoped responses. Starting
       // them alongside the session request could mix two browser identities.
-      const who = await getSession();
+      const who = await getSession(signal);
       if (generation !== loadGeneration.current) return;
       const identity = sessionIdentity(who);
       if (lastSessionIdentity.current !== null &&
@@ -473,19 +492,19 @@ export default function App() {
       // must never block first-use navigation when Ollama or a CV is slow.
       // A slow Ollama availability endpoint cannot hold profile documents
       // and private saved jobs hostage. Attach a rejection handler now.
-      const localAIRequest = Promise.allSettled([getLocalAIStatus()]);
+      const localAIRequest = Promise.allSettled([getLocalAIStatus(signal)]);
       const secondaryRequest = Promise.allSettled([
-        getApplications(), getHealth(), getCV(), getProfileFacts(),
-        getJobs(), getPrivateSavedJobs(), getJobAIConsents(), getJobAIConsentEvents()
+        getApplications(signal), getHealth(signal), getCV(signal), getProfileFacts(signal),
+        getJobs(signal), getPrivateSavedJobs(signal), getJobAIConsents(signal), getJobAIConsentEvents(signal)
       ]);
       const [board, prefs, results] = await Promise.all([
-        getDashboard(), getSearchPreferences(), getSearchResults()
+        getDashboard(signal), getSearchPreferences(signal), getSearchResults(signal)
       ]);
       if (generation !== loadGeneration.current) return;
 
       // Account switch during GETs: reject all mixed snapshots, rather than
       // showing A's job/CV data under B's currently signed-in browser.
-      const verifiedWho = await getSession();
+      const verifiedWho = await getSession(signal);
       if (generation !== loadGeneration.current) return;
       if (sessionIdentity(verifiedWho) !== identity) {
         throw new Error("Your signed-in account changed during refresh. Reload this workspace.");
@@ -513,7 +532,7 @@ export default function App() {
 
       const secondary = await secondaryRequest;
       if (generation !== loadGeneration.current) return;
-      const finalWho = await getSession();
+      const finalWho = await getSession(signal);
       if (generation !== loadGeneration.current) return;
       if (sessionIdentity(finalWho) !== identity) {
         throw new Error("Your signed-in account changed during profile loading. Reload this workspace.");
@@ -535,6 +554,7 @@ export default function App() {
       }
     } catch (exc) {
       if (generation === loadGeneration.current) {
+        controller.abort(); // cancel all sibling GETs after account verification fails
         lastSessionIdentity.current = null;
         clearPrivateWorkspace();
         setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
@@ -550,7 +570,12 @@ export default function App() {
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => { void load(true); }, 60000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      ++loadGeneration.current;
+      activeLoadController.current?.abort();
+      privateVerificationControllers.current.forEach((controller) => controller.abort());
+    };
   }, [load]);
 
   const navigate = (target: Page) => {
@@ -598,9 +623,13 @@ export default function App() {
       throw new Error("A search preference save is already in progress.");
     }
     savingSearchPreferences.current = true;
+    const verifyController = new AbortController();
+    privateVerificationControllers.current.add(verifyController);
+    const verifyDeadline = window.setTimeout(() => verifyController.abort(), 18000);
     // A concurrent refresh cannot publish an old preference snapshot while
     // the PUT and its paired discovery GET are in progress.
     ++loadGeneration.current;
+    activeLoadController.current?.abort();
     setRefreshing(false);
 
     const expectedIdentity = lastSessionIdentity.current;
@@ -609,7 +638,7 @@ export default function App() {
     const requireSameAccount = async () => {
       let observedIdentity: string | null = null;
       try {
-        observedIdentity = sessionIdentity(await getSession());
+        observedIdentity = sessionIdentity(await getSession(verifyController.signal));
       } catch {
         // Treat failed/unauthenticated session verification as a privacy
         // boundary failure, not permission to publish stale private results.
@@ -632,7 +661,7 @@ export default function App() {
       await requireSameAccount();
       const result = await updateSearchPreferences(next, expectedUserId);
       await requireSameAccount();
-      const fresh = await getSearchResults();
+      const fresh = await getSearchResults(verifyController.signal);
       await requireSameAccount();
 
       // Reuse the ORIGINAL signed-in private POST after *every* saved
@@ -699,9 +728,13 @@ export default function App() {
       if (!accountUnverified) await requireSameAccount();
       throw exc;
     } finally {
+      window.clearTimeout(verifyDeadline);
+      verifyController.abort();
+      privateVerificationControllers.current.delete(verifyController);
       savingSearchPreferences.current = false;
       if (accountUnverified) {
         ++loadGeneration.current;
+        activeLoadController.current?.abort();
         lastSessionIdentity.current = null;
         clearPrivateWorkspace();
         setError(
@@ -715,17 +748,21 @@ export default function App() {
     if (savingAIConsent.current || aiConsentStatus !== "ready") return;
     const originatingIdentity = lastSessionIdentity.current;
     savingAIConsent.current = true;
+    const verifyController = new AbortController();
+    privateVerificationControllers.current.add(verifyController);
+    const verifyDeadline = window.setTimeout(() => verifyController.abort(), 18000);
     ++loadGeneration.current; // Invalidate older private GET responses.
+    activeLoadController.current?.abort();
     setRefreshing(false); // A cancelled refresh must not leave its spinner stuck.
     setAIConsentBusy(true);
     try {
       const data = await runPrivateMutation(async (userId) => {
         await action(userId);
         const [consents, events] = await Promise.all([
-          getJobAIConsents(), getJobAIConsentEvents()
+          getJobAIConsents(verifyController.signal), getJobAIConsentEvents(verifyController.signal)
         ]);
         return { consents, events };
-      });
+      }, verifyController.signal);
       setAIConsents(data.consents.consents);
       setAIConsentEvents(data.events.events);
       setAIConsentStatus("ready");
@@ -735,6 +772,9 @@ export default function App() {
         setNotice(exc instanceof Error ? exc.message : "Could not change your AI permission.");
       }
     } finally {
+      window.clearTimeout(verifyDeadline);
+      verifyController.abort();
+      privateVerificationControllers.current.delete(verifyController);
       savingAIConsent.current = false;
       if (originatingIdentity === lastSessionIdentity.current) setAIConsentBusy(false);
     }

@@ -162,15 +162,82 @@ function switchableSession() {
 }
 
 describe("SP127: mobile-first persistent shell and nonblocking startup", () => {
+  it("aborts sibling account-A profile reads when session verification switches to B", async () => {
+    let sessionChecks = 0;
+    vi.mocked(api.getSession).mockImplementation(async () => {
+      sessionChecks += 1;
+      const who = sessionChecks === 1 ? "A" : "B";
+      return {
+        authenticated: true, email: "same-address@smartploy.invalid",
+        user_id: "owner-" + who, profile_id: "profile-" + who,
+        auth_source: "fixture",
+      };
+    });
+    let oldReadAborted = false;
+    vi.mocked(api.getCV).mockImplementation((signal) => new Promise((_resolve, reject) => {
+      signal?.addEventListener("abort", () => {
+        oldReadAborted = true;
+        reject(new DOMException("Cancelled old account CV", "AbortError"));
+      }, { once: true });
+    }));
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "SmartPloy isn't available" })).toBeTruthy();
+    expect(oldReadAborted).toBe(true);
+    expect(screen.queryByText(/same-address@smartploy.invalid/)).toBeNull();
+  });
+
+  it("aborts superseded private bootstrap reads on Retry and component teardown", () => {
+    const signals: AbortSignal[] = [];
+    vi.mocked(api.getSession).mockImplementation((signal) => {
+      if (signal) signals.push(signal);
+      return new Promise(() => {});
+    });
+    const view = render(<App />);
+    expect(screen.getByRole("button", { name: "Retry connection" })).toBeTruthy();
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
+    expect(signals).toHaveLength(2);
+    expect(signals[0].aborted).toBe(true);
+    expect(signals[1].aborted).toBe(false);
+    view.unmount();
+    expect(signals[1].aborted).toBe(true);
+  });
+
+  it("closes an open mobile dialog when a verified session fails", async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    try {
+      render(<App />);
+      expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+      expect(document.querySelector("#smartploy-sidebar")?.getAttribute("role")).toBe("dialog");
+      expect(document.body.style.overflow).toBe("hidden");
+      vi.mocked(api.getSession).mockRejectedValueOnce(new Error("Your session has expired"));
+      fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
+      expect(await screen.findByRole("heading", { name: "SmartPloy isn't available" })).toBeTruthy();
+      await waitFor(() => expect(document.body.style.overflow).not.toBe("hidden"));
+      expect(document.querySelector("#smartploy-sidebar[role=dialog]")).toBeNull();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+      document.body.style.overflow = "";
+    }
+  });
+
   it("fails closed with a retry after 18 seconds when session never responds", async () => {
     vi.useFakeTimers();
     try {
-      vi.mocked(api.getSession).mockImplementation(() => new Promise(() => {}));
+      let timedOutSignal: AbortSignal | undefined;
+      vi.mocked(api.getSession).mockImplementation((signal) => {
+        timedOutSignal = signal;
+        return new Promise(() => {});
+      });
       render(<App />);
       expect(screen.getByRole("heading", { name: "Connecting to your workspace" })).toBeTruthy();
       await act(async () => { await vi.advanceTimersByTimeAsync(18005); });
       expect(screen.getByRole("heading", { name: "SmartPloy isn't available" })).toBeTruthy();
       expect(screen.getByText(/Workspace connection timed out/)).toBeTruthy();
+      expect(timedOutSignal?.aborted).toBe(true);
       expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
       expect(document.querySelector(".spinner")).toBeNull();
       expect(screen.queryByText("test@smartploy.invalid")).toBeNull();
@@ -765,6 +832,10 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByText(/1 current job listings/i)).toBeTruthy();
     expect(screen.queryByText(/90% search match/i)).toBeNull();
     expect(currentPrefs.mode).toBe("general");
+    // The preference save's post-write GETs must be independently abortable.
+    const lastSearchSignal = vi.mocked(api.getSearchResults).mock.calls[vi.mocked(api.getSearchResults).mock.calls.length - 1]?.[0];
+    expect(lastSearchSignal).toBeInstanceOf(AbortSignal);
+    expect(lastSearchSignal?.aborted).toBe(true); // released after save completes
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
     await waitFor(() => expect(api.getSearchPreferences).toHaveBeenCalledTimes(
@@ -1424,6 +1495,12 @@ describe("actual SmartPloy App first-use and application handoff", () => {
       "consent-fixture", "usr-synthetic-1",
     ));
     await waitFor(() => expect(screen.getByText("Withdrawn")).toBeTruthy());
+    // Never leave follow-up consent reads alive after a completed mutation.
+    const lastConsentSignal = vi.mocked(api.getJobAIConsents).mock.calls[vi.mocked(api.getJobAIConsents).mock.calls.length - 1]?.[0];
+    const lastEventSignal = vi.mocked(api.getJobAIConsentEvents).mock.calls[vi.mocked(api.getJobAIConsentEvents).mock.calls.length - 1]?.[0];
+    expect(lastConsentSignal).toBeInstanceOf(AbortSignal);
+    expect(lastEventSignal).toBe(lastConsentSignal);
+    expect(lastConsentSignal?.aborted).toBe(true);
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 
