@@ -28,6 +28,7 @@ FILES = (
     "smartploy-mark-v2.svg",
     "logic.mjs", "upload.mjs", "questions.mjs", "page-questions.mjs",
     "adapters/approved-option.mjs",
+    "THIRD_PARTY_LICENSES.txt",
     "page-attachment.mjs", "page-review.mjs", "review-bridge.mjs",
     "page-final-claim.mjs", "page-final-submit.mjs", "attempt-lock.mjs",
 )
