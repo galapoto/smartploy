@@ -124,6 +124,7 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       (action.type !== "select" ||
         (el.selectedOptions.length === 1 &&
          !el.selectedOptions[0].disabled &&
+         !el.selectedOptions[0].closest("optgroup[disabled]") &&
          action.options.some(o =>
            o.value === el.selectedOptions[0].value &&
            o.label === String(el.selectedOptions[0].label ||
@@ -162,6 +163,7 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
       if (el.value !== action.value ||
           (action.type === "select" && (el.selectedOptions.length !== 1 ||
             el.selectedOptions[0].disabled ||
+            el.selectedOptions[0].closest("optgroup[disabled]") ||
             !action.options.some(approved => approved.value === el.selectedOptions[0].value &&
               approved.label === String(el.selectedOptions[0].label ||
                 el.selectedOptions[0].textContent || "").trim())))) {
