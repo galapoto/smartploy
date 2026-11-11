@@ -99,7 +99,7 @@ function inspectForm() {
       autocomplete: String(el.getAttribute("autocomplete") || "").slice(0, 100),
       placeholder: String(el.getAttribute("placeholder") || "").slice(0, 140),
       required: Boolean(el.required || el.getAttribute("aria-required") === "true"),
-      visible: visible(el), disabled: el.disabled === true, readonly: el.readOnly === true,
+      visible: visible(el), disabled: el.matches(":disabled"), readonly: el.readOnly === true,
       hasValue, maxLength: Number(el.maxLength) || -1,
       accept: type === "file" ? String(el.accept || "").slice(0, 200) : "",
       multiple: type === "file" && el.multiple === true,
@@ -107,7 +107,7 @@ function inspectForm() {
         .map(option => ({
           value: String(option.value || "").slice(0, 150),
           label: String(option.label || option.textContent || "").trim().slice(0, 150),
-          disabled: Boolean(option.disabled || option.closest("optgroup[disabled]"))
+          disabled: Boolean(option.disabled || option.matches(":disabled") || option.closest("optgroup[disabled]"))
         })) : undefined
     };
   });
