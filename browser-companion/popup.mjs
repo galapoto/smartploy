@@ -107,6 +107,9 @@ function inspectForm() {
         .map(option => ({
           value: String(option.value || "").slice(0, 150),
           label: String(option.label || option.textContent || "").trim().slice(0, 150),
+          // Preserve a visible optgroup heading; the option label alone may
+          // say "Yes" while its group discloses a protected category.
+          group: String(option.closest("optgroup")?.label || "").trim().slice(0, 150),
           disabled: Boolean(option.disabled || option.matches(":disabled") || option.closest("optgroup[disabled]"))
         })) : undefined
     };
