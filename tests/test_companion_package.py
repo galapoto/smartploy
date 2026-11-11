@@ -78,7 +78,7 @@ def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_pat
         assert manifest["manifest_version"] == 3
         assert manifest["permissions"] == ["activeTab", "scripting", "storage"]
         assert manifest["action"]["default_popup"] == "popup.html"
-        assert manifest["version"] == "0.5.3"
+        assert manifest["version"] == "0.5.4"
         assert b'id="startAutoApply"' in zipfile_src.read("popup.html")
         assert b"async function onStartAutoApply()" in zipfile_src.read("popup.mjs")
         assert manifest["icons"] == {"16": "icon16.png", "32": "icon32.png", "48": "icon48.png", "128": "icon128.png"}
