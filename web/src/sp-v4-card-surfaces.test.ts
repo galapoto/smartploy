@@ -58,6 +58,9 @@ describe("V4 shadcn-adapted surface system", () => {
     expect(css).toContain("SP V4 / M1 CONTRAST-CLOSURE-002");
     expect(css).toContain("background:var(--sp-ui-card)");
     expect(css).toContain("background:var(--sp-ui-card-raised)");
+    expect(css).toContain(".studio-packet-fallback label");
+    expect(css).toContain(".studio-ai-preview pre");
+    expect(css).toContain(".studio-receipt-import label");
     expect(css).toContain(".studio-review-queue-filters button span");
     expect(css).toContain('.studio-review-queue-filters button:not([aria-pressed="true"]):hover:not(:disabled)');
     expect(css).toContain('.studio-review-queue-filters button[aria-pressed="true"] span');
