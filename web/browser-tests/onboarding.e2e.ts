@@ -1650,8 +1650,12 @@ test("V4 M1: remaining pale workflow panels and editors contrast in real Chromiu
       filters.className = "studio-review-queue-filters";
       const selected = document.createElement("button");
       selected.setAttribute("aria-pressed", "true");
-      selected.textContent = "Selected applications";
+      selected.innerHTML = "Selected applications <span>3</span>";
       filters.appendChild(selected);
+      const unselected = document.createElement("button");
+      unselected.setAttribute("aria-pressed", "false");
+      unselected.innerHTML = "Other applications <span>12</span>";
+      filters.appendChild(unselected);
       fixture.appendChild(filters);
       root.appendChild(fixture);
     }
@@ -1673,7 +1677,8 @@ test("V4 M1: remaining pale workflow panels and editors contrast in real Chromiu
       ".studio-automation-approval,.studio-handoff,.studio-handoff-blockers," +
       ".studio-attempt-reserved,.studio-receipt,.studio-ai-preview," +
       ".studio-ai-icon,.studio-empty-icon,.flow-start-browse-button," +
-      ".studio-document textarea,.studio-review-queue-filters button"
+      ".studio-document textarea,.studio-review-queue-filters button," +
+      ".studio-review-queue-filters button span"
     )].map(el => {
       const css = getComputedStyle(el);
       const result = contrast(css.color, css.backgroundColor);
@@ -1688,7 +1693,7 @@ test("V4 M1: remaining pale workflow panels and editors contrast in real Chromiu
   await page.getByRole("button", {name: "Switch to dark mode"}).click();
   await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
   const dark = await snapshot();
-  expect(dark).toHaveLength(15);
+  expect(dark).toHaveLength(18);
   for (const surface of dark) {
     expect(surface.gradient, surface.selector).toBe("none");
     expect(surface.backgroundLightness, surface.selector).toBeLessThan(.06);
