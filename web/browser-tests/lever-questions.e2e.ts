@@ -16,6 +16,10 @@ const syntheticHtml = [
   "<input id='project' name='questions[project]' type='text' required>",
   "<label for='salary'>Expected salary</label>",
   "<input id='salary' name='questions[salary]' type='text' required>",
+  "<label for='source'>Where did you hear about this job?</label>",
+  "<select id='source' name='job_source' required>",
+  "<option value=''>Choose</option><option value='job-board'>Job board</option>",
+  "<option value='referral'>Referral</option></select>",
   "<label for='terms'>I agree to employer privacy terms</label>",
   "<input id='terms' type='checkbox' required>",
   "<button type='submit'>Submit application</button>",
@@ -49,8 +53,8 @@ async function setup(page: Page) {
   );
   await page.addScriptTag({
     content:source.replace(
-      "export function fillReviewedAnswers(",
-      "window.fillReviewedAnswers = function fillReviewedAnswers("
+      "export async function fillReviewedAnswers(",
+      "window.fillReviewedAnswers = async function fillReviewedAnswers("
     )
   });
   return () => outside;
@@ -83,6 +87,46 @@ async function act(page: Page, actions: Record<string,unknown>[], url = JOB_URL)
       {status:string;filled:number;reason:string},
   {actions,url,inspected:JOB_URL});
 }
+
+function sourceOption(value = "job-board") {
+  return {
+    index:4, label:"Where did you hear about this job?", type:"select",
+    expected_id:"source", expected_name:"job_source",
+    expected_placeholder:"", expected_max_length:-1, value,
+    options:[
+      {value:"job-board", label:"Job board"},
+      {value:"referral", label:"Referral"},
+    ]
+  };
+}
+
+test("V4 exact selected employer option persists, never answers protected fields or submits",async ({page})=>{
+  const outside=await setup(page);
+  const result=await act(page,[sourceOption()]);
+  expect(result.status).toBe("filled_for_review");
+  expect(result.filled).toBe(1);
+  expect(await page.locator("#source").inputValue()).toBe("job-board");
+  expect(await page.locator("#salary").inputValue()).toBe("");
+  expect(await page.locator("#terms").isChecked()).toBe(false);
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
+
+test("V4 dynamic native dropdown reset fails closed without a repeat write",async ({page})=>{
+  const outside=await setup(page);
+  await page.locator("#source").evaluate(el=>{
+    el.addEventListener("change",()=>{
+      setTimeout(()=>{(el as HTMLSelectElement).value="";},25);
+    },{once:true});
+  });
+  const result=await act(page,[sourceOption()]);
+  expect(result.status).toBe("blocked");
+  expect(result.filled).toBe(0);
+  expect(result.reason).toMatch(/did not retain/i);
+  expect(await page.locator("#source").inputValue()).toBe("");
+  expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
+  expect(outside()).toBe(0);
+});
 
 test("two human-reviewed answers fill only correct fields; never click submit",async ({page})=>{
   const outside=await setup(page);
@@ -133,12 +177,12 @@ test("existing answers and hidden questions are not overwritten",async ({page})=
   expect((await act(page,[why()])).status).toBe("blocked");
 });
 
-test("SPA inserts a field on change: browser stops before writing to shifted second control",async ({page})=>{
+test("SPA inserts a field on change: unverified first field is not counted",async ({page})=>{
   await setup(page);
   await page.evaluate(()=>{(window as any).injectDrift=true;});
   const result=await act(page,[why(),project()]);
-  expect(result.status).toBe("partial_needs_review");
-  expect(result.filled).toBe(1);
+  expect(result.status).toBe("blocked");
+  expect(result.filled).toBe(0);
   expect(await page.locator("#why").inputValue()).toBe(why().value);
   expect(await page.locator("#project").inputValue()).toBe("");
 });
@@ -190,8 +234,8 @@ test("single final answer detached or extra required field added on change remai
     },{once:true});
   });
   const detached=await act(page,[why()]);
-  expect(detached.status).toBe("partial_needs_review");
-  expect(detached.filled).toBe(1);
+  expect(detached.status).toBe("blocked");
+  expect(detached.filled).toBe(0);
   expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
 });
 
@@ -199,8 +243,8 @@ test("new required control added by last input is never reported as safely compl
   await setup(page);
   await page.evaluate(() => {(window as any).injectDrift = true;});
   const result=await act(page,[why()]);
-  expect(result.status).toBe("partial_needs_review");
-  expect(result.filled).toBe(1);
+  expect(result.status).toBe("blocked");
+  expect(result.filled).toBe(0);
   expect(await page.locator("#new_required").count()).toBe(1);
   expect(await page.evaluate(()=>(window as any).submitCount)).toBe(0);
 });

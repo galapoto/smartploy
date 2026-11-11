@@ -102,7 +102,14 @@ function inspectForm() {
       visible: visible(el), disabled: el.disabled === true, readonly: el.readOnly === true,
       hasValue, maxLength: Number(el.maxLength) || -1,
       accept: type === "file" ? String(el.accept || "").slice(0, 200) : "",
-      multiple: type === "file" && el.multiple === true
+      multiple: type === "file" && el.multiple === true,
+      // Applicant sees only explicit, bounded choices observed from the same form.
+      options: type === "select" ? Array.from(el.options).slice(0, 31)
+        .map(option => ({
+          value: String(option.value || "").slice(0, 150),
+          label: String(option.label || option.textContent || "").trim().slice(0, 150),
+          disabled: Boolean(option.disabled)
+        })) : undefined
     };
   });
   return {
@@ -835,7 +842,7 @@ async function onReviewQuestions() {
     const plan = planReviewedQuestions(reply.result.elements);
     currentQuestionPlan = { ...plan, url: tab.url };
     $("questionInfo").textContent =
-      plan.questions.length + " eligible required text questions; " +
+      plan.questions.length + " eligible required questions; " +
       plan.humanOnly.length + " require manual handling. " +
       (plan.humanOnly.length ? "Manual: " + plan.humanOnly.slice(0, 6).join("; ") : "");
     const list = $("questionList");
@@ -846,13 +853,26 @@ async function onReviewQuestions() {
       const label = document.createElement("label");
       label.textContent = item.label + " (review required)";
       label.setAttribute("for", fieldId);
-      const input = document.createElement("textarea");
+      const input = document.createElement(item.type === "select" ? "select" : "textarea");
       input.id = fieldId;
-      input.rows = 3;
-      input.maxLength = item.max_answer_length;
-      input.placeholder = "Type or paste a truthful answer you have reviewed.";
       input.autocomplete = "off";
-      input.spellcheck = false;
+      if (item.type === "select") {
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "Choose the exact employer option";
+        input.append(empty);
+        for (const approved of item.options) {
+          const option = document.createElement("option");
+          option.value = approved.value;
+          option.textContent = approved.label;
+          input.append(option);
+        }
+      } else {
+        input.rows = 3;
+        input.maxLength = item.max_answer_length;
+        input.placeholder = "Type or paste a truthful answer you have reviewed.";
+        input.spellcheck = false;
+      }
       wrapper.append(label, input);
       list.append(wrapper);
     }
@@ -860,7 +880,7 @@ async function onReviewQuestions() {
     $("fillQuestions").disabled = plan.questions.length === 0;
     status(plan.questions.length ?
       "Review every proposed answer for accuracy, then approve a one-time fill. Sensitive questions remain manual." :
-      "No safely eligible unanswered text questions. Answer employer-specific requirements manually.", true);
+      "No safely eligible unanswered questions. Answer employer-specific requirements manually.", true);
   } catch (error) { status(normalizeError(error)); }
 }
 

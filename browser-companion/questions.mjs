@@ -3,6 +3,7 @@
    consequential answers remain unfilled until a human explicitly reviews them.
    No model, storage, network access, account inference or submission here. */
 import { identifyField } from "./logic.mjs";
+import { uniqueApprovedOption } from "./adapters/approved-option.mjs";
 
 export class QuestionError extends Error {}
 export const MAX_QUESTION_ANSWER = 1500;
@@ -12,7 +13,7 @@ export const MAX_QUESTION_ITEMS = 12;
 // citizenship, protected traits, legal attestations, salary and authorization
 // remain manual even if a user has typed a possible answer.
 export const SENSITIVE_QUESTION =
-  /\b(?:visa|citizenship|citizen|nationality|sponsor|sponsorship|work permit|right to work|work authori[sz]ation|salary|compensation|wage|expected pay|pay range|eeo|race|ethnic|gender|sex|sexual|religion|politic|union membership|disability|health condition|medical|veteran|military|criminal|felony|convict|background check|privacy|consent|gdpr|agree|agreement|attest|certif(?:y|ication)|signature|passport|social security|government id|tax id|birth date|date of birth|age|bank account|start date|notice period|työlupa|oleskelulupa|kansalaisuus|palkka|henkilötunnus|sukupuoli|uskonto|rikosrekisteri|suostumus|allekirjoitus|arbetstillstånd|medborgarskap|personnummer|samtycke|underskrift|lön|födelsetid|kön)\b/iu;
+  /\b(?:visa|citizenship|citizen|nationality|sponsor|sponsorship|work permit|right to work|work authori[sz]ation|authori[sz]ed to work|legally eligible to work|eligible to work|employment eligibility|salary|compensation|wage|expected pay|pay range|eeo|race|ethnic|gender|sex|sexual|religion|politic|union membership|disability|health condition|medical|veteran|military|criminal|felony|convict|background check|privacy|consent|gdpr|agree|agreement|attest|certif(?:y|ication)|signature|passport|social security|government id|tax id|birth date|date of birth|age|bank account|start date|notice period|työlupa|oleskelulupa|kansalaisuus|palkka|henkilötunnus|sukupuoli|uskonto|rikosrekisteri|suostumus|allekirjoitus|arbetstillstånd|medborgarskap|personnummer|samtycke|underskrift|lön|födelsetid|kön)\b/iu;
 
 function tidy(value) {
   return String(value || "").normalize("NFKC")
@@ -25,7 +26,7 @@ function tidy(value) {
 }
 
 const RESTRICTED_IDENTIFIERS =
-  /(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|citizen|nationality|gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|immigrat|taxid|nationalid|henkilötunnus|sukupuol|kansalaisuu|oleskelulup|työlup|palkka|arbetstillstånd|medborgarskap|personnummer|samtycke)/i;
+  /(?:visa|sponsor|salary|compensat|wage|workauth|workpermit|workeligib|legallyeligible|authorizedtowork|authorisedtowork|citizen|nationality|gender|sex|race|ethnic|religion|disabil|veteran|passport|birth|dateofbirth|consent|privacy|agreement|legal|attest|signature|criminal|backgroundcheck|immigrat|taxid|nationalid|henkilötunnus|sukupuol|kansalaisuu|oleskelulup|työlup|palkka|arbetstillstånd|medborgarskap|personnummer|samtycke)/i;
 
 export function isSensitiveQuestion(row) {
   const material = tidy([row?.label, row?.name, row?.id, row?.placeholder].join(" "));
@@ -51,7 +52,7 @@ export function planReviewedQuestions(elements) {
       humanOnly.push("Unlabeled or invalid required question");
       continue;
     }
-    if (!["text", "textarea"].includes(row.type) || isSensitiveQuestion(row)) {
+    if (!["text", "textarea", "select"].includes(row.type) || isSensitiveQuestion(row)) {
       humanOnly.push(label); // no auto-select, radio, checkbox or legal/EEO answers
       continue;
     }
@@ -62,6 +63,26 @@ export function planReviewedQuestions(elements) {
     const limit = Number.isInteger(row.maxLength) && row.maxLength > 0
       ? Math.min(MAX_QUESTION_ANSWER, row.maxLength) : MAX_QUESTION_ANSWER;
     if (limit < 2) { humanOnly.push(label); continue; }
+    // V4: native SELECT requires the applicant to choose an exact value from
+    // a bounded set observed on this employer form. No fuzzy/default choice.
+    let choices;
+    if (row.type === "select") {
+      if (!Array.isArray(row.options) || row.options.length > 30) {
+        humanOnly.push(label); continue;
+      }
+      choices = row.options.filter(x =>
+        x && x.disabled !== true && typeof x.value === "string" &&
+        x.value.length >= 1 && x.value.length <= 150 &&
+        typeof x.label === "string" && x.label.trim().length >= 1 &&
+        x.label.length <= 150 &&
+        !SENSITIVE_QUESTION.test(tidy(x.label))
+      ).map(x => ({value:x.value, label:x.label.trim()}));
+      if (!choices.length || choices.length > 24 ||
+          new Set(choices.map(x => x.value)).size !== choices.length ||
+          new Set(choices.map(x => tidy(x.label))).size !== choices.length) {
+        humanOnly.push(label); continue;
+      }
+    }
     const key = tidy(label);
     if (labels.has(key)) repeated.add(key);
     labels.add(key);
@@ -70,7 +91,8 @@ export function planReviewedQuestions(elements) {
       expected_id: String(row.id || ""), expected_name: String(row.name || ""),
       expected_placeholder: String(row.placeholder || ""),
       expected_max_length: row.maxLength ?? -1,
-      max_answer_length: limit
+      max_answer_length: limit,
+      ...(choices ? {options:choices} : {})
     });
   }
   for (const item of possible) {
@@ -103,8 +125,12 @@ export function validateReviewedAnswers(plan, values) {
     if (isSensitiveQuestion(question)) {
       throw new QuestionError("A sensitive question must be answered manually.");
     }
+    if (question.type === "select" &&
+        !uniqueApprovedOption(value, question.options)) {
+      throw new QuestionError("Choose an exact, currently approved employer option.");
+    }
     actions.push({
-      ...question, value: value.trim()
+      ...question, value: question.type === "select" ? value : value.trim()
     });
   }
   if (!actions.length) {
