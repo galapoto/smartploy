@@ -109,7 +109,30 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
     return stop("At least one reviewed question changed; nothing was filled.");
   }
   let filled = 0;
+  const verified = [];
+  // REUSE: v0.5.4's already approved all-prior-values reinspection.
+  // A later onchange can erase an earlier correct answer without navigation.
+  function persistentCount() {
+    if (location.href !== inspectedUrl) return 0;
+    const live = Array.from(document.querySelectorAll("input,textarea,select"));
+    if (live.length !== all.length) return 0;
+    return verified.filter(({action,el}) =>
+      el.isConnected && live[action.index] === el &&
+      el.id === action.expected_id && el.name === action.expected_name &&
+      labelFor(el) === action.label && !el.disabled && !el.readOnly &&
+      el.value === action.value &&
+      (action.type !== "select" ||
+        (el.selectedOptions.length === 1 &&
+         !el.selectedOptions[0].disabled &&
+         action.options.some(o =>
+           o.value === el.selectedOptions[0].value &&
+           o.label === String(el.selectedOptions[0].label ||
+             el.selectedOptions[0].textContent || "").trim())))
+    ).length;
+  }
   for (const action of actions) {
+    if (filled && persistentCount() !== verified.length)
+      return stop("A previously approved answer changed; review without retry.", persistentCount());
     if (location.href !== inspectedUrl || !valid(action)) {
       return stop("The employer changed the form while it was being filled.", filled);
     }
@@ -144,11 +167,17 @@ export async function fillReviewedAnswers(actions, approvedUrl, inspectedUrl) {
                 el.selectedOptions[0].textContent || "").trim())))) {
         return stop("Employer did not retain the reviewed answer; finish manually.", filled);
       }
-      filled++;
+      verified.push({action,el});
+      filled = persistentCount();
+      if (filled !== verified.length)
+        return stop("An earlier approved answer changed; review without retry.", filled);
     } catch {
-      return stop("The employer form changed during an answer; review manually.", filled);
+      return stop("The employer form changed during an answer; review manually.", persistentCount());
     }
   }
+  filled = persistentCount();
+  if (filled !== verified.length)
+    return stop("Employer changed a previously approved answer; review without retry.", filled);
   return {
     status: "filled_for_review",
     filled,
