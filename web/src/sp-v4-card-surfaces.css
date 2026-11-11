@@ -344,3 +344,148 @@ html[data-smartploy-theme] .smartploy-app :is(
     .flow-mode,.flow-start-card,.flow-job,.tool-tile,.search-result-card
   ) {transition:none;transform:none}
 }
+
+
+/* SP V4 / M1 CONTRAST-CLOSURE-002 (2026-11-11)
+   Close the remaining real legacy "faded-blue panel + washed-out copy"
+   combinations. Reuse the exact existing shadcn-adapted surface tokens;
+   no new components, colors, fonts, dependencies, or hidden actions.
+   This sheet is last-loaded: do not add broad global body/input overrides. */
+html[data-smartploy-theme] .smartploy-app :is(
+  .flow-signal-summary,.flow-choice-locked,.flow-error,
+  .studio-automation,.studio-automation-approval,
+  .studio-handoff,.studio-handoff-blockers,.studio-attempt-reserved,
+  .studio-receipt,.studio-ai-preview,.studio-empty-icon,
+  .studio-ai-icon,.studio-receipt-import,.studio-packet-fallback
+) {
+  background:var(--sp-ui-card);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+  color:var(--sp-ui-ink);
+  box-shadow:var(--sp-ui-shadow);
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-automation-approval,.studio-ai-preview,
+  .studio-empty-icon,.studio-ai-icon
+) {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-automation-approval p,.studio-automation-approval label,
+  .studio-receipt-header > strong,.studio-receipt-import label,
+  .studio-receipt-record,.studio-receipt > p,
+  .studio-ai-preview h4,.studio-ai-preview p,
+  .flow-signal-summary,.flow-signal-summary span,
+  .studio-list-heading span,.studio-attempt-details,
+  .studio-attempt-details summary,.studio-handoff-disclaimer,
+  .studio-handoff-header p:last-child,.studio-automation-header h3
+) {
+  color:var(--sp-ui-ink);
+  text-shadow:none;
+  opacity:1;
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-receipt > p,.studio-handoff-disclaimer,
+  .studio-handoff-header p:last-child,
+  .studio-ai-privacy,.studio-automation-header p
+) {color:var(--sp-ui-muted)}
+/* Preserve failure/warning semantics without mint, sky-blue or low contrast. */
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-handoff-blockers,.studio-attempt-reserved
+) {
+  border:1px solid var(--sp-ui-card-border);
+  border-left:3px solid var(--sp-ui-warning);
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-attempt-reserved strong,.studio-handoff-blockers > strong,
+  .studio-packet-fallback > p
+) {color:var(--sp-ui-warning)}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-attempt-reserved p,.studio-handoff-blockers ul,
+  .studio-attempt-details li
+) {color:var(--sp-ui-ink)}
+html[data-smartploy-theme] .smartploy-app .flow-error {
+  border:1px solid var(--sp-ui-card-border);
+  border-left:3px solid var(--sp-ui-error);
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .flow-error > svg {
+  color:var(--sp-ui-error);
+}
+/* Job search and saved-application affordances must remain actionable.
+   Selected controls still look different from neutral and hovered controls. */
+html[data-smartploy-theme] .smartploy-app .studio-list-heading span {
+  background:var(--sp-ui-card-raised);
+  border:1px solid var(--sp-ui-card-border);
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app
+ .studio-review-queue-filters button[aria-pressed="true"] {
+  background:var(--sp-ui-card-raised);
+  color:var(--sp-ui-ink);
+  border-color:var(--sp-ui-accent);
+  box-shadow:inset 0 -2px var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app
+ .sp126-dashboard-main .flow-start-browse-button {
+  background:var(--sp-ui-card);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+  color:var(--sp-ui-ink);
+  box-shadow:var(--sp-ui-shadow);
+}
+html[data-smartploy-theme] .smartploy-app
+ .sp126-dashboard-main .flow-start-browse-button:hover:not(:disabled) {
+  background:var(--sp-ui-card-raised);
+  border-color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app
+ .sp126-dashboard-main .flow-start-browse-button :is(strong,svg) {
+  color:var(--sp-ui-ink);
+  opacity:1;
+}
+html[data-smartploy-theme] .smartploy-app
+ .sp126-dashboard-main .flow-start-browse-button small {
+  color:var(--sp-ui-muted);
+  opacity:1;
+}
+/* The actual CV, letter and receipt editors are surfaces too. Retain real
+   editability, focus, readonly and contrast in both themes. */
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-document textarea,
+  .studio-packet-fallback textarea,
+  .studio-receipt-import textarea
+) {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+  color:var(--sp-ui-ink);
+  box-shadow:none;
+  opacity:1;
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-document textarea,
+  .studio-packet-fallback textarea,
+  .studio-receipt-import textarea
+)::placeholder {
+  color:var(--sp-ui-muted);
+  opacity:1;
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .studio-document textarea,
+  .studio-packet-fallback textarea,
+  .studio-receipt-import textarea,
+  .sp126-dashboard-main .flow-start-browse-button,
+  .studio-review-queue-filters button
+):focus-visible {
+  outline:3px solid var(--sp-ui-ring);
+  outline-offset:2px;
+}
+@media(prefers-reduced-motion:reduce){
+  html[data-smartploy-theme] .smartploy-app :is(
+    .sp126-dashboard-main .flow-start-browse-button,
+    .studio-review-queue-filters button
+  ) {transition:none;transform:none}
+}
