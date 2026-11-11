@@ -1608,3 +1608,101 @@ test("V4 method cards clearly show disabled state on touch screens", async ({ pa
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
 });
+
+
+test("V4 M1: remaining pale workflow panels and editors contrast in real Chromium", async ({ page }) => {
+  await installSyntheticApi(page);
+  await page.setViewportSize({width: 390, height: 844});
+  await page.goto("/");
+
+  const snapshot = () => page.evaluate(() => {
+    const root = document.querySelector(".smartploy-app");
+    if (!root) throw new Error("SmartPloy app root missing");
+    let fixture = document.querySelector("#sp-m1-contrast-fixture") as HTMLElement | null;
+    if (!fixture) {
+      fixture = document.createElement("div");
+      fixture.id = "sp-m1-contrast-fixture";
+      fixture.className = "sp126-dashboard-main";
+      fixture.setAttribute("aria-hidden", "true");
+      for (const cls of [
+        "flow-signal-summary", "flow-choice-locked", "flow-error",
+        "studio-automation", "studio-automation-approval",
+        "studio-handoff", "studio-handoff-blockers", "studio-attempt-reserved",
+        "studio-receipt", "studio-ai-preview", "studio-ai-icon",
+        "studio-empty-icon",
+      ]) {
+        const item = document.createElement("div");
+        item.className = cls;
+        item.textContent = "Readable user-facing review status";
+        fixture.appendChild(item);
+      }
+      const browse = document.createElement("button");
+      browse.className = "flow-start-browse-button";
+      browse.innerHTML = "<span><strong>Choose a job</strong><small>Continue application</small></span>";
+      fixture.appendChild(browse);
+      const studio = document.createElement("section");
+      studio.className = "studio-document";
+      const editor = document.createElement("textarea");
+      editor.value = "Current approved candidate CV";
+      studio.appendChild(editor);
+      fixture.appendChild(studio);
+      const filters = document.createElement("div");
+      filters.className = "studio-review-queue-filters";
+      const selected = document.createElement("button");
+      selected.setAttribute("aria-pressed", "true");
+      selected.textContent = "Selected applications";
+      filters.appendChild(selected);
+      fixture.appendChild(filters);
+      root.appendChild(fixture);
+    }
+    const contrast = (foreground: string, background: string) => {
+      const luminosity = (color: string) => {
+        const parts = color.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number);
+        if (!parts || parts.length !== 3) throw new Error("Unsupported CSS color " + color);
+        const values = parts.map(n => {
+          const c = n / 255;
+          return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4;
+        });
+        return .2126 * values[0] + .7152 * values[1] + .0722 * values[2];
+      };
+      const a = luminosity(foreground), b = luminosity(background);
+      return {ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05), backgroundLightness:b};
+    };
+    return [...fixture.querySelectorAll(
+      ".flow-signal-summary,.flow-choice-locked,.flow-error,.studio-automation," +
+      ".studio-automation-approval,.studio-handoff,.studio-handoff-blockers," +
+      ".studio-attempt-reserved,.studio-receipt,.studio-ai-preview," +
+      ".studio-ai-icon,.studio-empty-icon,.flow-start-browse-button," +
+      ".studio-document textarea,.studio-review-queue-filters button"
+    )].map(el => {
+      const css = getComputedStyle(el);
+      const result = contrast(css.color, css.backgroundColor);
+      return {
+        selector: (el as HTMLElement).className || el.tagName,
+        gradient: css.backgroundImage,
+        ...result,
+      };
+    });
+  });
+
+  await page.getByRole("button", {name: "Switch to dark mode"}).click();
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "dark");
+  const dark = await snapshot();
+  expect(dark).toHaveLength(15);
+  for (const surface of dark) {
+    expect(surface.gradient, surface.selector).toBe("none");
+    expect(surface.backgroundLightness, surface.selector).toBeLessThan(.06);
+    expect(surface.ratio, surface.selector).toBeGreaterThanOrEqual(4.5);
+  }
+  await evidence(page, "v4-m1-legacy-panels-dark-mobile.png");
+
+  await page.getByRole("button", {name: "Switch to light mode"}).click();
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme", "light");
+  const light = await snapshot();
+  expect(light).toHaveLength(dark.length);
+  for (const surface of light) {
+    expect(surface.gradient, surface.selector).toBe("none");
+    expect(surface.backgroundLightness, surface.selector).toBeGreaterThan(.85);
+    expect(surface.ratio, surface.selector).toBeGreaterThanOrEqual(4.5);
+  }
+});
