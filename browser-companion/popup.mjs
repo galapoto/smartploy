@@ -107,7 +107,7 @@ function inspectForm() {
         .map(option => ({
           value: String(option.value || "").slice(0, 150),
           label: String(option.label || option.textContent || "").trim().slice(0, 150),
-          disabled: Boolean(option.disabled)
+          disabled: Boolean(option.disabled || option.closest("optgroup[disabled]"))
         })) : undefined
     };
   });
