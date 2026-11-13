@@ -456,7 +456,7 @@ async function requireFreshOwnerReview(packet) {
   }
   const [reply] = await chrome.scripting.executeScript({
     target:{tabId:owned[0].id},world:"ISOLATED",
-    func:verifyReviewOnSmartPloy,args:[{
+    func: verifyReviewOnSmartPloy,args:[{
       workspace_id:packet.workspace_id,
       expected_revision:packet.revision,
       expected_document_sha256:packet.document_sha256,
