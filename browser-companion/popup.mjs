@@ -583,7 +583,8 @@ async function onInspect() {
     const tab = await activeTab();
     const pkt = validatePacket(packetText, tab.url);
     await requireVerifiedReview(chrome.storage?.session, pkt);
-    await requireFreshOwnerReview(pkt);
+    // Read-only inspection keeps the existing owner/session marker; current
+    // account facts are rechecked before EVERY employer-side mutation.
     if (!exactAssistedForm(tab.url, pkt.application_url)) {
       throw new PacketError("Open the exact approved employer application form, not its job description.");
     }
