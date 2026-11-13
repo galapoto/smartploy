@@ -5,7 +5,7 @@ import {
   Trash2, AlertCircle, Sparkles, WandSparkles, ClipboardCopy, ExternalLink
 } from "lucide-react";
 import {
-  applicationDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
+  applicationBundleUrl, applicationDownloadUrl, deleteApplicationWorkspace, editApplicationWorkspace,
   getApplicationWorkspaces, getApplicationWorkspaceById, markApplicationManuallySent,
   getLocalAIStatus, runLocalAIInferenceProof, requestLocalAISuggestions, proposeEvidenceLetter,
   getBrowserHandoffReadiness, createBrowserHandoffPacket,
@@ -1371,6 +1371,11 @@ export default function ApplicationStudio(props: {
             <a href={dirty ? undefined : applicationDownloadUrl(selected.workspace_id, "cv", "pdf")}
               className={"outline-btn compact" + (dirty ? " disabled" : "")}
               aria-disabled={dirty}><Download size={15}/> PDF</a>
+            <a href={dirty ? undefined : applicationBundleUrl(selected.workspace_id)}
+              className={"navy-btn compact" + (dirty ? " disabled" : "")}
+              aria-disabled={dirty} download>
+              <Download size={15}/> Complete CV + cover letter · one ZIP
+            </a>
           </div>
         </div>
         <div className="studio-document" id="smartploy-letter-review">
