@@ -13,12 +13,13 @@ const source = popup.slice(begin, end);
 
 function mount(override = {}) {
   const button = {disabled:false};
+  const uploadInfo = {textContent:""};
   const calls = [];
   const context = {
     startAutoApplyInFlight:false, currentPlan:null, currentQuestionPlan:null,
     currentPacket:null, targetTabId:null, inspectedUrl:"",
     receiptOnly:false, attemptReserved:false,
-    $:id=>{assert.equal(id,"startAutoApply");return button;},
+    $:id=>{assert.ok(["startAutoApply","uploadInfo"].includes(id));return id==="startAutoApply" ? button : uploadInfo;},
     onInspect:async()=>{
       calls.push("inspect");
       context.currentPlan={actions:[{key:"email"}]};
@@ -26,6 +27,10 @@ function mount(override = {}) {
       context.targetTabId=7;
     },
     onFill:async()=>{calls.push("fill");return true;},
+    autoAttachSavedDocuments:async()=>{
+      calls.push("attach-reviewed-documents");
+      return {attached:2,reason:"CV and cover letter staged for review."};
+    },
     onReviewQuestions:async()=>{calls.push("questions");},
     normalizeError:()=> "Please inspect the employer form manually.",
     status:s=>calls.push("status:"+s),
@@ -37,9 +42,11 @@ function mount(override = {}) {
 test("one visible Start chains observed exact-job inspect, consented fill, then read-only questions",async()=>{
   const {launch,calls,button}=mount();
   await launch();
-  assert.deepEqual(calls,["inspect","fill","questions"]);
+  assert.deepEqual(calls,["inspect","fill","attach-reviewed-documents","questions"]);
   assert.equal(button.disabled,false);
-  assert.doesNotMatch(source,/^[^/\n]*\b(?:onSubmit|onAttach|onFillQuestions|onReserveFinalAttempt)\s*\(/m);
+  assert.doesNotMatch(source,/^[^/\n]*\b(?:onSubmit|onAttach|onReserveFinalAttempt)\s*\(/m);
+  assert.match(source,/await autoAttachSavedDocuments\(\)/);
+  assert.match(source,/currentQuestionPlan\.humanOnly\.length === 0/);
   assert.match(html,/id="startAutoApply"/);
   assert.match(html,/Manual controls &amp; safety details/);
   assert.match(popup,/await requireVerifiedReview\(chrome\.storage\?\.session, currentPacket\)/);
@@ -57,13 +64,13 @@ test("question-only and upload-only applications continue to review without a fa
       onFill:async()=>{calls.push("unexpected-fill");return false;},
     });
     await launch();
-    assert.deepEqual(calls,["inspect","questions"]);
+    assert.deepEqual(calls,["inspect","attach-reviewed-documents","questions"]);
     assert.equal(button.disabled,false);
   }
 });
 test("successful zero-write real fill continues, while cancelled fill does not",async()=>{
   const start=popup.indexOf("async function onFill() {");
-  const finish=popup.indexOf("\n/** One AutoApply action",start);
+  const finish=popup.indexOf("\n/** Fetch generated PDFs",start);
   assert.ok(start>0&&finish>start);
   const fragment=popup.slice(start,finish);
   function mountFill(approve) {
