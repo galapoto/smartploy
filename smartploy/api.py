@@ -7,6 +7,8 @@ import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+from io import BytesIO
+from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 import os
 import re
 from threading import Lock
@@ -3140,6 +3142,68 @@ def create_app(
             content=content, media_type=mime,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "private, no-store",
+                "Pragma": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "sandbox",
+            },
+        )
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/documents-bundle.zip")
+    def download_application_documents_bundle(
+        workspace_id: str, request: Request
+    ) -> Response:
+        """One owner-scoped ZIP containing ACTUAL current CV and cover letter.
+
+        Reuse the same deterministic render_document and private workspace lookup
+        as each existing PDF/DOCX download. No cross-origin reads or employer
+        requests, no fake placeholders and no server-side application submit.
+        """
+        tenant, _ = tenant_context(request)
+        item = app.state.workspace_repository.get(
+            tenant.profile_repository.profile_id, workspace_id
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        files = []
+        try:
+            for kind in ("cv", "letter"):
+                for file_format in ("pdf", "docx"):
+                    payload, _, filename = render_document(
+                        item, kind=kind, file_format=file_format
+                    )
+                    files.append((filename, payload))
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        stream = BytesIO()
+        # One package for this exact applicant's saved job revision.
+        manifest = {
+            "schema": "smartploy.application_documents.v1",
+            "workspace_id": item.workspace_id,
+            "revision": item.revision,
+            "files": [
+                {"name": name, "sha256": sha256(payload).hexdigest(), "size": len(payload)}
+                for name, payload in files
+            ],
+            "external_actions_performed": 0,
+        }
+        with ZipFile(stream, "w", compression=ZIP_DEFLATED, compresslevel=6) as bundle:
+            for name, payload in [
+                *files,
+                ("smartploy-document-manifest.json", json.dumps(
+                    manifest, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")),
+            ]:
+                # Fixed archive metadata avoids timestamps obscuring revisions.
+                info = ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = ZIP_DEFLATED
+                info.external_attr = 0o600 << 16
+                bundle.writestr(info, payload)
+        return Response(
+            content=stream.getvalue(), media_type="application/zip",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="smartploy-application-{item.workspace_id}.zip"',
                 "Cache-Control": "private, no-store",
                 "Pragma": "no-cache",
                 "X-Content-Type-Options": "nosniff",
