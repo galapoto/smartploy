@@ -115,6 +115,7 @@ jobs:
           node --check browser-companion/popup.mjs
           node --check browser-companion/upload.mjs
           node --check browser-companion/page-attachment.mjs
+          node --check browser-companion/page-document-fetch.mjs
           node --check browser-companion/questions.mjs
           node --check browser-companion/page-questions.mjs
           node --check browser-companion/attempt-lock.mjs
@@ -127,7 +128,7 @@ jobs:
       - name: Upload reviewed extension ZIP (not a production release)
         uses: actions/upload-artifact@v4
         with:
-          name: smartploy-extension-review-v0.5.3
+          name: smartploy-extension-review-v0.6.0
           path: |
             web/public/smartploy-apply-companion.zip
             web/public/smartploy-apply-companion.zip.sha256
@@ -363,13 +364,17 @@ jobs:
               assert extension.testzip() is None
               names = set(extension.namelist())
               assert {'manifest.json', 'popup.mjs', 'icon128.png',
+                      'page-document-fetch.mjs', 'page-attachment.mjs',
                       'INSTALL.txt', 'SHA256SUMS.txt'} <= names
               assert all('..' not in name and '/' not in name for name in names)
               manifest = json.loads(extension.read('manifest.json'))
               assert manifest['manifest_version'] == 3
               assert manifest['permissions'] == ['activeTab', 'scripting', 'storage']
+              # First-party account-owned CV/letter read; never employer-wide access.
+              assert manifest['host_permissions'] == ['https://smartploy.komplyint.fi/*']
               assert not any(x in manifest for x in (
-                  'background', 'host_permissions', 'content_scripts'))
+                  'background', 'optional_host_permissions', 'content_scripts',
+                  'externally_connectable', 'update_url'))
           PY
           python - <<'PY'
           import json
