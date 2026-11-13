@@ -475,7 +475,7 @@ export interface BrowserHandoffPacket {
   };
   privacy: {
     approved_contact_only: true;
-    approved_saved_answers_only: true;
+    approved_saved_answers_only?: true;
     original_cv_included: false;
     browser_form_fill_allowed_after_user_click: true;
     employer_submit_allowed_without_new_approval: false;
