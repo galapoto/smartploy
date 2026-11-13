@@ -756,11 +756,11 @@ async function autoAttachSavedDocuments() {
     }
     const domain = new URL(packet.application_url).hostname;
     if (!window.confirm(
-      "ATTACH REVIEWED APPLICATION DOCUMENTS?\\n\\n" +
-      packet.company + " — " + packet.role_title + "\\n" +
-      "Employer: " + domain + "\\n" +
+      "ATTACH REVIEWED APPLICATION DOCUMENTS?\n\n" +
+      packet.company + " — " + packet.role_title + "\n" +
+      "Employer: " + domain + "\n" +
       prepared.map(x=>x.kind==="cv" ? "CV PDF" : "Cover-letter PDF").join(" + ") +
-      "\\n\\nThese documents came from your CURRENT signed-in SmartPloy " +
+      "\n\nThese documents came from your CURRENT signed-in SmartPloy " +
       "application, and the employer website may upload each immediately. " +
       "This does NOT submit the application. Approve attachment?"
     )) return {attached:0,reason:"Document transfer not approved; attach manually."};
@@ -795,9 +795,10 @@ async function autoAttachSavedDocuments() {
   }
 }
 
-/** One AutoApply action built from the existing verified inspection and fill
- * primitives. Consent is still checked inside onFill(). No automatic PDF
- * attachment, inferred answer, final click, or employer submission.
+/** One applicant-approved AutoApply preparation action:
+ * exact employer → saved contact facts → current reviewed CV/letter PDF
+ * attachments → unchanged profile answers → new-question handoff.
+ * Never infer sensitive answers or auto-submit without separate rights.
  */
 async function onStartAutoApply() {
   if (startAutoApplyInFlight) return;
@@ -820,8 +821,17 @@ async function onStartAutoApply() {
     const attachment = await autoAttachSavedDocuments();
     $("uploadInfo").textContent = attachment.reason;
     await onReviewQuestions();
-    // Any new/changed answer remains human-review-only. Final submit still
-    // needs independently approved employer rights and a one-use claim.
+    // A completely known ordinary question set can continue through the
+    // existing single explicit answer-transfer approval. A new/changed,
+    // protected or missing question pauses here instead of guessing.
+    if (currentQuestionPlan?.questions?.length &&
+        currentQuestionPlan.humanOnly.length === 0 &&
+        currentQuestionPlan.questions.every((_,i)=>
+          Boolean($("approvedAnswer"+i)?.value?.trim()))) {
+      await onFillQuestions();
+    }
+    // Final send still requires independently approved employer rights,
+    // applicant consent and a one-use claim; never count a click as receipt.
   } catch (error) {
     status(normalizeError(error));
   } finally {
