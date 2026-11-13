@@ -371,7 +371,9 @@ jobs:
               assert manifest['manifest_version'] == 3
               assert manifest['permissions'] == ['activeTab', 'scripting', 'storage']
               # First-party account-owned CV/letter read; never employer-wide access.
-              assert manifest['host_permissions'] == ['https://smartploy.komplyint.fi/*']
+              assert manifest['host_permissions'] == [
+                   'https://smartploy.komplyint.fi/*', 'https://smartploy.obumai.com/*'
+               ]
               assert not any(x in manifest for x in (
                   'background', 'optional_host_permissions', 'content_scripts',
                   'externally_connectable', 'update_url'))
