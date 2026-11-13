@@ -100,11 +100,20 @@ test("one reviewed Start workflow attaches both current CV and cover letter PDFs
   const external = await setup(page);
   // The two real page file controls are distinct, and the same reviewed PDF
   // executor must accept only the matching kind. Fake PDF is synthetic.
-  const cv = await attach(page, request({kind:"cv",expected_label:"Résumé"}));
+  const labelOnPage = async (selector:string) =>
+    page.locator(selector).evaluate((el:HTMLInputElement)=>{
+      const raw=el.labels?.[0]?.innerText || el.getAttribute("aria-label") ||
+        (el.id?document.querySelector('label[for="'+CSS.escape(el.id)+'"]')?.textContent:"") ||
+        el.getAttribute("placeholder") || el.getAttribute("name") || el.id || "";
+      return String(raw).trim().slice(0,150);
+    });
+  const cvLabel = await labelOnPage("#resume_file");
+  const letterLabel = await labelOnPage("#letter_file");
+  const cv = await attach(page, request({kind:"cv",expected_label:cvLabel}));
   expect(cv.status,cv.reason).toBe("attached_locally");
   const letter = await attach(page, request({
     kind:"letter",index:1,expected_id:"letter_file",expected_name:"coverLetter",
-    expected_label:"Cover letter",expected_accept:"",
+    expected_label:letterLabel,expected_accept:"",
     file_name:"SmartPloy-Cover-Letter.pdf"
   }));
   expect(letter.status,letter.reason).toBe("attached_locally");
