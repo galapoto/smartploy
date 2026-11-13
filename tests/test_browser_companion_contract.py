@@ -11,7 +11,9 @@ def test_companion_runs_only_on_the_user_clicked_active_tab():
     manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["manifest_version"] == 3
     assert set(manifest["permissions"]) <= {"activeTab", "scripting", "storage"}
-    assert "host_permissions" not in manifest
+    assert manifest["host_permissions"] == [
+        "https://smartploy.komplyint.fi/*", "https://smartploy.obumai.com/*"
+    ]
     assert "background" not in manifest
     assert "content_scripts" not in manifest
     assert "web_accessible_resources" not in manifest
