@@ -25,6 +25,7 @@
     "128": "icon128.png"
   },
   "host_permissions": [
-    "https://smartploy.komplyint.fi/*"
+    "https://smartploy.komplyint.fi/*",
+    "https://smartploy.obumai.com/*"
   ]
 }
