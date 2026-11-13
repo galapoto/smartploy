@@ -880,8 +880,9 @@ export default function App() {
         createFact("application_answer",payload,true,userId));
       const old=facts.filter((fact)=>{
         const prior=savedApplicationAnswer(fact);
-        return prior && prior.question.normalize("NFKC").toLowerCase() ===
-          question.normalize("NFKC").toLowerCase() &&
+        const canonical = (value:string) =>
+          value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+        return prior && canonical(prior.question) === canonical(question) &&
           fact.fact_id !== saved.fact.fact_id;
       });
       for(const previous of old){
