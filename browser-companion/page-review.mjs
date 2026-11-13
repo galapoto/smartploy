@@ -24,7 +24,12 @@ export async function verifyReviewOnSmartPloy(requested) {
     !/^[a-f0-9]{64}$/.test(requested.expected_application_url_sha256) ||
     !Number.isInteger(requested.expected_cv_pdf_size) ||
     requested.expected_cv_pdf_size < 12 ||
-    requested.expected_cv_pdf_size > 2 * 1024 * 1024
+    requested.expected_cv_pdf_size > 2 * 1024 * 1024 ||
+    !/^[a-f0-9]{64}$/.test(requested.expected_letter_pdf_sha256 || "") ||
+    !Number.isInteger(requested.expected_letter_pdf_size) ||
+    requested.expected_letter_pdf_size < 12 ||
+    requested.expected_letter_pdf_size > 2 * 1024 * 1024 ||
+    !/^[a-f0-9]{64}$/.test(requested.expected_saved_answers_sha256 || "")
   ) {
     return {review_verified: false, reason: "invalid_binding"};
   }
@@ -64,7 +69,10 @@ export async function verifyReviewOnSmartPloy(requested) {
           expected_cv_pdf_sha256: requested.expected_cv_pdf_sha256,
           expected_fields_sha256: requested.expected_fields_sha256,
           expected_application_url_sha256: requested.expected_application_url_sha256,
-          expected_cv_pdf_size: requested.expected_cv_pdf_size
+          expected_cv_pdf_size: requested.expected_cv_pdf_size,
+          expected_letter_pdf_sha256: requested.expected_letter_pdf_sha256,
+          expected_letter_pdf_size: requested.expected_letter_pdf_size,
+          expected_saved_answers_sha256: requested.expected_saved_answers_sha256
         }),
       }
     );
@@ -75,6 +83,7 @@ export async function verifyReviewOnSmartPloy(requested) {
     const verdict = await response.json();
     if (
       verdict.review_verified !== true || verdict.review_state !== "pending" ||
+      verdict.bound_profile_and_letter !== true ||
       verdict.automatic_employer_submit_authorized !== false ||
       verdict.browser_grant_issued !== false ||
       verdict.external_actions_performed !== false ||
@@ -86,6 +95,7 @@ export async function verifyReviewOnSmartPloy(requested) {
     return {
       review_verified: true, review_state: "pending",
       expires_at: verdict.expires_at,
+      bound_profile_and_letter: true,
       automatic_employer_submit_authorized: false,
       external_actions_performed: false,
       browser_grant_issued: false,
