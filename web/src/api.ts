@@ -537,6 +537,14 @@ export function applicationDownloadUrl(
 }
 
 
+/** Four truthful current documents (CV/letter PDF+DOCX), one private ZIP.
+ * This URL is never sent to the employer or browser companion as an authority.
+ */
+export function applicationBundleUrl(workspaceId: string): string {
+  return API_BASE + "/api/v1/application-workspaces/" +
+    encodeURIComponent(workspaceId) + "/documents-bundle.zip";
+}
+
 export function getLocalAIStatus(): Promise<import("./types").LocalAIStatus> {
   return request<import("./types").LocalAIStatus>("/api/v1/local-ai/status");
 }
