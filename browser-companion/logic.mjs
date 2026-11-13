@@ -127,6 +127,10 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
       (savedAnswers.length && packet.privacy.approved_saved_answers_only !== true)) {
     throw new PacketError("Saved application answers were not approved by this profile.");
   }
+  if (letterPresent &&
+      !/^[a-f0-9]{64}$/.test(packet.saved_answers_sha256 || "")) {
+    throw new PacketError("A reviewed profile answer-set fingerprint is required.");
+  }
   const seenQuestions = new Set();
   const restricted = /\b(?:visa|immigration|citizenship|citizen|nationality|passport|work permit|sponsor|salary|wage|compensation|gender|sex|sexual|male|female|race|ethnic|black|white|asian|hispanic|religion|disabil|medical|health|veteran|criminal|background|privacy|consent|gdpr|legal|agreement|attest|signature|birth|age|social security|government id|tax id|bank account|työlupa|oleskelulupa|kansalaisuus|sukupuoli|uskonto|palkka|henkilötunnus|suostumus|arbetstillstånd|medborgarskap|personnummer|samtycke|lön)\b/iu;
   const checkedAnswers = savedAnswers.map(row => {
@@ -160,7 +164,8 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
     } : {}),
     expires_at: packet.expires_at,
     fields,
-    saved_answers: checkedAnswers
+    saved_answers: checkedAnswers,
+    ...(letterPresent ? {saved_answers_sha256:packet.saved_answers_sha256} : {})
   };
 }
 
