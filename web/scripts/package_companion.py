@@ -103,7 +103,9 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
     if (
         manifest.get("manifest_version") != 3
         or manifest.get("permissions") != ["activeTab", "scripting", "storage"]
-        or manifest.get("host_permissions") != ["https://smartploy.komplyint.fi/*"]
+        or manifest.get("host_permissions") != [
+            "https://smartploy.komplyint.fi/*", "https://smartploy.obumai.com/*"
+        ]
         or any(field in manifest for field in (
             "optional_host_permissions", "background",
             "content_scripts", "externally_connectable", "update_url",
