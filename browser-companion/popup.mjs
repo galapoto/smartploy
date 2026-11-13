@@ -814,7 +814,8 @@ async function autoAttachSavedDocuments() {
       }
       attached++;
     }
-    return {attached,reason:attached+" reviewed PDF attachment(s) placed locally. " +
+    return {attached,ready:attached===prepared.length,
+      reason:attached+" reviewed PDF attachment(s) placed locally. " +
       (letterNote || "Check both employer upload indicators before finishing.")};
   } catch(error) {
     return {attached:0,reason:normalizeError(error)};
@@ -846,6 +847,12 @@ async function onStartAutoApply() {
     if (!filled) return;
     const attachment = await autoAttachSavedDocuments();
     $("uploadInfo").textContent = attachment.reason;
+    if (!attachment.ready) {
+      status("The current CV and any dedicated cover-letter PDF must be attached " +
+        "to the correct employer inputs before application automation can continue. " +
+        (attachment.reason || "Review attachment status and resume manually."));
+      return;
+    }
     await onReviewQuestions();
     // A completely known ordinary question set can continue through the
     // existing single explicit answer-transfer approval. A new/changed,
