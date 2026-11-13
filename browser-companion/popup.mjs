@@ -2,8 +2,9 @@
    No background automation, no external API calls, no raw profile persistence.
    The final action is only possible after an exact one-job approval. */
 import { PacketError, planFields, validatePacket } from "./logic.mjs";
-import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactReceiptPage, isLeverFinalProvider, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
+import { UploadError, chooseResumeField, chooseCoverLetterField, encodePdfBase64, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactReceiptPage, isLeverFinalProvider, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
 import { attachReviewedPdf } from "./page-attachment.mjs";
+import { readOwnReviewedPdf } from "./page-document-fetch.mjs";
 import { QuestionError, planReviewedQuestions, suggestSavedAnswers, validateReviewedAnswers } from "./questions.mjs";
 import { fillReviewedAnswers } from "./page-questions.mjs";
 import { AttemptError, oneAttemptKey, withSubmissionLock } from "./attempt-lock.mjs";
@@ -678,6 +679,122 @@ async function onFill() {
   } catch (error) { status(normalizeError(error)); return false; }
 }
 
+/** Fetch generated PDFs from this applicant's still-signed-in SmartPloy tab
+ * and attach them to exact approved employer fields without making the user
+ * download/re-upload files. A single explicit employer-transfer approval is
+ * still required because attaching may trigger immediate employer upload.
+ * Documents live only inside this invocation, never extension storage.
+ */
+async function autoAttachSavedDocuments() {
+  if (!currentPacket || targetTabId === null || receiptOnly || attemptReserved) {
+    return {attached:0,reason:"No current reviewed application."};
+  }
+  const packet = currentPacket;
+  if (!packet.letter_pdf_sha256 || !packet.letter_pdf_size) {
+    return {attached:0,reason:"Prepare a fresh application packet for automatic CV and letter attachment."};
+  }
+  try {
+    const tab = await activeTab();
+    validatePacket(currentPacketToJSON(),tab.url);
+    await requireVerifiedReview(chrome.storage?.session,packet);
+    if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
+        !exactAssistedForm(tab.url,packet.application_url) ||
+        await hasPriorLeverAttempt(packet)) {
+      throw new PacketError("Employer page, application or prior attempt changed.");
+    }
+    const [form] = await chrome.scripting.executeScript({
+      target:{tabId:tab.id},func:inspectForm
+    });
+    if (!form?.result || form.result.url !== tab.url ||
+        form.result.allElementsCount > 250) {
+      throw new UploadError("The employer form changed during attachment inspection.");
+    }
+    const cvTarget = chooseResumeField(form.result.elements);
+    let letterTarget = null;
+    let letterNote = "";
+    try {
+      letterTarget = chooseCoverLetterField(form.result.elements);
+    } catch (error) {
+      if (error instanceof UploadError &&
+          error.message.startsWith("No separate cover-letter PDF input")) {
+        letterNote = "No separate cover-letter upload field; the reviewed letter is filled as text where supported.";
+      } else throw error;
+    }
+    const docs = [{
+      kind:"cv",target:cvTarget,sha256:packet.cv_pdf_sha256,size:packet.cv_pdf_size
+    }];
+    if (letterTarget) docs.push({
+      kind:"letter",target:letterTarget,
+      sha256:packet.letter_pdf_sha256,size:packet.letter_pdf_size
+    });
+    const ownedTabs = (await chrome.tabs.query({
+      url:"https://smartploy.komplyint.fi/*"
+    })).filter(item=>item?.id && isSmartPloyTab(item.url));
+    if (ownedTabs.length !== 1) {
+      throw new UploadError(
+        "Keep exactly one signed-in smartploy.komplyint.fi tab open so " +
+        "SmartPloy can retrieve your existing CV and letter automatically."
+      );
+    }
+    const prepared = [];
+    for (const doc of docs) {
+      const [reply] = await chrome.scripting.executeScript({
+        target:{tabId:ownedTabs[0].id},
+        func:readOwnReviewedPdf,
+        args:[{
+          workspace_id:packet.workspace_id,kind:doc.kind,
+          sha256:doc.sha256,size:doc.size
+        }]
+      });
+      if (!reply?.result?.ready ||
+          reply.result.sha256 !== doc.sha256 ||
+          reply.result.size !== doc.size) {
+        throw new UploadError(reply?.result?.reason ||
+          "The reviewed PDF could not be verified against this application.");
+      }
+      prepared.push({...doc,...reply.result});
+    }
+    const domain = new URL(packet.application_url).hostname;
+    if (!window.confirm(
+      "ATTACH REVIEWED APPLICATION DOCUMENTS?\\n\\n" +
+      packet.company + " — " + packet.role_title + "\\n" +
+      "Employer: " + domain + "\\n" +
+      prepared.map(x=>x.kind==="cv" ? "CV PDF" : "Cover-letter PDF").join(" + ") +
+      "\\n\\nThese documents came from your CURRENT signed-in SmartPloy " +
+      "application, and the employer website may upload each immediately. " +
+      "This does NOT submit the application. Approve attachment?"
+    )) return {attached:0,reason:"Document transfer not approved; attach manually."};
+    let attached=0;
+    for (const doc of prepared) {
+      const again=await activeTab();
+      validatePacket(currentPacketToJSON(),again.url);
+      await requireVerifiedReview(chrome.storage?.session,packet);
+      if (packet !== currentPacket || again.id !== tab.id ||
+          again.url !== tab.url || await hasPriorLeverAttempt(packet)) {
+        throw new UploadError("Selected job or tab changed; stop attachment.");
+      }
+      const [result] = await chrome.scripting.executeScript({
+        target:{tabId:tab.id},func:attachReviewedPdf,
+        args:[{
+          application_url:packet.application_url,inspected_url:tab.url,
+          ...doc.target,kind:doc.kind,
+          file_name:doc.filename,size:doc.size,
+          sha256:doc.sha256,base64:doc.base64
+        }]
+      });
+      if (result?.result?.status !== "attached_locally") {
+        return {attached,reason:result?.result?.reason ||
+          "Attachment outcome uncertain. Inspect employer upload indicator; do not retry blindly."};
+      }
+      attached++;
+    }
+    return {attached,reason:attached+" reviewed PDF attachment(s) placed locally. " +
+      (letterNote || "Check both employer upload indicators before finishing.")};
+  } catch(error) {
+    return {attached:0,reason:normalizeError(error)};
+  }
+}
+
 /** One AutoApply action built from the existing verified inspection and fill
  * primitives. Consent is still checked inside onFill(). No automatic PDF
  * attachment, inferred answer, final click, or employer submission.
@@ -700,8 +817,11 @@ async function onStartAutoApply() {
     // mutate. Skip the unnecessary fill prompt, then review real questions.
     const filled = currentPlan.actions.length === 0 ? true : await onFill();
     if (!filled) return;
+    const attachment = await autoAttachSavedDocuments();
+    $("uploadInfo").textContent = attachment.reason;
     await onReviewQuestions();
-    // Attachment, reviewed answers and final send remain separate controls.
+    // Any new/changed answer remains human-review-only. Final submit still
+    // needs independently approved employer rights and a one-use claim.
   } catch (error) {
     status(normalizeError(error));
   } finally {
