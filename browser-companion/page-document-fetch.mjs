@@ -6,7 +6,7 @@
 */
 export async function readOwnReviewedPdf(spec) {
   const blocked = reason => ({ready:false,reason});
-  if (location.origin !== "https://smartploy.komplyint.fi" ||
+  if (!["https://smartploy.komplyint.fi", "https://smartploy.obumai.com"].includes(location.origin) ||
       window.top !== window.self || !spec ||
       !/^kit-[0-9a-f]{30}$/.test(spec.workspace_id || "") ||
       !["cv","letter"].includes(spec.kind) ||
