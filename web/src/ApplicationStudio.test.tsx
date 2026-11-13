@@ -43,6 +43,7 @@ vi.mock("./api", () => ({
   createBrowserHandoffPacket: vi.fn(),
   importBrowserReceipt: vi.fn(),
   applicationDownloadUrl: vi.fn(() => "/synthetic-download"),
+  applicationBundleUrl: vi.fn(() => "/synthetic-documents-bundle"),
 }));
 
 function job(tag: string): ApplicationWorkspace {
