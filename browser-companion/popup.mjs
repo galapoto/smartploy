@@ -934,6 +934,10 @@ async function onAttach() {
         $("cvFile").files?.[0] !== file) {
       throw new PacketError("The employer tab or selected PDF changed. Reinspect.");
     }
+    // The applicant may have edited/revoked the profile or letter while the
+    // confirm dialog was open. No employer upload without a fresh server check.
+    await requireVerifiedReview(chrome.storage?.session,currentPacket);
+    await requireFreshOwnerReview(currentPacket);
     const [reply] = await chrome.scripting.executeScript({
       target: { tabId: tab.id }, func: attachReviewedPdf,
       args: [{
