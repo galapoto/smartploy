@@ -7,6 +7,7 @@ always returned for human review. This module never submits or uploads data.
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 import re
 import unicodedata
 from typing import Any
@@ -95,3 +96,17 @@ def approved_answers_for_packet(profile: Any) -> list[dict[str, str]]:
             continue
         result.append(choices[key][0])
     return result[:MAX_PACKET_ANSWERS]
+
+
+def saved_answers_sha256(answers: list[dict[str, str]]) -> str:
+    """Cross-language stable SHA of the actual Q/A, not just document metadata.
+
+    Bind it to the signed-in owner's latest approved answer set. The
+    independent MV3 browser checks this after every new private review.
+    """
+    rows = [
+        {"question": row["question"], "answer": row["answer"]}
+        for row in answers
+    ]
+    encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
+    return sha256(("smartploy.saved.answers.v1\0" + encoded).encode("utf-8")).hexdigest()
