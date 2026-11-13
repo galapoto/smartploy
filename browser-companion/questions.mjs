@@ -83,6 +83,42 @@ export function planReviewedQuestions(elements) {
   return { questions, humanOnly, requiresManualReview: humanOnly.length > 0 };
 }
 
+/** Reuse only account-approved exact answers from the selected job packet.
+ * Different employer text is a NEW/CHANGED question, not a fuzzy synonym.
+ * This is a suggestion for the applicant's one-time fill approval, never a
+ * browser instruction or background submission authority.
+ */
+export function suggestSavedAnswers(plan, savedAnswers) {
+  const questions = Array.isArray(plan?.questions) ? plan.questions : [];
+  const approved = Array.isArray(savedAnswers) ? savedAnswers : [];
+  const byQuestion = new Map();
+  const ambiguous = new Set();
+  const exact = raw => String(raw || "").normalize("NFKC").toLowerCase()
+    .replace(/\s+/g, " ").trim();
+  for (const row of approved) {
+    if (!row || typeof row.question !== "string" ||
+        typeof row.answer !== "string") continue;
+    const key = exact(row.question);
+    if (!key || byQuestion.has(key)) ambiguous.add(key);
+    else byQuestion.set(key, row.answer);
+  }
+  let reused = 0;
+  const needsReview = [];
+  const values = questions.map(item => {
+    const key = exact(item?.label);
+    const value = byQuestion.get(key);
+    if (!ambiguous.has(key) && typeof value === "string" &&
+        !isSensitiveQuestion(item) && value.length > 0 &&
+        value.length <= item.max_answer_length) {
+      reused++;
+      return value;
+    }
+    needsReview.push(String(item?.label || "Unlabeled employer question"));
+    return "";
+  });
+  return {values, reused, needsReview};
+}
+
 export function validateReviewedAnswers(plan, values) {
   if (!plan || !Array.isArray(plan.questions) ||
       !Array.isArray(values) || values.length !== plan.questions.length ||
