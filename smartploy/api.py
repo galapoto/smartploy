@@ -68,6 +68,7 @@ from .cv_job_matching import cv_job_matches
 from .cv_storage import CVArchiveNotFound, CVRevisionConflict, MemoryCVRepository, PostgresCVRepository
 from .cv_editor import render_editor_cv
 from .profile import FACT_TYPES, ProfileFact
+from .profile_application_answers import saved_answers_sha256
 from .identity import (
     AuthenticatedPrincipal,
     IdentityRepository,
@@ -368,6 +369,17 @@ class BrowserReviewVerificationPayload(BaseModel):
     expected_fields_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_application_url_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_cv_pdf_size: int = Field(ge=12, le=2 * 1024 * 1024)
+    # Optional for the already-installed v0.5.4 review client. New v0.6.0
+    # must send all three so the server can bind the current profile + letter.
+    expected_saved_answers_sha256: Optional[str] = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    expected_letter_pdf_sha256: Optional[str] = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    expected_letter_pdf_size: Optional[int] = Field(
+        default=None, ge=12, le=2 * 1024 * 1024
+    )
 
 
 class BrowserFinalAttemptPayload(BrowserReviewVerificationPayload):
@@ -2942,6 +2954,27 @@ def create_app(
                != payload.expected_application_url_sha256
         ):
             raise HTTPException(status_code=409, detail="Reviewed packet fields, job or PDF changed")
+        modern = any(
+            value is not None for value in (
+                payload.expected_saved_answers_sha256,
+                payload.expected_letter_pdf_sha256,
+                payload.expected_letter_pdf_size,
+            )
+        )
+        if modern and (
+            not payload.expected_saved_answers_sha256
+            or not payload.expected_letter_pdf_sha256
+            or not payload.expected_letter_pdf_size
+            or packet["letter_pdf_sha256"] != payload.expected_letter_pdf_sha256
+            or packet["letter_pdf_size"] != payload.expected_letter_pdf_size
+            or packet["saved_answers_sha256"] != payload.expected_saved_answers_sha256
+            or saved_answers_sha256(packet["saved_answers"])
+               != payload.expected_saved_answers_sha256
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Applicant profile answers or reviewed letter changed; reverify",
+            )
         try:
             item = repo.verify_for_companion(
                 binding, workspace_id=workspace_id,
@@ -2961,6 +2994,7 @@ def create_app(
                 "review_verified": True,
                 "review_state": "pending",
                 "expires_at": item.expires_at.isoformat(),
+                "bound_profile_and_letter": modern,
                 "automatic_employer_submit_authorized": False,
                 "external_actions_performed": False,
                 "browser_grant_issued": False,
