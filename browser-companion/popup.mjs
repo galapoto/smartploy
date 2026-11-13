@@ -584,6 +584,7 @@ async function onInspect() {
     const tab = await activeTab();
     const pkt = validatePacket(packetText, tab.url);
     await requireVerifiedReview(chrome.storage?.session, pkt);
+    await requireFreshOwnerReview(pkt);
     if (!exactAssistedForm(tab.url, pkt.application_url)) {
       throw new PacketError("Open the exact approved employer application form, not its job description.");
     }
@@ -674,6 +675,7 @@ async function onFill() {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
+    await requireFreshOwnerReview(currentPacket);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
         !exactAssistedForm(tab.url, currentPacket.application_url)) {
       throw new PacketError("Reinspect after changing employer tab, URL, or application form.");
@@ -719,6 +721,7 @@ async function autoAttachSavedDocuments() {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(),tab.url);
     await requireVerifiedReview(chrome.storage?.session,packet);
+    await requireFreshOwnerReview(packet);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
         !exactAssistedForm(tab.url,packet.application_url) ||
         await hasPriorLeverAttempt(packet)) {
@@ -791,6 +794,7 @@ async function autoAttachSavedDocuments() {
       const again=await activeTab();
       validatePacket(currentPacketToJSON(),again.url);
       await requireVerifiedReview(chrome.storage?.session,packet);
+    await requireFreshOwnerReview(packet);
       if (packet !== currentPacket || again.id !== tab.id ||
           again.url !== tab.url || await hasPriorLeverAttempt(packet)) {
         throw new UploadError("Selected job or tab changed; stop attachment.");
@@ -876,6 +880,7 @@ async function onAttach() {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
+    await requireFreshOwnerReview(currentPacket);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
         !exactAssistedForm(tab.url, currentPacket.application_url)) {
       throw new PacketError("Open and reinspect the exact reviewed employer form before attaching.");
@@ -970,6 +975,7 @@ async function onReviewQuestions() {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
+    await requireFreshOwnerReview(currentPacket);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
         !exactAssistedForm(tab.url, currentPacket.application_url)) {
       throw new QuestionError("Open and reinspect the matching employer application before reviewing questions.");
@@ -1050,6 +1056,7 @@ async function onFillQuestions() {
     const again = await activeTab();
     validatePacket(currentPacketToJSON(), again.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
+    await requireFreshOwnerReview(currentPacket);
     if (again.id !== targetTabId || again.url !== tab.url ||
         await hasPriorLeverAttempt(currentPacket)) {
       throw new QuestionError("Application state changed; do not retry until reinspection.");
