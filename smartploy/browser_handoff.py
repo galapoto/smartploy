@@ -229,6 +229,9 @@ def make_browser_packet(
     cv_pdf, _, _ = render_document(workspace, kind="cv", file_format="pdf")
     if len(cv_pdf) > 2 * 1024 * 1024:
         raise HandoffError("The reviewed PDF exceeds the companion attachment limit")
+    letter_pdf, _, _ = render_document(workspace, kind="letter", file_format="pdf")
+    if len(letter_pdf) > 2 * 1024 * 1024:
+        raise HandoffError("The reviewed letter PDF exceeds the attachment limit")
     packet = {
         "schema": SCHEMA,
         "issued_at": stamp.isoformat(),
@@ -243,6 +246,8 @@ def make_browser_packet(
         ).hexdigest(),
         "cv_pdf_sha256": sha256(cv_pdf).hexdigest(),
         "cv_pdf_size": len(cv_pdf),
+        "letter_pdf_sha256": sha256(letter_pdf).hexdigest(),
+        "letter_pdf_size": len(letter_pdf),
         "fields": {
             **contact,
             "cover_letter": workspace.cover_letter_text[:10000],
