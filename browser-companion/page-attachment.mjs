@@ -5,7 +5,10 @@
    the browser owner must consent to transferring the named PDF beforehand. */
 export async function attachReviewedPdf(payload) {
   const stop = (reason) => ({ status: "blocked", reason });
-  if (!payload || typeof payload !== "object") return stop("Invalid upload request.");
+  if (!payload || typeof payload !== "object" ||
+      (payload.kind !== undefined && !["cv","letter"].includes(payload.kind)))
+    return stop("Invalid upload request.");
+  const attachmentKind = payload.kind === "letter" ? "letter" : "cv";
   let page, approved;
   try {
     page = new URL(location.href);
@@ -57,7 +60,7 @@ export async function attachReviewedPdf(payload) {
   }
   const input = all[payload.index];
   if (!input || input.tagName !== "INPUT" || input.type !== "file" ||
-      input.disabled || input.readOnly || input.multiple || input.files?.length ||
+      input.matches(":disabled") || input.readOnly || input.multiple || input.files?.length ||
       !input.closest("form") ||
       String(input.id || "") !== payload.expected_id ||
       String(input.name || "") !== payload.expected_name ||
@@ -80,9 +83,12 @@ export async function attachReviewedPdf(payload) {
   }
   const meaning = [label, input.name, input.id].join(" ")
     .replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[^\p{L}\p{N}]+/gu, " ").toLowerCase();
-  if (!/(^|\s)(cv|resume|résumé|curriculum vitae|ansioluettelo|meritförteckning)(\s|$)/u.test(meaning) ||
-      /(^|\s)(cover letter|passport|photo|image|identity document|transcript|certificate)(\s|$)/u.test(meaning)) {
-    return stop("The target is not a unique résumé input.");
+  const isCV = /(^|\s)(cv|resume|résumé|curriculum vitae|ansioluettelo|meritförteckning)(\s|$)/u.test(meaning);
+  const isLetter = /(^|\s)(cover letter|application letter|motivation letter|saatekirje|hakemuskirje|personligt brev)(\s|$)/u.test(meaning);
+  const ambiguous = /(^|\s)(passport|photo|image|identity document|transcript|certificate|reference letter)(\s|$)/u.test(meaning);
+  if (ambiguous || (attachmentKind === "cv" ? !isCV || isLetter : !isLetter || isCV)) {
+    return stop("The target is not a unique approved " +
+      (attachmentKind === "cv" ? "résumé" : "cover-letter") + " input.");
   }
   const accept = String(input.accept || "").toLowerCase();
   if (accept && !accept.split(",").some((x) =>
@@ -124,13 +130,15 @@ export async function attachReviewedPdf(payload) {
     if (!input.files || input.files.length !== 1 ||
         input.files[0].size !== payload.size ||
         input.files[0].name !== payload.file_name) {
-      return stop("The browser did not accept the selected résumé.");
+      return stop("The browser did not accept the selected reviewed PDF.");
     }
     // The employer's own handlers may upload immediately; do not claim their
     // server accepted it. The only proof here is a local FileList assignment.
     input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    return { status: "attached_locally", reason: "PDF placed in the employer's résumé field. Verify upload status on the page." };
+    return { status: "attached_locally", reason: "Reviewed " +
+      (attachmentKind === "cv" ? "CV" : "cover-letter") +
+      " PDF placed in the employer's exact upload field. Verify its upload indicator." };
   } catch {
     return { status: "ambiguous", reason: "Attachment may have triggered employer processing. Inspect the page before doing anything else." };
   }
