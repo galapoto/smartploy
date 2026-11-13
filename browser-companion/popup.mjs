@@ -449,9 +449,8 @@ async function requireFreshOwnerReview(packet) {
     throw new PacketError("Saved profile or letter changed; review a fresh application packet.");
   }
   const owned = (await chrome.tabs.query({
-    url:"https://smartploy.komplyint.fi/*"
-  })).filter(item=>item?.id && item?.url &&
-    new URL(item.url).origin === "https://smartploy.komplyint.fi");
+    url:["https://smartploy.komplyint.fi/*","https://smartploy.obumai.com/*"]
+  })).filter(item=>item?.id && item?.url && isSmartPloyTab(item.url));
   if (owned.length !== 1) {
     throw new PacketError("Keep one signed-in SmartPloy tab open to check the current profile and documents.");
   }
@@ -753,11 +752,11 @@ async function autoAttachSavedDocuments() {
       sha256:packet.letter_pdf_sha256,size:packet.letter_pdf_size
     });
     const ownedTabs = (await chrome.tabs.query({
-      url:"https://smartploy.komplyint.fi/*"
+      url:["https://smartploy.komplyint.fi/*","https://smartploy.obumai.com/*"]
     })).filter(item=>item?.id && isSmartPloyTab(item.url));
     if (ownedTabs.length !== 1) {
       throw new UploadError(
-        "Keep exactly one signed-in smartploy.komplyint.fi tab open so " +
+        "Keep exactly one signed-in SmartPloy tab open so " +
         "SmartPloy can retrieve your existing CV and letter automatically."
       );
     }
