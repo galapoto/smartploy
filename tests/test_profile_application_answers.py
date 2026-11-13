@@ -7,6 +7,7 @@ from smartploy.profile import CandidateProfile, ProfileFact
 from smartploy.profile_application_answers import (
     SCHEMA, approved_answers_for_packet, decode_profile_answer,
     encode_profile_answer,
+    saved_answers_sha256,
 )
 
 
@@ -75,3 +76,12 @@ def test_answer_format_does_not_accept_unknown_keys_or_unreviewed_schema():
     ]:
         with pytest.raises(ValueError):
             encode_profile_answer(json.dumps(data))
+
+
+def test_saved_answer_digest_is_stable_and_changed_or_revoked_data_changes_it():
+    first=[{"question":"How did you hear about us?","answer":"Careers page"}]
+    modified=[{"question":"How did you hear about us?","answer":"Referral"}]
+    assert len(saved_answers_sha256(first)) == 64
+    assert saved_answers_sha256(first) == saved_answers_sha256(list(first))
+    assert saved_answers_sha256(first) != saved_answers_sha256(modified)
+    assert saved_answers_sha256(first) != saved_answers_sha256([])
