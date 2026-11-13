@@ -182,14 +182,17 @@ test("profile-once flow distinguishes dedicated letter PDF from CV and identity 
   assert.equal(letter.expected_id,"coverLetter");
   for(const label of ["Cover letter","Application letter","Motivation letter",
                       "Saatekirje","Hakemuskirje","Personligt brev"]){
-    assert.equal(chooseCoverLetterField([field({label})]).index,1,label);
+    assert.equal(chooseCoverLetterField([field({
+      label,id:"cover_letter_file",name:"cover_letter"
+    })]).index,1,label);
   }
   for(const unsafe of [
     [],[field({label:"Passport"})],
     [field({label:"Cover letter and passport"})],
-    [field({label:"Cover letter",visible:false})],
-    [field({label:"Cover letter",hasValue:true})],
-    [field({label:"Cover letter",accept:"image/png"})],
-    [field({label:"Cover letter"}),field({index:2,label:"Application letter"})]
+    [field({label:"Cover letter",id:"letter",name:"cover_letter",visible:false})],
+    [field({label:"Cover letter",id:"letter",name:"cover_letter",hasValue:true})],
+    [field({label:"Cover letter",id:"letter",name:"cover_letter",accept:"image/png"})],
+    [field({label:"Cover letter",id:"letter_a",name:"letter_a"}),
+     field({index:2,label:"Application letter",id:"letter_b",name:"letter_b"})]
   ])assert.throws(()=>chooseCoverLetterField(unsafe),UploadError);
 });
