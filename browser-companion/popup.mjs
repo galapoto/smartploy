@@ -9,7 +9,7 @@ import { QuestionError, planReviewedQuestions, suggestSavedAnswers, validateRevi
 import { fillReviewedAnswers } from "./page-questions.mjs";
 import { AttemptError, oneAttemptKey, withSubmissionLock } from "./attempt-lock.mjs";
 import {
-  approvedFieldsSha256, isSmartPloyTab, recordVerifiedReview,
+  approvedFieldsSha256, approvedSavedAnswersSha256, isSmartPloyTab, recordVerifiedReview,
   requireVerifiedReview, sha256Text, validateReviewPacket,
   recordOneUseFinalAttempt, requireOneUseFinalAttempt, consumeLocalFinalAttempt
 } from "./review-bridge.mjs";
@@ -437,6 +437,46 @@ async function activeTab() {
   return tab;
 }
 
+/** A local approval cannot remain valid after its account profile changed.
+ * Recheck every external data transfer against the current signed-in owner,
+ * exact job/revision, BOTH PDF digests and the latest approved Q/A set.
+ * No private answers, PDF, cookie or login token is stored here.
+ */
+async function requireFreshOwnerReview(packet) {
+  const approvedHash = await approvedSavedAnswersSha256(packet.saved_answers || []);
+  if (!packet.letter_pdf_sha256 || !packet.letter_pdf_size ||
+      packet.saved_answers_sha256 !== approvedHash) {
+    throw new PacketError("Saved profile or letter changed; review a fresh application packet.");
+  }
+  const owned = (await chrome.tabs.query({
+    url:"https://smartploy.komplyint.fi/*"
+  })).filter(item=>item?.id && item?.url &&
+    new URL(item.url).origin === "https://smartploy.komplyint.fi");
+  if (owned.length !== 1) {
+    throw new PacketError("Keep one signed-in SmartPloy tab open to check the current profile and documents.");
+  }
+  const [reply] = await chrome.scripting.executeScript({
+    target:{tabId:owned[0].id},world:"ISOLATED",
+    func:verifyReviewOnSmartPloy,args:[{
+      workspace_id:packet.workspace_id,
+      expected_revision:packet.revision,
+      expected_document_sha256:packet.document_sha256,
+      expected_cv_pdf_sha256:packet.cv_pdf_sha256,
+      expected_cv_pdf_size:packet.cv_pdf_size,
+      expected_fields_sha256:await approvedFieldsSha256(packet.fields),
+      expected_application_url_sha256:await sha256Text(packet.application_url),
+      expected_letter_pdf_sha256:packet.letter_pdf_sha256,
+      expected_letter_pdf_size:packet.letter_pdf_size,
+      expected_saved_answers_sha256:approvedHash
+    }]
+  });
+  if (reply?.frameId !== 0 || !reply?.result?.review_verified ||
+      reply.result.bound_profile_and_letter !== true) {
+    throw new PacketError("The approved profile or CV/letter is stale. Return to SmartPloy and review it again.");
+  }
+  return reply.result;
+}
+
 async function onVerifySmartPloyReview() {
   $("reviewInfo").textContent = "";
   try {
@@ -451,26 +491,8 @@ async function onVerifySmartPloyReview() {
     if (!chrome.storage?.session) {
       throw new PacketError("Ephemeral extension storage unavailable. No review can be verified.");
     }
-    const [reply] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, world: "ISOLATED",
-      func: verifyReviewOnSmartPloy,
-      args: [{
-        workspace_id: packet.workspace_id,
-        expected_revision: packet.revision,
-        expected_document_sha256: packet.document_sha256,
-        expected_cv_pdf_sha256: packet.cv_pdf_sha256,
-        expected_fields_sha256: await approvedFieldsSha256(packet.fields),
-        expected_application_url_sha256: await sha256Text(packet.application_url),
-        expected_cv_pdf_size: packet.cv_pdf_size
-      }]
-    });
-    if (reply?.frameId !== 0 || !reply?.result?.review_verified) {
-      throw new PacketError(
-        "SmartPloy could not verify the signed-in exact CV/job review. " +
-        "Record it in My applications and try again."
-      );
-    }
-    const saved = await recordVerifiedReview(chrome.storage.session, packet, reply.result);
+    const refreshed=await requireFreshOwnerReview(packet);
+    const saved = await recordVerifiedReview(chrome.storage.session, packet, refreshed);
     $("reviewInfo").textContent =
       "Signed-in review verified until " + new Date(saved.expires_at).toLocaleTimeString() +
       (isLeverFinalProvider(packet.application_url)
