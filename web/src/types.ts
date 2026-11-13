@@ -457,8 +457,8 @@ export interface BrowserHandoffPacket {
   document_sha256: string;
   cv_pdf_sha256: string;
   cv_pdf_size: number;
-  letter_pdf_sha256: string;
-  letter_pdf_size: number;
+  letter_pdf_sha256?: string;
+  letter_pdf_size?: number;
   saved_answers?: {question: string; answer: string}[];
   /** Server-owned SHA fingerprint for the EXACT approved employer transfer. */
   approved_fields_sha256?: string;
