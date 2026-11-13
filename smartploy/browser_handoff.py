@@ -16,7 +16,7 @@ from typing import Mapping
 from .application_workspace import ApplicationWorkspace, render_document
 from .domain import JobCandidate
 from .profile import CandidateProfile
-from .profile_application_answers import approved_answers_for_packet
+from .profile_application_answers import approved_answers_for_packet, saved_answers_sha256
 
 SCHEMA = "smartploy.browser_handoff.v2"
 LIFETIME_SECONDS = 15 * 60
@@ -232,6 +232,7 @@ def make_browser_packet(
     letter_pdf, _, _ = render_document(workspace, kind="letter", file_format="pdf")
     if len(letter_pdf) > 2 * 1024 * 1024:
         raise HandoffError("The reviewed letter PDF exceeds the attachment limit")
+    saved_answers = approved_answers_for_packet(profile)
     packet = {
         "schema": SCHEMA,
         "issued_at": stamp.isoformat(),
@@ -254,7 +255,8 @@ def make_browser_packet(
         },
         # Explicit profile-once employer Q/A stays outside the nine contact
         # fields' submission fingerprint and still needs a separate fill click.
-        "saved_answers": approved_answers_for_packet(profile),
+        "saved_answers": saved_answers,
+        "saved_answers_sha256": saved_answers_sha256(saved_answers),
         "privacy": {
             "approved_contact_only": True,
             "approved_saved_answers_only": True,
