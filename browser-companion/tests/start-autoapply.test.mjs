@@ -29,7 +29,7 @@ function mount(override = {}) {
     onFill:async()=>{calls.push("fill");return true;},
     autoAttachSavedDocuments:async()=>{
       calls.push("attach-reviewed-documents");
-      return {attached:2,reason:"CV and cover letter staged for review."};
+      return {attached:2,ready:true,reason:"CV and cover letter staged for review."};
     },
     onReviewQuestions:async()=>{calls.push("questions");},
     normalizeError:()=> "Please inspect the employer form manually.",
@@ -52,6 +52,20 @@ test("one visible Start chains observed exact-job inspect, consented fill, then 
   assert.match(popup,/await requireVerifiedReview\(chrome\.storage\?\.session, currentPacket\)/);
   assert.match(popup,/if \(!window\.confirm\(/);
 });
+test("missing/changed CV or unavailable employer upload stops before questions and final submit",async()=>{
+  const {launch,calls,button}=mount({
+    autoAttachSavedDocuments:async()=>{
+      calls.push("attach-failed");
+      return {attached:0,ready:false,reason:"Current CV could not be attached."};
+    }
+  });
+  await launch();
+  assert.deepEqual(calls.slice(0,3),["inspect","fill","attach-failed"]);
+  assert.equal(calls.includes("questions"),false);
+  assert.equal(calls.some(v=>String(v).includes("submitted")),false);
+  assert.equal(button.disabled,false);
+});
+
 test("question-only and upload-only applications continue to review without a fake contact fill",async()=>{
   for (const plan of [{actions:[],skippedUploads:[]},{actions:[],skippedUploads:[{key:"cv"}]}]) {
     const {launch,calls,context,button}=mount({
