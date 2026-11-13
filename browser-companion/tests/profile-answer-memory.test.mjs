@@ -24,6 +24,10 @@ function packet(changes={}) {
     saved_answers:[
       {question:"How did you hear about us?",answer:"Career page"}
     ],
+    saved_answers_sha256:createHash("sha256")
+      .update("smartploy.saved.answers.v1\0"+
+        JSON.stringify([{question:"How did you hear about us?",answer:"Career page"}]))
+      .digest("hex"),
     privacy:{
       approved_contact_only:true,approved_saved_answers_only:true,
       original_cv_included:false,employer_submit_allowed_without_new_approval:false
