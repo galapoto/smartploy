@@ -42,6 +42,15 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
       packet.cv_pdf_size < 12 || packet.cv_pdf_size > 2 * 1024 * 1024) {
     throw new PacketError("An exact reviewed CV PDF fingerprint is required. Copy a new SmartPloy packet.");
   }
+  const letterPresent = packet.letter_pdf_sha256 !== undefined ||
+    packet.letter_pdf_size !== undefined;
+  if (letterPresent && (
+    !/^[a-f0-9]{64}$/.test(packet.letter_pdf_sha256 || "") ||
+    !Number.isInteger(packet.letter_pdf_size) ||
+    packet.letter_pdf_size < 12 || packet.letter_pdf_size > 2 * 1024 * 1024
+  )) {
+    throw new PacketError("Approved cover-letter PDF fingerprint is invalid. Prepare a new application packet.");
+  }
   const issued = Date.parse(packet.issued_at);
   const expires = Date.parse(packet.expires_at);
   if (!Number.isFinite(issued) || !Number.isFinite(expires) ||
@@ -145,6 +154,10 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
     document_sha256: packet.document_sha256,
     cv_pdf_sha256: packet.cv_pdf_sha256,
     cv_pdf_size: packet.cv_pdf_size,
+    ...(letterPresent ? {
+      letter_pdf_sha256: packet.letter_pdf_sha256,
+      letter_pdf_size: packet.letter_pdf_size
+    } : {}),
     expires_at: packet.expires_at,
     fields,
     saved_answers: checkedAnswers
