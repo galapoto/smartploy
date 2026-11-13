@@ -59,6 +59,20 @@ export async function approvedFieldsSha256(fields) {
   return sha256Text("smartploy.fields.v1\0" + pieces.join("\0"));
 }
 
+/** Cross-language stable digest of every applicant-approved saved answer.
+ * No raw answers are persisted; server compares against its CURRENT profile
+ * after each review verification. Optionally empty for legacy-only clients.
+ */
+export async function approvedSavedAnswersSha256(answers) {
+  if (!Array.isArray(answers) || answers.length > 16 ||
+      answers.some(row=>!row || typeof row.question !== "string" ||
+        typeof row.answer !== "string")) {
+    throw new PacketError("Invalid applicant answer set");
+  }
+  const rows=answers.map(row=>({question:row.question,answer:row.answer}));
+  return sha256Text("smartploy.saved.answers.v1\0" + JSON.stringify(rows));
+}
+
 export async function reviewSessionKey(packet) {
   const fields = [
     packet.workspace_id, String(packet.revision),
@@ -68,8 +82,20 @@ export async function reviewSessionKey(packet) {
   ];
   if (fields.some(x => typeof x !== "string" || !x))
     throw new PacketError("Invalid reviewed packet binding");
+  const hasDocuments = Boolean(packet.letter_pdf_sha256);
+  if (hasDocuments) {
+    const actual=await approvedSavedAnswersSha256(packet.saved_answers || []);
+    if (packet.saved_answers_sha256 !== actual ||
+        !/^[a-f0-9]{64}$/.test(packet.letter_pdf_sha256) ||
+        !Number.isInteger(packet.letter_pdf_size)) {
+      throw new PacketError("Profile answers or letter PDF changed after review; reverify.");
+    }
+    fields.push(packet.letter_pdf_sha256,String(packet.letter_pdf_size),actual);
+  }
   return "smartploy.review." +
-    await sha256Text("smartploy.review.v1\0" + fields.join("\0"));
+    await sha256Text((hasDocuments ?
+      "smartploy.review.profile-once.v2\0" :
+      "smartploy.review.v1\0") + fields.join("\0"));
 }
 
 function sessionStorage(storage) {
@@ -85,7 +111,9 @@ export async function recordVerifiedReview(storage, packet, result, now = Date.n
   if (!result || result.review_verified !== true || result.review_state !== "pending" ||
       result.automatic_employer_submit_authorized !== false ||
       result.browser_grant_issued !== false ||
-      result.external_actions_performed !== false) {
+      result.external_actions_performed !== false ||
+      (packet.letter_pdf_sha256 &&
+       result.bound_profile_and_letter !== true)) {
     throw new PacketError("SmartPloy did not verify this exact signed-in application review");
   }
   const expires = Date.parse(result.expires_at);
