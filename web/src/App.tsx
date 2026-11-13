@@ -1347,7 +1347,7 @@ export default function App() {
           </label>
         </div>
         <button className="navy-btn" type="submit" disabled={!!busyFact}>
-          <Save size={16}/> {busyFact === "saved-answer" ? "Saving…" :
+          <Check size={16}/> {busyFact === "saved-answer" ? "Saving…" :
           "Save and approve reusable answer"}
         </button>
       </form>
