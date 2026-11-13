@@ -8,7 +8,11 @@ EXT = Path(__file__).resolve().parents[1] / "browser-companion"
 def test_question_assistant_never_extends_extension_authority():
     manifest = json.loads((EXT / "manifest.json").read_text())
     assert set(manifest["permissions"]) == {"activeTab", "scripting", "storage"}
-    for disallowed in ("host_permissions", "content_scripts", "background"):
+    assert manifest["host_permissions"] == [
+        "https://smartploy.komplyint.fi/*", "https://smartploy.obumai.com/*"
+    ]
+    for disallowed in ("optional_host_permissions", "content_scripts",
+                       "background", "externally_connectable"):
         assert disallowed not in manifest
 
 
