@@ -119,7 +119,7 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
     throw new PacketError("Saved application answers were not approved by this profile.");
   }
   const seenQuestions = new Set();
-  const restricted = /\\b(?:visa|immigration|citizenship|citizen|nationality|passport|work permit|sponsor|salary|wage|compensation|gender|sex|sexual|male|female|race|ethnic|black|white|asian|hispanic|religion|disabil|medical|health|veteran|criminal|background|privacy|consent|gdpr|legal|agreement|attest|signature|birth|age|social security|government id|tax id|bank account|työlupa|oleskelulupa|kansalaisuus|sukupuoli|uskonto|palkka|henkilötunnus|suostumus|arbetstillstånd|medborgarskap|personnummer|samtycke|lön)\\b/iu;
+  const restricted = /\b(?:visa|immigration|citizenship|citizen|nationality|passport|work permit|sponsor|salary|wage|compensation|gender|sex|sexual|male|female|race|ethnic|black|white|asian|hispanic|religion|disabil|medical|health|veteran|criminal|background|privacy|consent|gdpr|legal|agreement|attest|signature|birth|age|social security|government id|tax id|bank account|työlupa|oleskelulupa|kansalaisuus|sukupuoli|uskonto|palkka|henkilötunnus|suostumus|arbetstillstånd|medborgarskap|personnummer|samtycke|lön)\b/iu;
   const checkedAnswers = savedAnswers.map(row => {
     if (!row || typeof row !== "object" ||
         Object.keys(row).sort().join("|") !== "answer|question") {
@@ -127,7 +127,7 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
     }
     const question = text(row.question, 150).trim();
     const answer = text(row.answer, 480).trim();
-    const key = question.normalize("NFKC").toLowerCase().replace(/\\s+/g, " ").trim();
+    const key = question.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
     if (!key || !answer || seenQuestions.has(key) ||
         restricted.test(question) || restricted.test(answer)) {
       throw new PacketError("Saved answers contain an unsafe or duplicate question.");
