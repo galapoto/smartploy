@@ -4,7 +4,7 @@
 import { PacketError, planFields, validatePacket } from "./logic.mjs";
 import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactReceiptPage, isLeverFinalProvider, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
 import { attachReviewedPdf } from "./page-attachment.mjs";
-import { QuestionError, planReviewedQuestions, validateReviewedAnswers } from "./questions.mjs";
+import { QuestionError, planReviewedQuestions, suggestSavedAnswers, validateReviewedAnswers } from "./questions.mjs";
 import { fillReviewedAnswers } from "./page-questions.mjs";
 import { AttemptError, oneAttemptKey, withSubmissionLock } from "./attempt-lock.mjs";
 import {
@@ -833,10 +833,14 @@ async function onReviewQuestions() {
       throw new QuestionError("The employer form changed or is too large.");
     }
     const plan = planReviewedQuestions(reply.result.elements);
+    const memory = suggestSavedAnswers(plan, currentPacket.saved_answers);
     currentQuestionPlan = { ...plan, url: tab.url };
     $("questionInfo").textContent =
       plan.questions.length + " eligible required text questions; " +
+      memory.reused + " answered from your approved saved profile; " +
+      memory.needsReview.length + " NEW/CHANGED questions need an answer; " +
       plan.humanOnly.length + " require manual handling. " +
+      (memory.needsReview.length ? "Check: " + memory.needsReview.slice(0, 6).join("; ") + ". " : "") +
       (plan.humanOnly.length ? "Manual: " + plan.humanOnly.slice(0, 6).join("; ") : "");
     const list = $("questionList");
     for (const [index, item] of plan.questions.entries()) {
@@ -844,13 +848,16 @@ async function onReviewQuestions() {
       const wrapper = document.createElement("div");
       wrapper.className = "question-item";
       const label = document.createElement("label");
-      label.textContent = item.label + " (review required)";
+      label.textContent = item.label + (memory.values[index] ?
+        " (saved profile answer · verify unchanged)" :
+        " (new or changed · answer and save to your SmartPloy profile for next time)");
       label.setAttribute("for", fieldId);
       const input = document.createElement("textarea");
       input.id = fieldId;
       input.rows = 3;
       input.maxLength = item.max_answer_length;
-      input.placeholder = "Type or paste a truthful answer you have reviewed.";
+      input.value = memory.values[index] || "";
+      input.placeholder = "New/changed question. Type an accurate answer and save it once in My CV & documents.";
       input.autocomplete = "off";
       input.spellcheck = false;
       wrapper.append(label, input);
