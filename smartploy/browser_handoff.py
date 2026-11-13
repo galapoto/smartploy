@@ -16,6 +16,7 @@ from typing import Mapping
 from .application_workspace import ApplicationWorkspace, render_document
 from .domain import JobCandidate
 from .profile import CandidateProfile
+from .profile_application_answers import approved_answers_for_packet
 
 SCHEMA = "smartploy.browser_handoff.v2"
 LIFETIME_SECONDS = 15 * 60
@@ -246,8 +247,12 @@ def make_browser_packet(
             **contact,
             "cover_letter": workspace.cover_letter_text[:10000],
         },
+        # Explicit profile-once employer Q/A stays outside the nine contact
+        # fields' submission fingerprint and still needs a separate fill click.
+        "saved_answers": approved_answers_for_packet(profile),
         "privacy": {
             "approved_contact_only": True,
+            "approved_saved_answers_only": True,
             "original_cv_included": False,
             "browser_form_fill_allowed_after_user_click": True,
             "employer_submit_allowed_without_new_approval": False,
