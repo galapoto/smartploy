@@ -222,6 +222,22 @@ function StartupShell(props: {
   </div>;
 }
 
+/** Employer-specific answer memory is separate from matching/CV evidence.
+ * It is shown only to this signed-in applicant, and a changed employer
+ * question is never treated as an approximate match.
+ */
+function savedApplicationAnswer(fact: CandidateFact): {question: string; answer: string} | null {
+  if (fact.fact_type !== "application_answer") return null;
+  try {
+    const item = JSON.parse(fact.value);
+    if (item?.schema === "smartploy.profile_answer.v1" &&
+        typeof item.question === "string" && typeof item.answer === "string") {
+      return {question:item.question,answer:item.answer};
+    }
+  } catch { /* old/invalid records cannot be reused */ }
+  return null;
+}
+
 export default function App() {
   const [theme, toggleTheme] = useSmartployTheme();
   const [page, setPage] = useState<Page>("dashboard");
@@ -340,6 +356,8 @@ export default function App() {
   const [newFactType, setNewFactType] = useState("skill");
   const [newFactValue, setNewFactValue] = useState("");
   const [confirmFact, setConfirmFact] = useState(false);
+  const [savedAnswerQuestion, setSavedAnswerQuestion] = useState("");
+  const [savedAnswerText, setSavedAnswerText] = useState("");
   const [manualBusy, setManualBusy] = useState(false);
   const [removingPrivateJob, setRemovingPrivateJob] = useState("");
   const [jobForm, setJobForm] = useState<ManualJobPayload>({
@@ -844,6 +862,45 @@ export default function App() {
     }
   }
 
+  async function onSaveApplicationAnswer(event: FormEvent) {
+    event.preventDefault();
+    const question=savedAnswerQuestion.trim();
+    const answer=savedAnswerText.trim();
+    if (!question || !answer || busyFact) return;
+    const actionIdentity=lastSessionIdentity.current;
+    setBusyFact("saved-answer");
+    try {
+      const payload=JSON.stringify({
+        schema:"smartploy.profile_answer.v1",question,answer
+      });
+      // Save the new approved answer first. Then remove the prior value of
+      // the SAME question, so a change requires one edit rather than duplicate
+      // profile setup. During any partial failure the packet fails closed.
+      const saved=await runPrivateMutation((userId)=>
+        createFact("application_answer",payload,true,userId));
+      const old=facts.filter((fact)=>{
+        const prior=savedApplicationAnswer(fact);
+        return prior && prior.question.normalize("NFKC").toLowerCase() ===
+          question.normalize("NFKC").toLowerCase() &&
+          fact.fact_id !== saved.fact.fact_id;
+      });
+      for(const previous of old){
+        await runPrivateMutation((userId)=>deleteFact(previous.fact_id,userId));
+      }
+      setSavedAnswerQuestion("");setSavedAnswerText("");
+      setNotice("Approved application answer saved to your private profile. " +
+        "SmartPloy reuses it only when the employer's question matches exactly.");
+      await load(true);
+    } catch(exc) {
+      if (!(exc instanceof PrivateActionIdentityChanged)) {
+        setNotice(exc instanceof Error ? exc.message : "Unable to save the answer.");
+        await load(true).catch(()=>undefined);
+      }
+    } finally {
+      if(lastSessionIdentity.current===actionIdentity)setBusyFact("");
+    }
+  }
+
   async function onFactApproval(fact: CandidateFact) {
     const actionIdentity = lastSessionIdentity.current;
     setBusyFact(fact.fact_id);
@@ -1159,7 +1216,8 @@ export default function App() {
     onNavigate={navigate} onRetry={() => void load()} />;
 
   const accountViewKey = session?.user_id || session?.profile_id || session?.subject_fingerprint || "unidentified";
-  const approved = facts.filter((item) => item.approved);
+  const approved = facts.filter((item) => item.approved && item.fact_type !== "application_answer");
+  const savedAnswerFacts = facts.filter((item) => item.fact_type === "application_answer");
   const skills = approved.filter((item) => item.fact_type === "skill");
   const sourcesReady = dashboard.source_health.some((s) => s.status === "healthy");
   const obumReady = Boolean(localAI?.ready || health?.obumai_configured);
@@ -1231,7 +1289,9 @@ export default function App() {
 
   const factPanel = <section className="panel facts-panel">
     <div className="panel-heading"><div><p className="section-kicker">VERIFIED PROFILE</p><h2>Skills & experience</h2><p>Only facts you approve affect job matching and AI drafts.</p></div><span className="subtle-count">{approved.length} approved</span></div>
-    {facts.length ? <div className="facts-list">{facts.map((fact) => (
+    {facts.some((fact) => fact.fact_type !== "application_answer") ?
+      <div className="facts-list">{facts.filter((fact) =>
+        fact.fact_type !== "application_answer").map((fact) => (
       <div className="fact-row" key={fact.fact_id}>
         <div><span className="fact-type">{fact.fact_type.replaceAll("_", " ")}</span><strong>{fact.value}</strong><small>{fact.approved ? "Verified by you" : "Needs your review"}</small></div>
         <button className={cx("fact-toggle", fact.approved && "approved")} type="button" disabled={busyFact === fact.fact_id} onClick={() => void onFactApproval(fact)} title={fact.approved ? "Mark unapproved" : "Approve this fact"}>{fact.approved ? <><Check size={15} /> Approved</> : "Approve"}</button>
@@ -1246,6 +1306,55 @@ export default function App() {
       <label className="check-confirm"><input type="checkbox" checked={confirmFact} onChange={(event) => setConfirmFact(event.target.checked)} /> I confirm this information is accurate and may be used for matching.</label>
       <button className="navy-btn" type="submit" disabled={busyFact === "new"}><Plus size={16} /> {busyFact === "new" ? "Saving…" : confirmFact ? "Save approved fact" : "Save for review"}</button>
     </form>
+    <section className="studio-packet-fallback" aria-label="Reusable job application answers">
+      <h3>Application answers · save once</h3>
+      <p className="muted">Answer a normal employer question once. SmartPloy will prefill
+        the exact same question on future supported applications. New, changed,
+        legal and sensitive questions will be brought to your attention instead of guessed.</p>
+      {savedAnswerFacts.length ? <div className="facts-list">
+        {savedAnswerFacts.map((fact)=>{
+          const item=savedApplicationAnswer(fact);
+          if(!item)return null;
+          return <div className="fact-row" key={fact.fact_id}>
+            <div><strong>{item.question}</strong><small>{item.answer}</small>
+              <small>{fact.approved ? "Approved for exact-question reuse" : "Not yet approved"}</small>
+            </div>
+            <button className="outline-btn compact" type="button"
+              disabled={!!busyFact} onClick={()=>{
+                setSavedAnswerQuestion(item.question);
+                setSavedAnswerText(item.answer);
+              }}>Edit</button>
+            <button className="icon-btn subtle" type="button" title="Remove saved answer"
+              aria-label={"Remove saved answer: "+item.question}
+              disabled={!!busyFact} onClick={()=>void onFactDelete(fact)}>
+              <Trash2 size={16}/>
+            </button>
+          </div>;
+        })}
+      </div> : null}
+      <form className="fact-form" onSubmit={(event)=>void onSaveApplicationAnswer(event)}>
+        <div className="fact-inputs">
+          <label>Employer question
+            <input type="text" maxLength={150} required
+              placeholder="e.g. How did you hear about this role?"
+              value={savedAnswerQuestion}
+              onChange={(event)=>setSavedAnswerQuestion(event.target.value)}/>
+          </label>
+          <label>Your accurate answer
+            <textarea rows={3} maxLength={480} required value={savedAnswerText}
+              onChange={(event)=>setSavedAnswerText(event.target.value)}
+              placeholder="Enter this once; review it whenever it is used."/>
+          </label>
+        </div>
+        <button className="navy-btn" type="submit" disabled={!!busyFact}>
+          <Save size={16}/> {busyFact === "saved-answer" ? "Saving…" :
+          "Save and approve reusable answer"}
+        </button>
+      </form>
+      <p className="privacy-note"><LockKeyhole size={14}/> These saved answers are excluded
+        from job-matching evidence and AI prompts. They are only offered for
+        exact ordinary employer questions after you approve an application.</p>
+    </section>
   </section>;
 
   const toolsPanel = <section className="panel tools-panel">
