@@ -918,18 +918,29 @@ async function onStartAutoApply() {
         (attachment.reason || "Review attachment status and resume manually."));
       return;
     }
-    await onReviewQuestions();
-    // A completely known ordinary question set can continue through the
-    // existing single explicit answer-transfer approval. A new/changed,
-    // protected or missing question pauses here instead of guessing.
-    if (currentQuestionPlan?.questions?.length &&
-        currentQuestionPlan.humanOnly.length === 0 &&
-        currentQuestionPlan.questions.every((_,i)=>
-          Boolean($("approvedAnswer"+i)?.value?.trim()))) {
-      await onFillQuestions();
+    const reviewed=await onReviewQuestions();
+    if (!reviewed || currentPacket === null || receiptOnly) return;
+    // NEW/CHANGED ordinary questions or sensitive/consent controls require
+    // applicant input and an explicit Finish click afterwards.
+    if (reviewed.needsReview.length || reviewed.humanOnly.length) {
+      status("AutoApply prepared your documents and existing profile answers. " +
+        "Review these new or sensitive employer requirements, fill them truthfully, " +
+        "then use Finish this one application. No final attempt was reserved.");
+      return;
     }
-    // Final send still requires independently approved employer rights,
-    // applicant consent and a one-use claim; never count a click as receipt.
+    if (reviewed.questions.length) {
+      const completed=await onFillQuestions();
+      if (!completed) return;
+    }
+    // A complete supported Lever form can finish in this SAME Start call:
+    // exact dry-run, fresh approval, one-use claim, single final click, receipt.
+    if (isLeverFinalProvider(currentPacket.application_url)) {
+      await onCompleteOneJob();
+    } else {
+      status("Reviewed CV, letter and known answers are prepared. " +
+        "This employer uses a provider without independently authorized " +
+        "automatic final submission; review and submit personally.");
+    }
   } catch (error) {
     status(normalizeError(error));
   } finally {
@@ -1068,7 +1079,8 @@ async function onReviewQuestions() {
     }
     const plan = planReviewedQuestions(reply.result.elements);
     const memory = suggestSavedAnswers(plan, currentPacket.saved_answers);
-    currentQuestionPlan = { ...plan, url: tab.url };
+    currentQuestionPlan = { ...plan, url: tab.url,
+      needsReview: memory.needsReview };
     $("questionInfo").textContent =
       plan.questions.length + " eligible required text questions; " +
       memory.reused + " answered from your approved saved profile; " +
@@ -1102,12 +1114,13 @@ async function onReviewQuestions() {
     status(plan.questions.length ?
       "Review every proposed answer for accuracy, then approve a one-time fill. Sensitive questions remain manual." :
       "No safely eligible unanswered text questions. Answer employer-specific requirements manually.", true);
-  } catch (error) { status(normalizeError(error)); }
+    return {...plan,needsReview:memory.needsReview};
+  } catch (error) { status(normalizeError(error)); return null; }
 }
 
 async function onFillQuestions() {
   if (receiptOnly || !currentPacket || !currentQuestionPlan || attemptReserved ||
-      $("questionPanel").hidden) return;
+      $("questionPanel").hidden) return false;
   preflightPassed = false;
   $("submit").disabled = true;
   $("approve").checked = false;
@@ -1128,7 +1141,7 @@ async function onFillQuestions() {
       "The employer site may transmit answer values when input/change events fire. " +
       "This will not click Submit, agree to terms, answer protected questions, " +
       "or retry after an uncertain outcome."
-    )) return;
+    )) return false;
     const again = await activeTab();
     validatePacket(currentPacketToJSON(), again.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
@@ -1151,7 +1164,8 @@ async function onFillQuestions() {
       "Review all answered questions in the employer form. Unknown or legally significant fields still need manual completion.";
     status(finding?.reason || "Answer result is uncertain. Inspect the employer form.",
       finding?.status === "filled_for_review");
-  } catch (error) { status(normalizeError(error)); }
+    return finding?.status === "filled_for_review";
+  } catch (error) { status(normalizeError(error)); return false; }
 }
 
 async function onPreflight() {
