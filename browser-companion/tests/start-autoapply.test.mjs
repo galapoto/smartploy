@@ -46,12 +46,47 @@ test("one visible Start chains observed exact-job inspect, consented fill, then 
   assert.equal(button.disabled,false);
   assert.doesNotMatch(source,/^[^/\n]*\b(?:onSubmit|onAttach|onReserveFinalAttempt)\s*\(/m);
   assert.match(source,/await autoAttachSavedDocuments\(\)/);
-  assert.match(source,/currentQuestionPlan\.humanOnly\.length === 0/);
+  assert.match(source,/reviewed\.needsReview\.length \|\| reviewed\.humanOnly\.length/);
   assert.match(html,/id="startAutoApply"/);
   assert.match(html,/Manual controls &amp; safety details/);
   assert.match(popup,/await requireVerifiedReview\(chrome\.storage\?\.session, currentPacket\)/);
   assert.match(popup,/if \(!window\.confirm\(/);
 });
+test("ONE supported job: Start chains approved CV/letter, known questions and permitted final journey",async()=>{
+  const {launch,calls,button}=mount({
+    onReviewQuestions:async()=>{
+      calls.push("questions");
+      return {questions:[{label:"How did you hear about us?"}],
+        needsReview:[],humanOnly:[]};
+    },
+    onFillQuestions:async()=>{calls.push("fill-known-answers");return true;},
+    onCompleteOneJob:async()=>{calls.push("one-use-final-and-receipt");return true;},
+    isLeverFinalProvider:()=>true,
+  });
+  await launch();
+  assert.deepEqual(calls,[
+    "inspect","fill","attach-reviewed-documents","questions",
+    "fill-known-answers","one-use-final-and-receipt"
+  ]);
+  assert.equal(button.disabled,false);
+});
+test("new employer question prevents the irreversible claim until applicant answers",async()=>{
+  const {launch,calls}=mount({
+    onReviewQuestions:async()=>{
+      calls.push("questions");
+      return {questions:[{label:"Why this role?"}],
+        needsReview:["Why this role?"],humanOnly:[]};
+    },
+    onCompleteOneJob:async()=>{calls.push("UNEXPECTED-FINAL");},
+  });
+  await launch();
+  assert.deepEqual(calls.slice(0,4),[
+    "inspect","fill","attach-reviewed-documents","questions"
+  ]);
+  assert.equal(calls.some(x=>x==="UNEXPECTED-FINAL"),false);
+  assert.match(calls.at(-1),/new or sensitive/i);
+});
+
 test("missing/changed CV or unavailable employer upload stops before questions and final submit",async()=>{
   const {launch,calls,button}=mount({
     autoAttachSavedDocuments:async()=>{
