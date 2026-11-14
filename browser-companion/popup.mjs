@@ -5,6 +5,7 @@ import { PacketError, planFields, validatePacket } from "./logic.mjs";
 import { UploadError, chooseResumeField, chooseCoverLetterField, encodePdfBase64, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactReceiptPage, isLeverFinalProvider, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
 import { attachReviewedPdf } from "./page-attachment.mjs";
 import { readOwnReviewedPdf } from "./page-document-fetch.mjs";
+import { saveOneObservedReceiptOnSmartPloy } from "./page-receipt-import.mjs";
 import { QuestionError, planReviewedQuestions, suggestSavedAnswers, validateReviewedAnswers } from "./questions.mjs";
 import { fillReviewedAnswers } from "./page-questions.mjs";
 import { AttemptError, oneAttemptKey, withSubmissionLock } from "./attempt-lock.mjs";
