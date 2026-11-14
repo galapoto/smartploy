@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timezone
 from hashlib import sha256
+import json
 import os
 from uuid import uuid4
 
@@ -74,6 +75,17 @@ def reviewed_case(monkeypatch):
         ("skill", "Python SQL"),
     ):
         profile.upsert_fact(ProfileFact(kind, value, "user-entered", approved=True))
+    # The ONE application fixture exercises non-empty saved applicant answers
+    # so an old claim cannot silently bypass profile change detection.
+    profile.upsert_fact(ProfileFact(
+        "application_answer",
+        json.dumps({
+            "schema":"smartploy.profile_answer.v1",
+            "question":"How did you hear about us?",
+            "answer":"Careers page",
+        }),
+        "user-confirmed",approved=True,
+    ))
     jobs = PostgresJobRepository(DSN)
     workspaces = PostgresWorkspaceRepository(DSN)
     work = None
@@ -141,6 +153,9 @@ def reviewed_case(monkeypatch):
             "expected_application_url_sha256":
                 sha256(packet["application_url"].encode("utf-8")).hexdigest(),
             "expected_cv_pdf_size": packet["cv_pdf_size"],
+            "expected_saved_answers_sha256": packet["saved_answers_sha256"],
+            "expected_letter_pdf_sha256": packet["letter_pdf_sha256"],
+            "expected_letter_pdf_size": packet["letter_pdf_size"],
             "confirm_one_job_final_click": True,
             "acknowledge_external_employer_transfer": True,
             "acknowledge_no_automatic_retry": True,
@@ -501,6 +516,9 @@ def test_exact_oidc_review_two_person_rights_reserves_once_without_employer_send
         {"expected_fields_sha256": "0" * 64},
         {"expected_application_url_sha256": "0" * 64},
         {"expected_cv_pdf_size": case["body"]["expected_cv_pdf_size"] + 1},
+        {"expected_saved_answers_sha256": "0" * 64},
+        {"expected_letter_pdf_sha256": "0" * 64},
+        {"expected_letter_pdf_size": case["body"]["expected_letter_pdf_size"] + 1},
         {"acknowledge_no_automatic_retry": False},
     ):
         item = api.post(route, json={**case["body"], **changed}, headers=headers)
@@ -542,6 +560,27 @@ def test_exact_oidc_review_two_person_rights_reserves_once_without_employer_send
                 (case["a"].profile_id,),
             )
             assert cur.fetchone()[0] == 0
+
+
+def test_one_job_final_claim_rejects_revoked_or_changed_applicant_answer(reviewed_case):
+    case=reviewed_case
+    authorize_review_and_employer(case)
+    profile=PostgresProfileRepository(DSN, profile_id=case["a"].profile_id)
+    profile.upsert_fact(ProfileFact(
+        "application_answer", json.dumps({
+            "schema":"smartploy.profile_answer.v1",
+            "question":"How did you hear about us?",
+            "answer":"Referral, newly confirmed by applicant"
+        }),"user-confirmed",approved=True,
+    ))
+    # A changed answer requires new user review and cannot burn the old claim.
+    denied=case["api"].post(
+        case["claim_route"],json=case["body"],headers=case["headers"]
+    )
+    assert denied.status_code == 409,denied.text
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(
+        case["a"],case["work"].canonical_key
+    ) is None
 
 
 def test_reserved_browser_attempt_reconciles_observed_receipt_then_owner_report(reviewed_case):
