@@ -32,6 +32,7 @@ async function withFakeEmployer({
   emailLabel = "Email", letterLabel = "Cover letter", resumeLabel = "CV / Résumé",
   mutateDuringCvRead = null, reviewedLetterAttached = false,
   approveLetter = false, reviewedLetterBytes = letterPdf,
+  formTarget = "", buttonFormTarget = "", baseTarget = "",
 } = {}) {
   const old = Object.fromEntries(
     ["location","window","document","getComputedStyle"].map(x => [x,globalThis[x]])
@@ -84,12 +85,16 @@ async function withFakeEmployer({
     closest: () => null, getClientRects: () => [{}],
     querySelectorAll: () => inputs,
     checkValidity: () => formValid,
-    getAttribute: (name) => name === "action" ? state.formAction : "",
+    target: formTarget,
+    getAttribute: (name) => name === "action" ? state.formAction :
+      name === "target" ? formTarget : "",
   };
   const button = {
     innerText: submitLabel,
     disabled: false,
-    getAttribute: (name) => name === "formaction" ? state.buttonFormAction : "",
+    getAttribute: (name) => name === "formaction" ? state.buttonFormAction :
+      name === "formtarget" ? buttonFormTarget : "",
+    formTarget:buttonFormTarget,
     getClientRects: () => [{}],
     closest: (selector) => selector === "form" ? form : null,
     click() { state.clicks++; if (submitThrows) throw Error("Browser failed"); },
@@ -103,7 +108,10 @@ async function withFakeEmployer({
       hasAttribute: () => noLock ? true : state.marker,
       setAttribute: (k,v) => {state.marker=true;},
     },
-    querySelector: () => state.challenge ? {} : null,
+    querySelector: (selector) => state.challenge ? {} :
+      selector === "base[target]" && baseTarget ? {
+        getAttribute: () => baseTarget
+      } : null,
     querySelectorAll: () => state.duplicateButton ? [button,button] : [button],
   };
   const binding = {
@@ -151,6 +159,7 @@ test("one actual form sends both the reviewed CV and letter PDF, once, with no f
 test("missing, modified, or unapproved cover-letter attachment blocks the one-use submit",async()=>{
   for(const config of [
     {reviewedLetterAttached:false,approveLetter:true,letterValue:""},
+    {reviewedLetterAttached:false,approveLetter:true,letterValue:letter},
     {reviewedLetterAttached:true,approveLetter:false,letterValue:""},
     {reviewedLetterAttached:true,approveLetter:true,letterValue:"",
       reviewedLetterBytes:Buffer.from("%PDF-1.4\n%Modified\n%%EOF") },
@@ -178,6 +187,21 @@ test("untrusted URL, incomplete employer form, duplicate control or challenge ne
     assert.equal(r.result.attempted,false,JSON.stringify(config));
     assert.equal(r.result.reason,reason,JSON.stringify(config));
     assert.equal(r.clicks,0,JSON.stringify(config));
+  }
+});
+
+test("one-job dry-run rejects new-tab employer targets BEFORE sticky claim",async()=>{
+  for(const config of [
+    {formTarget:"_blank"},
+    {formTarget:"other_window"},
+    {buttonFormTarget:"_blank"},
+    {baseTarget:"_blank"}
+  ]){
+    const reply=await withFakeEmployer(config);
+    assert.equal(reply.result.reason,"unsupported_external_confirmation_target",
+      JSON.stringify(config));
+    assert.equal(reply.clicks,0);
+    assert.equal(reply.marker,false);
   }
 });
 
