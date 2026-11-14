@@ -113,6 +113,6 @@ def test_profile_answer_update_does_not_delete_unrelated_approved_facts():
     repo.upsert_fact(latest)
     answers=approved_answers_for_packet(repo.profile())
     assert len(answers)==2
-    assert {"question":"How   did you hear about us?","answer":"Careers page"} in answers
+    assert {"question":"How did you hear about us?","answer":"Careers page"} in answers
     assert {"question":"What is your favorite coding language?","answer":"Python"} in answers
     assert all(f.fact_id!=initial.fact_id for f in repo.list_facts())
