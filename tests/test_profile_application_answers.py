@@ -85,3 +85,34 @@ def test_saved_answer_digest_is_stable_and_changed_or_revoked_data_changes_it():
     assert saved_answers_sha256(first) == saved_answers_sha256(list(first))
     assert saved_answers_sha256(first) != saved_answers_sha256(modified)
     assert saved_answers_sha256(first) != saved_answers_sha256([])
+
+
+def test_server_replaces_casefold_equivalent_profile_answers_in_one_owner_transaction():
+    from smartploy.profile_storage import MemoryProfileRepository
+    repository=MemoryProfileRepository("profile-once-user")
+    first=saved("Straße?  Which experience?", "Previous approved answer")
+    repository.upsert_fact(first)
+    newer=saved("STRASSE? Which experience?", "Updated truthful answer")
+    repository.upsert_fact(newer)
+    results=repository.list_facts()
+    assert len(results)==1
+    assert results[0].fact_id==newer.fact_id
+    assert approved_answers_for_packet(repository.profile())==[
+        {"question":"STRASSE? Which experience?","answer":"Updated truthful answer"}
+    ]
+
+
+def test_profile_answer_update_does_not_delete_unrelated_approved_facts():
+    from smartploy.profile_storage import MemoryProfileRepository
+    repo=MemoryProfileRepository("applicant-x")
+    initial=saved("How did you hear about us?", "Referral")
+    other=saved("What is your favorite coding language?", "Python")
+    for fact in [initial,other]:
+        repo.upsert_fact(fact)
+    latest=saved("How   did you hear about us?", "Careers page")
+    repo.upsert_fact(latest)
+    answers=approved_answers_for_packet(repo.profile())
+    assert len(answers)==2
+    assert {"question":"How   did you hear about us?","answer":"Careers page"} in answers
+    assert {"question":"What is your favorite coding language?","answer":"Python"} in answers
+    assert all(f.fact_id!=initial.fact_id for f in repo.list_facts())
