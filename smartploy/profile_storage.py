@@ -142,6 +142,12 @@ class PostgresProfileRepository:
     def delete_fact(self, fact_id: str) -> bool:
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
+                # Even a simple revoke/delete must serialize with the exact
+                # one-job final-claim snapshot. All answer writes use this lock.
+                cur.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))",
+                    (self.profile_id, "application_answer"),
+                )
                 cur.execute(
                     "DELETE FROM smartploy_profile_facts WHERE profile_id = %s AND fact_id = %s",
                     (self.profile_id, fact_id),
