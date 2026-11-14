@@ -535,6 +535,10 @@ async function onReserveFinalAttempt() {
       "NOW, even if the browser click later fails. No automatic retry. " +
       "Only an independently permitted employer may receive the application. Proceed?"
     )) return;
+    // Consent does NOT freeze the CV/letter/profile. Recheck after it before
+    // server consumes the irreversible cross-device employer attempt.
+    await requireVerifiedReview(chrome.storage?.session,packet);
+    await requireFreshOwnerReview(packet);
     const [response] = await chrome.scripting.executeScript({
       target: {tabId: tab.id}, world: "ISOLATED",
       func: reserveFinalClickOnSmartPloy,
@@ -546,6 +550,9 @@ async function onReserveFinalAttempt() {
         expected_fields_sha256: await approvedFieldsSha256(packet.fields),
         expected_application_url_sha256: await sha256Text(packet.application_url),
         expected_cv_pdf_size: packet.cv_pdf_size,
+        expected_saved_answers_sha256: await approvedSavedAnswersSha256(packet.saved_answers || []),
+        expected_letter_pdf_sha256: packet.letter_pdf_sha256,
+        expected_letter_pdf_size: packet.letter_pdf_size,
         confirm_one_job_final_click: true,
         acknowledge_external_employer_transfer: true,
         acknowledge_no_automatic_retry: true,
