@@ -7,6 +7,8 @@ import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+from io import BytesIO
+from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
 import os
 import re
 from threading import Lock
@@ -66,6 +68,7 @@ from .cv_job_matching import cv_job_matches
 from .cv_storage import CVArchiveNotFound, CVRevisionConflict, MemoryCVRepository, PostgresCVRepository
 from .cv_editor import render_editor_cv
 from .profile import FACT_TYPES, ProfileFact
+from .profile_application_answers import saved_answers_sha256
 from .identity import (
     AuthenticatedPrincipal,
     IdentityRepository,
@@ -366,10 +369,29 @@ class BrowserReviewVerificationPayload(BaseModel):
     expected_fields_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_application_url_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_cv_pdf_size: int = Field(ge=12, le=2 * 1024 * 1024)
+    # Optional for the already-installed v0.5.4 review client. New v0.6.0
+    # must send all three so the server can bind the current profile + letter.
+    expected_saved_answers_sha256: Optional[str] = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    expected_letter_pdf_sha256: Optional[str] = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    expected_letter_pdf_size: Optional[int] = Field(
+        default=None, ge=12, le=2 * 1024 * 1024
+    )
 
 
 class BrowserFinalAttemptPayload(BrowserReviewVerificationPayload):
-    """Separate explicit final-click decision for one reviewed employer job."""
+    """Separate explicit final-click decision for one reviewed employer job.
+
+    Final claims MUST bind latest profile facts and letter PDF. Older
+    companion builds can review/prepare but cannot reserve a new external
+    submission using stale saved answers.
+    """
+    expected_saved_answers_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_letter_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_letter_pdf_size: int = Field(ge=12, le=2 * 1024 * 1024)
     confirm_one_job_final_click: StrictBool
     acknowledge_external_employer_transfer: StrictBool
     acknowledge_no_automatic_retry: StrictBool
@@ -2474,10 +2496,15 @@ def create_app(
             or packet["cv_pdf_sha256"] != payload.expected_cv_pdf_sha256
             or packet["cv_pdf_size"] != payload.expected_cv_pdf_size
             or packet["approved_fields_sha256"] != payload.expected_fields_sha256
+            or packet["saved_answers_sha256"] != payload.expected_saved_answers_sha256
+            or saved_answers_sha256(packet["saved_answers"])
+               != payload.expected_saved_answers_sha256
+            or packet["letter_pdf_sha256"] != payload.expected_letter_pdf_sha256
+            or packet["letter_pdf_size"] != payload.expected_letter_pdf_size
             or sha256(packet["application_url"].encode("utf-8")).hexdigest()
                != payload.expected_application_url_sha256
         ):
-            raise HTTPException(status_code=409, detail="Reviewed employer, CV PDF or approved fields changed")
+            raise HTTPException(status_code=409, detail="Employer, profile answers or reviewed CV/letter changed; refresh")
         # Both calls reuse original SP15e atomic permission/review/claim gates,
         # including independent two-person rights and sticky cross-device DB
         # uniqueness. Even if this process crashes, a committed reservation
@@ -2503,6 +2530,7 @@ def create_app(
                 expected_document_sha256=packet["document_sha256"],
                 expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
                 expected_fields_sha256=payload.expected_fields_sha256,
+                expected_saved_answers_sha256=payload.expected_saved_answers_sha256,
                 action_scope=ACTION,
             )
         except EmployerFinalActionDenied as exc:
@@ -2940,6 +2968,27 @@ def create_app(
                != payload.expected_application_url_sha256
         ):
             raise HTTPException(status_code=409, detail="Reviewed packet fields, job or PDF changed")
+        modern = any(
+            value is not None for value in (
+                payload.expected_saved_answers_sha256,
+                payload.expected_letter_pdf_sha256,
+                payload.expected_letter_pdf_size,
+            )
+        )
+        if modern and (
+            not payload.expected_saved_answers_sha256
+            or not payload.expected_letter_pdf_sha256
+            or not payload.expected_letter_pdf_size
+            or packet["letter_pdf_sha256"] != payload.expected_letter_pdf_sha256
+            or packet["letter_pdf_size"] != payload.expected_letter_pdf_size
+            or packet["saved_answers_sha256"] != payload.expected_saved_answers_sha256
+            or saved_answers_sha256(packet["saved_answers"])
+               != payload.expected_saved_answers_sha256
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Applicant profile answers or reviewed letter changed; reverify",
+            )
         try:
             item = repo.verify_for_companion(
                 binding, workspace_id=workspace_id,
@@ -2959,6 +3008,7 @@ def create_app(
                 "review_verified": True,
                 "review_state": "pending",
                 "expires_at": item.expires_at.isoformat(),
+                "bound_profile_and_letter": modern,
                 "automatic_employer_submit_authorized": False,
                 "external_actions_performed": False,
                 "browser_grant_issued": False,
@@ -3140,6 +3190,68 @@ def create_app(
             content=content, media_type=mime,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "private, no-store",
+                "Pragma": "no-cache",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "sandbox",
+            },
+        )
+
+    @app.get("/api/v1/application-workspaces/{workspace_id}/documents-bundle.zip")
+    def download_application_documents_bundle(
+        workspace_id: str, request: Request
+    ) -> Response:
+        """One owner-scoped ZIP containing ACTUAL current CV and cover letter.
+
+        Reuse the same deterministic render_document and private workspace lookup
+        as each existing PDF/DOCX download. No cross-origin reads or employer
+        requests, no fake placeholders and no server-side application submit.
+        """
+        tenant, _ = tenant_context(request)
+        item = app.state.workspace_repository.get(
+            tenant.profile_repository.profile_id, workspace_id
+        )
+        if item is None:
+            raise HTTPException(status_code=404, detail="Application workspace not found")
+        files = []
+        try:
+            for kind in ("cv", "letter"):
+                for file_format in ("pdf", "docx"):
+                    payload, _, filename = render_document(
+                        item, kind=kind, file_format=file_format
+                    )
+                    files.append((filename, payload))
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        stream = BytesIO()
+        # One package for this exact applicant's saved job revision.
+        manifest = {
+            "schema": "smartploy.application_documents.v1",
+            "workspace_id": item.workspace_id,
+            "revision": item.revision,
+            "files": [
+                {"name": name, "sha256": sha256(payload).hexdigest(), "size": len(payload)}
+                for name, payload in files
+            ],
+            "external_actions_performed": 0,
+        }
+        with ZipFile(stream, "w", compression=ZIP_DEFLATED, compresslevel=6) as bundle:
+            for name, payload in [
+                *files,
+                ("smartploy-document-manifest.json", json.dumps(
+                    manifest, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")),
+            ]:
+                # Fixed archive metadata avoids timestamps obscuring revisions.
+                info = ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = ZIP_DEFLATED
+                info.external_attr = 0o600 << 16
+                bundle.writestr(info, payload)
+        return Response(
+            content=stream.getvalue(), media_type="application/zip",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="smartploy-application-{item.workspace_id}.zip"',
                 "Cache-Control": "private, no-store",
                 "Pragma": "no-cache",
                 "X-Content-Type-Options": "nosniff",

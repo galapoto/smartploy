@@ -13,7 +13,11 @@ def test_no_new_browser_background_or_remote_host_capability():
     assert tuple(map(int, manifest["version"].split("."))) >= (0, 5, 1)
     assert manifest["action"]["default_icon"] == manifest["icons"]
     assert set(manifest["permissions"]) == {"activeTab", "scripting", "storage"}
-    for key in ("host_permissions", "background", "content_scripts"):
+    assert manifest["host_permissions"] == [
+        "https://smartploy.komplyint.fi/*", "https://smartploy.obumai.com/*"
+    ]
+    for key in ("optional_host_permissions", "background", "content_scripts",
+                "externally_connectable", "update_url"):
         assert key not in manifest
 
 

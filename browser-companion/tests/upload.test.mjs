@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  UploadError, MAX_PDF_BYTES, chooseResumeField, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactAshbyReceiptPage, isLeverFinalProvider,
+  UploadError, MAX_PDF_BYTES, chooseResumeField, chooseCoverLetterField, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactAshbyReceiptPage, isLeverFinalProvider,
   encodePdfBase64, validatePdf
 } from "../upload.mjs";
 
@@ -164,4 +164,35 @@ test("SP43 exact reviewed Greenhouse form works on official hosted job and legac
   assert.equal(exactGreenhouseForm(
     greenhouseModern,greenhouseModern+"?gh_src=unknown"
   ),false);
+});
+
+
+test("profile-once flow distinguishes dedicated letter PDF from CV and identity documents",()=>{
+  const fields=[
+    field(),
+    field({
+      index:2,label:"Cover letter (PDF)",id:"coverLetter",
+      name:"cover_letter"
+    })
+  ];
+  const cv=chooseResumeField(fields);
+  const letter=chooseCoverLetterField(fields);
+  assert.equal(cv.index,1);
+  assert.equal(letter.index,2);
+  assert.equal(letter.expected_id,"coverLetter");
+  for(const label of ["Cover letter","Application letter","Motivation letter",
+                      "Saatekirje","Hakemuskirje","Personligt brev"]){
+    assert.equal(chooseCoverLetterField([field({
+      label,id:"cover_letter_file",name:"cover_letter"
+    })]).index,1,label);
+  }
+  for(const unsafe of [
+    [],[field({label:"Passport"})],
+    [field({label:"Cover letter and passport"})],
+    [field({label:"Cover letter",id:"letter",name:"cover_letter",visible:false})],
+    [field({label:"Cover letter",id:"letter",name:"cover_letter",hasValue:true})],
+    [field({label:"Cover letter",id:"letter",name:"cover_letter",accept:"image/png"})],
+    [field({label:"Cover letter",id:"letter_a",name:"letter_a"}),
+     field({index:2,label:"Application letter",id:"letter_b",name:"letter_b"})]
+  ])assert.throws(()=>chooseCoverLetterField(unsafe),UploadError);
 });

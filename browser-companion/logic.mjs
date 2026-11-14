@@ -42,6 +42,15 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
       packet.cv_pdf_size < 12 || packet.cv_pdf_size > 2 * 1024 * 1024) {
     throw new PacketError("An exact reviewed CV PDF fingerprint is required. Copy a new SmartPloy packet.");
   }
+  const letterPresent = packet.letter_pdf_sha256 !== undefined ||
+    packet.letter_pdf_size !== undefined;
+  if (letterPresent && (
+    !/^[a-f0-9]{64}$/.test(packet.letter_pdf_sha256 || "") ||
+    !Number.isInteger(packet.letter_pdf_size) ||
+    packet.letter_pdf_size < 12 || packet.letter_pdf_size > 2 * 1024 * 1024
+  )) {
+    throw new PacketError("Approved cover-letter PDF fingerprint is invalid. Prepare a new application packet.");
+  }
   const issued = Date.parse(packet.issued_at);
   const expires = Date.parse(packet.expires_at);
   if (!Number.isFinite(issued) || !Number.isFinite(expires) ||
@@ -110,6 +119,35 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
       packet.privacy.employer_submit_allowed_without_new_approval !== false) {
     throw new PacketError("The packet does not meet SmartPloy's privacy boundaries");
   }
+  // The existing signed-in profile is the only source of remembered answers.
+  // Bound and reject ambiguous or legal/EEO disclosures; never infer answers
+  // from CV prose or permit a packet to turn a sensitive field into a fill.
+  const savedAnswers = packet.saved_answers ?? [];
+  if (!Array.isArray(savedAnswers) || savedAnswers.length > 16 ||
+      (savedAnswers.length && packet.privacy.approved_saved_answers_only !== true)) {
+    throw new PacketError("Saved application answers were not approved by this profile.");
+  }
+  if (letterPresent &&
+      !/^[a-f0-9]{64}$/.test(packet.saved_answers_sha256 || "")) {
+    throw new PacketError("A reviewed profile answer-set fingerprint is required.");
+  }
+  const seenQuestions = new Set();
+  const restricted = /\b(?:visa|immigration|citizenship|citizen|nationality|passport|work permit|sponsor|salary|wage|compensation|gender|sex|sexual|male|female|race|ethnic|black|white|asian|hispanic|religion|disabil|medical|health|veteran|criminal|background|privacy|consent|gdpr|legal|agreement|attest|signature|birth|age|social security|government id|tax id|bank account|työlupa|oleskelulupa|kansalaisuus|sukupuoli|uskonto|palkka|henkilötunnus|suostumus|arbetstillstånd|medborgarskap|personnummer|samtycke|lön)\b/iu;
+  const checkedAnswers = savedAnswers.map(row => {
+    if (!row || typeof row !== "object" ||
+        Object.keys(row).sort().join("|") !== "answer|question") {
+      throw new PacketError("Saved answer record has an invalid format.");
+    }
+    const question = text(row.question, 150).trim();
+    const answer = text(row.answer, 480).trim();
+    const key = question.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+    if (!key || !answer || seenQuestions.has(key) ||
+        restricted.test(question) || restricted.test(answer)) {
+      throw new PacketError("Saved answers contain an unsafe or duplicate question.");
+    }
+    seenQuestions.add(key);
+    return {question, answer};
+  });
   return {
     schema: SCHEMA,
     workspace_id: packet.workspace_id,
@@ -120,8 +158,14 @@ export function validatePacket(input, activeTabUrl, now = Date.now()) {
     document_sha256: packet.document_sha256,
     cv_pdf_sha256: packet.cv_pdf_sha256,
     cv_pdf_size: packet.cv_pdf_size,
+    ...(letterPresent ? {
+      letter_pdf_sha256: packet.letter_pdf_sha256,
+      letter_pdf_size: packet.letter_pdf_size
+    } : {}),
     expires_at: packet.expires_at,
-    fields
+    fields,
+    saved_answers: checkedAnswers,
+    ...(letterPresent ? {saved_answers_sha256:packet.saved_answers_sha256} : {})
   };
 }
 

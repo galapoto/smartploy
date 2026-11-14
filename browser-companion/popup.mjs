@@ -2,13 +2,15 @@
    No background automation, no external API calls, no raw profile persistence.
    The final action is only possible after an exact one-job approval. */
 import { PacketError, planFields, validatePacket } from "./logic.mjs";
-import { UploadError, chooseResumeField, encodePdfBase64, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactReceiptPage, isLeverFinalProvider, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
+import { UploadError, chooseResumeField, chooseCoverLetterField, encodePdfBase64, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactReceiptPage, isLeverFinalProvider, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
 import { attachReviewedPdf } from "./page-attachment.mjs";
-import { QuestionError, planReviewedQuestions, validateReviewedAnswers } from "./questions.mjs";
+import { readOwnReviewedPdf } from "./page-document-fetch.mjs";
+import { saveOneObservedReceiptOnSmartPloy } from "./page-receipt-import.mjs";
+import { QuestionError, planReviewedQuestions, suggestSavedAnswers, validateReviewedAnswers } from "./questions.mjs";
 import { fillReviewedAnswers } from "./page-questions.mjs";
 import { AttemptError, oneAttemptKey, withSubmissionLock } from "./attempt-lock.mjs";
 import {
-  approvedFieldsSha256, isSmartPloyTab, recordVerifiedReview,
+  approvedFieldsSha256, approvedSavedAnswersSha256, isSmartPloyTab, recordVerifiedReview,
   requireVerifiedReview, sha256Text, validateReviewPacket,
   recordOneUseFinalAttempt, requireOneUseFinalAttempt, consumeLocalFinalAttempt
 } from "./review-bridge.mjs";
@@ -27,6 +29,9 @@ let attemptReserved = false;
 let receiptOnly = false;
 let receiptCheckSequence = 0;
 let startAutoApplyInFlight = false;
+let completingOneJob = false;
+let oneJobFinalApproval = false;
+let oneJobSubmitWasAttempted = false;
 
 function clearReceiptObservation() {
   receiptCheckSequence++;
@@ -436,6 +441,99 @@ async function activeTab() {
   return tab;
 }
 
+/** A local approval cannot remain valid after its account profile changed.
+ * Recheck every external data transfer against the current signed-in owner,
+ * exact job/revision, BOTH PDF digests and the latest approved Q/A set.
+ * No private answers, PDF, cookie or login token is stored here.
+ */
+async function requireFreshOwnerReview(packet) {
+  const approvedHash = await approvedSavedAnswersSha256(packet.saved_answers || []);
+  if (!packet.letter_pdf_sha256 || !packet.letter_pdf_size ||
+      packet.saved_answers_sha256 !== approvedHash) {
+    throw new PacketError("Saved profile or letter changed; review a fresh application packet.");
+  }
+  const owned = (await chrome.tabs.query({
+    url:["https://smartploy.komplyint.fi/*","https://smartploy.obumai.com/*"]
+  })).filter(item=>item?.id && item?.url && isSmartPloyTab(item.url));
+  if (owned.length !== 1) {
+    throw new PacketError("Keep one signed-in SmartPloy tab open to check the current profile and documents.");
+  }
+  const [reply] = await chrome.scripting.executeScript({
+    target:{tabId:owned[0].id},world:"ISOLATED",
+    func: verifyReviewOnSmartPloy,args:[{
+      workspace_id:packet.workspace_id,
+      expected_revision:packet.revision,
+      expected_document_sha256:packet.document_sha256,
+      expected_cv_pdf_sha256:packet.cv_pdf_sha256,
+      expected_cv_pdf_size:packet.cv_pdf_size,
+      expected_fields_sha256:await approvedFieldsSha256(packet.fields),
+      expected_application_url_sha256:await sha256Text(packet.application_url),
+      expected_letter_pdf_sha256:packet.letter_pdf_sha256,
+      expected_letter_pdf_size:packet.letter_pdf_size,
+      expected_saved_answers_sha256:approvedHash
+    }]
+  });
+  if (reply?.frameId !== 0 || !reply?.result?.review_verified ||
+      reply.result.bound_profile_and_letter !== true) {
+    throw new PacketError("The approved profile or CV/letter is stale. Return to SmartPloy and review it again.");
+  }
+  return reply.result;
+}
+
+/** One exact reviewed form binding for both harmless preflight and final click.
+ * Only the independent server claim and a human confirmation can enable the
+ * final click; passing dry_run=true never grants a submission capability.
+ */
+function finalEmployerBinding(packet, dryRun = false) {
+  return {
+    application_url:packet.application_url,
+    cv_pdf_sha256:packet.cv_pdf_sha256,
+    cv_pdf_size:packet.cv_pdf_size,
+    letter_pdf_sha256:packet.letter_pdf_sha256,
+    letter_pdf_size:packet.letter_pdf_size,
+    email:packet.fields.email,
+    full_name:packet.fields.full_name,
+    cover_letter:packet.fields.cover_letter,
+    ...(dryRun ? {dry_run:true} : {})
+  };
+}
+
+/** Secret-free immutable server intent, including the latest reviewed profile.
+ * No employer interaction is performed while this value is generated.
+ */
+async function finalOneJobClaimBinding(packet) {
+  const memoryHash=await approvedSavedAnswersSha256(packet.saved_answers || []);
+  if (memoryHash !== packet.saved_answers_sha256 ||
+      !packet.letter_pdf_sha256 || !packet.letter_pdf_size) {
+    throw new PacketError("The saved profile or cover letter changed. Create a fresh packet.");
+  }
+  return {
+    workspace_id:packet.workspace_id,expected_revision:packet.revision,
+    expected_document_sha256:packet.document_sha256,
+    expected_cv_pdf_sha256:packet.cv_pdf_sha256,
+    expected_cv_pdf_size:packet.cv_pdf_size,
+    expected_fields_sha256:await approvedFieldsSha256(packet.fields),
+    expected_application_url_sha256:await sha256Text(packet.application_url),
+    expected_saved_answers_sha256:memoryHash,
+    expected_letter_pdf_sha256:packet.letter_pdf_sha256,
+    expected_letter_pdf_size:packet.letter_pdf_size,
+    confirm_one_job_final_click:true,
+    acknowledge_external_employer_transfer:true,
+    acknowledge_no_automatic_retry:true
+  };
+}
+
+async function signedInAppTab() {
+  const items=(await chrome.tabs.query({
+    url:["https://smartploy.komplyint.fi/*","https://smartploy.obumai.com/*"]
+  })).filter(tab=>tab?.id && tab?.url && isSmartPloyTab(tab.url));
+  if (items.length !== 1)
+    throw new PacketError(
+      "Keep exactly one signed-in SmartPloy tab open for this application."
+    );
+  return items[0];
+}
+
 async function onVerifySmartPloyReview() {
   $("reviewInfo").textContent = "";
   try {
@@ -450,26 +548,8 @@ async function onVerifySmartPloyReview() {
     if (!chrome.storage?.session) {
       throw new PacketError("Ephemeral extension storage unavailable. No review can be verified.");
     }
-    const [reply] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, world: "ISOLATED",
-      func: verifyReviewOnSmartPloy,
-      args: [{
-        workspace_id: packet.workspace_id,
-        expected_revision: packet.revision,
-        expected_document_sha256: packet.document_sha256,
-        expected_cv_pdf_sha256: packet.cv_pdf_sha256,
-        expected_fields_sha256: await approvedFieldsSha256(packet.fields),
-        expected_application_url_sha256: await sha256Text(packet.application_url),
-        expected_cv_pdf_size: packet.cv_pdf_size
-      }]
-    });
-    if (reply?.frameId !== 0 || !reply?.result?.review_verified) {
-      throw new PacketError(
-        "SmartPloy could not verify the signed-in exact CV/job review. " +
-        "Record it in My applications and try again."
-      );
-    }
-    const saved = await recordVerifiedReview(chrome.storage.session, packet, reply.result);
+    const refreshed=await requireFreshOwnerReview(packet);
+    const saved = await recordVerifiedReview(chrome.storage.session, packet, refreshed);
     $("reviewInfo").textContent =
       "Signed-in review verified until " + new Date(saved.expires_at).toLocaleTimeString() +
       (isLeverFinalProvider(packet.application_url)
@@ -513,6 +593,10 @@ async function onReserveFinalAttempt() {
       "NOW, even if the browser click later fails. No automatic retry. " +
       "Only an independently permitted employer may receive the application. Proceed?"
     )) return;
+    // Consent does NOT freeze the CV/letter/profile. Recheck after it before
+    // server consumes the irreversible cross-device employer attempt.
+    await requireVerifiedReview(chrome.storage?.session,packet);
+    await requireFreshOwnerReview(packet);
     const [response] = await chrome.scripting.executeScript({
       target: {tabId: tab.id}, world: "ISOLATED",
       func: reserveFinalClickOnSmartPloy,
@@ -524,6 +608,9 @@ async function onReserveFinalAttempt() {
         expected_fields_sha256: await approvedFieldsSha256(packet.fields),
         expected_application_url_sha256: await sha256Text(packet.application_url),
         expected_cv_pdf_size: packet.cv_pdf_size,
+        expected_saved_answers_sha256: await approvedSavedAnswersSha256(packet.saved_answers || []),
+        expected_letter_pdf_sha256: packet.letter_pdf_sha256,
+        expected_letter_pdf_size: packet.letter_pdf_size,
         confirm_one_job_final_click: true,
         acknowledge_external_employer_transfer: true,
         acknowledge_no_automatic_retry: true,
@@ -561,6 +648,8 @@ async function onInspect() {
     const tab = await activeTab();
     const pkt = validatePacket(packetText, tab.url);
     await requireVerifiedReview(chrome.storage?.session, pkt);
+    // Read-only inspection keeps the existing owner/session marker; current
+    // account facts are rechecked before EVERY employer-side mutation.
     if (!exactAssistedForm(tab.url, pkt.application_url)) {
       throw new PacketError("Open the exact approved employer application form, not its job description.");
     }
@@ -651,6 +740,7 @@ async function onFill() {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
+    await requireFreshOwnerReview(currentPacket);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
         !exactAssistedForm(tab.url, currentPacket.application_url)) {
       throw new PacketError("Reinspect after changing employer tab, URL, or application form.");
@@ -678,9 +768,135 @@ async function onFill() {
   } catch (error) { status(normalizeError(error)); return false; }
 }
 
-/** One AutoApply action built from the existing verified inspection and fill
- * primitives. Consent is still checked inside onFill(). No automatic PDF
- * attachment, inferred answer, final click, or employer submission.
+/** Fetch generated PDFs from this applicant's still-signed-in SmartPloy tab
+ * and attach them to exact approved employer fields without making the user
+ * download/re-upload files. A single explicit employer-transfer approval is
+ * still required because attaching may trigger immediate employer upload.
+ * Documents live only inside this invocation, never extension storage.
+ */
+async function autoAttachSavedDocuments() {
+  if (!currentPacket || targetTabId === null || receiptOnly || attemptReserved) {
+    return {attached:0,reason:"No current reviewed application."};
+  }
+  const packet = currentPacket;
+  if (!packet.letter_pdf_sha256 || !packet.letter_pdf_size) {
+    return {attached:0,reason:"Prepare a fresh application packet for automatic CV and letter attachment."};
+  }
+  try {
+    const tab = await activeTab();
+    validatePacket(currentPacketToJSON(),tab.url);
+    await requireVerifiedReview(chrome.storage?.session,packet);
+    await requireFreshOwnerReview(packet);
+    if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
+        !exactAssistedForm(tab.url,packet.application_url) ||
+        await hasPriorLeverAttempt(packet)) {
+      throw new PacketError("Employer page, application or prior attempt changed.");
+    }
+    const [form] = await chrome.scripting.executeScript({
+      target:{tabId:tab.id},func:inspectForm
+    });
+    if (!form?.result || form.result.url !== tab.url ||
+        form.result.allElementsCount > 250) {
+      throw new UploadError("The employer form changed during attachment inspection.");
+    }
+    const cvTarget = chooseResumeField(form.result.elements);
+    let letterTarget = null;
+    let letterNote = "";
+    try {
+      letterTarget = chooseCoverLetterField(form.result.elements);
+    } catch (error) {
+      if (error instanceof UploadError &&
+          error.message.startsWith("No separate cover-letter PDF input")) {
+        letterNote = "No separate cover-letter upload field; the reviewed letter is filled as text where supported.";
+      } else throw error;
+    }
+    if (!letterTarget && isLeverFinalProvider(packet.application_url)) {
+      return {attached:0,ready:false,
+        reason:"This Lever form has no separate cover-letter PDF upload. " +
+          "The one-job two-PDF AutoApply contract cannot submit without " +
+          "both attachments. Select a supported posting or complete this one manually."};
+    }
+    const docs = [{
+      kind:"cv",target:cvTarget,sha256:packet.cv_pdf_sha256,size:packet.cv_pdf_size
+    }];
+    if (letterTarget) docs.push({
+      kind:"letter",target:letterTarget,
+      sha256:packet.letter_pdf_sha256,size:packet.letter_pdf_size
+    });
+    const ownedTabs = (await chrome.tabs.query({
+      url:["https://smartploy.komplyint.fi/*","https://smartploy.obumai.com/*"]
+    })).filter(item=>item?.id && isSmartPloyTab(item.url));
+    if (ownedTabs.length !== 1) {
+      throw new UploadError(
+        "Keep exactly one signed-in SmartPloy tab open so " +
+        "SmartPloy can retrieve your existing CV and letter automatically."
+      );
+    }
+    const prepared = [];
+    for (const doc of docs) {
+      const [reply] = await chrome.scripting.executeScript({
+        target:{tabId:ownedTabs[0].id},
+        func:readOwnReviewedPdf,
+        args:[{
+          workspace_id:packet.workspace_id,kind:doc.kind,
+          sha256:doc.sha256,size:doc.size
+        }]
+      });
+      if (!reply?.result?.ready ||
+          reply.result.sha256 !== doc.sha256 ||
+          reply.result.size !== doc.size) {
+        throw new UploadError(reply?.result?.reason ||
+          "The reviewed PDF could not be verified against this application.");
+      }
+      prepared.push({...doc,...reply.result});
+    }
+    const domain = new URL(packet.application_url).hostname;
+    if (!window.confirm(
+      "ATTACH REVIEWED APPLICATION DOCUMENTS?\n\n" +
+      packet.company + " — " + packet.role_title + "\n" +
+      "Employer: " + domain + "\n" +
+      prepared.map(x=>x.kind==="cv" ? "CV PDF" : "Cover-letter PDF").join(" + ") +
+      "\n\nThese documents came from your CURRENT signed-in SmartPloy " +
+      "application, and the employer website may upload each immediately. " +
+      "This does NOT submit the application. Approve attachment?"
+    )) return {attached:0,reason:"Document transfer not approved; attach manually."};
+    let attached=0;
+    for (const doc of prepared) {
+      const again=await activeTab();
+      validatePacket(currentPacketToJSON(),again.url);
+      await requireVerifiedReview(chrome.storage?.session,packet);
+      await requireFreshOwnerReview(packet);
+      if (packet !== currentPacket || again.id !== tab.id ||
+          again.url !== tab.url || await hasPriorLeverAttempt(packet)) {
+        throw new UploadError("Selected job or tab changed; stop attachment.");
+      }
+      const [result] = await chrome.scripting.executeScript({
+        target:{tabId:tab.id},func:attachReviewedPdf,
+        args:[{
+          application_url:packet.application_url,inspected_url:tab.url,
+          ...doc.target,kind:doc.kind,
+          file_name:doc.filename,size:doc.size,
+          sha256:doc.sha256,base64:doc.base64
+        }]
+      });
+      if (result?.result?.status !== "attached_locally") {
+        return {attached,reason:result?.result?.reason ||
+          "Attachment outcome uncertain. Inspect employer upload indicator; do not retry blindly."};
+      }
+      attached++;
+    }
+    return {attached,ready:attached===prepared.length,
+      reason:attached+" reviewed PDF attachment(s) placed locally. " +
+      (letterNote || "Check both employer upload indicators before finishing.")};
+  } catch(error) {
+    return {attached:0,reason:normalizeError(error)};
+  }
+}
+
+/** One applicant-approved AutoApply preparation action:
+ * exact employer → saved contact facts → current reviewed CV/letter PDF
+ * attachments → unchanged profile answers → new-question handoff.
+ * Never infer sensitive answers or auto-submit without separate rights.
  */
 async function onStartAutoApply() {
   if (startAutoApplyInFlight) return;
@@ -700,8 +916,37 @@ async function onStartAutoApply() {
     // mutate. Skip the unnecessary fill prompt, then review real questions.
     const filled = currentPlan.actions.length === 0 ? true : await onFill();
     if (!filled) return;
-    await onReviewQuestions();
-    // Attachment, reviewed answers and final send remain separate controls.
+    const attachment = await autoAttachSavedDocuments();
+    $("uploadInfo").textContent = attachment.reason;
+    if (!attachment.ready) {
+      status("The current CV and any dedicated cover-letter PDF must be attached " +
+        "to the correct employer inputs before application automation can continue. " +
+        (attachment.reason || "Review attachment status and resume manually."));
+      return;
+    }
+    const reviewed=await onReviewQuestions();
+    if (!reviewed || currentPacket === null || receiptOnly) return;
+    // NEW/CHANGED ordinary questions or sensitive/consent controls require
+    // applicant input and an explicit Finish click afterwards.
+    if (reviewed.needsReview.length || reviewed.humanOnly.length) {
+      status("AutoApply prepared your documents and existing profile answers. " +
+        "Review these new or sensitive employer requirements, fill them truthfully, " +
+        "then use Finish this one application. No final attempt was reserved.");
+      return;
+    }
+    if (reviewed.questions.length) {
+      const completed=await onFillQuestions();
+      if (!completed) return;
+    }
+    // A complete supported Lever form can finish in this SAME Start call:
+    // exact dry-run, fresh approval, one-use claim, single final click, receipt.
+    if (isLeverFinalProvider(currentPacket.application_url)) {
+      await onCompleteOneJob();
+    } else {
+      status("Reviewed CV, letter and known answers are prepared. " +
+        "This employer uses a provider without independently authorized " +
+        "automatic final submission; review and submit personally.");
+    }
   } catch (error) {
     status(normalizeError(error));
   } finally {
@@ -724,6 +969,7 @@ async function onAttach() {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
+    await requireFreshOwnerReview(currentPacket);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
         !exactAssistedForm(tab.url, currentPacket.application_url)) {
       throw new PacketError("Open and reinspect the exact reviewed employer form before attaching.");
@@ -770,6 +1016,10 @@ async function onAttach() {
         $("cvFile").files?.[0] !== file) {
       throw new PacketError("The employer tab or selected PDF changed. Reinspect.");
     }
+    // The applicant may have edited/revoked the profile or letter while the
+    // confirm dialog was open. No employer upload without a fresh server check.
+    await requireVerifiedReview(chrome.storage?.session,currentPacket);
+    await requireFreshOwnerReview(currentPacket);
     const [reply] = await chrome.scripting.executeScript({
       target: { tabId: tab.id }, func: attachReviewedPdf,
       args: [{
@@ -818,6 +1068,7 @@ async function onReviewQuestions() {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(), tab.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
+    await requireFreshOwnerReview(currentPacket);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
         !exactAssistedForm(tab.url, currentPacket.application_url)) {
       throw new QuestionError("Open and reinspect the matching employer application before reviewing questions.");
@@ -833,10 +1084,15 @@ async function onReviewQuestions() {
       throw new QuestionError("The employer form changed or is too large.");
     }
     const plan = planReviewedQuestions(reply.result.elements);
-    currentQuestionPlan = { ...plan, url: tab.url };
+    const memory = suggestSavedAnswers(plan, currentPacket.saved_answers);
+    currentQuestionPlan = { ...plan, url: tab.url,
+      needsReview: memory.needsReview };
     $("questionInfo").textContent =
       plan.questions.length + " eligible required text questions; " +
+      memory.reused + " answered from your approved saved profile; " +
+      memory.needsReview.length + " NEW/CHANGED questions need an answer; " +
       plan.humanOnly.length + " require manual handling. " +
+      (memory.needsReview.length ? "Check: " + memory.needsReview.slice(0, 6).join("; ") + ". " : "") +
       (plan.humanOnly.length ? "Manual: " + plan.humanOnly.slice(0, 6).join("; ") : "");
     const list = $("questionList");
     for (const [index, item] of plan.questions.entries()) {
@@ -844,13 +1100,16 @@ async function onReviewQuestions() {
       const wrapper = document.createElement("div");
       wrapper.className = "question-item";
       const label = document.createElement("label");
-      label.textContent = item.label + " (review required)";
+      label.textContent = item.label + (memory.values[index] ?
+        " (saved profile answer · verify unchanged)" :
+        " (new or changed · answer and save to your SmartPloy profile for next time)");
       label.setAttribute("for", fieldId);
       const input = document.createElement("textarea");
       input.id = fieldId;
       input.rows = 3;
       input.maxLength = item.max_answer_length;
-      input.placeholder = "Type or paste a truthful answer you have reviewed.";
+      input.value = memory.values[index] || "";
+      input.placeholder = "New/changed question. Type an accurate answer and save it once in My CV & documents.";
       input.autocomplete = "off";
       input.spellcheck = false;
       wrapper.append(label, input);
@@ -861,12 +1120,13 @@ async function onReviewQuestions() {
     status(plan.questions.length ?
       "Review every proposed answer for accuracy, then approve a one-time fill. Sensitive questions remain manual." :
       "No safely eligible unanswered text questions. Answer employer-specific requirements manually.", true);
-  } catch (error) { status(normalizeError(error)); }
+    return {...plan,needsReview:memory.needsReview};
+  } catch (error) { status(normalizeError(error)); return null; }
 }
 
 async function onFillQuestions() {
   if (receiptOnly || !currentPacket || !currentQuestionPlan || attemptReserved ||
-      $("questionPanel").hidden) return;
+      $("questionPanel").hidden) return false;
   preflightPassed = false;
   $("submit").disabled = true;
   $("approve").checked = false;
@@ -887,10 +1147,11 @@ async function onFillQuestions() {
       "The employer site may transmit answer values when input/change events fire. " +
       "This will not click Submit, agree to terms, answer protected questions, " +
       "or retry after an uncertain outcome."
-    )) return;
+    )) return false;
     const again = await activeTab();
     validatePacket(currentPacketToJSON(), again.url);
     await requireVerifiedReview(chrome.storage?.session, currentPacket);
+    await requireFreshOwnerReview(currentPacket);
     if (again.id !== targetTabId || again.url !== tab.url ||
         await hasPriorLeverAttempt(currentPacket)) {
       throw new QuestionError("Application state changed; do not retry until reinspection.");
@@ -909,7 +1170,8 @@ async function onFillQuestions() {
       "Review all answered questions in the employer form. Unknown or legally significant fields still need manual completion.";
     status(finding?.reason || "Answer result is uncertain. Inspect the employer form.",
       finding?.status === "filled_for_review");
-  } catch (error) { status(normalizeError(error)); }
+    return finding?.status === "filled_for_review";
+  } catch (error) { status(normalizeError(error)); return false; }
 }
 
 async function onPreflight() {
@@ -962,10 +1224,16 @@ async function onPreflight() {
 }
 
 async function onSubmit() {
-  if (receiptOnly || !currentPacket || !preflightPassed || !$("approve").checked ||
+  // The single Start/Finish journey obtains the SAME explicit fresh consent
+  // immediately before its server claim. Manual Submit keeps its checkbox
+  // and separate modal. Neither mode can avoid the one-use server lock.
+  const reviewedOneJobApproval=oneJobFinalApproval;
+  oneJobFinalApproval=false;
+  if (receiptOnly || !currentPacket || !preflightPassed ||
+      (!$("approve").checked && !reviewedOneJobApproval) ||
       attemptReserved || targetTabId === null ||
       !isLeverFinalProvider(currentPacket.application_url)) return;
-  if (!window.confirm(
+  if (!reviewedOneJobApproval && !window.confirm(
     "FINAL CONFIRMATION: CLICK THE EMPLOYER'S SUBMIT BUTTON ONCE?\n\n" +
     currentPacket.company + " — " + currentPacket.role_title + "\n\n" +
     "The reviewed applicant details and CV may be sent to this employer. " +
@@ -975,6 +1243,7 @@ async function onSubmit() {
   $("submit").disabled = true;
   $("submit").setAttribute("aria-disabled", "true");
   preflightPassed = false;
+  oneJobSubmitWasAttempted = false;
   try {
     const packet = validateReviewPacket(currentPacketToJSON());
     const key = await oneAttemptKey(packet);
@@ -1012,6 +1281,8 @@ async function onSubmit() {
           application_url: packet.application_url,
           cv_pdf_sha256: packet.cv_pdf_sha256,
           cv_pdf_size: packet.cv_pdf_size,
+          letter_pdf_sha256: packet.letter_pdf_sha256,
+          letter_pdf_size: packet.letter_pdf_size,
           email: packet.fields.email,
           full_name: packet.fields.full_name,
           cover_letter: packet.fields.cover_letter,
@@ -1021,6 +1292,7 @@ async function onSubmit() {
       if (!finding) throw new PacketError(
         "Employer outcome unknown. Attempt reserved; do not retry."
       );
+      oneJobSubmitWasAttempted = finding.attempted === true;
       status(finding.attempted ?
         "One permitted employer final click was attempted. Check the " +
         "employer confirmation and save its reference. SmartPloy has NOT " +
@@ -1032,6 +1304,166 @@ async function onSubmit() {
   } catch (error) {
     status(normalizeError(error) +
       " If a server or local attempt was reserved, DO NOT retry.");
+  }
+}
+
+/** ONE supported Lever job: exact reviewed profile and both current PDF
+ * attachments -> dry-run all form controls -> user's one fresh final consent ->
+ * first-party two-person-permitted sticky claim -> original one-use submit ->
+ * exact same-job reference-bearing browser observation -> signed-in persistence.
+ *
+ * No permission shortcut, no background runner and never a blind second click.
+ * If the employer does not issue a reference, report UNCERTAIN, not applied.
+ */
+async function onCompleteOneJob() {
+  if (completingOneJob || receiptOnly || !currentPacket ||
+      targetTabId === null || attemptReserved) return false;
+  completingOneJob=true;
+  $("finishOneJob").disabled=true;
+  const packet=currentPacket;
+  const fingerprint=$("packet").value;
+  try {
+    if (!isLeverFinalProvider(packet.application_url)) {
+      status("One-job automatic final submit is currently supported only for authorized Lever applications. Review and submit other ATS forms personally.");
+      return false;
+    }
+    const employer=await activeTab();
+    validatePacket(fingerprint,employer.url);
+    await requireVerifiedReview(chrome.storage?.session,packet);
+    if (employer.id !== targetTabId || employer.url !== inspectedUrl ||
+        !exactLeverForm(employer.url,packet.application_url) ||
+        await hasPriorLeverAttempt(packet)) {
+      throw new PacketError("The employer job/form changed or has an earlier attempt.");
+    }
+    // The exact final executor, not a weaker approximation, inspects every
+    // input, submitted destination, both PDF bytes/digests, and CAPTCHA.
+    const dry=async()=>{
+      const [reply]=await chrome.scripting.executeScript({
+        target:{tabId:employer.id},world:"ISOLATED",
+        func:submitReviewedLeverOnce,
+        args:[finalEmployerBinding(packet,true)]
+      });
+      return reply?.frameId === 0 && reply?.result?.preflight_ready === true ?
+        {ready:true} :
+        {ready:false,reason:reply?.result?.reason || "Employer form not ready"};
+    };
+    let readiness=await dry();
+    if (!readiness.ready) {
+      status("This exact employer form still needs attention: "+readiness.reason+
+        ". Complete only the missing fields and use Finish this application.");
+      return false;
+    }
+    if (!window.confirm(
+      "COMPLETE THIS ONE REVIEWED JOB APPLICATION?\n\n" +
+      packet.company + " — " + packet.role_title + "\n" +
+      packet.application_url + "\n\n" +
+      "SmartPloy has checked the matching profile, CV and cover-letter PDFs, " +
+      "required fields, employer form and exact job. I personally confirm " +
+      "that every claim, legal consent and answer is accurate and authorize " +
+      "ONE irreversible final submit click. Employer permission must also " +
+      "pass the independent server gate. A reserved attempt cannot be retried. " +
+      "Proceed?"
+    )) return false;
+    const rechecked=await activeTab();
+    if (rechecked.id !== employer.id || rechecked.url !== employer.url ||
+        fingerprint !== $("packet").value || packet !== currentPacket) {
+      throw new PacketError("Selected job or reviewed packet changed during final consent.");
+    }
+    await requireVerifiedReview(chrome.storage?.session,packet);
+    await requireFreshOwnerReview(packet);
+    readiness=await dry();
+    if (!readiness.ready) {
+      status("Form changed before the one-use server claim: "+readiness.reason);
+      return false;
+    }
+    const firstParty=await signedInAppTab();
+    const [response]=await chrome.scripting.executeScript({
+      target:{tabId:firstParty.id},world:"ISOLATED",
+      func:reserveFinalClickOnSmartPloy,
+      args:[await finalOneJobClaimBinding(packet)]
+    });
+    const verdict=response?.result;
+    if (response?.frameId !== 0 || verdict?.claim_reserved !== true) {
+      status("Cannot complete this job: independent employer authorization " +
+        "or current applicant review was not confirmed (" +
+        (verdict?.reason || "unknown") + "). No submit attempted. " +
+        "Check attempt status before any repeat.");
+      return false;
+    }
+    // The server has NOW burned the one-use, cross-device attempt. Any
+    // failure from this point is an UNKNOWN/NOT SENT outcome, never retry.
+    await recordOneUseFinalAttempt(chrome.storage.session,packet,verdict);
+    if (fingerprint !== $("packet").value || packet !== currentPacket ||
+        (await activeTab()).id !== employer.id) {
+      throw new PacketError("Application changed after server claim; no retry.");
+    }
+    preflightPassed=true;
+    oneJobFinalApproval=true; // exactly the modal consent above, same call
+    await onSubmit();         // original local WebLock + one-use server claim
+    if (!oneJobSubmitWasAttempted) {
+      status("One-use employer attempt was consumed, but the final click was " +
+        "not confirmed. Inspect employer and SmartPloy attempt status. Never retry.");
+      return false;
+    }
+    status("One final employer click made. Checking the exact job for an actual confirmation reference; no automatic retry.",true);
+    // A real employer redirect can take a few seconds. Never infer success
+    // from a click, a URL change alone or a generic thank-you page.
+    let observed=false;
+    for (let attempt=0;attempt<24;attempt++) {
+      const open=await activeTab();
+      if (open.id !== employer.id) break;
+      if (exactReceiptPage(open.url,packet.application_url)) {
+        await onReceipt();
+        observed=Boolean($("receiptExport").value);
+        break;
+      }
+      await new Promise(resolve=>setTimeout(resolve,450));
+    }
+    if (!observed) {
+      status("The employer was clicked once, but NO verified same-job reference " +
+        "was observed. Check its confirmation page or email and use Check " +
+        "confirmation. Do not submit again.");
+      return false;
+    }
+    const evidence=JSON.parse($("receiptExport").value);
+    if (!window.confirm(
+      "RECORD THE EMPLOYER CONFIRMATION?\n\n" +
+      packet.company + " — " + packet.role_title + "\n" +
+      "Visible employer reference: " + evidence.reference + "\n\n" +
+      "I have personally inspected the matching employer confirmation page " +
+      "and confirm this exact reference is visible. Save the browser-observed " +
+      "receipt to my signed-in SmartPloy application? " +
+      "This does NOT claim an independently verified provider acknowledgment."
+    )) {
+      status("Reference-bearing employer confirmation observed, but not " +
+        "saved to SmartPloy. You can copy the observation below.");
+      return false;
+    }
+    const appTab=await signedInAppTab();
+    const [result]=await chrome.scripting.executeScript({
+      target:{tabId:appTab.id},world:"ISOLATED",
+      func:saveOneObservedReceiptOnSmartPloy,
+      args:[{workspace_id:packet.workspace_id,receipt:evidence,
+        confirm_user_observed:true}]
+    });
+    if (result?.frameId !== 0 || result?.result?.saved !== true) {
+      status("Employer confirmation observed, but account recording " +
+        "was not confirmed ("+(result?.result?.reason || "unknown")+
+        "). Check the current application receipt before taking any action; never resubmit.");
+      return false;
+    }
+    status("ONE JOB COMPLETE: exact employer confirmation reference " +
+      evidence.reference + " was observed and recorded in SmartPloy. " +
+      "External provider API acknowledgment remains unverified.",true);
+    return true;
+  } catch(error) {
+    status("One-job AutoApply outcome incomplete or uncertain: "+
+      normalizeError(error)+". Do not retry a reserved attempt.");
+    return false;
+  } finally {
+    completingOneJob=false;
+    oneJobFinalApproval=false;
+    $("finishOneJob").disabled=false;
   }
 }
 
@@ -1145,6 +1577,7 @@ $("verifyReview").addEventListener("click", () => void onVerifySmartPloyReview()
 $("reserveFinal").addEventListener("click", () => void onReserveFinalAttempt());
 $("inspect").addEventListener("click", () => void onInspect());
 $("startAutoApply").addEventListener("click", () => void onStartAutoApply());
+$("finishOneJob").addEventListener("click", () => void onCompleteOneJob());
 $("resume").addEventListener("click", () => void onResumeReceipt());
 $("fill").addEventListener("click", () => void onFill());
 $("attach").addEventListener("click", () => void onAttach());

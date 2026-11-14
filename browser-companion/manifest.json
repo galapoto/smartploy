@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SmartPloy Apply Companion",
-  "version": "0.5.4",
-  "description": "Reviewed Lever, Ashby and Greenhouse forms: Start AutoApply fills approved fields and requests question review. No unattended final send.",
+  "version": "0.6.0",
+  "description": "Profile-once reviewed Lever/Ashby/Greenhouse form filling, exact CV and letter PDF attachment from your signed-in SmartPloy tab. Final send requires separate authorization.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -23,5 +23,9 @@
     "32": "icon32.png",
     "48": "icon48.png",
     "128": "icon128.png"
-  }
+  },
+  "host_permissions": [
+    "https://smartploy.komplyint.fi/*",
+    "https://smartploy.obumai.com/*"
+  ]
 }

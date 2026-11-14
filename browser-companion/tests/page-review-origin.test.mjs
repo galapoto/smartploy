@@ -10,10 +10,14 @@ const binding = Object.freeze({
   expected_fields_sha256: "d".repeat(64),
   expected_application_url_sha256: "e".repeat(64),
   expected_cv_pdf_size: 12000,
+  expected_letter_pdf_sha256: "1".repeat(64),
+  expected_letter_pdf_size: 8400,
+  expected_saved_answers_sha256: "2".repeat(64),
 });
 const approved = {
   review_verified: true, review_state: "pending",
   expires_at: "2026-10-22T22:00:00Z",
+  bound_profile_and_letter: true,
   browser_grant_issued: false,
   automatic_employer_submit_authorized: false,
   external_actions_performed: false,

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { PacketError } from "../logic.mjs";
 import {
-  approvedFieldsSha256, isSmartPloyTab, recordVerifiedReview,
+  approvedFieldsSha256, approvedSavedAnswersSha256, isSmartPloyTab, recordVerifiedReview,
   requireVerifiedReview, reviewSessionKey, sha256Text,
   validateReviewPacket, REVIEW_SESSION_SECONDS,
   recordOneUseFinalAttempt, requireOneUseFinalAttempt,
@@ -128,6 +128,38 @@ test("different job, CV, revision, or same email with a new workspace cannot reu
     assert.notEqual(await reviewSessionKey(other),await reviewSessionKey(base));
     await assert.rejects(requireVerifiedReview(store,other,now),PacketError);
   }
+});
+
+test("profile-once review marker binds both PDF digests and exact approved answer snapshot",async()=>{
+  const answers=[
+    {question:"How did you hear about us?",answer:"Careers page"}
+  ];
+  const answerHash=await approvedSavedAnswersSha256(answers);
+  const checked=validateReviewPacket(packet({
+    letter_pdf_sha256:"e".repeat(64),letter_pdf_size:2048,
+    saved_answers:answers,saved_answers_sha256:answerHash,
+    privacy:{...packet().privacy,approved_saved_answers_only:true}
+  }),now);
+  const store=storage();
+  await assert.rejects(recordVerifiedReview(store,checked,verdict(),now),PacketError);
+  const approved={...verdict(),bound_profile_and_letter:true};
+  await recordVerifiedReview(store,checked,approved,now);
+  assert.equal(await requireVerifiedReview(store,checked,now),true);
+  for(const changed of [
+    {...checked,letter_pdf_sha256:"d".repeat(64)},
+    {...checked,letter_pdf_size:4096},
+    {...checked,saved_answers_sha256:"f".repeat(64)},
+    {...checked,saved_answers:[{
+      question:"How did you hear about us?",answer:"Friend"
+    }]}
+  ]){
+    await assert.rejects(requireVerifiedReview(store,changed,now),PacketError);
+  }
+  const revised=[{question:answers[0].question,answer:"Friend"}];
+  const current={...checked,saved_answers:revised,
+    saved_answers_sha256:await approvedSavedAnswersSha256(revised)};
+  assert.notEqual(await reviewSessionKey(current),await reviewSessionKey(checked));
+  await assert.rejects(requireVerifiedReview(store,current,now),PacketError);
 });
 
 test("invalid, stale, or submit-authorizing server response never pairs",async()=>{

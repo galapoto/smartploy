@@ -7,6 +7,8 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto;
 const URL = "https://jobs.lever.co/synthetic/12345678-aaaa-bbbb-cccc-123456789abc/apply";
 const pdf = Buffer.from("%PDF-1.4\n%Synthetic-reviewed-pdf%%EOF");
 const pdfDigest = createHash("sha256").update(pdf).digest("hex");
+const letterPdf = Buffer.from("%PDF-1.4\n%Approved-letter-attachment\n%%EOF");
+const letterPdfDigest = createHash("sha256").update(letterPdf).digest("hex");
 const letter = "My confirmed experience and qualifications are relevant to this role. I reviewed this letter.";
 
 function control(props = {}) {
@@ -28,7 +30,9 @@ async function withFakeEmployer({
   noLock = false, extraAttachment = false, hiddenExtraAttachment = false,
   submitLabel = "Submit application", fullNameLabel = "Full name",
   emailLabel = "Email", letterLabel = "Cover letter", resumeLabel = "CV / Résumé",
-  mutateDuringCvRead = null,
+  mutateDuringCvRead = null, reviewedLetterAttached = false,
+  approveLetter = false, reviewedLetterBytes = letterPdf,
+  formTarget = "", buttonFormTarget = "", baseTarget = "",
 } = {}) {
   const old = Object.fromEntries(
     ["location","window","document","getComputedStyle"].map(x => [x,globalThis[x]])
@@ -64,17 +68,33 @@ async function withFakeEmployer({
       labels:[{innerText:"Optional additional information"}]}),
     control({type:"hidden", value:"initial-csrf-token", name:"csrf_token",
       getClientRects: () => [], labels:[]}),
+    control({type:"file",
+      files:reviewedLetterAttached ? [{
+        size:reviewedLetterBytes.length,
+        name:"SmartPloy-Cover-Letter.pdf",type:"application/pdf",
+        async arrayBuffer() {
+          return reviewedLetterBytes.buffer.slice(
+            reviewedLetterBytes.byteOffset,
+            reviewedLetterBytes.byteOffset+reviewedLetterBytes.byteLength
+          );
+        }
+      }] : [],
+      labels:[{innerText:"Cover letter"}]}),
   ];
   const form = {
     closest: () => null, getClientRects: () => [{}],
     querySelectorAll: () => inputs,
     checkValidity: () => formValid,
-    getAttribute: (name) => name === "action" ? state.formAction : "",
+    target: formTarget,
+    getAttribute: (name) => name === "action" ? state.formAction :
+      name === "target" ? formTarget : "",
   };
   const button = {
     innerText: submitLabel,
     disabled: false,
-    getAttribute: (name) => name === "formaction" ? state.buttonFormAction : "",
+    getAttribute: (name) => name === "formaction" ? state.buttonFormAction :
+      name === "formtarget" ? buttonFormTarget : "",
+    formTarget:buttonFormTarget,
     getClientRects: () => [{}],
     closest: (selector) => selector === "form" ? form : null,
     click() { state.clicks++; if (submitThrows) throw Error("Browser failed"); },
@@ -88,13 +108,20 @@ async function withFakeEmployer({
       hasAttribute: () => noLock ? true : state.marker,
       setAttribute: (k,v) => {state.marker=true;},
     },
-    querySelector: () => state.challenge ? {} : null,
+    querySelector: (selector) => state.challenge ? {} :
+      selector === "base[target]" && baseTarget ? {
+        getAttribute: () => baseTarget
+      } : null,
     querySelectorAll: () => state.duplicateButton ? [button,button] : [button],
   };
   const binding = {
     application_url: URL, cv_pdf_sha256:pdfDigest, cv_pdf_size:pdf.length,
     email:"candidate@example.invalid", full_name:"Synthetic Applicant",
     cover_letter:letter,
+    ...(approveLetter ? {
+      letter_pdf_sha256:letterPdfDigest,
+      letter_pdf_size:letterPdf.length
+    } : {})
   };
   try {
     const result = await submitReviewedLeverOnce(binding);
@@ -118,6 +145,31 @@ test("exact approved Lever form and matching CV permits ONE click only", async (
   assert.equal(r.repeated.reason,"employer_form_already_attempted");
 });
 
+test("one actual form sends both the reviewed CV and letter PDF, once, with no false receipt",async()=>{
+  const r=await withFakeEmployer({
+    reviewedLetterAttached:true,approveLetter:true,letterValue:""
+  });
+  assert.equal(r.result.attempted,true,r.result.reason);
+  assert.equal(r.result.provider_acknowledged,false);
+  assert.equal(r.clicks,1);
+  assert.equal(r.repeated.attempted,false);
+  assert.equal(r.repeated.reason,"employer_form_already_attempted");
+});
+
+test("missing, modified, or unapproved cover-letter attachment blocks the one-use submit",async()=>{
+  for(const config of [
+    {reviewedLetterAttached:false,approveLetter:true,letterValue:""},
+    {reviewedLetterAttached:false,approveLetter:true,letterValue:letter},
+    {reviewedLetterAttached:true,approveLetter:false,letterValue:""},
+    {reviewedLetterAttached:true,approveLetter:true,letterValue:"",
+      reviewedLetterBytes:Buffer.from("%PDF-1.4\n%Modified\n%%EOF") },
+  ]){
+    const r=await withFakeEmployer(config);
+    assert.equal(r.result.attempted,false,JSON.stringify(config));
+    assert.equal(r.clicks,0,JSON.stringify(config));
+  }
+});
+
 test("untrusted URL, incomplete employer form, duplicate control or challenge never click",async()=>{
   const scenarios = [
     [{employerUrl:"https://malicious.example.invalid/apply"},"wrong_employer_job"],
@@ -135,6 +187,21 @@ test("untrusted URL, incomplete employer form, duplicate control or challenge ne
     assert.equal(r.result.attempted,false,JSON.stringify(config));
     assert.equal(r.result.reason,reason,JSON.stringify(config));
     assert.equal(r.clicks,0,JSON.stringify(config));
+  }
+});
+
+test("one-job dry-run rejects new-tab employer targets BEFORE sticky claim",async()=>{
+  for(const config of [
+    {formTarget:"_blank"},
+    {formTarget:"other_window"},
+    {buttonFormTarget:"_blank"},
+    {baseTarget:"_blank"}
+  ]){
+    const reply=await withFakeEmployer(config);
+    assert.equal(reply.result.reason,"unsupported_external_confirmation_target",
+      JSON.stringify(config));
+    assert.equal(reply.clicks,0);
+    assert.equal(reply.marker,false);
   }
 });
 

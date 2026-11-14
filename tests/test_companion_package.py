@@ -78,7 +78,7 @@ def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_pat
         assert manifest["manifest_version"] == 3
         assert manifest["permissions"] == ["activeTab", "scripting", "storage"]
         assert manifest["action"]["default_popup"] == "popup.html"
-        assert manifest["version"] == "0.5.4"
+        assert manifest["version"] == "0.6.0"
         assert b'id="startAutoApply"' in zipfile_src.read("popup.html")
         assert b"async function onStartAutoApply()" in zipfile_src.read("popup.mjs")
         assert manifest["icons"] == {"16": "icon16.png", "32": "icon32.png", "48": "icon48.png", "128": "icon128.png"}
@@ -86,8 +86,13 @@ def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_pat
         assert packager._valid_png(zipfile_src.read("icon128.png"), 128)
         bundle_icon_content_matches_site(zipfile_src, packager)
 
+        assert manifest["host_permissions"] == [
+            "https://smartploy.komplyint.fi/*",
+            "https://smartploy.obumai.com/*",
+        ]
+        assert "page-document-fetch.mjs" in names
         for denied in (
-            "host_permissions", "background", "content_scripts",
+            "optional_host_permissions", "background", "content_scripts",
             "externally_connectable", "update_url",
         ):
             assert denied not in manifest

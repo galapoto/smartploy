@@ -457,6 +457,10 @@ export interface BrowserHandoffPacket {
   document_sha256: string;
   cv_pdf_sha256: string;
   cv_pdf_size: number;
+  letter_pdf_sha256?: string;
+  letter_pdf_size?: number;
+  saved_answers?: {question: string; answer: string}[];
+  saved_answers_sha256?: string;
   /** Server-owned SHA fingerprint for the EXACT approved employer transfer. */
   approved_fields_sha256?: string;
   fields: {
@@ -472,6 +476,7 @@ export interface BrowserHandoffPacket {
   };
   privacy: {
     approved_contact_only: true;
+    approved_saved_answers_only?: true;
     original_cv_included: false;
     browser_form_fill_allowed_after_user_click: true;
     employer_submit_allowed_without_new_approval: false;
