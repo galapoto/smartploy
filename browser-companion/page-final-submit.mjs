@@ -16,7 +16,8 @@ export async function submitReviewedLeverOnce(expected) {
       typeof expected.email !== "string" || !expected.email.includes("@") ||
       typeof expected.full_name !== "string" || !expected.full_name.trim() ||
       typeof expected.cover_letter !== "string" ||
-      expected.cover_letter.length < 60) {
+      expected.cover_letter.length < 60 ||
+      (expected.dry_run !== undefined && typeof expected.dry_run !== "boolean")) {
     return fail("invalid_reviewed_binding");
   }
   const hasReviewedLetter = expected.letter_pdf_sha256 !== undefined ||
@@ -287,6 +288,15 @@ export async function submitReviewedLeverOnce(expected) {
       )) ||
       document.documentElement?.hasAttribute("data-smartploy-final-attempt")) {
     return fail("employer_form_changed");
+  }
+  // Reuse the exact same CV/letter/form verification BEFORE consuming the
+  // irreversible server claim; dry-run NEVER touches the submit control.
+  if (expected.dry_run === true) {
+    return {
+      attempted: false, preflight_ready: true,
+      provider_acknowledged: false, automatic_retry_authorized: false,
+      reason: "one_job_exact_form_ready_no_external_action",
+    };
   }
   document.documentElement?.setAttribute("data-smartploy-final-attempt", "1");
   try {
