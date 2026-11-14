@@ -1204,10 +1204,16 @@ async function onPreflight() {
 }
 
 async function onSubmit() {
-  if (receiptOnly || !currentPacket || !preflightPassed || !$("approve").checked ||
+  // The single Start/Finish journey obtains the SAME explicit fresh consent
+  // immediately before its server claim. Manual Submit keeps its checkbox
+  // and separate modal. Neither mode can avoid the one-use server lock.
+  const reviewedOneJobApproval=oneJobFinalApproval;
+  oneJobFinalApproval=false;
+  if (receiptOnly || !currentPacket || !preflightPassed ||
+      (!$("approve").checked && !reviewedOneJobApproval) ||
       attemptReserved || targetTabId === null ||
       !isLeverFinalProvider(currentPacket.application_url)) return;
-  if (!window.confirm(
+  if (!reviewedOneJobApproval && !window.confirm(
     "FINAL CONFIRMATION: CLICK THE EMPLOYER'S SUBMIT BUTTON ONCE?\n\n" +
     currentPacket.company + " — " + currentPacket.role_title + "\n\n" +
     "The reviewed applicant details and CV may be sent to this employer. " +
@@ -1217,6 +1223,7 @@ async function onSubmit() {
   $("submit").disabled = true;
   $("submit").setAttribute("aria-disabled", "true");
   preflightPassed = false;
+  oneJobSubmitWasAttempted = false;
   try {
     const packet = validateReviewPacket(currentPacketToJSON());
     const key = await oneAttemptKey(packet);
@@ -1265,6 +1272,7 @@ async function onSubmit() {
       if (!finding) throw new PacketError(
         "Employer outcome unknown. Attempt reserved; do not retry."
       );
+      oneJobSubmitWasAttempted = finding.attempted === true;
       status(finding.attempted ?
         "One permitted employer final click was attempted. Check the " +
         "employer confirmation and save its reference. SmartPloy has NOT " +
