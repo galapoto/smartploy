@@ -2530,6 +2530,7 @@ def create_app(
                 expected_document_sha256=packet["document_sha256"],
                 expected_cv_pdf_sha256=packet["cv_pdf_sha256"],
                 expected_fields_sha256=payload.expected_fields_sha256,
+                expected_saved_answers_sha256=payload.expected_saved_answers_sha256,
                 action_scope=ACTION,
             )
         except EmployerFinalActionDenied as exc:
