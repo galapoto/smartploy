@@ -810,6 +810,12 @@ async function autoAttachSavedDocuments() {
         letterNote = "No separate cover-letter upload field; the reviewed letter is filled as text where supported.";
       } else throw error;
     }
+    if (!letterTarget && isLeverFinalProvider(packet.application_url)) {
+      return {attached:0,ready:false,
+        reason:"This Lever form has no separate cover-letter PDF upload. " +
+          "The one-job two-PDF AutoApply contract cannot submit without " +
+          "both attachments. Select a supported posting or complete this one manually."};
+    }
     const docs = [{
       kind:"cv",target:cvTarget,sha256:packet.cv_pdf_sha256,size:packet.cv_pdf_size
     }];
@@ -859,7 +865,7 @@ async function autoAttachSavedDocuments() {
       const again=await activeTab();
       validatePacket(currentPacketToJSON(),again.url);
       await requireVerifiedReview(chrome.storage?.session,packet);
-    await requireFreshOwnerReview(packet);
+      await requireFreshOwnerReview(packet);
       if (packet !== currentPacket || again.id !== tab.id ||
           again.url !== tab.url || await hasPriorLeverAttempt(packet)) {
         throw new UploadError("Selected job or tab changed; stop attachment.");
