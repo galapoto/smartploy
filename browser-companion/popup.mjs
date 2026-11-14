@@ -1196,6 +1196,8 @@ async function onSubmit() {
           application_url: packet.application_url,
           cv_pdf_sha256: packet.cv_pdf_sha256,
           cv_pdf_size: packet.cv_pdf_size,
+          letter_pdf_sha256: packet.letter_pdf_sha256,
+          letter_pdf_size: packet.letter_pdf_size,
           email: packet.fields.email,
           full_name: packet.fields.full_name,
           cover_letter: packet.fields.cover_letter,
