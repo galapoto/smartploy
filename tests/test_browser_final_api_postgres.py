@@ -583,6 +583,46 @@ def test_one_job_final_claim_rejects_revoked_or_changed_applicant_answer(reviewe
     ) is None
 
 
+def test_final_claim_rechecks_changed_answers_after_initial_packet_and_approval(
+    reviewed_case, monkeypatch,
+):
+    """The signed-in packet was valid but changed BEFORE the sticky DB claim.
+
+    Simulate the second account session committing a replacement between the
+    earlier API packet read, user approval and the claim transaction.
+    No stale application may receive an irreversible final-click claim.
+    """
+    case=reviewed_case
+    authorize_review_and_employer(case)
+    gate=case["api"].app.state.employer_final_actions
+    actual_approve=gate.approve
+
+    def replace_answer_between_approval_and_consume(*args, **kwargs):
+        result=actual_approve(*args, **kwargs)
+        PostgresProfileRepository(DSN, profile_id=case["a"].profile_id).upsert_fact(
+            ProfileFact(
+                "application_answer",
+                json.dumps({
+                    "schema":"smartploy.profile_answer.v1",
+                    "question":"How did you hear about us?",
+                    "answer":"Applicant updated this answer in another session",
+                }),
+                "user-confirmed",approved=True,
+            )
+        )
+        return result
+
+    monkeypatch.setattr(gate,"approve",replace_answer_between_approval_and_consume)
+    denied=case["api"].post(
+        case["claim_route"],json=case["body"],headers=case["headers"],
+    )
+    assert denied.status_code == 409,denied.text
+    assert "answers changed" in denied.text.casefold()
+    assert PostgresEmployerSubmitClaimRepository(DSN).get(
+        case["a"],case["work"].canonical_key
+    ) is None
+
+
 def test_reserved_browser_attempt_reconciles_observed_receipt_then_owner_report(reviewed_case):
     """SP31: finish a previously claimed application, never send the same job twice.
 
