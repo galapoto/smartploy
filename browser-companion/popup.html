@@ -20,10 +20,12 @@
       <button id="verifyReview" type="button" class="secondary">Verify review on signed-in SmartPloy</button>
       <p id="reviewInfo" role="status"></p>
       <button id="startAutoApply" type="button" class="start-autoapply">
-        Start AutoApply · fill reviewed fields
+        Start AutoApply · complete this job
       </button>
-      <p class="muted">Inspects the exact form, asks before filling, and shows remaining questions.
-        No PDF is uploaded or application submitted automatically.</p>
+      <p class="muted">Use your saved profile, prepare and attach the job-specific CV and
+        cover letter, and fill approved answers. New or sensitive questions pause for
+        your review. Final submission is only attempted with your explicit approval
+        and the employer's independently verified permission.</p>
       <details class="sp-advanced">
         <summary>Manual controls &amp; safety details</summary>
       <p class="muted">Only for an independently authorized <strong>Lever</strong> posting:
@@ -59,10 +61,10 @@
 
     <section id="submission" hidden>
       <h2>3. Review employer form and finish applying</h2>
-      <p class="warning">Select a reviewed SmartPloy CV PDF for an explicitly approved transfer,
-        or attach it yourself on the employer page. The employer may upload immediately
-        when the file is placed in its résumé field. You must personally review and
-        answer employer-specific questions, privacy notices and security challenges.</p>
+      <p class="warning">SmartPloy can attach the exact current CV and cover letter PDF
+        to supported fields after your approval. If a particular employer has different
+        requirements, review them here. Employer sites may upload attached files
+        immediately; security challenges and legal consents remain yours to complete.</p>
       <label for="cvFile">Select reviewed CV PDF (maximum 2 MiB)</label>
       <input type="file" id="cvFile" accept=".pdf,application/pdf" />
       <button id="attach" type="button" class="secondary">Approve and attach PDF (no submit)</button>
@@ -76,7 +78,7 @@
         <button id="fillQuestions" type="button" disabled>Approve and fill reviewed answers (no submit)</button>
       </div>
       <button id="finishOneJob" type="button" class="start-autoapply">
-        Finish this one application · submit only with permission
+        Finish this application
       </button>
       <button id="check">Check required fields</button>
       <p id="preflight" role="status"></p>
