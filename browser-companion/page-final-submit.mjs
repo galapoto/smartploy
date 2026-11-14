@@ -79,6 +79,19 @@ export async function submitReviewedLeverOnce(expected) {
   const finalButton = buttons[0];
   const form = finalButton.closest("form");
   if (!form || !visible(form)) return fail("standard_employer_form_missing");
+  // Explicit targets (or document <base target>) may send the irreversible
+  // application into a different tab without any observable same-tab receipt.
+  // Keep this first single-job release self-targeted and fail closed in both
+  // dry-run and final execution; no claim is burned for an unknown target.
+  const targetAttrs = [
+    form.target, form.getAttribute?.("target"),
+    finalButton.formTarget, finalButton.getAttribute?.("formtarget"),
+    document.querySelector("base[target]")?.getAttribute("target")
+  ];
+  if (targetAttrs.some(t => t && String(t).trim() &&
+      String(t).trim().toLowerCase() !== "_self")) {
+    return fail("unsupported_external_confirmation_target");
+  }
 
   // Inspect every form control for attachments, including non-visible inputs:
   // hidden populated file controls may still be sent with the employer form.
@@ -160,10 +173,11 @@ export async function submitReviewedLeverOnce(expected) {
       return fail("reviewed_cover_letter_changed_or_unverifiable");
     }
   }
-  if (hasReviewedLetter && !attachedLetter &&
-      !(letterTexts.length === 1 &&
-        String(letterTexts[0].value || "").trim() === expected.cover_letter.trim())) {
-    return fail("reviewed_cover_letter_missing");
+  // The ONE-JOB acceptance contract requires actual current CV AND letter
+  // PDFs in distinct employer file controls; prose cannot silently replace a
+  // separately approved attachment merely because its text matches.
+  if (hasReviewedLetter && !attachedLetter) {
+    return fail("reviewed_cover_letter_pdf_missing");
   }
   if (attachedLetter && (
     !visible(letterFileInput) ||
