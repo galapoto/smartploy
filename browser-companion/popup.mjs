@@ -1287,6 +1287,166 @@ async function onSubmit() {
   }
 }
 
+/** ONE supported Lever job: exact reviewed profile and both current PDF
+ * attachments -> dry-run all form controls -> user's one fresh final consent ->
+ * first-party two-person-permitted sticky claim -> original one-use submit ->
+ * exact same-job reference-bearing browser observation -> signed-in persistence.
+ *
+ * No permission shortcut, no background runner and never a blind second click.
+ * If the employer does not issue a reference, report UNCERTAIN, not applied.
+ */
+async function onCompleteOneJob() {
+  if (completingOneJob || receiptOnly || !currentPacket ||
+      targetTabId === null || attemptReserved) return false;
+  completingOneJob=true;
+  $("finishOneJob").disabled=true;
+  const packet=currentPacket;
+  const fingerprint=$("packet").value;
+  try {
+    if (!isLeverFinalProvider(packet.application_url)) {
+      status("One-job automatic final submit is currently supported only for authorized Lever applications. Review and submit other ATS forms personally.");
+      return false;
+    }
+    const employer=await activeTab();
+    validatePacket(fingerprint,employer.url);
+    await requireVerifiedReview(chrome.storage?.session,packet);
+    if (employer.id !== targetTabId || employer.url !== inspectedUrl ||
+        !exactLeverForm(employer.url,packet.application_url) ||
+        await hasPriorLeverAttempt(packet)) {
+      throw new PacketError("The employer job/form changed or has an earlier attempt.");
+    }
+    // The exact final executor, not a weaker approximation, inspects every
+    // input, submitted destination, both PDF bytes/digests, and CAPTCHA.
+    const dry=async()=>{
+      const [reply]=await chrome.scripting.executeScript({
+        target:{tabId:employer.id},world:"ISOLATED",
+        func:submitReviewedLeverOnce,
+        args:[finalEmployerBinding(packet,true)]
+      });
+      return reply?.frameId === 0 && reply?.result?.preflight_ready === true ?
+        {ready:true} :
+        {ready:false,reason:reply?.result?.reason || "Employer form not ready"};
+    };
+    let readiness=await dry();
+    if (!readiness.ready) {
+      status("This exact employer form still needs attention: "+readiness.reason+
+        ". Complete only the missing fields and use Finish this application.");
+      return false;
+    }
+    if (!window.confirm(
+      "COMPLETE THIS ONE REVIEWED JOB APPLICATION?\n\n" +
+      packet.company + " — " + packet.role_title + "\n" +
+      packet.application_url + "\n\n" +
+      "SmartPloy has checked the matching profile, CV and cover-letter PDFs, " +
+      "required fields, employer form and exact job. I personally confirm " +
+      "that every claim, legal consent and answer is accurate and authorize " +
+      "ONE irreversible final submit click. Employer permission must also " +
+      "pass the independent server gate. A reserved attempt cannot be retried. " +
+      "Proceed?"
+    )) return false;
+    const rechecked=await activeTab();
+    if (rechecked.id !== employer.id || rechecked.url !== employer.url ||
+        fingerprint !== $("packet").value || packet !== currentPacket) {
+      throw new PacketError("Selected job or reviewed packet changed during final consent.");
+    }
+    await requireVerifiedReview(chrome.storage?.session,packet);
+    await requireFreshOwnerReview(packet);
+    readiness=await dry();
+    if (!readiness.ready) {
+      status("Form changed before the one-use server claim: "+readiness.reason);
+      return false;
+    }
+    const firstParty=await signedInAppTab();
+    const [response]=await chrome.scripting.executeScript({
+      target:{tabId:firstParty.id},world:"ISOLATED",
+      func:reserveFinalClickOnSmartPloy,
+      args:[await finalOneJobClaimBinding(packet)]
+    });
+    const verdict=response?.result;
+    if (response?.frameId !== 0 || verdict?.claim_reserved !== true) {
+      status("Cannot complete this job: independent employer authorization " +
+        "or current applicant review was not confirmed (" +
+        (verdict?.reason || "unknown") + "). No submit attempted. " +
+        "Check attempt status before any repeat.");
+      return false;
+    }
+    // The server has NOW burned the one-use, cross-device attempt. Any
+    // failure from this point is an UNKNOWN/NOT SENT outcome, never retry.
+    await recordOneUseFinalAttempt(chrome.storage.session,packet,verdict);
+    if (fingerprint !== $("packet").value || packet !== currentPacket ||
+        (await activeTab()).id !== employer.id) {
+      throw new PacketError("Application changed after server claim; no retry.");
+    }
+    preflightPassed=true;
+    oneJobFinalApproval=true; // exactly the modal consent above, same call
+    await onSubmit();         // original local WebLock + one-use server claim
+    if (!oneJobSubmitWasAttempted) {
+      status("One-use employer attempt was consumed, but the final click was " +
+        "not confirmed. Inspect employer and SmartPloy attempt status. Never retry.");
+      return false;
+    }
+    status("One final employer click made. Checking the exact job for an actual confirmation reference; no automatic retry.",true);
+    // A real employer redirect can take a few seconds. Never infer success
+    // from a click, a URL change alone or a generic thank-you page.
+    let observed=false;
+    for (let attempt=0;attempt<24;attempt++) {
+      const open=await activeTab();
+      if (open.id !== employer.id) break;
+      if (exactReceiptPage(open.url,packet.application_url)) {
+        await onReceipt();
+        observed=Boolean($("receiptExport").value);
+        break;
+      }
+      await new Promise(resolve=>setTimeout(resolve,450));
+    }
+    if (!observed) {
+      status("The employer was clicked once, but NO verified same-job reference " +
+        "was observed. Check its confirmation page or email and use Check " +
+        "confirmation. Do not submit again.");
+      return false;
+    }
+    const evidence=JSON.parse($("receiptExport").value);
+    if (!window.confirm(
+      "RECORD THE EMPLOYER CONFIRMATION?\n\n" +
+      packet.company + " — " + packet.role_title + "\n" +
+      "Visible employer reference: " + evidence.reference + "\n\n" +
+      "I have personally inspected the matching employer confirmation page " +
+      "and confirm this exact reference is visible. Save the browser-observed " +
+      "receipt to my signed-in SmartPloy application? " +
+      "This does NOT claim an independently verified provider acknowledgment."
+    )) {
+      status("Reference-bearing employer confirmation observed, but not " +
+        "saved to SmartPloy. You can copy the observation below.");
+      return false;
+    }
+    const appTab=await signedInAppTab();
+    const [result]=await chrome.scripting.executeScript({
+      target:{tabId:appTab.id},world:"ISOLATED",
+      func:saveOneObservedReceiptOnSmartPloy,
+      args:[{workspace_id:packet.workspace_id,receipt:evidence,
+        confirm_user_observed:true}]
+    });
+    if (result?.frameId !== 0 || result?.result?.saved !== true) {
+      status("Employer confirmation observed, but account recording " +
+        "was not confirmed ("+(result?.result?.reason || "unknown")+
+        "). Check the current application receipt before taking any action; never resubmit.");
+      return false;
+    }
+    status("ONE JOB COMPLETE: exact employer confirmation reference " +
+      evidence.reference + " was observed and recorded in SmartPloy. " +
+      "External provider API acknowledgment remains unverified.",true);
+    return true;
+  } catch(error) {
+    status("One-job AutoApply outcome incomplete or uncertain: "+
+      normalizeError(error)+". Do not retry a reserved attempt.");
+    return false;
+  } finally {
+    completingOneJob=false;
+    oneJobFinalApproval=false;
+    $("finishOneJob").disabled=false;
+  }
+}
+
 async function onResumeReceipt() {
   clearReceiptObservation();
   const resumeSequence = receiptCheckSequence;
