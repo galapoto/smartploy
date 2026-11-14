@@ -1557,6 +1557,7 @@ $("verifyReview").addEventListener("click", () => void onVerifySmartPloyReview()
 $("reserveFinal").addEventListener("click", () => void onReserveFinalAttempt());
 $("inspect").addEventListener("click", () => void onInspect());
 $("startAutoApply").addEventListener("click", () => void onStartAutoApply());
+$("finishOneJob").addEventListener("click", () => void onCompleteOneJob());
 $("resume").addEventListener("click", () => void onResumeReceipt());
 $("fill").addEventListener("click", () => void onFill());
 $("attach").addEventListener("click", () => void onAttach());
