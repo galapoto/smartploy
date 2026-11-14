@@ -383,7 +383,15 @@ class BrowserReviewVerificationPayload(BaseModel):
 
 
 class BrowserFinalAttemptPayload(BrowserReviewVerificationPayload):
-    """Separate explicit final-click decision for one reviewed employer job."""
+    """Separate explicit final-click decision for one reviewed employer job.
+
+    Final claims MUST bind latest profile facts and letter PDF. Older
+    companion builds can review/prepare but cannot reserve a new external
+    submission using stale saved answers.
+    """
+    expected_saved_answers_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_letter_pdf_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_letter_pdf_size: int = Field(ge=12, le=2 * 1024 * 1024)
     confirm_one_job_final_click: StrictBool
     acknowledge_external_employer_transfer: StrictBool
     acknowledge_no_automatic_retry: StrictBool
@@ -2488,10 +2496,15 @@ def create_app(
             or packet["cv_pdf_sha256"] != payload.expected_cv_pdf_sha256
             or packet["cv_pdf_size"] != payload.expected_cv_pdf_size
             or packet["approved_fields_sha256"] != payload.expected_fields_sha256
+            or packet["saved_answers_sha256"] != payload.expected_saved_answers_sha256
+            or saved_answers_sha256(packet["saved_answers"])
+               != payload.expected_saved_answers_sha256
+            or packet["letter_pdf_sha256"] != payload.expected_letter_pdf_sha256
+            or packet["letter_pdf_size"] != payload.expected_letter_pdf_size
             or sha256(packet["application_url"].encode("utf-8")).hexdigest()
                != payload.expected_application_url_sha256
         ):
-            raise HTTPException(status_code=409, detail="Reviewed employer, CV PDF or approved fields changed")
+            raise HTTPException(status_code=409, detail="Employer, profile answers or reviewed CV/letter changed; refresh")
         # Both calls reuse original SP15e atomic permission/review/claim gates,
         # including independent two-person rights and sticky cross-device DB
         # uniqueness. Even if this process crashes, a committed reservation
