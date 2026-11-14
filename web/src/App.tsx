@@ -873,21 +873,11 @@ export default function App() {
       const payload=JSON.stringify({
         schema:"smartploy.profile_answer.v1",question,answer
       });
-      // Save the new approved answer first. Then remove the prior value of
-      // the SAME question, so a change requires one edit rather than duplicate
-      // profile setup. During any partial failure the packet fails closed.
-      const saved=await runPrivateMutation((userId)=>
+      // The server atomically replaces any existing answer with the same
+      // Unicode-casefolded question. A second client must never delete a
+      // replacement that was committed by a concurrent signed-in session.
+      await runPrivateMutation((userId)=>
         createFact("application_answer",payload,true,userId));
-      const old=facts.filter((fact)=>{
-        const prior=savedApplicationAnswer(fact);
-        const canonical = (value:string) =>
-          value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
-        return prior && canonical(prior.question) === canonical(question) &&
-          fact.fact_id !== saved.fact.fact_id;
-      });
-      for(const previous of old){
-        await runPrivateMutation((userId)=>deleteFact(previous.fact_id,userId));
-      }
       setSavedAnswerQuestion("");setSavedAnswerText("");
       setNotice("Approved application answer saved to your private profile. " +
         "SmartPloy reuses it only when the employer's question matches exactly.");
