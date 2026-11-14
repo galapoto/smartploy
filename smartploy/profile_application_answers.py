@@ -72,30 +72,55 @@ def encode_profile_answer(raw: str) -> str:
     return json.dumps({"schema": SCHEMA, **row}, ensure_ascii=False, separators=(",", ":"))
 
 
-def approved_answers_for_packet(profile: Any) -> list[dict[str, str]]:
-    """Return only unique non-sensitive account-approved Q/A; conflicts fail closed.
-
-    Never take unapproved values, arbitrary CV prose, or duplicate conflicting
-    answers. The browser must still ask the applicant before each employer fill.
-    """
+def _approved_answers_from_values(values: Any) -> list[dict[str, str]]:
+    """Canonical shared projection for app packets AND locked SQL snapshots."""
     choices: dict[str, list[dict[str, str]]] = {}
-    for fact in profile.approved_facts:
-        if fact.fact_type != "application_answer":
-            continue
+    for value in values:
         try:
-            row = decode_profile_answer(fact.value)
+            row = decode_profile_answer(value)
         except ValueError:
             continue
         key = canonical_question(row["question"])
         choices.setdefault(key, []).append(row)
     result: list[dict[str, str]] = []
     for key in sorted(choices):
-        unique = {item["answer"] for item in choices[key]}
-        if len(choices[key]) != 1 or len(unique) != 1:
-            # Old and new competing entries require the user to resolve them.
+        if len(choices[key]) != 1:
+            # Conflicts are NOT an excuse to choose one of multiple answers.
             continue
         result.append(choices[key][0])
     return result[:MAX_PACKET_ANSWERS]
+
+
+def approved_answers_for_packet(profile: Any) -> list[dict[str, str]]:
+    """Return unique approved ordinary answers; never infer or expose sensitive."""
+    return _approved_answers_from_values(
+        fact.value for fact in profile.approved_facts
+        if fact.fact_type == "application_answer"
+    )
+
+
+def saved_answers_sha256_locked(cur: Any, profile_id: str) -> str:
+    """Read latest approved answers under the SAME transaction as sticky claim.
+
+    Every public approved-answer save/replacement/revocation takes this exact
+    per-account PostgreSQL advisory transaction lock. The claim locks it and
+    recomputes the approved snapshot before committing the one-use attempt.
+    """
+    cur.execute(
+        "SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))",
+        (profile_id, "application_answer"),
+    )
+    cur.execute(
+        """
+        SELECT value FROM smartploy_profile_facts
+        WHERE profile_id=%s AND fact_type='application_answer' AND approved=true
+        ORDER BY fact_id
+        """,
+        (profile_id,),
+    )
+    return saved_answers_sha256(
+        _approved_answers_from_values(value for (value,) in cur.fetchall())
+    )
 
 
 def saved_answers_sha256(answers: list[dict[str, str]]) -> str:
