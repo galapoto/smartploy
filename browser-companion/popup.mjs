@@ -29,6 +29,9 @@ let attemptReserved = false;
 let receiptOnly = false;
 let receiptCheckSequence = 0;
 let startAutoApplyInFlight = false;
+let completingOneJob = false;
+let oneJobFinalApproval = false;
+let oneJobSubmitWasAttempted = false;
 
 function clearReceiptObservation() {
   receiptCheckSequence++;
@@ -475,6 +478,60 @@ async function requireFreshOwnerReview(packet) {
     throw new PacketError("The approved profile or CV/letter is stale. Return to SmartPloy and review it again.");
   }
   return reply.result;
+}
+
+/** One exact reviewed form binding for both harmless preflight and final click.
+ * Only the independent server claim and a human confirmation can enable the
+ * final click; passing dry_run=true never grants a submission capability.
+ */
+function finalEmployerBinding(packet, dryRun = false) {
+  return {
+    application_url:packet.application_url,
+    cv_pdf_sha256:packet.cv_pdf_sha256,
+    cv_pdf_size:packet.cv_pdf_size,
+    letter_pdf_sha256:packet.letter_pdf_sha256,
+    letter_pdf_size:packet.letter_pdf_size,
+    email:packet.fields.email,
+    full_name:packet.fields.full_name,
+    cover_letter:packet.fields.cover_letter,
+    ...(dryRun ? {dry_run:true} : {})
+  };
+}
+
+/** Secret-free immutable server intent, including the latest reviewed profile.
+ * No employer interaction is performed while this value is generated.
+ */
+async function finalOneJobClaimBinding(packet) {
+  const memoryHash=await approvedSavedAnswersSha256(packet.saved_answers || []);
+  if (memoryHash !== packet.saved_answers_sha256 ||
+      !packet.letter_pdf_sha256 || !packet.letter_pdf_size) {
+    throw new PacketError("The saved profile or cover letter changed. Create a fresh packet.");
+  }
+  return {
+    workspace_id:packet.workspace_id,expected_revision:packet.revision,
+    expected_document_sha256:packet.document_sha256,
+    expected_cv_pdf_sha256:packet.cv_pdf_sha256,
+    expected_cv_pdf_size:packet.cv_pdf_size,
+    expected_fields_sha256:await approvedFieldsSha256(packet.fields),
+    expected_application_url_sha256:await sha256Text(packet.application_url),
+    expected_saved_answers_sha256:memoryHash,
+    expected_letter_pdf_sha256:packet.letter_pdf_sha256,
+    expected_letter_pdf_size:packet.letter_pdf_size,
+    confirm_one_job_final_click:true,
+    acknowledge_external_employer_transfer:true,
+    acknowledge_no_automatic_retry:true
+  };
+}
+
+async function signedInAppTab() {
+  const items=(await chrome.tabs.query({
+    url:["https://smartploy.komplyint.fi/*","https://smartploy.obumai.com/*"]
+  })).filter(tab=>tab?.id && tab?.url && isSmartPloyTab(tab.url));
+  if (items.length !== 1)
+    throw new PacketError(
+      "Keep exactly one signed-in SmartPloy tab open for this application."
+    );
+  return items[0];
 }
 
 async function onVerifySmartPloyReview() {
