@@ -116,6 +116,7 @@ jobs:
           node --check browser-companion/upload.mjs
           node --check browser-companion/page-attachment.mjs
           node --check browser-companion/page-document-fetch.mjs
+          node --check browser-companion/page-receipt-import.mjs
           node --check browser-companion/questions.mjs
           node --check browser-companion/page-questions.mjs
           node --check browser-companion/attempt-lock.mjs
