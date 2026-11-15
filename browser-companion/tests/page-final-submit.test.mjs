@@ -33,6 +33,7 @@ async function withFakeEmployer({
   mutateDuringCvRead = null, reviewedLetterAttached = false,
   approveLetter = false, reviewedLetterBytes = letterPdf,
   formTarget = "", buttonFormTarget = "", baseTarget = "",
+  requiredRadioChoice = null,
 } = {}) {
   const old = Object.fromEntries(
     ["location","window","document","getComputedStyle"].map(x => [x,globalThis[x]])
@@ -64,6 +65,14 @@ async function withFakeEmployer({
       getClientRects: () => [], labels:[{innerText:"Hidden supporting document"}]}),
     control({type:"checkbox", required:requiredMissing, checked:!requiredMissing,
       labels:[{innerText:"Consent"}]}),
+    ...(requiredRadioChoice === null ? [] : [
+      control({type:"radio", name:"candidate_preference", value:"yes",
+        required:true, checked:requiredRadioChoice === "yes",
+        labels:[{innerText:"Yes"}]}),
+      control({type:"radio", name:"candidate_preference", value:"no",
+        checked:requiredRadioChoice === "no",
+        labels:[{innerText:"No"}]}),
+    ]),
     control({type:"textarea", value:"I would like to join this team.",
       labels:[{innerText:"Optional additional information"}]}),
     control({type:"hidden", value:"initial-csrf-token", name:"csrf_token",
@@ -188,6 +197,18 @@ test("untrusted URL, incomplete employer form, duplicate control or challenge ne
     assert.equal(r.result.reason,reason,JSON.stringify(config));
     assert.equal(r.clicks,0,JSON.stringify(config));
   }
+});
+
+test("required radio group accepts any selected option and rejects none", async () => {
+  for (const selected of ["yes", "no"]) {
+    const r = await withFakeEmployer({requiredRadioChoice:selected});
+    assert.equal(r.result.attempted,true,selected);
+    assert.equal(r.clicks,1,selected);
+  }
+  const none = await withFakeEmployer({requiredRadioChoice:""});
+  assert.equal(none.result.reason,"required_employer_field_unresolved");
+  assert.equal(none.clicks,0);
+  assert.equal(none.marker,false);
 });
 
 test("one-job dry-run rejects new-tab employer targets BEFORE sticky claim",async()=>{
