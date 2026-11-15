@@ -60,6 +60,28 @@ export async function attachReviewedPdf(payload) {
   }
   const input = all[payload.index];
   const owningForm = input?.closest?.("form");
+  // On Lever the *application submit* button, not any globally visible
+  // upload control, is the authority for the destination form. A separate
+  // profile/talent-pool form must never receive reviewed applicant PDFs.
+  const leverApplicationForm = () => {
+    if (!lever) return owningForm;
+    const buttons = Array.from(document.querySelectorAll('button,input[type="submit"]'))
+      .filter(button => {
+        const title = String(button.innerText || button.value ||
+          button.getAttribute?.("aria-label") || "")
+          .replace(/\s+/g, " ").trim().toLowerCase();
+        if (!["submit application","send application","lähetä hakemus",
+              "skicka ansökan"].includes(title) || button.disabled ||
+            button.closest?.("[hidden],[aria-hidden='true'],[inert]")) return false;
+        const style = getComputedStyle(button);
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          button.getClientRects().length > 0;
+      });
+    return buttons.length === 1 ? (buttons[0].form || buttons[0].closest("form")) : null;
+  };
+  if (lever && (!owningForm || leverApplicationForm() !== owningForm)) {
+    return stop("The reviewed PDF input is not part of the final application form.");
+  }
   if (!input || input.tagName !== "INPUT" || input.type !== "file" ||
       input.matches(":disabled") || input.readOnly || input.multiple || input.files?.length ||
       !owningForm || input.form !== owningForm ||
@@ -138,6 +160,7 @@ export async function attachReviewedPdf(payload) {
       input.matches(":disabled") || input.readOnly || input.multiple ||
       input.files?.length || input.closest("form") !== owningForm ||
       input.form !== owningForm ||
+      (lever && leverApplicationForm() !== owningForm) ||
       String(input.id || "") !== payload.expected_id ||
       String(input.name || "") !== payload.expected_name ||
       String(input.accept || "") !== payload.expected_accept ||
