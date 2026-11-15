@@ -27,7 +27,9 @@ FILES = (
     "icon16.png", "icon32.png", "icon48.png", "icon128.png",
     "smartploy-mark-v2.svg",
     "logic.mjs", "upload.mjs", "questions.mjs", "page-questions.mjs",
-    "page-attachment.mjs", "page-review.mjs", "review-bridge.mjs",
+    "page-attachment.mjs", "page-document-fetch.mjs",
+    "page-receipt-import.mjs",
+    "page-review.mjs", "review-bridge.mjs",
     "page-final-claim.mjs", "page-final-submit.mjs", "attempt-lock.mjs",
 )
 MAX_SOURCE_BYTES = 500_000
@@ -102,8 +104,11 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
     if (
         manifest.get("manifest_version") != 3
         or manifest.get("permissions") != ["activeTab", "scripting", "storage"]
+        or manifest.get("host_permissions") != [
+            "https://smartploy.komplyint.fi/*", "https://smartploy.obumai.com/*"
+        ]
         or any(field in manifest for field in (
-            "host_permissions", "optional_host_permissions", "background",
+            "optional_host_permissions", "background",
             "content_scripts", "externally_connectable", "update_url",
         ))
         or manifest.get("action", {}).get("default_popup") != "popup.html"
@@ -144,8 +149,10 @@ def reviewed_files() -> tuple[dict[str, bytes], str]:
             if not imported.startswith("./") or imported[2:] not in files:
                 raise ValueError(f"{name} references an unreviewed import: {imported}")
 
-    # Verify all local HTML references. Chrome extension does not need host
-    # permissions: every execution is user-triggered via activeTab.
+    # Verify all local HTML references. The ONE exact SmartPloy first-party
+    # host permission is required only to read the signed-in applicant's
+    # deterministic reviewed PDFs from the app tab; employer execution is
+    # still user-triggered via activeTab. No wildcard employer permissions.
     for asset in HTML_ASSET.findall(files["popup.html"].decode("utf-8")):
         if asset.startswith(("./", "../", "http:", "https:", "//")):
             raise ValueError(f"Unapproved external or relative popup asset: {asset}")
@@ -163,9 +170,10 @@ def make_zip(output: Path) -> str:
         "1. Extract this ZIP to a local folder on your own desktop computer.\n"
         "2. In Chrome/Chromium open chrome://extensions and enable Developer mode.\n"
         "3. Choose Load unpacked, then select the EXTRACTED folder containing manifest.json.\n"
-        "4. Sign in to SmartPloy, review your saved application and CV, and copy\n"
-        "   the short-lived reviewed packet. Use the extension only on the exact\n"
-        "   approved job form after reading employer privacy terms.\n"
+        "4. Sign in to SmartPloy, review your CV, letter and saved profile once,\n"
+        "   then copy the short-lived packet. Use the companion only on the exact\n"
+        "   approved job form after reading employer privacy terms. It can\n"
+        "   retrieve current reviewed PDFs only from smartploy.komplyint.fi.\n"
         "5. Only individually employer-authorized Lever cases can use a separate\n"
         "   one-use final click when the server operator enables it. Otherwise\n"
         "   personally submit on the employer website and report the result.\n\n"

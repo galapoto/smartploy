@@ -16,7 +16,11 @@ def test_exact_existing_mv3_capabilities_and_first_party_claim_gate():
     markup=(EXT/"popup.html").read_text()
     assert manifest["manifest_version"]==3
     assert set(manifest["permissions"])=={"activeTab","scripting","storage"}
-    for forbidden in ("host_permissions","background","content_scripts","externally_connectable"):
+    assert manifest["host_permissions"] == [
+        "https://smartploy.komplyint.fi/*", "https://smartploy.obumai.com/*"
+    ]
+    for forbidden in ("optional_host_permissions","background","content_scripts",
+                      "externally_connectable","update_url"):
         assert forbidden not in manifest
     assert "func: submitOnce" not in popup
     assert "live[0].click()" not in popup

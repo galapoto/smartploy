@@ -15,10 +15,14 @@ const payload={
   expected_fields_sha256:"135df071b9de4a37fd07681b9a61b09c8e2bfe6bbba4df84108c69168176403c",
   expected_application_url_sha256:"5e7b33db375658c5dd70e418de459e97f7c050c5f6d86045a86345be15c01227",
   expected_cv_pdf_size:87522,
+  expected_letter_pdf_sha256:"d".repeat(64),
+  expected_letter_pdf_size:2689,
+  expected_saved_answers_sha256:"e".repeat(64),
 };
 const approved={
   review_verified:true,review_state:"pending",
   expires_at:"2099-01-01T00:00:00Z",
+  bound_profile_and_letter:true,
   automatic_employer_submit_authorized:false,
   external_actions_performed:false,browser_grant_issued:false
 };
@@ -68,7 +72,10 @@ test("real site-origin browser function verifies exact reviewed packet without l
     expected_cv_pdf_sha256:pdfSha,
     expected_fields_sha256:payload.expected_fields_sha256,
     expected_application_url_sha256:payload.expected_application_url_sha256,
-    expected_cv_pdf_size:payload.expected_cv_pdf_size
+    expected_cv_pdf_size:payload.expected_cv_pdf_size,
+    expected_letter_pdf_sha256:payload.expected_letter_pdf_sha256,
+    expected_letter_pdf_size:payload.expected_letter_pdf_size,
+    expected_saved_answers_sha256:payload.expected_saved_answers_sha256
   });
   expect(requests).toEqual([SITE,origin+"/api/v1/session",API]);
   expect(crossSite).toBe(0);

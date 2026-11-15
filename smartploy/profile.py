@@ -28,6 +28,7 @@ FACT_TYPES = {
     "location",
     "work_authorization",
     "preference",
+    "application_answer",
 }
 
 
@@ -48,6 +49,11 @@ class ProfileFact:
         if fact_type not in FACT_TYPES:
             raise ValueError(f"unsupported profile fact type: {fact_type}")
         value = normalize_space(self.value)
+        if fact_type == "application_answer":
+            # Reuse profile storage without adding a parallel answer database.
+            # This structured type is screened before it can be approved.
+            from .profile_application_answers import encode_profile_answer
+            value = encode_profile_answer(value)
         source = normalize_space(self.source)
         if not value:
             raise ValueError("profile fact value is required")
@@ -131,6 +137,10 @@ class CandidateProfile:
     def approved_evidence(self) -> dict[str, Any]:
         grouped: dict[str, list[dict[str, Any]]] = {}
         for fact in self.approved_facts:
+            # Application Q/A is saved once for exact employer-form reuse, not
+            # general matching, CV prose, public results, or local-AI prompts.
+            if fact.fact_type == "application_answer":
+                continue
             grouped.setdefault(fact.fact_type, []).append(
                 {
                     "fact_id": fact.fact_id,

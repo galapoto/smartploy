@@ -16,9 +16,20 @@ export async function submitReviewedLeverOnce(expected) {
       typeof expected.email !== "string" || !expected.email.includes("@") ||
       typeof expected.full_name !== "string" || !expected.full_name.trim() ||
       typeof expected.cover_letter !== "string" ||
-      expected.cover_letter.length < 60) {
+      expected.cover_letter.length < 60 ||
+      (expected.dry_run !== undefined && typeof expected.dry_run !== "boolean") ||
+      (expected.expected_form_snapshot_sha256 !== undefined &&
+       !/^[a-f0-9]{64}$/.test(expected.expected_form_snapshot_sha256))) {
     return fail("invalid_reviewed_binding");
   }
+  const hasReviewedLetter = expected.letter_pdf_sha256 !== undefined ||
+    expected.letter_pdf_size !== undefined;
+  if (hasReviewedLetter && (
+      !/^[a-f0-9]{64}$/.test(expected.letter_pdf_sha256 || "") ||
+      !Number.isSafeInteger(expected.letter_pdf_size) ||
+      expected.letter_pdf_size < 12 ||
+      expected.letter_pdf_size > 2 * 1024 * 1024
+  )) return fail("invalid_reviewed_letter_binding");
   if (typeof window !== "undefined" && window.top !== window.self) {
     return fail("nested_employer_frame");
   }
@@ -70,6 +81,26 @@ export async function submitReviewedLeverOnce(expected) {
   const finalButton = buttons[0];
   const form = finalButton.closest("form");
   if (!form || !visible(form)) return fail("standard_employer_form_missing");
+  // Browser form submission ignores nameless file controls and controls
+  // disabled directly OR by a disabled ancestor fieldset. Checking only a
+  // populated FileList is not enough to prove either PDF will be submitted.
+  const submittedFileControl = (item) => Boolean(
+    item && item.form === form && !item.disabled &&
+    !item.matches?.(":disabled") && String(item.name || "").trim()
+  );
+  // Explicit targets (or document <base target>) may send the irreversible
+  // application into a different tab without any observable same-tab receipt.
+  // Keep this first single-job release self-targeted and fail closed in both
+  // dry-run and final execution; no claim is burned for an unknown target.
+  const targetAttrs = [
+    form.target, form.getAttribute?.("target"),
+    finalButton.formTarget, finalButton.getAttribute?.("formtarget"),
+    document.querySelector("base[target]")?.getAttribute("target")
+  ];
+  if (targetAttrs.some(t => t && String(t).trim() &&
+      String(t).trim().toLowerCase() !== "_self")) {
+    return fail("unsupported_external_confirmation_target");
+  }
 
   // Inspect every form control for attachments, including non-visible inputs:
   // hidden populated file controls may still be sent with the employer form.
@@ -82,8 +113,18 @@ export async function submitReviewedLeverOnce(expected) {
     if (type === "password" || type === "hidden") return false;
     const required = item.required === true ||
       item.getAttribute("aria-required") === "true";
+    // A required radio is valid when *any enabled member of its named group*
+    // is selected, not necessarily the member carrying `required`. Keep the
+    // explicit unresolved check for aria-required groups as well as native
+    // form.checkValidity() and each control's validity.
     const hasValue = type === "file" ? Boolean(item.files?.length) :
-      ["checkbox", "radio"].includes(type) ? Boolean(item.checked) :
+      type === "radio" ? Boolean(item.checked || (
+        String(item.name || "").trim() && allElements.some(other =>
+          String(other.type || "").toLowerCase() === "radio" &&
+          other.name === item.name && !other.disabled && other.checked
+        )
+      )) :
+      type === "checkbox" ? Boolean(item.checked) :
       Boolean(String(item.value || "").trim());
     return (required && !hasValue) || (item.validity && !item.validity.valid);
   };
@@ -125,13 +166,45 @@ export async function submitReviewedLeverOnce(expected) {
     return fail("reviewed_name_changed_or_unverifiable");
   }
 
-  const letters = elements.filter((item) =>
-    /cover.?letter|saatekirje|personligt brev/i.test(labelled(item)));
-  if (letters.length > 1 ||
-      (letters.length === 1 &&
-       String(letters[0].value || "").trim() !== expected.cover_letter.trim())) {
-    return fail("reviewed_cover_letter_changed_or_unverifiable");
+  // A reviewed letter can arrive as employer text OR as its dedicated PDF.
+  const letterLabel = (item) =>
+    /cover.?letter|application letter|motivation letter|saatekirje|hakemuskirje|personligt brev/i
+      .test(labelled(item));
+  const letterTexts = elements.filter((item) =>
+    String(item.type || "").toLowerCase() !== "file" && letterLabel(item));
+  const letterFileInputs = allElements.filter((item) =>
+    String(item.type || "").toLowerCase() === "file" && letterLabel(item));
+  if (letterTexts.length > 1 || letterFileInputs.length > 1) {
+    return fail("ambiguous_reviewed_cover_letter_fields");
   }
+  const letterFileInput = letterFileInputs[0] || null;
+  const attachedLetter = letterFileInput?.files?.length === 1 ?
+    letterFileInput.files[0] : null;
+  if (letterFileInput?.files?.length > 1 || (attachedLetter && !hasReviewedLetter)) {
+    return fail("unreviewed_extra_attachment_present");
+  }
+  if (letterTexts.length === 1) {
+    const entered = String(letterTexts[0].value || "").trim();
+    if (entered && entered !== expected.cover_letter.trim()) {
+      return fail("reviewed_cover_letter_changed_or_unverifiable");
+    }
+    if (!entered && !attachedLetter) {
+      return fail("reviewed_cover_letter_changed_or_unverifiable");
+    }
+  }
+  // The ONE-JOB acceptance contract requires actual current CV AND letter
+  // PDFs in distinct employer file controls; prose cannot silently replace a
+  // separately approved attachment merely because its text matches.
+  if (hasReviewedLetter && !attachedLetter) {
+    return fail("reviewed_cover_letter_pdf_missing");
+  }
+  if (attachedLetter && (
+    !visible(letterFileInput) || !submittedFileControl(letterFileInput) ||
+    attachedLetter.size !== expected.letter_pdf_size ||
+    !/\.pdf$/i.test(attachedLetter.name) ||
+    (attachedLetter.type &&
+     attachedLetter.type.toLowerCase() !== "application/pdf")
+  )) return fail("reviewed_letter_attachment_changed");
 
   const resumes = elements.filter((item) => {
     if (String(item.type || "").toLowerCase() !== "file") return false;
@@ -144,13 +217,15 @@ export async function submitReviewedLeverOnce(expected) {
   // carry private or stale documents that are not covered by the CV digest.
   const otherAttachments = allElements.filter((item) =>
     String(item.type || "").toLowerCase() === "file" &&
-    item !== resumes[0] && Boolean(item.files?.length)
+    item !== resumes[0] && item !== letterFileInput &&
+    Boolean(item.files?.length)
   );
   if (otherAttachments.length) {
     return fail("unreviewed_extra_attachment_present");
   }
   const cv = resumes[0].files[0];
-  if (cv.size !== expected.cv_pdf_size || cv.size > 2 * 1024 * 1024 ||
+  if (!submittedFileControl(resumes[0]) ||
+      cv.size !== expected.cv_pdf_size || cv.size > 2 * 1024 * 1024 ||
       !/\.pdf$/i.test(cv.name) ||
       (cv.type && cv.type.toLowerCase() !== "application/pdf")) {
     return fail("reviewed_cv_attachment_changed");
@@ -170,6 +245,7 @@ export async function submitReviewedLeverOnce(expected) {
     item.options ? Array.from(item.options, option => [
       option.value, option.text, option.disabled, option.selected,
     ]) : null,
+    item.form === form, Boolean(item.matches?.(":disabled")),
   ]);
   const finalDestinationBinding = () => JSON.stringify([
     form.action ?? "", form.method ?? "", form.enctype ?? "",
@@ -185,15 +261,40 @@ export async function submitReviewedLeverOnce(expected) {
     finalButton.getAttribute?.("formmethod") ?? null,
     finalButton.getAttribute?.("formenctype") ?? null,
     finalButton.getAttribute?.("formtarget") ?? null,
+    // A reactive <base target> can change after the initial destination check
+    // while one or both reviewed PDFs are being hashed. Bind its live value.
+    document.querySelector("base[target]")?.getAttribute("target") ?? null,
   ]);
   const reviewedControls = allElements.map(controlBinding);
   const reviewedDestination = finalDestinationBinding();
+  let formSnapshotSha256 = "";
   try {
     const buffer = await cv.arrayBuffer();
     // No CV bytes or file digest leave the employer tab.
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", buffer));
     const actual = Array.from(digest, b => b.toString(16).padStart(2, "0")).join("");
     if (actual !== expected.cv_pdf_sha256) return fail("reviewed_cv_attachment_changed");
+    if (attachedLetter) {
+      const letterBuffer = await attachedLetter.arrayBuffer();
+      const letterDigest = new Uint8Array(
+        await crypto.subtle.digest("SHA-256", letterBuffer)
+      );
+      const actualLetter = Array.from(letterDigest,
+        b => b.toString(16).padStart(2, "0")).join("");
+      if (actualLetter !== expected.letter_pdf_sha256)
+        return fail("reviewed_letter_attachment_changed");
+    }
+    // Pinned to the exact employer controls verified in this dry-run; only
+    // the digest leaves the tab. The popup carries it across the async server
+    // claim and the final executor refuses a changed answer or destination.
+    const snapshotBytes = new TextEncoder().encode(
+      JSON.stringify([reviewedControls, reviewedDestination])
+    );
+    const snapshotDigest = new Uint8Array(
+      await crypto.subtle.digest("SHA-256", snapshotBytes)
+    );
+    formSnapshotSha256 = Array.from(snapshotDigest,
+      b => b.toString(16).padStart(2,"0")).join("");
   } catch {
     return fail("reviewed_cv_unverifiable");
   }
@@ -221,16 +322,40 @@ export async function submitReviewedLeverOnce(expected) {
       liveVisible.some(unresolvedEmployerField) ||
       liveControls.some((item) =>
         String(item.type || "").toLowerCase() === "file" &&
-        item !== resumes[0] && Boolean(item.files?.length)
+        item !== resumes[0] && item !== letterFileInput &&
+    Boolean(item.files?.length)
       ) ||
       resumes[0].files?.length !== 1 || resumes[0].files[0] !== cv ||
+      // FileList presence alone is insufficient: disabled inputs and inputs
+      // with a foreign form owner are not submitted to this employer form.
+      !submittedFileControl(resumes[0]) ||
+      (attachedLetter && !submittedFileControl(letterFileInput)) ||
       String(emailInputs[0].value || "").trim().toLowerCase() !==
         expected.email.trim().toLowerCase() ||
       !reviewedNameStillMatches() ||
-      (letters.length === 1 &&
-       String(letters[0].value || "").trim() !== expected.cover_letter.trim()) ||
+      (letterTexts.length === 1 &&
+       String(letterTexts[0].value || "").trim() &&
+       String(letterTexts[0].value || "").trim() !== expected.cover_letter.trim()) ||
+      (attachedLetter && (
+        letterFileInput?.files?.length !== 1 ||
+        letterFileInput.files[0] !== attachedLetter
+      )) ||
       document.documentElement?.hasAttribute("data-smartploy-final-attempt")) {
     return fail("employer_form_changed");
+  }
+  // Reuse the exact same CV/letter/form verification BEFORE consuming the
+  // irreversible server claim; dry-run NEVER touches the submit control.
+  if (expected.expected_form_snapshot_sha256 &&
+      formSnapshotSha256 !== expected.expected_form_snapshot_sha256) {
+    return fail("employer_form_changed_since_final_review");
+  }
+  if (expected.dry_run === true) {
+    return {
+      attempted: false, preflight_ready: true,
+      form_snapshot_sha256: formSnapshotSha256,
+      provider_acknowledged: false, automatic_retry_authorized: false,
+      reason: "one_job_exact_form_ready_no_external_action",
+    };
   }
   document.documentElement?.setAttribute("data-smartploy-final-attempt", "1");
   try {

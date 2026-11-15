@@ -5,7 +5,10 @@
    the browser owner must consent to transferring the named PDF beforehand. */
 export async function attachReviewedPdf(payload) {
   const stop = (reason) => ({ status: "blocked", reason });
-  if (!payload || typeof payload !== "object") return stop("Invalid upload request.");
+  if (!payload || typeof payload !== "object" ||
+      (payload.kind !== undefined && !["cv","letter"].includes(payload.kind)))
+    return stop("Invalid upload request.");
+  const attachmentKind = payload.kind === "letter" ? "letter" : "cv";
   let page, approved;
   try {
     page = new URL(location.href);
@@ -56,19 +59,43 @@ export async function attachReviewedPdf(payload) {
     return stop("The employer form changed since inspection.");
   }
   const input = all[payload.index];
+  const owningForm = input?.closest?.("form");
+  // On Lever the *application submit* button, not any globally visible
+  // upload control, is the authority for the destination form. A separate
+  // profile/talent-pool form must never receive reviewed applicant PDFs.
+  const leverApplicationForm = () => {
+    if (!lever) return owningForm;
+    const buttons = Array.from(document.querySelectorAll('button,input[type="submit"]'))
+      .filter(button => {
+        const title = String(button.innerText || button.value ||
+          button.getAttribute?.("aria-label") || "")
+          .replace(/\s+/g, " ").trim().toLowerCase();
+        if (!["submit application","send application","lähetä hakemus",
+              "skicka ansökan"].includes(title) || button.disabled ||
+            button.closest?.("[hidden],[aria-hidden='true'],[inert]")) return false;
+        const style = getComputedStyle(button);
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          button.getClientRects().length > 0;
+      });
+    return buttons.length === 1 ? (buttons[0].form || buttons[0].closest("form")) : null;
+  };
+  if (lever && (!owningForm || leverApplicationForm() !== owningForm)) {
+    return stop("The reviewed PDF input is not part of the final application form.");
+  }
   if (!input || input.tagName !== "INPUT" || input.type !== "file" ||
-      input.disabled || input.readOnly || input.multiple || input.files?.length ||
-      !input.closest("form") ||
+      input.matches(":disabled") || input.readOnly || input.multiple || input.files?.length ||
+      !owningForm || input.form !== owningForm ||
       String(input.id || "") !== payload.expected_id ||
       String(input.name || "") !== payload.expected_name ||
       String(input.accept || "") !== payload.expected_accept) {
     return stop("The résumé input changed, is ambiguous, or already contains a file.");
   }
-  const label = String(input.labels?.[0]?.innerText ||
+  const readLabel = () => String(input.labels?.[0]?.innerText ||
     input.getAttribute("aria-label") ||
     (input.id ? document.querySelector('label[for="' + CSS.escape(input.id) + '"]')?.innerText : "") ||
     input.getAttribute("placeholder") || input.getAttribute("name") || input.id || "")
     .trim().slice(0, 150);
+  const label = readLabel();
   if (label !== payload.expected_label) {
     return stop("The résumé label changed since inspection.");
   }
@@ -78,16 +105,26 @@ export async function attachReviewedPdf(payload) {
       input.getClientRects().length === 0) {
     return stop("The résumé input is no longer visible.");
   }
-  const meaning = [label, input.name, input.id].join(" ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[^\p{L}\p{N}]+/gu, " ").toLowerCase();
-  if (!/(^|\s)(cv|resume|résumé|curriculum vitae|ansioluettelo|meritförteckning)(\s|$)/u.test(meaning) ||
-      /(^|\s)(cover letter|passport|photo|image|identity document|transcript|certificate)(\s|$)/u.test(meaning)) {
-    return stop("The target is not a unique résumé input.");
+  const matchesApprovedKind = (currentLabel) => {
+    const meaning = [currentLabel, input.name, input.id].join(" ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/[^\p{L}\p{N}]+/gu, " ").toLowerCase();
+    const isCV = /(^|\s)(cv|resume|résumé|curriculum vitae|ansioluettelo|meritförteckning)(\s|$)/u.test(meaning);
+    const isLetter = /(^|\s)(cover letter|application letter|motivation letter|saatekirje|hakemuskirje|personligt brev)(\s|$)/u.test(meaning);
+    const ambiguous = /(^|\s)(passport|photo|image|identity document|transcript|certificate|reference letter)(\s|$)/u.test(meaning);
+    return !ambiguous && (attachmentKind === "cv" ?
+      isCV && !isLetter : isLetter && !isCV);
+  };
+  if (!matchesApprovedKind(label)) {
+    return stop("The target is not a unique approved " +
+      (attachmentKind === "cv" ? "résumé" : "cover-letter") + " input.");
   }
-  const accept = String(input.accept || "").toLowerCase();
-  if (accept && !accept.split(",").some((x) =>
-    [".pdf", "application/pdf", "application/*", "*/*"].includes(x.trim())
-  )) return stop("Employer form does not support PDF attachments.");
+  const acceptsPdf = () => {
+    const accept = String(input.accept || "").toLowerCase();
+    return !accept || accept.split(",").some((x) =>
+      [".pdf", "application/pdf", "application/*", "*/*"].includes(x.trim()));
+  };
+  if (!acceptsPdf()) return stop("Employer form does not support PDF attachments.");
 
   let bytes;
   try {
@@ -111,9 +148,28 @@ export async function attachReviewedPdf(payload) {
 
   // Recheck after async hashing: a hostile/fast-changing form must not redirect
   // the upload to a newly mounted control or a different account.
+  const latest = Array.from(document.querySelectorAll("input,textarea,select"));
+  // Do not transfer a reviewed document if an employer-side reactive update
+  // has repurposed the very same DOM node during the async SHA-256 operation.
+  // All checks remain synchronous until FileList assignment and input/change.
   if (location.href !== payload.inspected_url ||
-      !input.isConnected || input.files?.length ||
-      Array.from(document.querySelectorAll("input,textarea,select"))[payload.index] !== input) {
+      !input.isConnected || latest.length !== all.length ||
+      latest.some((node, index) => node !== all[index]) ||
+      latest[payload.index] !== input ||
+      input.tagName !== "INPUT" || input.type !== "file" ||
+      input.matches(":disabled") || input.readOnly || input.multiple ||
+      input.files?.length || input.closest("form") !== owningForm ||
+      input.form !== owningForm ||
+      (lever && leverApplicationForm() !== owningForm) ||
+      String(input.id || "") !== payload.expected_id ||
+      String(input.name || "") !== payload.expected_name ||
+      String(input.accept || "") !== payload.expected_accept ||
+      readLabel() !== payload.expected_label ||
+      !matchesApprovedKind(readLabel()) || !acceptsPdf() ||
+      input.closest("[hidden],[aria-hidden='true'],[inert]") ||
+      getComputedStyle(input).display === "none" ||
+      getComputedStyle(input).visibility === "hidden" ||
+      input.getClientRects().length === 0) {
     return stop("The employer form changed during PDF validation.");
   }
   try {
@@ -124,13 +180,15 @@ export async function attachReviewedPdf(payload) {
     if (!input.files || input.files.length !== 1 ||
         input.files[0].size !== payload.size ||
         input.files[0].name !== payload.file_name) {
-      return stop("The browser did not accept the selected résumé.");
+      return stop("The browser did not accept the selected reviewed PDF.");
     }
     // The employer's own handlers may upload immediately; do not claim their
     // server accepted it. The only proof here is a local FileList assignment.
     input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-    return { status: "attached_locally", reason: "PDF placed in the employer's résumé field. Verify upload status on the page." };
+    return { status: "attached_locally", reason: "Reviewed " +
+      (attachmentKind === "cv" ? "CV" : "cover-letter") +
+      " PDF placed in the employer's exact upload field. Verify its upload indicator." };
   } catch {
     return { status: "ambiguous", reason: "Attachment may have triggered employer processing. Inspect the page before doing anything else." };
   }

@@ -25,6 +25,7 @@ from .employer_submit_claim_storage import (
     reserve_employer_claim_locked, verified_employer_submit_preflight,
 )
 from .identity import UserProfileBinding
+from .profile_application_answers import saved_answers_sha256_locked
 
 SHA = re.compile(r"^[a-f0-9]{64}$")
 FINAL_APPROVAL_LIFETIME_SECONDS = 90
@@ -355,6 +356,7 @@ class PostgresEmployerFinalActionGate:
         expected_document_sha256:str,expected_cv_pdf_sha256:str,
         expected_fields_sha256:str,
         action_scope: str = ACTION,
+        expected_saved_answers_sha256: str | None = None,
     )->FinalActionReservation:
         """Internal durable handoff primitive; not exposed via HTTP/MV3.
 
@@ -401,6 +403,22 @@ class PostgresEmployerFinalActionGate:
                     expected_doc=doc_hash,expected_pdf=expected_cv_pdf_sha256,
                     expected_fields=fields_hash,
                 )
+                if expected_saved_answers_sha256 is not None:
+                    if not SHA.fullmatch(expected_saved_answers_sha256):
+                        raise EmployerFinalActionDenied(
+                            "Invalid applicant answer snapshot before final claim"
+                        )
+                    # Mandatory for the v0.6 browser. Use the SAME transaction
+                    # and per-owner lock as the sticky claim insertion. New
+                    # approvals, edits or deletes cannot move the applicant
+                    # answer snapshot between verification and reservation.
+                    current_answers_sha = saved_answers_sha256_locked(
+                        cur, binding.profile_id
+                    )
+                    if current_answers_sha != expected_saved_answers_sha256:
+                        raise EmployerFinalActionDenied(
+                            "Approved application answers changed; re-review before submission"
+                        )
                 cur.execute(
                     self._select()+"""
                       WHERE approval_id=%s AND user_id=%s AND profile_id=%s

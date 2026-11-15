@@ -96,6 +96,62 @@ test("a reviewed PDF is locally attached to the unique résumé input, not submi
   expect(external()).toBe(0);
 });
 
+test("one reviewed Start workflow attaches both current CV and cover letter PDFs, never submits", async ({page}) => {
+  const external = await setup(page);
+  // The two real page file controls are distinct, and the same reviewed PDF
+  // executor must accept only the matching kind. Fake PDF is synthetic.
+  const labelOnPage = async (selector:string) =>
+    page.locator(selector).evaluate((el:HTMLInputElement)=>{
+      const raw=el.labels?.[0]?.innerText || el.getAttribute("aria-label") ||
+        (el.id?document.querySelector('label[for="'+CSS.escape(el.id)+'"]')?.textContent:"") ||
+        el.getAttribute("placeholder") || el.getAttribute("name") || el.id || "";
+      return String(raw).trim().slice(0,150);
+    });
+  const cvLabel = await labelOnPage("#resume_file");
+  const letterLabel = await labelOnPage("#letter_file");
+  const cv = await attach(page, request({kind:"cv",expected_label:cvLabel}));
+  expect(cv.status,cv.reason).toBe("attached_locally");
+  const letter = await attach(page, request({
+    kind:"letter",index:1,expected_id:"letter_file",expected_name:"coverLetter",
+    expected_label:letterLabel,expected_accept:"",
+    file_name:"SmartPloy-Cover-Letter.pdf"
+  }));
+  expect(letter.status,letter.reason).toBe("attached_locally");
+  const state=await page.evaluate(()=>{
+    const cv=document.querySelector<HTMLInputElement>("#resume_file")!;
+    const letter=document.querySelector<HTMLInputElement>("#letter_file")!;
+    return {
+      cv:cv.files?.[0]?.name,
+      letter:letter.files?.[0]?.name,
+      changes:(window as any).uploadEvents,
+      submits:(window as any).submissions
+    };
+  });
+  expect(state).toEqual({
+    cv:"reviewed-cv.pdf",letter:"SmartPloy-Cover-Letter.pdf",
+    changes:1,submits:0
+  });
+  expect(external()).toBe(0);
+});
+
+test("reviewed cover letter PDF cannot overwrite an employer CV or unrelated file field",async ({page})=>{
+  await setup(page);
+  for(const bad of [
+    request({kind:"letter"}),
+    request({kind:"letter",index:1,expected_id:"letter_file",
+      expected_name:"coverLetter",expected_label:"Cover letter",
+      expected_accept:"",file_name:"Wrong.txt"}),
+    request({kind:"cv",index:1,expected_id:"letter_file",
+      expected_name:"coverLetter",expected_label:"Cover letter",
+      expected_accept:""}),
+  ]){
+    const state=await attach(page,bad);
+    expect(state.status,bad.kind+" "+state.reason).toBe("blocked");
+  }
+  expect(await page.locator("#resume_file").evaluate((el:HTMLInputElement)=>el.files?.length)).toBe(0);
+  expect(await page.locator("#letter_file").evaluate((el:HTMLInputElement)=>el.files?.length)).toBe(0);
+});
+
 test("wrong employer/job, stale identity and corrupt digest never attach", async ({page}) => {
   const external = await setup(page);
   const variants = [

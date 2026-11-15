@@ -8,6 +8,7 @@ from psycopg import connect
 from psycopg.types.json import Jsonb
 
 from .profile import CandidateProfile, ProfileFact
+from .profile_application_answers import canonical_question, decode_profile_answer
 from .storage import apply_migrations
 
 
@@ -26,6 +27,17 @@ class MemoryProfileRepository:
 
     def upsert_fact(self, fact: ProfileFact) -> ProfileFact:
         item = fact.normalized()
+        if item.fact_type == "application_answer":
+            desired = canonical_question(decode_profile_answer(item.value)["question"])
+            for fact_id, existing in list(self._facts.items()):
+                if existing.fact_type != "application_answer" or fact_id == item.fact_id:
+                    continue
+                try:
+                    previous = canonical_question(decode_profile_answer(existing.value)["question"])
+                except ValueError:
+                    continue
+                if previous == desired:
+                    del self._facts[fact_id]
         self._facts[item.fact_id] = item
         return item
 
@@ -53,6 +65,42 @@ class PostgresProfileRepository:
         item = fact.normalized()
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
+                if item.fact_type == "application_answer":
+                    # One owner-scoped transaction: replacement must use the
+                    # SERVER's Python Unicode casefold and avoid competing
+                    # answers appearing during concurrent browser sessions.
+                    cur.execute(
+                        "SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))",
+                        (self.profile_id, "application_answer"),
+                    )
+                    desired = canonical_question(
+                        decode_profile_answer(item.value)["question"]
+                    )
+                    cur.execute(
+                        """
+                        SELECT fact_id, value FROM smartploy_profile_facts
+                        WHERE profile_id = %s AND fact_type = 'application_answer'
+                        """,
+                        (self.profile_id,),
+                    )
+                    replacing = []
+                    for fact_id, value in cur.fetchall():
+                        if str(fact_id) == item.fact_id:
+                            continue
+                        try:
+                            question = decode_profile_answer(value)["question"]
+                        except ValueError:
+                            continue
+                        if canonical_question(question) == desired:
+                            replacing.append(str(fact_id))
+                    if replacing:
+                        cur.execute(
+                            """
+                            DELETE FROM smartploy_profile_facts
+                            WHERE profile_id = %s AND fact_id = ANY(%s)
+                            """,
+                            (self.profile_id, replacing),
+                        )
                 cur.execute(
                     """
                     INSERT INTO smartploy_profile_facts (
@@ -94,6 +142,12 @@ class PostgresProfileRepository:
     def delete_fact(self, fact_id: str) -> bool:
         with connect(self.dsn) as conn:
             with conn.cursor() as cur:
+                # Even a simple revoke/delete must serialize with the exact
+                # one-job final-claim snapshot. All answer writes use this lock.
+                cur.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))",
+                    (self.profile_id, "application_answer"),
+                )
                 cur.execute(
                     "DELETE FROM smartploy_profile_facts WHERE profile_id = %s AND fact_id = %s",
                     (self.profile_id, fact_id),

@@ -21,6 +21,11 @@ export async function reserveFinalClickOnSmartPloy(requested) {
       !Number.isInteger(requested.expected_cv_pdf_size) ||
       requested.expected_cv_pdf_size < 12 ||
       requested.expected_cv_pdf_size > 2 * 1024 * 1024 ||
+      !/^[a-f0-9]{64}$/.test(requested.expected_saved_answers_sha256 || "") ||
+      !/^[a-f0-9]{64}$/.test(requested.expected_letter_pdf_sha256 || "") ||
+      !Number.isInteger(requested.expected_letter_pdf_size) ||
+      requested.expected_letter_pdf_size < 12 ||
+      requested.expected_letter_pdf_size > 2 * 1024 * 1024 ||
       requested.confirm_one_job_final_click !== true ||
       requested.acknowledge_external_employer_transfer !== true ||
       requested.acknowledge_no_automatic_retry !== true) {
@@ -60,6 +65,9 @@ export async function reserveFinalClickOnSmartPloy(requested) {
           expected_fields_sha256: requested.expected_fields_sha256,
           expected_application_url_sha256: requested.expected_application_url_sha256,
           expected_cv_pdf_size: requested.expected_cv_pdf_size,
+          expected_saved_answers_sha256: requested.expected_saved_answers_sha256,
+          expected_letter_pdf_sha256: requested.expected_letter_pdf_sha256,
+          expected_letter_pdf_size: requested.expected_letter_pdf_size,
           confirm_one_job_final_click: true,
           acknowledge_external_employer_transfer: true,
           acknowledge_no_automatic_retry: true,

@@ -189,6 +189,46 @@ export function chooseResumeField(elements) {
   return candidates[0];
 }
 
+/** Exact, applicant-approved optional cover-letter PDF upload.
+ * Never pick a generic "other attachments", passport, consent or CV field.
+ * A missing or duplicate labeled field is handed to the candidate.
+ */
+export function chooseCoverLetterField(elements) {
+  if (!Array.isArray(elements) || elements.length > 250) {
+    throw new UploadError("Employer form inspection exceeds the safe field limit.");
+  }
+  const candidates = [];
+  for (const row of elements) {
+    if (!row || row.type !== "file") continue;
+    const name = normalized([row.label,row.name,row.id].join(" "));
+    if (!/(^|\s)(cover letter|application letter|motivation letter|saatekirje|hakemuskirje|personligt brev)(\s|$)/u.test(name)) continue;
+    if (/(^|\s)(cv|resume|résumé|passport|photo|image|identity document|certificate|transcript|reference letter)(\s|$)/u.test(name)) {
+      throw new UploadError("Ambiguous cover-letter attachment field. Attach manually.");
+    }
+    if (!row.visible || row.disabled || row.readonly || row.multiple || row.hasValue) {
+      throw new UploadError("Cover-letter field unavailable. Review it manually.");
+    }
+    const accept=String(row.accept || "").trim().toLowerCase();
+    if (accept && !accept.split(",").some(part =>
+      [".pdf","application/pdf","application/*","*/*"].includes(part.trim())
+    )) throw new UploadError("The employer letter field does not advertise PDF support.");
+    if (!Number.isInteger(row.index) || row.index < 0 || row.index >= 250)
+      throw new UploadError("Invalid cover-letter field identity.");
+    candidates.push({
+      index:row.index,
+      expected_id:String(row.id || ""),
+      expected_name:String(row.name || ""),
+      expected_label:String(row.label || ""),
+      expected_accept:String(row.accept || "")
+    });
+  }
+  if (candidates.length !== 1)
+    throw new UploadError(candidates.length ?
+      "Multiple cover-letter inputs found; attach manually." :
+      "No separate cover-letter PDF input. The reviewed letter may be entered as text.");
+  return candidates[0];
+}
+
 export function validatePdf(filename, mime, bytes) {
   if (
     typeof filename !== "string" || filename.length < 5 || filename.length > 150 ||

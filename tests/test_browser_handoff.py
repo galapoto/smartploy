@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import json
+from io import BytesIO
+from zipfile import ZipFile
 from hashlib import sha256
 
 import pytest
@@ -554,3 +556,81 @@ def test_sp43_greenhouse_owner_application_api_issues_only_review_packet():
     assert packet.json()["external_actions_performed"] is False
     assert packet.json()["packet"]["privacy"]["employer_submit_allowed_without_new_approval"] is False
     assert cli.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
+
+
+def test_profile_once_browser_packet_contains_saved_answers_and_current_documents_zip():
+    """Same owner, exact revised CV/letter files and profile answer, no employer send."""
+    service = SmartployService()
+    service.register_source(SourcePolicy("manual-import", "Manual", "manual", ("manual",)))
+    client = TestClient(create_app(service))
+    ingested = client.post("/api/v1/jobs/ingest", json={
+        "observation": {
+            "source_id": "manual-import", "source_mode": "manual",
+            "raw_text": "Junior Data Analyst job with Python",
+            "source_url": APPLICATION_URL,
+            "payload": {
+                "company": "Upright Project",
+                "role_title": "Junior Data Analyst",
+                "description": "Python and SQL dashboards",
+                "application_url": APPLICATION_URL,
+            },
+        }
+    })
+    assert ingested.status_code == 200, ingested.text
+    key = ingested.json()["candidate"]["canonical_key"]
+    for fact in profile().approved_facts:
+        assert client.post("/api/v1/profile/facts", json={
+            "fact_type": fact.fact_type, "value": fact.value, "approved": True
+        }).status_code == 201
+    user_answer = json.dumps({
+        "schema": "smartploy.profile_answer.v1",
+        "question": "How did you hear about us?", "answer": "Careers page",
+    })
+    saved = client.post("/api/v1/profile/facts",json={
+        "fact_type": "application_answer", "value": user_answer, "approved": True,
+    })
+    assert saved.status_code == 201, saved.text
+    started = client.post(f"/api/v1/jobs/{key}/application-workspace")
+    assert started.status_code == 200, started.text
+    workspace = started.json()["workspace"]
+    wid = workspace["workspace_id"]
+    reviewed = client.put(f"/api/v1/application-workspaces/{wid}",json={
+        "expected_revision": workspace["revision"],
+        "cv_text": "Test Candidate\nPython analyst\nRelevant project experience",
+        "cover_letter_text": (
+            "Dear Hiring Team,\nI would like to join as a Data Analyst. "
+            "My approved Python and SQL experience matches this position.\n"
+            "Kind regards,\nTest Candidate"
+        ),
+    })
+    assert reviewed.status_code == 200, reviewed.text
+    rev = reviewed.json()["workspace"]["revision"]
+    packaged = client.get(f"/api/v1/application-workspaces/{wid}/documents-bundle.zip")
+    assert packaged.status_code == 200, packaged.text
+    assert packaged.headers["content-type"].startswith("application/zip")
+    assert packaged.headers["cache-control"] == "private, no-store"
+    with ZipFile(BytesIO(packaged.content)) as archive:
+        names = archive.namelist()
+        assert len(names) == 5
+        assert len([name for name in names if name.endswith(".pdf")]) == 2
+        assert len([name for name in names if name.endswith(".docx")]) == 2
+        manifest = json.loads(archive.read("smartploy-document-manifest.json"))
+        assert manifest["revision"] == rev
+        assert manifest["external_actions_performed"] == 0
+        for item in manifest["files"]:
+            assert len(archive.read(item["name"])) == item["size"]
+            assert sha256(archive.read(item["name"])).hexdigest() == item["sha256"]
+    packet_response=client.post(
+        f"/api/v1/application-workspaces/{wid}/browser-packet",
+        json={"expected_revision":rev,"confirm_private_data_transfer":True},
+    )
+    assert packet_response.status_code == 200,packet_response.text
+    packet = packet_response.json()["packet"]
+    assert packet["saved_answers"] == [
+        {"question":"How did you hear about us?","answer":"Careers page"}
+    ]
+    assert packet["privacy"]["approved_saved_answers_only"] is True
+    assert packet["cv_pdf_size"] > 100
+    assert packet["letter_pdf_size"] > 100
+    assert len(packet["letter_pdf_sha256"]) == 64
+    assert client.get("/api/v1/applications/summary").json()["actually_submitted"] == 0
