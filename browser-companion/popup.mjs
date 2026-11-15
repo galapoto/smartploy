@@ -1359,6 +1359,14 @@ async function onCompleteOneJob() {
         ". Complete only the missing fields and use Finish this application.");
       return false;
     }
+    // This is the exact form the applicant is about to approve. Preserve its
+    // answer and destination fingerprint through consent, owner verification,
+    // and the independently authorized one-use server claim.
+    const approvedFormSnapshotSha256=readiness.form_snapshot_sha256;
+    if (!/^[a-f0-9]{64}$/.test(approvedFormSnapshotSha256 || "")) {
+      status("Cannot verify the employer form being approved. No claim consumed.");
+      return false;
+    }
     if (!window.confirm(
       "COMPLETE THIS ONE REVIEWED JOB APPLICATION?\n\n" +
       packet.company + " — " + packet.role_title + "\n" +
@@ -1382,13 +1390,14 @@ async function onCompleteOneJob() {
       status("Form changed before the one-use server claim: "+readiness.reason);
       return false;
     }
-    if (!/^[a-f0-9]{64}$/.test(readiness.form_snapshot_sha256 || "")) {
-      status("Cannot bind the reviewed employer answers to this final attempt. No claim consumed.");
+    if (readiness.form_snapshot_sha256 !== approvedFormSnapshotSha256) {
+      status("Employer answers or form destination changed after your approval. " +
+        "Review the current form and approve it again. No claim consumed.");
       return false;
     }
-    // Immutable exact form-controls digest is carried only in popup memory
-    // across the signed-in server claim. Final executor must match it.
-    oneJobFormSnapshotSha256=readiness.form_snapshot_sha256;
+    // Never replace the applicant-approved digest with a newer preclaim state.
+    // The final executor also checks this exact digest after server reservation.
+    oneJobFormSnapshotSha256=approvedFormSnapshotSha256;
     const firstParty=await signedInAppTab();
     const [response]=await chrome.scripting.executeScript({
       target:{tabId:firstParty.id},world:"ISOLATED",
