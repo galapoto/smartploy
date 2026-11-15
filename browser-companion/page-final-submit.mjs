@@ -79,6 +79,13 @@ export async function submitReviewedLeverOnce(expected) {
   const finalButton = buttons[0];
   const form = finalButton.closest("form");
   if (!form || !visible(form)) return fail("standard_employer_form_missing");
+  // Browser form submission ignores nameless file controls and controls
+  // disabled directly OR by a disabled ancestor fieldset. Checking only a
+  // populated FileList is not enough to prove either PDF will be submitted.
+  const submittedFileControl = (item) => Boolean(
+    item && item.form === form && !item.disabled &&
+    !item.matches?.(":disabled") && String(item.name || "").trim()
+  );
   // Explicit targets (or document <base target>) may send the irreversible
   // application into a different tab without any observable same-tab receipt.
   // Keep this first single-job release self-targeted and fail closed in both
@@ -190,8 +197,7 @@ export async function submitReviewedLeverOnce(expected) {
     return fail("reviewed_cover_letter_pdf_missing");
   }
   if (attachedLetter && (
-    !visible(letterFileInput) || letterFileInput.disabled ||
-    letterFileInput.form !== form ||
+    !visible(letterFileInput) || !submittedFileControl(letterFileInput) ||
     attachedLetter.size !== expected.letter_pdf_size ||
     !/\.pdf$/i.test(attachedLetter.name) ||
     (attachedLetter.type &&
@@ -216,7 +222,7 @@ export async function submitReviewedLeverOnce(expected) {
     return fail("unreviewed_extra_attachment_present");
   }
   const cv = resumes[0].files[0];
-  if (resumes[0].disabled || resumes[0].form !== form ||
+  if (!submittedFileControl(resumes[0]) ||
       cv.size !== expected.cv_pdf_size || cv.size > 2 * 1024 * 1024 ||
       !/\.pdf$/i.test(cv.name) ||
       (cv.type && cv.type.toLowerCase() !== "application/pdf")) {
@@ -307,8 +313,8 @@ export async function submitReviewedLeverOnce(expected) {
       resumes[0].files?.length !== 1 || resumes[0].files[0] !== cv ||
       // FileList presence alone is insufficient: disabled inputs and inputs
       // with a foreign form owner are not submitted to this employer form.
-      resumes[0].disabled || resumes[0].form !== form ||
-      (attachedLetter && (letterFileInput.disabled || letterFileInput.form !== form)) ||
+      !submittedFileControl(resumes[0]) ||
+      (attachedLetter && !submittedFileControl(letterFileInput)) ||
       String(emailInputs[0].value || "").trim().toLowerCase() !==
         expected.email.trim().toLowerCase() ||
       !reviewedNameStillMatches() ||
