@@ -38,7 +38,7 @@ async function withFakeEmployer({
     ["location","window","document","getComputedStyle"].map(x => [x,globalThis[x]])
   );
   const state = {clicks: 0, marker: false, challenge, duplicateButton,
-    formAction: "/synthetic/submit", buttonFormAction: ""};
+    formAction: "/synthetic/submit", buttonFormAction: "", baseTarget};
   const file = {
     size: cvBytes.length, name: "candidate-reviewed.pdf",
     type: "application/pdf",
@@ -109,8 +109,8 @@ async function withFakeEmployer({
       setAttribute: (k,v) => {state.marker=true;},
     },
     querySelector: (selector) => state.challenge ? {} :
-      selector === "base[target]" && baseTarget ? {
-        getAttribute: () => baseTarget
+      selector === "base[target]" && state.baseTarget ? {
+        getAttribute: () => state.baseTarget
       } : null,
     querySelectorAll: () => state.duplicateButton ? [button,button] : [button],
   };
@@ -202,6 +202,19 @@ test("one-job dry-run rejects new-tab employer targets BEFORE sticky claim",asyn
       JSON.stringify(config));
     assert.equal(reply.clicks,0);
     assert.equal(reply.marker,false);
+  }
+});
+
+test("base target changed or inserted during async PDF hashing prevents employer click",async()=>{
+  for (const initial of ["", "_self"]) {
+    const r = await withFakeEmployer({
+      baseTarget: initial,
+      mutateDuringCvRead: (_inputs, state) => {state.baseTarget = "_blank";},
+    });
+    assert.equal(r.result.reason, "employer_form_changed");
+    assert.equal(r.result.attempted, false);
+    assert.equal(r.clicks, 0);
+    assert.equal(r.marker, false);
   }
 });
 
