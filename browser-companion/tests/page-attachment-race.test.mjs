@@ -10,7 +10,8 @@ const digest = createHash("sha256").update(pdf).digest("hex");
 const globalNames = ["document","location","window","crypto","atob","File",
   "DataTransfer","Event","CSS","getComputedStyle"];
 
-async function withEmployerUpload({kind="cv", mutate=()=>{}, foreignOwner=false}={}) {
+async function withEmployerUpload({kind="cv", mutate=()=>{}, foreignOwner=false,
+  wrongApplicationForm=false}={}) {
   const saved = new Map(globalNames.map(key =>
     [key,Object.getOwnPropertyDescriptor(globalThis,key)]));
   const state = {hidden:false,disabled:false, events:[],form:{},controls:[]};
@@ -28,13 +29,22 @@ async function withEmployerUpload({kind="cv", mutate=()=>{}, foreignOwner=false}
   };
   state.controls=[input];
   input.form=foreignOwner ? {} : state.form;
+  state.submitForm=wrongApplicationForm ? {} : state.form;
+  const submitButton={
+    innerText:"Submit application",disabled:false,
+    getAttribute:()=>"",
+    getClientRects:()=>[{}],
+    get form(){return state.submitForm;},
+    closest:(selector)=>selector === "form" ? state.submitForm : null,
+  };
   const frame={};
   frame.top=frame; frame.self=frame;
   const stubs = {
     location:{href:application},
     window:frame,
     document:{
-      querySelectorAll:()=>state.controls,
+      querySelectorAll:(selector)=>selector === 'button,input[type="submit"]' ?
+        [submitButton] : state.controls,
       querySelector:()=>null,
     },
     crypto:{subtle:{
@@ -91,6 +101,20 @@ test("unchanged reviewed CV and cover-letter fields attach locally without submi
     assert.equal(r.result.status,"attached_locally",kind);
     assert.equal(r.files.length,1,kind);
     assert.deepEqual(r.events,["input","change"],kind);
+  }
+});
+
+test("a talent-pool form cannot receive either reviewed PDF",async()=>{
+  for(const kind of ["cv","letter"]){
+    const prior=await withEmployerUpload({kind,wrongApplicationForm:true});
+    assert.equal(prior.result.status,"blocked",kind);
+    assert.equal(prior.files.length,0,kind);
+    const moved=await withEmployerUpload({kind,mutate:(_input,state)=>{
+      state.submitForm={};
+    }});
+    assert.equal(moved.result.status,"blocked",kind);
+    assert.equal(moved.files.length,0,kind);
+    assert.deepEqual(moved.events,[],kind);
   }
 });
 
