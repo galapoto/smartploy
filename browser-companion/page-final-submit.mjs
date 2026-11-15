@@ -104,8 +104,18 @@ export async function submitReviewedLeverOnce(expected) {
     if (type === "password" || type === "hidden") return false;
     const required = item.required === true ||
       item.getAttribute("aria-required") === "true";
+    // A required radio is valid when *any enabled member of its named group*
+    // is selected, not necessarily the member carrying `required`. Keep the
+    // explicit unresolved check for aria-required groups as well as native
+    // form.checkValidity() and each control's validity.
     const hasValue = type === "file" ? Boolean(item.files?.length) :
-      ["checkbox", "radio"].includes(type) ? Boolean(item.checked) :
+      type === "radio" ? Boolean(item.checked || (
+        String(item.name || "").trim() && allElements.some(other =>
+          String(other.type || "").toLowerCase() === "radio" &&
+          other.name === item.name && !other.disabled && other.checked
+        )
+      )) :
+      type === "checkbox" ? Boolean(item.checked) :
       Boolean(String(item.value || "").trim());
     return (required && !hasValue) || (item.validity && !item.validity.valid);
   };
