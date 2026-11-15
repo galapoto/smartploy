@@ -62,7 +62,7 @@ export async function attachReviewedPdf(payload) {
   const owningForm = input?.closest?.("form");
   if (!input || input.tagName !== "INPUT" || input.type !== "file" ||
       input.matches(":disabled") || input.readOnly || input.multiple || input.files?.length ||
-      !owningForm ||
+      !owningForm || input.form !== owningForm ||
       String(input.id || "") !== payload.expected_id ||
       String(input.name || "") !== payload.expected_name ||
       String(input.accept || "") !== payload.expected_accept) {
@@ -137,6 +137,7 @@ export async function attachReviewedPdf(payload) {
       input.tagName !== "INPUT" || input.type !== "file" ||
       input.matches(":disabled") || input.readOnly || input.multiple ||
       input.files?.length || input.closest("form") !== owningForm ||
+      input.form !== owningForm ||
       String(input.id || "") !== payload.expected_id ||
       String(input.name || "") !== payload.expected_name ||
       String(input.accept || "") !== payload.expected_accept ||
