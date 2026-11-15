@@ -18,6 +18,7 @@ function mount({
   firstReady=true,secondReady=true,allowConsent=true,
   allowReceipt=true,serverAllows=true,employerConfirms=true,
   actuallyClicked=true,changedProfile=false,
+  changedAfterConsent=false,missingInitialSnapshot=false,
 }={}) {
   const records=[],nodes=new Map();
   const packet={
@@ -66,7 +67,9 @@ function mount({
           dryCount++;records.push("dry-run-"+dryCount);
           return [{frameId:0,result:{
             preflight_ready:dryCount===1?firstReady:secondReady,
-            form_snapshot_sha256:"e".repeat(64),
+            form_snapshot_sha256:dryCount===1 && missingInitialSnapshot ?
+              "" : dryCount===2 && changedAfterConsent ?
+              "f".repeat(64) : "e".repeat(64),
             reason:"required-fields-missing"
           }}];
         }
@@ -137,6 +140,24 @@ test("reactive employer form changes after consent do not consume one-use claim"
   const {complete,records}=mount({secondReady:false});
   assert.equal(await complete(),false);
   assert.equal(records.includes("server-one-use-claim"),false);
+});
+
+test("changed answer or submit destination AFTER approval never consumes claim",async()=>{
+  const {complete,records}=mount({changedAfterConsent:true});
+  assert.equal(await complete(),false);
+  assert.equal(records.includes("final-consent"),true);
+  assert.equal(records.filter(x=>x.startsWith("dry-run-")).length,2);
+  assert.equal(records.includes("server-one-use-claim"),false);
+  assert.equal(records.includes("one-permitted-employer-click"),false);
+  assert.equal(records.some(x=>x.includes("changed after your approval")),true);
+});
+
+test("missing initial form fingerprint blocks before consent and claim",async()=>{
+  const {complete,records}=mount({missingInitialSnapshot:true});
+  assert.equal(await complete(),false);
+  assert.equal(records.includes("final-consent"),false);
+  assert.equal(records.includes("server-one-use-claim"),false);
+  assert.equal(records.includes("one-permitted-employer-click"),false);
 });
 test("independent server permission denial never submits one job",async()=>{
   const {complete,records}=mount({serverAllows:false});
