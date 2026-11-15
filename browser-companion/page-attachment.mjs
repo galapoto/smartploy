@@ -59,19 +59,21 @@ export async function attachReviewedPdf(payload) {
     return stop("The employer form changed since inspection.");
   }
   const input = all[payload.index];
+  const owningForm = input?.closest?.("form");
   if (!input || input.tagName !== "INPUT" || input.type !== "file" ||
       input.matches(":disabled") || input.readOnly || input.multiple || input.files?.length ||
-      !input.closest("form") ||
+      !owningForm ||
       String(input.id || "") !== payload.expected_id ||
       String(input.name || "") !== payload.expected_name ||
       String(input.accept || "") !== payload.expected_accept) {
     return stop("The résumé input changed, is ambiguous, or already contains a file.");
   }
-  const label = String(input.labels?.[0]?.innerText ||
+  const readLabel = () => String(input.labels?.[0]?.innerText ||
     input.getAttribute("aria-label") ||
     (input.id ? document.querySelector('label[for="' + CSS.escape(input.id) + '"]')?.innerText : "") ||
     input.getAttribute("placeholder") || input.getAttribute("name") || input.id || "")
     .trim().slice(0, 150);
+  const label = readLabel();
   if (label !== payload.expected_label) {
     return stop("The résumé label changed since inspection.");
   }
@@ -81,19 +83,26 @@ export async function attachReviewedPdf(payload) {
       input.getClientRects().length === 0) {
     return stop("The résumé input is no longer visible.");
   }
-  const meaning = [label, input.name, input.id].join(" ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[^\p{L}\p{N}]+/gu, " ").toLowerCase();
-  const isCV = /(^|\s)(cv|resume|résumé|curriculum vitae|ansioluettelo|meritförteckning)(\s|$)/u.test(meaning);
-  const isLetter = /(^|\s)(cover letter|application letter|motivation letter|saatekirje|hakemuskirje|personligt brev)(\s|$)/u.test(meaning);
-  const ambiguous = /(^|\s)(passport|photo|image|identity document|transcript|certificate|reference letter)(\s|$)/u.test(meaning);
-  if (ambiguous || (attachmentKind === "cv" ? !isCV || isLetter : !isLetter || isCV)) {
+  const matchesApprovedKind = (currentLabel) => {
+    const meaning = [currentLabel, input.name, input.id].join(" ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/[^\p{L}\p{N}]+/gu, " ").toLowerCase();
+    const isCV = /(^|\s)(cv|resume|résumé|curriculum vitae|ansioluettelo|meritförteckning)(\s|$)/u.test(meaning);
+    const isLetter = /(^|\s)(cover letter|application letter|motivation letter|saatekirje|hakemuskirje|personligt brev)(\s|$)/u.test(meaning);
+    const ambiguous = /(^|\s)(passport|photo|image|identity document|transcript|certificate|reference letter)(\s|$)/u.test(meaning);
+    return !ambiguous && (attachmentKind === "cv" ?
+      isCV && !isLetter : isLetter && !isCV);
+  };
+  if (!matchesApprovedKind(label)) {
     return stop("The target is not a unique approved " +
       (attachmentKind === "cv" ? "résumé" : "cover-letter") + " input.");
   }
-  const accept = String(input.accept || "").toLowerCase();
-  if (accept && !accept.split(",").some((x) =>
-    [".pdf", "application/pdf", "application/*", "*/*"].includes(x.trim())
-  )) return stop("Employer form does not support PDF attachments.");
+  const acceptsPdf = () => {
+    const accept = String(input.accept || "").toLowerCase();
+    return !accept || accept.split(",").some((x) =>
+      [".pdf", "application/pdf", "application/*", "*/*"].includes(x.trim()));
+  };
+  if (!acceptsPdf()) return stop("Employer form does not support PDF attachments.");
 
   let bytes;
   try {
@@ -117,9 +126,26 @@ export async function attachReviewedPdf(payload) {
 
   // Recheck after async hashing: a hostile/fast-changing form must not redirect
   // the upload to a newly mounted control or a different account.
+  const latest = Array.from(document.querySelectorAll("input,textarea,select"));
+  // Do not transfer a reviewed document if an employer-side reactive update
+  // has repurposed the very same DOM node during the async SHA-256 operation.
+  // All checks remain synchronous until FileList assignment and input/change.
   if (location.href !== payload.inspected_url ||
-      !input.isConnected || input.files?.length ||
-      Array.from(document.querySelectorAll("input,textarea,select"))[payload.index] !== input) {
+      !input.isConnected || latest.length !== all.length ||
+      latest.some((node, index) => node !== all[index]) ||
+      latest[payload.index] !== input ||
+      input.tagName !== "INPUT" || input.type !== "file" ||
+      input.matches(":disabled") || input.readOnly || input.multiple ||
+      input.files?.length || input.closest("form") !== owningForm ||
+      String(input.id || "") !== payload.expected_id ||
+      String(input.name || "") !== payload.expected_name ||
+      String(input.accept || "") !== payload.expected_accept ||
+      readLabel() !== payload.expected_label ||
+      !matchesApprovedKind(readLabel()) || !acceptsPdf() ||
+      input.closest("[hidden],[aria-hidden='true'],[inert]") ||
+      getComputedStyle(input).display === "none" ||
+      getComputedStyle(input).visibility === "hidden" ||
+      input.getClientRects().length === 0) {
     return stop("The employer form changed during PDF validation.");
   }
   try {
