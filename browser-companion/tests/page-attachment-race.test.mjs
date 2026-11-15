@@ -10,7 +10,7 @@ const digest = createHash("sha256").update(pdf).digest("hex");
 const globalNames = ["document","location","window","crypto","atob","File",
   "DataTransfer","Event","CSS","getComputedStyle"];
 
-async function withEmployerUpload({kind="cv", mutate=()=>{}}={}) {
+async function withEmployerUpload({kind="cv", mutate=()=>{}, foreignOwner=false}={}) {
   const saved = new Map(globalNames.map(key =>
     [key,Object.getOwnPropertyDescriptor(globalThis,key)]));
   const state = {hidden:false,disabled:false, events:[],form:{},controls:[]};
@@ -27,6 +27,7 @@ async function withEmployerUpload({kind="cv", mutate=()=>{}}={}) {
     dispatchEvent:(event)=>{state.events.push(event.type);return true;},
   };
   state.controls=[input];
+  input.form=foreignOwner ? {} : state.form;
   const frame={};
   frame.top=frame; frame.self=frame;
   const stubs = {
@@ -93,6 +94,15 @@ test("unchanged reviewed CV and cover-letter fields attach locally without submi
   }
 });
 
+test("an already foreign-owned PDF field refuses any transfer",async()=>{
+  for(const kind of ["cv","letter"]){
+    const r=await withEmployerUpload({kind,foreignOwner:true});
+    assert.equal(r.result.status,"blocked",kind);
+    assert.equal(r.files.length,0,kind);
+    assert.deepEqual(r.events,[],kind);
+  }
+});
+
 test("reactive upload-field repurposing during SHA-256 blocks before FileList transfer",async()=>{
   const mutations=[
     ["label",(input)=>{input.labels[0].innerText="Passport photo";}],
@@ -101,6 +111,7 @@ test("reactive upload-field repurposing during SHA-256 blocks before FileList tr
     ["accept",(input)=>{input.accept="image/jpeg";}],
     ["visibility",(_input,state)=>{state.hidden=true;}],
     ["form",(_input,state)=>{state.form={};}],
+    ["form owner",(input)=>{input.form={};}],
     ["type",(input)=>{input.type="text";}],
     ["disabled",(_input,state)=>{state.disabled=true;}],
     ["reordered",(_input,state)=>{state.controls.unshift({});}],
