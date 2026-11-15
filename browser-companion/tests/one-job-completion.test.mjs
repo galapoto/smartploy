@@ -36,7 +36,7 @@ function mount({
     completingOneJob:false,receiptOnly:false,
     currentPacket:packet,targetTabId:8,attemptReserved:false,
     inspectedUrl:JOB,preflightPassed:false,oneJobFinalApproval:false,
-    oneJobSubmitWasAttempted:false,
+    oneJobSubmitWasAttempted:false,oneJobFormSnapshotSha256:"",
     $:getNode,
     window:{confirm:message=>{
       records.push(message.startsWith("COMPLETE")?"final-consent":"receipt-consent");
@@ -66,6 +66,7 @@ function mount({
           dryCount++;records.push("dry-run-"+dryCount);
           return [{frameId:0,result:{
             preflight_ready:dryCount===1?firstReady:secondReady,
+            form_snapshot_sha256:"e".repeat(64),
             reason:"required-fields-missing"
           }}];
         }
@@ -87,6 +88,7 @@ function mount({
     onSubmit:async()=>{
       assert.equal(context.oneJobFinalApproval,true);
       assert.equal(context.preflightPassed,true);
+      assert.equal(context.oneJobFormSnapshotSha256,"e".repeat(64));
       context.oneJobFinalApproval=false;
       records.push("one-permitted-employer-click");
       context.oneJobSubmitWasAttempted=actuallyClicked;
