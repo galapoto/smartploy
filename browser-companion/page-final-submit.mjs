@@ -17,7 +17,9 @@ export async function submitReviewedLeverOnce(expected) {
       typeof expected.full_name !== "string" || !expected.full_name.trim() ||
       typeof expected.cover_letter !== "string" ||
       expected.cover_letter.length < 60 ||
-      (expected.dry_run !== undefined && typeof expected.dry_run !== "boolean")) {
+      (expected.dry_run !== undefined && typeof expected.dry_run !== "boolean") ||
+      (expected.expected_form_snapshot_sha256 !== undefined &&
+       !/^[a-f0-9]{64}$/.test(expected.expected_form_snapshot_sha256))) {
     return fail("invalid_reviewed_binding");
   }
   const hasReviewedLetter = expected.letter_pdf_sha256 !== undefined ||
@@ -243,6 +245,7 @@ export async function submitReviewedLeverOnce(expected) {
     item.options ? Array.from(item.options, option => [
       option.value, option.text, option.disabled, option.selected,
     ]) : null,
+    item.form === form, Boolean(item.matches?.(":disabled")),
   ]);
   const finalDestinationBinding = () => JSON.stringify([
     form.action ?? "", form.method ?? "", form.enctype ?? "",
@@ -264,6 +267,7 @@ export async function submitReviewedLeverOnce(expected) {
   ]);
   const reviewedControls = allElements.map(controlBinding);
   const reviewedDestination = finalDestinationBinding();
+  let formSnapshotSha256 = "";
   try {
     const buffer = await cv.arrayBuffer();
     // No CV bytes or file digest leave the employer tab.
@@ -280,6 +284,17 @@ export async function submitReviewedLeverOnce(expected) {
       if (actualLetter !== expected.letter_pdf_sha256)
         return fail("reviewed_letter_attachment_changed");
     }
+    // Pinned to the exact employer controls verified in this dry-run; only
+    // the digest leaves the tab. The popup carries it across the async server
+    // claim and the final executor refuses a changed answer or destination.
+    const snapshotBytes = new TextEncoder().encode(
+      JSON.stringify([reviewedControls, reviewedDestination])
+    );
+    const snapshotDigest = new Uint8Array(
+      await crypto.subtle.digest("SHA-256", snapshotBytes)
+    );
+    formSnapshotSha256 = Array.from(snapshotDigest,
+      b => b.toString(16).padStart(2,"0")).join("");
   } catch {
     return fail("reviewed_cv_unverifiable");
   }
@@ -330,9 +345,14 @@ export async function submitReviewedLeverOnce(expected) {
   }
   // Reuse the exact same CV/letter/form verification BEFORE consuming the
   // irreversible server claim; dry-run NEVER touches the submit control.
+  if (expected.expected_form_snapshot_sha256 &&
+      formSnapshotSha256 !== expected.expected_form_snapshot_sha256) {
+    return fail("employer_form_changed_since_final_review");
+  }
   if (expected.dry_run === true) {
     return {
       attempted: false, preflight_ready: true,
+      form_snapshot_sha256: formSnapshotSha256,
       provider_acknowledged: false, automatic_retry_authorized: false,
       reason: "one_job_exact_form_ready_no_external_action",
     };
