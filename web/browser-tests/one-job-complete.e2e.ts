@@ -192,7 +192,19 @@ test("ONE job: saved profile→field fill→two PDF attachments→answers→revi
   const dry=await page.evaluate(async v=>
     (window as any).submitReviewedLeverOnce({...v,dry_run:true}),reviewed);
   expect(dry.preflight_ready,dry.reason).toBe(true);
+  expect(dry.form_snapshot_sha256).toMatch(/^[a-f0-9]{64}$/);
   expect(await page.evaluate(()=> (window as any).employerSubmitClicks)).toBe(0);
+  // The exact final executor must refuse unreviewed changes during an
+  // asynchronous claim. This negative test runs BEFORE any server claim.
+  await page.locator("#referral").fill("Unreviewed altered answer");
+  const changed=await page.evaluate(async ({v,sha})=>
+    (window as any).submitReviewedLeverOnce({
+      ...v,expected_form_snapshot_sha256:sha
+    }),{v:reviewed,sha:dry.form_snapshot_sha256});
+  expect(changed.attempted).toBe(false);
+  expect(changed.reason).toBe("employer_form_changed_since_final_review");
+  expect(await page.evaluate(()=> (window as any).employerSubmitClicks)).toBe(0);
+  await page.locator("#referral").fill(ANSWER);
   const claim=await smartPage.evaluate(async (v)=>
     (window as any).reserveFinalClickOnSmartPloy(v),{
       workspace_id:WORKSPACE,expected_revision:2,
@@ -212,7 +224,9 @@ test("ONE job: saved profile→field fill→two PDF attachments→answers→revi
   // Test harness simulates the extension's separately tested local durable
   // no-retry lock. Actual employer final logic is executed on this DOM.
   const clicked=await page.evaluate(async v=>
-    (window as any).submitReviewedLeverOnce(v),reviewed);
+    (window as any).submitReviewedLeverOnce(v),{
+      ...reviewed,expected_form_snapshot_sha256:dry.form_snapshot_sha256
+    });
   expect(clicked.attempted,clicked.reason).toBe(true);
   expect(clicked.provider_acknowledged).toBe(false);
   expect(await page.evaluate(()=> (window as any).employerSubmitClicks)).toBe(1);
