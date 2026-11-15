@@ -190,7 +190,8 @@ export async function submitReviewedLeverOnce(expected) {
     return fail("reviewed_cover_letter_pdf_missing");
   }
   if (attachedLetter && (
-    !visible(letterFileInput) ||
+    !visible(letterFileInput) || letterFileInput.disabled ||
+    letterFileInput.form !== form ||
     attachedLetter.size !== expected.letter_pdf_size ||
     !/\.pdf$/i.test(attachedLetter.name) ||
     (attachedLetter.type &&
@@ -215,7 +216,8 @@ export async function submitReviewedLeverOnce(expected) {
     return fail("unreviewed_extra_attachment_present");
   }
   const cv = resumes[0].files[0];
-  if (cv.size !== expected.cv_pdf_size || cv.size > 2 * 1024 * 1024 ||
+  if (resumes[0].disabled || resumes[0].form !== form ||
+      cv.size !== expected.cv_pdf_size || cv.size > 2 * 1024 * 1024 ||
       !/\.pdf$/i.test(cv.name) ||
       (cv.type && cv.type.toLowerCase() !== "application/pdf")) {
     return fail("reviewed_cv_attachment_changed");
@@ -303,6 +305,10 @@ export async function submitReviewedLeverOnce(expected) {
     Boolean(item.files?.length)
       ) ||
       resumes[0].files?.length !== 1 || resumes[0].files[0] !== cv ||
+      // FileList presence alone is insufficient: disabled inputs and inputs
+      // with a foreign form owner are not submitted to this employer form.
+      resumes[0].disabled || resumes[0].form !== form ||
+      (attachedLetter && (letterFileInput.disabled || letterFileInput.form !== form)) ||
       String(emailInputs[0].value || "").trim().toLowerCase() !==
         expected.email.trim().toLowerCase() ||
       !reviewedNameStillMatches() ||
