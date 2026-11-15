@@ -169,6 +169,21 @@ test("ONE job: saved profile→field fill→two PDF attachments→answers→revi
     {actions,url:JOB});
   expect(qFilled.status,qFilled.reason).toBe("filled_for_review");
 
+  // Real Chromium radio validity: native group is valid when the applicant
+  // checks the second option, even if the first is marked `required`.
+  const radioGroupValid=await page.evaluate(()=>{
+    const form=document.querySelector("form#application")!;
+    const first=document.createElement("input");
+    first.type="radio";first.name="candidate_choice";
+    first.value="first";first.required=true;
+    const second=document.createElement("input");
+    second.type="radio";second.name="candidate_choice";
+    second.value="second";second.checked=true;
+    form.append(first,second);
+    return !first.checked && second.checked && form.checkValidity();
+  });
+  expect(radioGroupValid).toBe(true);
+
   const reviewed={
     application_url:JOB,cv_pdf_sha256:sha(CV),cv_pdf_size:CV.length,
     letter_pdf_sha256:sha(LETTER),letter_pdf_size:LETTER.length,
