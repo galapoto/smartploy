@@ -32,6 +32,7 @@ let startAutoApplyInFlight = false;
 let completingOneJob = false;
 let oneJobFinalApproval = false;
 let oneJobSubmitWasAttempted = false;
+let oneJobFormSnapshotSha256 = "";
 
 function clearReceiptObservation() {
   receiptCheckSequence++;
@@ -1228,7 +1229,9 @@ async function onSubmit() {
   // immediately before its server claim. Manual Submit keeps its checkbox
   // and separate modal. Neither mode can avoid the one-use server lock.
   const reviewedOneJobApproval=oneJobFinalApproval;
+  const approvedFormSnapshot=reviewedOneJobApproval ? oneJobFormSnapshotSha256 : "";
   oneJobFinalApproval=false;
+  oneJobFormSnapshotSha256="";
   if (receiptOnly || !currentPacket || !preflightPassed ||
       (!$("approve").checked && !reviewedOneJobApproval) ||
       attemptReserved || targetTabId === null ||
@@ -1286,6 +1289,9 @@ async function onSubmit() {
           email: packet.fields.email,
           full_name: packet.fields.full_name,
           cover_letter: packet.fields.cover_letter,
+          ...(reviewedOneJobApproval ? {
+            expected_form_snapshot_sha256:approvedFormSnapshot
+          } : {}),
         }],
       });
       const finding = result?.result;
@@ -1344,7 +1350,7 @@ async function onCompleteOneJob() {
         args:[finalEmployerBinding(packet,true)]
       });
       return reply?.frameId === 0 && reply?.result?.preflight_ready === true ?
-        {ready:true} :
+        {ready:true,form_snapshot_sha256:reply?.result?.form_snapshot_sha256} :
         {ready:false,reason:reply?.result?.reason || "Employer form not ready"};
     };
     let readiness=await dry();
@@ -1376,6 +1382,13 @@ async function onCompleteOneJob() {
       status("Form changed before the one-use server claim: "+readiness.reason);
       return false;
     }
+    if (!/^[a-f0-9]{64}$/.test(readiness.form_snapshot_sha256 || "")) {
+      status("Cannot bind the reviewed employer answers to this final attempt. No claim consumed.");
+      return false;
+    }
+    // Immutable exact form-controls digest is carried only in popup memory
+    // across the signed-in server claim. Final executor must match it.
+    oneJobFormSnapshotSha256=readiness.form_snapshot_sha256;
     const firstParty=await signedInAppTab();
     const [response]=await chrome.scripting.executeScript({
       target:{tabId:firstParty.id},world:"ISOLATED",
@@ -1463,6 +1476,7 @@ async function onCompleteOneJob() {
   } finally {
     completingOneJob=false;
     oneJobFinalApproval=false;
+    oneJobFormSnapshotSha256="";
     $("finishOneJob").disabled=false;
   }
 }
