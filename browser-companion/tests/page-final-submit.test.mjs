@@ -36,6 +36,8 @@ async function withFakeEmployer({
   requiredRadioChoice = null,
   cvDisabled = false, letterDisabled = false,
   cvForeignForm = false, letterForeignForm = false,
+  cvAncestorDisabled = false, letterAncestorDisabled = false,
+  cvNameless = false, letterNameless = false,
 } = {}) {
   const old = Object.fromEntries(
     ["location","window","document","getComputedStyle"].map(x => [x,globalThis[x]])
@@ -103,6 +105,10 @@ async function withFakeEmployer({
   // Real HTMLInputElement.form can differ from its DOM ancestor via the
   // "form" attribute. Model actual submission ownership for both PDF files.
   for(const element of inputs) element.form=form;
+  inputs[3].name=cvNameless ? "" : "resume";
+  inputs[9].name=letterNameless ? "" : "coverLetter";
+  inputs[3].matches=(selector)=>selector === ":disabled" && cvAncestorDisabled;
+  inputs[9].matches=(selector)=>selector === ":disabled" && letterAncestorDisabled;
   inputs[3].disabled=cvDisabled;
   inputs[9].disabled=letterDisabled;
   if(cvForeignForm) inputs[3].form={};
@@ -178,10 +184,16 @@ test("both reviewed PDF inputs must be enabled and owned by the submitted form",
   for(const config of [
     {cvDisabled:true},
     {cvForeignForm:true},
+    {cvAncestorDisabled:true},
+    {cvNameless:true},
     {reviewedLetterAttached:true,approveLetter:true,letterValue:"",
       letterDisabled:true},
     {reviewedLetterAttached:true,approveLetter:true,letterValue:"",
       letterForeignForm:true},
+    {reviewedLetterAttached:true,approveLetter:true,letterValue:"",
+      letterAncestorDisabled:true},
+    {reviewedLetterAttached:true,approveLetter:true,letterValue:"",
+      letterNameless:true},
   ]){
     const r=await withFakeEmployer(config);
     assert.equal(r.result.attempted,false,JSON.stringify(config));
@@ -194,8 +206,12 @@ test("PDF control disabled or reassociated during hashing blocks final click",as
   const mutations=[
     (inputs)=>{inputs[3].disabled=true;},
     (inputs)=>{inputs[3].form={};},
+    (inputs)=>{inputs[3].matches=()=>true;},
+    (inputs)=>{inputs[3].name="";},
     (inputs)=>{inputs[9].disabled=true;},
     (inputs)=>{inputs[9].form={};},
+    (inputs)=>{inputs[9].matches=()=>true;},
+    (inputs)=>{inputs[9].name="";},
   ];
   for(const mutateDuringCvRead of mutations){
     const r=await withFakeEmployer({
