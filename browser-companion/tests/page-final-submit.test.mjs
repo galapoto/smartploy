@@ -34,6 +34,8 @@ async function withFakeEmployer({
   approveLetter = false, reviewedLetterBytes = letterPdf,
   formTarget = "", buttonFormTarget = "", baseTarget = "",
   requiredRadioChoice = null,
+  cvDisabled = false, letterDisabled = false,
+  cvForeignForm = false, letterForeignForm = false,
 } = {}) {
   const old = Object.fromEntries(
     ["location","window","document","getComputedStyle"].map(x => [x,globalThis[x]])
@@ -98,6 +100,13 @@ async function withFakeEmployer({
     getAttribute: (name) => name === "action" ? state.formAction :
       name === "target" ? formTarget : "",
   };
+  // Real HTMLInputElement.form can differ from its DOM ancestor via the
+  // "form" attribute. Model actual submission ownership for both PDF files.
+  for(const element of inputs) element.form=form;
+  inputs[3].disabled=cvDisabled;
+  inputs[9].disabled=letterDisabled;
+  if(cvForeignForm) inputs[3].form={};
+  if(letterForeignForm) inputs[9].form={};
   const button = {
     innerText: submitLabel,
     disabled: false,
@@ -163,6 +172,41 @@ test("one actual form sends both the reviewed CV and letter PDF, once, with no f
   assert.equal(r.clicks,1);
   assert.equal(r.repeated.attempted,false);
   assert.equal(r.repeated.reason,"employer_form_already_attempted");
+});
+
+test("both reviewed PDF inputs must be enabled and owned by the submitted form",async()=>{
+  for(const config of [
+    {cvDisabled:true},
+    {cvForeignForm:true},
+    {reviewedLetterAttached:true,approveLetter:true,letterValue:"",
+      letterDisabled:true},
+    {reviewedLetterAttached:true,approveLetter:true,letterValue:"",
+      letterForeignForm:true},
+  ]){
+    const r=await withFakeEmployer(config);
+    assert.equal(r.result.attempted,false,JSON.stringify(config));
+    assert.equal(r.clicks,0,JSON.stringify(config));
+    assert.equal(r.marker,false,JSON.stringify(config));
+  }
+});
+
+test("PDF control disabled or reassociated during hashing blocks final click",async()=>{
+  const mutations=[
+    (inputs)=>{inputs[3].disabled=true;},
+    (inputs)=>{inputs[3].form={};},
+    (inputs)=>{inputs[9].disabled=true;},
+    (inputs)=>{inputs[9].form={};},
+  ];
+  for(const mutateDuringCvRead of mutations){
+    const r=await withFakeEmployer({
+      reviewedLetterAttached:true,approveLetter:true,letterValue:"",
+      mutateDuringCvRead
+    });
+    assert.equal(r.result.reason,"employer_form_changed");
+    assert.equal(r.result.attempted,false);
+    assert.equal(r.clicks,0);
+    assert.equal(r.marker,false);
+  }
 });
 
 test("missing, modified, or unapproved cover-letter attachment blocks the one-use submit",async()=>{
