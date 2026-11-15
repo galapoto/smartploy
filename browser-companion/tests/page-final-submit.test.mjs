@@ -38,6 +38,7 @@ async function withFakeEmployer({
   cvForeignForm = false, letterForeignForm = false,
   cvAncestorDisabled = false, letterAncestorDisabled = false,
   cvNameless = false, letterNameless = false,
+  usePinnedSnapshot = false, mutateAfterDryRun = null,
 } = {}) {
   const old = Object.fromEntries(
     ["location","window","document","getComputedStyle"].map(x => [x,globalThis[x]])
@@ -148,6 +149,15 @@ async function withFakeEmployer({
     } : {})
   };
   try {
+    if (usePinnedSnapshot) {
+      const dry = await submitReviewedLeverOnce({...binding,dry_run:true});
+      if (!dry.preflight_ready) {
+        return {result:dry,repeated:null,clicks:state.clicks,marker:state.marker};
+      }
+      if (typeof mutateAfterDryRun === "function")
+        mutateAfterDryRun(inputs,state,file);
+      binding.expected_form_snapshot_sha256=dry.form_snapshot_sha256;
+    }
     const result = await submitReviewedLeverOnce(binding);
     const repeated = result.attempted ? await submitReviewedLeverOnce(binding) : null;
     return {result, repeated, clicks:state.clicks, marker:state.marker};
@@ -167,6 +177,20 @@ test("exact approved Lever form and matching CV permits ONE click only", async (
   assert.equal(r.marker,true);
   assert.equal(r.repeated.attempted,false);
   assert.equal(r.repeated.reason,"employer_form_already_attempted");
+});
+
+test("exact form answer digest persists across claim and forbids changed answers",async()=>{
+  const approved=await withFakeEmployer({usePinnedSnapshot:true});
+  assert.equal(approved.result.attempted,true,approved.result.reason);
+  assert.equal(approved.clicks,1);
+  const changed=await withFakeEmployer({
+    usePinnedSnapshot:true,
+    mutateAfterDryRun:(inputs)=>{inputs[7].value="Unreviewed altered answer";},
+  });
+  assert.equal(changed.result.attempted,false);
+  assert.equal(changed.result.reason,"employer_form_changed_since_final_review");
+  assert.equal(changed.clicks,0);
+  assert.equal(changed.marker,false);
 });
 
 test("one actual form sends both the reviewed CV and letter PDF, once, with no false receipt",async()=>{
