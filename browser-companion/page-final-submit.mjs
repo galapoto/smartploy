@@ -240,6 +240,9 @@ export async function submitReviewedLeverOnce(expected) {
     finalButton.getAttribute?.("formmethod") ?? null,
     finalButton.getAttribute?.("formenctype") ?? null,
     finalButton.getAttribute?.("formtarget") ?? null,
+    // A reactive <base target> can change after the initial destination check
+    // while one or both reviewed PDFs are being hashed. Bind its live value.
+    document.querySelector("base[target]")?.getAttribute("target") ?? null,
   ]);
   const reviewedControls = allElements.map(controlBinding);
   const reviewedDestination = finalDestinationBinding();
