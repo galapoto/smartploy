@@ -17,7 +17,8 @@ assert.ok(inspectStart>0 && inspectEnd>inspectStart);
 const realFunctions=popup.slice(enterStart,enterEnd)+
   "\n"+popup.slice(inspectStart,inspectEnd);
 
-function mount({localAttempt=true,uncertainClaim=false}={}){
+function mount({localAttempt=true,uncertainClaim=false,serverAttempt=false,
+  serverUnavailable=false}={}){
   const records=[],nodes=new Map();
   const job="https://jobs.lever.co/test/actualjob/apply";
   const packet={application_url:job,workspace_id:"kit-"+"a".repeat(30)};
@@ -37,6 +38,15 @@ function mount({localAttempt=true,uncertainClaim=false}={}){
     clearReceiptObservation:()=>{state.receiptCheckSequence++;},
     activeTab:async()=>({id:4,url:job}),
     validatePacket:()=>packet,
+    isLeverFinalProvider:()=>true,
+    inspectOwnFinalActionReadiness:async()=>{
+      records.push("read-owner-server-attempt");
+      return serverUnavailable ?
+        {ready:false,reason:"readiness_unavailable"} :
+        {ready:!serverAttempt,reason:serverAttempt?
+          "previous_employer_attempt_reserved":"ready",
+          previous_employer_attempt_reserved:serverAttempt};
+    },
     hasPriorLeverAttempt:async()=>{
       records.push("read-local-attempt");
       return localAttempt;
@@ -88,4 +98,28 @@ test("consumed final action never visually regains a bright hover and keeps acce
   assert.match(html,/id="finalClaimInfo" role="status"/);
   assert.match(html,/id="feedback" role="status" aria-live="polite"/);
   assert.match(html,/id="receipt"/);
+});
+
+test("after popup reload the server-only consumed claim is still recovery-only",async()=>{
+  const {inspect,state,node,records}=mount({
+    localAttempt:false,uncertainClaim:false,serverAttempt:true
+  });
+  await inspect();
+  assert.equal(state.attemptReserved,true);
+  assert.equal(state.receiptOnly,true);
+  assert.equal(node("startAutoApply").disabled,true);
+  assert.equal(node("finishOneJob").disabled,true);
+  assert.equal(node("receipt").disabled,false);
+  assert.equal(records.includes("read-owner-server-attempt"),true);
+  assert.equal(records.includes("incorrect-reenable-review"),false);
+  assert.equal(records.includes("incorrect-employer-injection"),false);
+});
+
+test("cannot safely rearm a claimed Lever job while signed-in attempt status is unavailable",async()=>{
+  const {inspect,node,records}=mount({localAttempt:false,serverUnavailable:true});
+  await inspect();
+  assert.equal(records.includes("incorrect-reenable-review"),false);
+  assert.equal(records.includes("incorrect-employer-injection"),false);
+  assert.equal(node("plan").hidden,true);
+  assert.equal(records.some(s=>/cannot verify prior employer attempts/i.test(s)),true);
 });
