@@ -169,7 +169,7 @@ test("popup uses only the injected first-party readiness helper, never direct ne
   const allowed=await mountReadiness();
   assert.equal(allowed.result.ready,true);
   assert.deepEqual(allowed.calls,["signed-in-first-party-readiness"]);
-  assert.doesNotMatch(popup,/\\bfetch\\s*\\(/);
+  assert.doesNotMatch(popup,/\bfetch\s*\(/);
   for(const options of [{permission:false},{enabled:false},{frameId:9}]){
     const denied=await mountReadiness(options);
     assert.equal(denied.result.ready,false,JSON.stringify(options));
