@@ -90,6 +90,7 @@ async function request<T>(path: string, init?: RequestInit, expectedUserId?: str
     }
     if (
       response.status === 401 &&
+      path !== "/api/v1/session" &&
       loginUrl.startsWith("/") &&
       typeof window !== "undefined"
     ) {

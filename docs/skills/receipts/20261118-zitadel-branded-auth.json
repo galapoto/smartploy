@@ -1,0 +1,151 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "d4153ebc1e4187ff9c74120a187e059f18691f6e",
+  "user_outcome": "SmartPloy offers a unique high-contrast sign-in/sign-up using unchanged official Google buttons while all user authentication continues through existing ZITADEL OIDC, with Google federation gated by explicit provider configuration.",
+  "components": [
+    {
+      "name": "ui",
+      "paths": [
+        "web/public/google-signin-light.png",
+        "web/public/google-signup-light.png",
+        "web/src/App.test.tsx",
+        "web/src/App.tsx",
+        "web/src/SignIn.test.tsx",
+        "web/src/SignIn.tsx",
+        "web/src/api.ts",
+        "web/src/main.tsx",
+        "web/src/signin.css"
+      ],
+      "skills": [
+        {
+          "name": "Apple HIG foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Designed a clearly labeled high-contrast login entry with keyboard-navigable sign-in/sign-up controls, visible focus, responsive layout, and no blurred authentication surface."
+        },
+        {
+          "name": "UI UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "e59ff376a41f7ca47b7541ad5c116495cbade3ee",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Used a minimal deliberate two-mode layout with restrained navy/turquoise accents, direct action labels, reduced-motion support, and no unnecessary auth fields."
+        },
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Kept existing pytest and Vitest fixtures, checked signed-out rendering, provider-gated redirects, unchanged OIDC callback contracts, and negative unconfigured-provider behavior."
+        }
+      ],
+      "applied_method": "Created distinct branded credential-free sign-in/sign-up with accessible controls; loaded original Google web PNGs unchanged, and displayed this screen only on typed backend 401. Existing private-session isolation gate remains intact.",
+      "reuse_provenance": "COPIED unchanged user-provided Google official web buttons from signin-assets.zip, exact SHA256 in docs/v4/SMARTPLOY_BRANDED_ZITADEL_GOOGLE_ENTRY_20261118.md. REUSED first-party existing galapoto/smartploy@d4153eb BrandMark, App startup/session state and API request. ADAPTED only initial getSession 401 redirect. NEW minimal sign-in component and CSS.",
+      "tests": "web/src/SignIn.test.tsx 2 Vitest cases, App.test.tsx signed-out state test, TypeScript compilation and source-exact GitHub Actions web job.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "All first-party implementation source is readable and authorized, and the exact Google design assets were provided directly; no opaque implementation needs REA reconstruction or licensing guesswork.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "backend",
+      "paths": [
+        "smartploy/api.py",
+        "smartploy/oidc.py"
+      ],
+      "skills": [
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Kept existing pytest and Vitest fixtures, checked signed-out rendering, provider-gated redirects, unchanged OIDC callback contracts, and negative unconfigured-provider behavior."
+        }
+      ],
+      "applied_method": "Added anonymous no-secret Google-provider capability status, validated ZITADEL-only sign-up and direct Google provider options without changing Authlib PKCE/nonces, callback, account binding or HttpOnly session. Invalid intents fail closed.",
+      "reuse_provenance": "REUSED unchanged first-party smartploy/api.py::auth_login authorize_redirect and smartploy/oidc.py existing OIDC callback/session machinery at d4153eb; ADAPTED auth_login option validation, NEW /auth/providers. No new OAuth client or Google credentials.",
+      "tests": "tests/test_oidc.py registration, configured/unconfigured Google provider and negative unsupported parameter cases, original login and callback security regression via pytest.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "All first-party implementation source is readable and authorized, and the exact Google design assets were provided directly; no opaque implementation needs REA reconstruction or licensing guesswork.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "qa",
+      "paths": [
+        "tests/test_oidc.py"
+      ],
+      "skills": [
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Kept existing pytest and Vitest fixtures, checked signed-out rendering, provider-gated redirects, unchanged OIDC callback contracts, and negative unconfigured-provider behavior."
+        }
+      ],
+      "applied_method": "Adapted existing FakeOIDCClient to record authorize_redirect options and added positive ZITADEL registration/provider and negative invalid/unconfigured routes, while retaining original security tests.",
+      "reuse_provenance": "REUSED first-party tests/test_oidc.py::FakeOIDCClient and existing production-mode TestClient fixture at d4153eb; NEW route-specific assertions.",
+      "tests": "GitHub Actions test job, pytest tests/test_oidc.py on exact PR head; real ZITADEL callback acceptance NOT VERIFIED.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "All first-party implementation source is readable and authorized, and the exact Google design assets were provided directly; no opaque implementation needs REA reconstruction or licensing guesswork.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "delivery",
+      "paths": [
+        "deploy/personal/docker-compose.yml",
+        "deploy/personal/env.example"
+      ],
+      "skills": [
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Kept existing pytest and Vitest fixtures, checked signed-out rendering, provider-gated redirects, unchanged OIDC callback contracts, and negative unconfigured-provider behavior."
+        }
+      ],
+      "applied_method": "Kept Google provider configuration in server-only OIDC API runtime, explicit optional variables in existing Compose and env example; no client secret, auto-authorization, or new deployment topology.",
+      "reuse_provenance": "REUSED existing production Compose API identity flow and 0600 env pattern at d4153eb. ADAPTED only two optional nonsecret Google-IdP configuration keys.",
+      "tests": "Production Compose config validation in native CI; manual exact-SHA OVH release and real ZITADEL Google activation NOT VERIFIED.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "All first-party implementation source is readable and authorized, and the exact Google design assets were provided directly; no opaque implementation needs REA reconstruction or licensing guesswork.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "docs",
+      "paths": [
+        "docs/v4/SMARTPLOY_BRANDED_ZITADEL_GOOGLE_ENTRY_20261118.md"
+      ],
+      "skills": [
+        {
+          "name": "Apple HIG foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Designed a clearly labeled high-contrast login entry with keyboard-navigable sign-in/sign-up controls, visible focus, responsive layout, and no blurred authentication surface."
+        },
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Kept existing pytest and Vitest fixtures, checked signed-out rendering, provider-gated redirects, unchanged OIDC callback contracts, and negative unconfigured-provider behavior."
+        }
+      ],
+      "applied_method": "Recorded shipped behavior, exact first-party baseline, source Google asset provenance and checksums, operator activation requirements and explicit live verification gaps.",
+      "reuse_provenance": "REUSED V4 implementation authority, existing pinned skills adoption method and source proof. NEW scoped sign-in authentication runbook with real dependency boundaries.",
+      "tests": "CI component-skill gate validates the exact changed-file receipt. Real users and production remain NOT VERIFIED.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "All first-party implementation source is readable and authorized, and the exact Google design assets were provided directly; no opaque implementation needs REA reconstruction or licensing guesswork.",
+      "measured_seconds": "NOT_MEASURED"
+    }
+  ]
+}

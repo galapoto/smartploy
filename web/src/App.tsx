@@ -29,6 +29,7 @@ import SearchSetup from "./SearchSetup";
 import SearchResultsPanel from "./SearchResultsPanel";
 import TrainingProgramsPanel from "./TrainingProgramsPanel";
 import BrandMark from "./BrandMark";
+import SignIn from "./SignIn";
 import { useSmartployTheme } from "./theme";
 import AIConsentSettings from "./AIConsentSettings";
 import type {
@@ -264,6 +265,7 @@ export default function App() {
   const [discovery, setDiscovery] = useState<SearchResults | null>(null);
   const [localAI, setLocalAI] = useState<LocalAIStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loginRequired, setLoginRequired] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [busyCV, setBusyCV] = useState(false);
   const [busyFact, setBusyFact] = useState("");
@@ -512,6 +514,7 @@ export default function App() {
       // The essential account-bound workspace has arrived. Optional CV, AI
       // and application reads must not keep the startup timeout active.
       if (connectionDeadline !== null) window.clearTimeout(connectionDeadline);
+      setLoginRequired(false);
       setDashboard(board); setPreferences(prefs); setDiscovery(results);
       setSession(verifiedWho);
       setLoading(false); setRefreshing(false); setError("");
@@ -555,6 +558,11 @@ export default function App() {
       if (generation === loadGeneration.current) {
         lastSessionIdentity.current = null;
         clearPrivateWorkspace();
+        // Only a server-issued 401 opens the login page. Other failures
+        // continue to use the existing retry shell, never expose private data.
+        const status = exc && typeof exc === "object" && "status" in exc
+          ? (exc as { status?: unknown }).status : null;
+        setLoginRequired(status === 401);
         setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
       }
     } finally {
@@ -1202,6 +1210,7 @@ export default function App() {
 
   // Never hide navigation behind a rotating fullscreen loader. No applicant
   // details are shown until the signed-in account is verified by the server.
+  if (!dashboard && loginRequired && !loading) return <SignIn />;
   if (!dashboard) return <StartupShell page={page} loading={loading}
     error={error} theme={theme} onTheme={toggleTheme}
     onNavigate={navigate} onRetry={() => void load()} />;

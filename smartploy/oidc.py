@@ -34,6 +34,7 @@ OIDC_CLIENT_NAME = "obum_identity"
 PUBLIC_AUTH_PATHS = frozenset(
     {
         "/auth/login",
+        "/auth/providers",
         "/auth/callback",
         "/auth/logout",
         "/auth/logged-out",

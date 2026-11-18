@@ -765,12 +765,50 @@ def create_app(
             },
         )
 
+    def google_idp_config() -> tuple[str, str] | None:
+        """Only an operator-supplied ZITADEL IdP ID can enable Google."""
+        idp_id = os.getenv("SMARTPLOY_OIDC_GOOGLE_IDP_ID", "").strip()
+        domain = os.getenv("SMARTPLOY_OIDC_GOOGLE_ORG_DOMAIN", "").strip().lower()
+        if not re.fullmatch(r"[1-9][0-9]{9,23}", idp_id):
+            return None
+        if domain and (not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?", domain)
+                       or ".." in domain or "." not in domain):
+            return None
+        return idp_id, domain
+
+    @app.get("/auth/providers")
+    async def auth_providers():
+        # No user IDs, provider IDs, credentials or policy secrets in JSON.
+        return JSONResponse(
+            content={"google": oidc_settings is not None and google_idp_config() is not None},
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
+
     @app.get("/auth/login")
     async def auth_login(request: Request):
         if oidc_settings is None or oidc_remote is None:
             raise HTTPException(status_code=404, detail="OIDC login is not enabled")
+        intent = request.query_params.get("intent", "")
+        provider = request.query_params.get("provider", "")
+        if intent not in ("", "signup") or provider not in ("", "google"):
+            raise HTTPException(status_code=400, detail="Unsupported authentication option")
+        options: dict[str, str] = {}
+        if intent == "signup":
+            # ZITADEL still owns registration, verification, MFA and sessions.
+            options["prompt"] = "create"
+        if provider == "google":
+            selected = google_idp_config()
+            if selected is None:
+                raise HTTPException(status_code=404, detail="Google sign-in is not configured")
+            idp_id, domain = selected
+            scope_parts = [oidc_settings.scope, f"urn:zitadel:iam:org:idp:id:{idp_id}"]
+            if domain:
+                scope_parts.append(f"urn:zitadel:iam:org:domain:primary:{domain}")
+            options["scope"] = " ".join(scope_parts)
         request.scope.setdefault("session", {})
-        response = await oidc_remote.authorize_redirect(request, oidc_settings.redirect_uri)
+        response = await oidc_remote.authorize_redirect(
+            request, oidc_settings.redirect_uri, **options
+        )
         # Authlib caches PKCE + nonce in PostgreSQL. Its modern CSRF protection
         # also requires a browser-specific marker across the ZITADEL redirect.
         # The previous ephemeral request.scope["session"] was lost on redirect.

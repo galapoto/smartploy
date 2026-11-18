@@ -53,6 +53,9 @@ services:
       SMARTPLOY_OIDC_REDIRECT_URI: ${SMARTPLOY_OIDC_REDIRECT_URI:-}
       SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI: ${SMARTPLOY_OIDC_POST_LOGOUT_REDIRECT_URI:-}
       SMARTPLOY_OIDC_SCOPE: ${SMARTPLOY_OIDC_SCOPE:-openid profile email}
+      # Optional ZITADEL Google IdP: only in API container, never client-side.
+      SMARTPLOY_OIDC_GOOGLE_IDP_ID: ${SMARTPLOY_OIDC_GOOGLE_IDP_ID:-}
+      SMARTPLOY_OIDC_GOOGLE_ORG_DOMAIN: ${SMARTPLOY_OIDC_GOOGLE_ORG_DOMAIN:-}
       # One-shot reviewed Lever final-click activation, API-only and OFF by default.
       # Requires separate independent employer rights and applicant consent.
       SMARTPLOY_BROWSER_FINAL_SUBMIT_ENABLED: ${SMARTPLOY_BROWSER_FINAL_SUBMIT_ENABLED:-false}

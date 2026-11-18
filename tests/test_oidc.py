@@ -58,10 +58,12 @@ class FakeOIDCClient:
     def __init__(self):
         self.login_redirect_uri = ""
         self.logout_called = False
+        self.login_options = {}
 
-    async def authorize_redirect(self, request, redirect_uri):
+    async def authorize_redirect(self, request, redirect_uri, **options):
         del request
         self.login_redirect_uri = str(redirect_uri)
+        self.login_options = options
         return RedirectResponse(
             "https://auth.obumai.com/oauth/v2/authorize"
             "?response_type=code&code_challenge=fixture&code_challenge_method=S256"
@@ -409,3 +411,57 @@ def test_invalid_oidc_production_configuration_fails_closed(monkeypatch, name, v
     monkeypatch.setenv(name, value)
     with pytest.raises(ValueError):
         create_app(SmartployService(), oidc_client=FakeOIDCClient())
+
+def test_branded_zitadel_signup_and_direct_google_intents(monkeypatch):
+    configure_oidc(monkeypatch)
+    monkeypatch.setenv("SMARTPLOY_OIDC_GOOGLE_IDP_ID", "76625965177954913")
+    monkeypatch.setenv("SMARTPLOY_OIDC_GOOGLE_ORG_DOMAIN", "example.org")
+    provider = FakeOIDCClient()
+    api = TestClient(create_app(
+        SmartployService(), oidc_client=provider,
+        session_repository=MemorySessionRepository(),
+        oidc_state_cache=MemoryOIDCStateCache(),
+        identity_repository=MemoryIdentityRepository(),
+    ), base_url="https://smartploy.obumai.com", follow_redirects=False)
+
+    available = api.get("/auth/providers")
+    assert available.status_code == 200
+    assert available.json() == {"google": True}
+    assert available.headers["cache-control"] == "no-store"
+    assert "76625965177954913" not in available.text
+
+    signup = api.get("/auth/login?intent=signup")
+    assert signup.status_code == 302
+    assert provider.login_options == {"prompt": "create"}
+    assert api.cookies.get(OIDC_FLOW_COOKIE_NAME)
+
+    google = api.get("/auth/login?intent=signup&provider=google")
+    assert google.status_code == 302
+    assert provider.login_options["prompt"] == "create"
+    assert "urn:zitadel:iam:org:idp:id:76625965177954913" in provider.login_options["scope"]
+    assert "urn:zitadel:iam:org:domain:primary:example.org" in provider.login_options["scope"]
+    assert provider.login_redirect_uri == "https://smartploy.obumai.com/auth/callback"
+    assert "client_secret" not in google.headers["location"]
+
+
+def test_branded_google_auth_fails_closed_when_unconfigured(monkeypatch):
+    configure_oidc(monkeypatch)
+    monkeypatch.delenv("SMARTPLOY_OIDC_GOOGLE_IDP_ID", raising=False)
+    monkeypatch.delenv("SMARTPLOY_OIDC_GOOGLE_ORG_DOMAIN", raising=False)
+    provider = FakeOIDCClient()
+    api = TestClient(create_app(
+        SmartployService(), oidc_client=provider,
+        session_repository=MemorySessionRepository(),
+        oidc_state_cache=MemoryOIDCStateCache(),
+        identity_repository=MemoryIdentityRepository(),
+    ), base_url="https://smartploy.obumai.com", follow_redirects=False)
+
+    assert api.get("/auth/providers").json() == {"google": False}
+    assert api.get("/auth/login?provider=google").status_code == 404
+    assert api.get("/auth/login?intent=admin").status_code == 400
+    assert api.get("/auth/login?provider=https://evil.example").status_code == 400
+    assert api.get("/auth/login?intent=signup").status_code == 302
+    assert provider.login_options == {"prompt": "create"}
+    monkeypatch.setenv("SMARTPLOY_OIDC_GOOGLE_IDP_ID", "invalid-idp")
+    assert api.get("/auth/providers").json() == {"google": False}
+    assert api.get("/auth/login?provider=google").status_code == 404
