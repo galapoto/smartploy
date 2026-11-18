@@ -76,7 +76,7 @@
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "Existing TypeScript Playwright and Python pytest frameworks already meet scoped requirements; REA has no opaque executable to inspect.",
       "reuse_provenance": "COPIED: none. ADAPTED existing Playwright config and first-party HTML/CSS test method; NEW focused 2 browser acceptance cases and native gate regressions; no new npm or pip package.",
-      "tests": "web npm run test:e2e and pytest -q tests/test_component_skill_gate.py. Exact CI and real signed-in employer proof pending.",
+      "tests": "web npm run test:e2e and pytest -q tests/test_component_skill_gate.py. Exact CI and real signed-in employer proof pending. Static test proves main-push source baseline cannot resolve via unavailable HEAD^ in a shallow clone.",
       "measured_seconds": "NOT_MEASURED"
     },
     {
@@ -94,11 +94,11 @@
           "applied": "Used the existing Playwright runner to test authored popup HTML/CSS in real Chromium and source-executed no-retry paths with synthetic inputs."
         }
       ],
-      "applied_method": "Applied the actual webapp-testing skill's existing-server, browser-fixture, negative-test discipline to native CI by executing the existing per-component gate in the authoritative Woodpecker Python/Postgres job, comparing exact PR HEAD to fetched main SHA (shallow-checkout safe), or main release first-parent SHA.",
+      "applied_method": "Applied the actual webapp-testing skill's existing-server, browser-fixture, negative-test discipline to native CI by executing the existing per-component gate in the authoritative Woodpecker Python/Postgres job, comparing exact PR HEAD to fetched main SHA (shallow-checkout safe), or main release first-parent SHA. Main-push shallow checkout reads the exact raw parent commit SHA and fetches that immutable tree before comparing paths; cannot confuse shallow absence with no changes.",
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "Existing Woodpecker + Python gate are human-readable first-party source; REA cannot improve this normal CI file.",
       "reuse_provenance": "COPIED: none. ADAPTED galapoto/smartploy@00697f805584fc5c16ab08b82033b8175ec9257f .woodpecker/smartploy.yaml. INTEGRATED pre-existing check_component_skill_gate.py; no new runners or secrets.",
-      "tests": "Woodpecker exact PR/main pipeline with shallow PR checkout baseline verification must PASS and preserve obumdelivery_ci_gate.py validate and final scripts.",
+      "tests": "Woodpecker exact PR/main pipeline with shallow PR checkout baseline verification must PASS and preserve obumdelivery_ci_gate.py validate and final scripts. Native Woodpecker main-push check must compare exact fetched parent tree, prove SHA match, run skills gate and original controls.",
       "measured_seconds": "NOT_MEASURED"
     },
     {
