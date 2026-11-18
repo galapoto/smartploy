@@ -18,7 +18,8 @@ function mount(override = {}) {
   const finalClaimInfo = {textContent:""};
   const calls = [];
   const context = {
-    startAutoApplyInFlight:false, currentPlan:null, currentQuestionPlan:null,
+    startAutoApplyInFlight:false,completingOneJob:false,
+    currentPlan:null, currentQuestionPlan:null,
     currentPacket:null, targetTabId:null, inspectedUrl:"",
     receiptOnly:false, attemptReserved:false, oneJobClaimMayExist:false,
     $:id=>{
@@ -233,7 +234,7 @@ test("unexpected inspection rejection restores controls and reports safe blocker
 });
 
 test("Start never restarts a claimed or uncertain one-job employer attempt",async()=>{
-  for(const state of ["oneJobClaimMayExist","attemptReserved"]){
+  for(const state of ["oneJobClaimMayExist","attemptReserved","completingOneJob"]){
     const {launch,context,calls}=mount();
     context[state]=true;
     await launch();
