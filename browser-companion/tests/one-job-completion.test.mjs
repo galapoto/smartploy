@@ -35,7 +35,7 @@ function mount({
   };
   getNode("packet").value="reviewed-synthetic-packet";
   const context={
-    completingOneJob:false,receiptOnly:false,
+    completingOneJob:false,startAutoApplyInFlight:false,receiptOnly:false,
     currentPacket:packet,targetTabId:8,attemptReserved:false,
     oneJobClaimMayExist:false,
     inspectedUrl:JOB,preflightPassed:false,oneJobFinalApproval:false,
