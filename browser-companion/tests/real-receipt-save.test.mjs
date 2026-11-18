@@ -145,51 +145,33 @@ test("missing signed-in SmartPloy app never sends receipt anywhere",async()=>{
   assert.equal(nodes.saveReceipt.disabled,false);
 });
 
-async function mountReadiness({
-  origin="https://smartploy.komplyint.fi",
-  permission=true,enabled=true,ok=true,workspaceId=WORKSPACE,
-  nested=false
-}={}){
-  const requests=[],frame={},context={
-    location:{origin},window:{top:frame,self:nested?{}:frame},
+async function mountReadiness({permission=true,enabled=true,frameId=0}={}){
+  const calls=[],context={
     signedInAppTab:async()=>({id:30}),
-    fetch:async (url,options)=>{
-      requests.push({url,options});
-      return {ok,async json(){return {
-        operator_permission_reviewed:permission,
-        trusted_one_use_browser_redemption_available:enabled
-      };}};
-    },
-    chrome:{scripting:{executeScript:async request=>[{
-      frameId:0,result:await request.func(...request.args)
-    }]}},
+    readOneJobFinalActionReadinessOnSmartPloy:
+      function readOneJobFinalActionReadinessOnSmartPloy(){},
+    chrome:{scripting:{executeScript:async request=>{
+      assert.equal(request.func.name,"readOneJobFinalActionReadinessOnSmartPloy");
+      assert.deepEqual(request.args,[WORKSPACE]);
+      calls.push("signed-in-first-party-readiness");
+      return [{frameId,result:{
+        ready:permission && enabled,
+        reason:!permission?"employer_permission_not_approved":
+          !enabled?"browser_final_click_disabled":"ready"
+      }}];
+    }}}
   };
   runInNewContext(permissionSource+
     "\nthis.readiness=inspectOwnFinalActionReadiness;",context);
-  return {result:await context.readiness(workspaceId),requests};
+  return {result:await context.readiness(WORKSPACE),calls};
 }
-test("owner-specific GET only enables a genuinely permitted and enabled posting",async()=>{
+test("popup uses only the injected first-party readiness helper, never direct network",async()=>{
   const allowed=await mountReadiness();
   assert.equal(allowed.result.ready,true);
-  assert.equal(allowed.requests.length,1);
-  assert.equal(allowed.requests[0].options.method,undefined);
-  assert.equal(allowed.requests[0].options.credentials,"same-origin");
-  assert.equal(allowed.requests[0].options.redirect,"error");
-  assert.match(allowed.requests[0].url,/\/final-action-readiness$/);
-  for(const options of [{permission:false},{enabled:false},{ok:false}]){
+  assert.deepEqual(allowed.calls,["signed-in-first-party-readiness"]);
+  assert.doesNotMatch(popup,/\\bfetch\\s*\\(/);
+  for(const options of [{permission:false},{enabled:false},{frameId:9}]){
     const denied=await mountReadiness(options);
     assert.equal(denied.result.ready,false,JSON.stringify(options));
-  }
-});
-test("readiness refuses untrusted origins, nested frames and invalid workspace IDs without network",async()=>{
-  for(const options of [
-    {origin:"https://evil.invalid"},
-    {origin:"http://smartploy.komplyint.fi"},
-    {nested:true},
-    {workspaceId:"../../../other"},
-  ]){
-    const denied=await mountReadiness(options);
-    assert.equal(denied.result.ready,false,JSON.stringify(options));
-    assert.equal(denied.requests.length,0,JSON.stringify(options));
   }
 });
