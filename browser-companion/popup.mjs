@@ -110,10 +110,19 @@ function inspectForm() {
       autocomplete: String(el.getAttribute("autocomplete") || "").slice(0, 100),
       placeholder: String(el.getAttribute("placeholder") || "").slice(0, 140),
       required: Boolean(el.required || el.getAttribute("aria-required") === "true"),
-      visible: visible(el), disabled: el.disabled === true, readonly: el.readOnly === true,
+      visible: visible(el), disabled: el.matches(":disabled"), readonly: el.readOnly === true,
       hasValue, maxLength: Number(el.maxLength) || -1,
       accept: type === "file" ? String(el.accept || "").slice(0, 200) : "",
-      multiple: type === "file" && el.multiple === true
+      multiple: type === "file" && el.multiple === true,
+      options: type === "select" ? Array.from(el.options).slice(0, 31)
+        .map(option => ({
+          value: String(option.value || "").slice(0, 150),
+          label: String(option.label || option.textContent || "").trim().slice(0, 150),
+          // Preserve a visible optgroup heading; the option label alone may
+          // say "Yes" while its group discloses a protected category.
+          group: String(option.closest("optgroup")?.label || "").trim().slice(0, 150),
+          disabled: Boolean(option.disabled || option.matches(":disabled") || option.closest("optgroup[disabled]"))
+        })) : undefined
     };
   });
   return {
@@ -1124,7 +1133,7 @@ function currentPacketToJSON() {
 }
 
 
-/* Review and fill required employer-specific TEXT questions only.
+/* Review and fill ordinary employer-specific text and native select questions.
    This does not produce or infer answers: the applicant types or pastes a
    checked answer (including any reviewed ObumAI draft) and approves transfer.
    Legal, visa, salary, EEO, consent and unsupported controls stay human-only. */
@@ -1162,7 +1171,7 @@ async function onReviewQuestions() {
     currentQuestionPlan = { ...plan, url: tab.url,
       needsReview: memory.needsReview };
     $("questionInfo").textContent =
-      plan.questions.length + " eligible required text questions; " +
+      plan.questions.length + " eligible required questions; " +
       memory.reused + " answered from your approved saved profile; " +
       memory.needsReview.length + " NEW/CHANGED questions need an answer; " +
       plan.humanOnly.length + " require manual handling. " +
@@ -1178,14 +1187,30 @@ async function onReviewQuestions() {
         " (saved profile answer · verify unchanged)" :
         " (new or changed · answer and save to your SmartPloy profile for next time)");
       label.setAttribute("for", fieldId);
-      const input = document.createElement("textarea");
+      const input = document.createElement(item.type === "select" ? "select" : "textarea");
       input.id = fieldId;
-      input.rows = 3;
-      input.maxLength = item.max_answer_length;
-      input.value = memory.values[index] || "";
-      input.placeholder = "New/changed question. Type an accurate answer and save it once in My CV & documents.";
       input.autocomplete = "off";
-      input.spellcheck = false;
+      if (item.type === "select") {
+        // Choices are drawn from the exact inspected employer control.
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = "Choose the exact employer option";
+        input.append(empty);
+        for (const reviewed of item.options) {
+          const option = document.createElement("option");
+          option.value = reviewed.value;
+          option.textContent = reviewed.label;
+          input.append(option);
+        }
+        const saved = memory.values[index] || "";
+        if (saved && item.options.some(option => option.value === saved)) input.value = saved;
+      } else {
+        input.rows = 3;
+        input.maxLength = item.max_answer_length;
+        input.value = memory.values[index] || "";
+        input.placeholder = "New/changed question. Type an accurate answer and save it once in My CV & documents.";
+        input.spellcheck = false;
+      }
       wrapper.append(label, input);
       list.append(wrapper);
     }
@@ -1193,7 +1218,7 @@ async function onReviewQuestions() {
     $("fillQuestions").disabled = plan.questions.length === 0;
     status(plan.questions.length ?
       "Review every proposed answer for accuracy, then approve a one-time fill. Sensitive questions remain manual." :
-      "No safely eligible unanswered text questions. Answer employer-specific requirements manually.", true);
+      "No safely eligible unanswered questions. Answer employer-specific requirements manually.", true);
     return {...plan,needsReview:memory.needsReview};
   } catch (error) { status(normalizeError(error)); return null; }
 }
