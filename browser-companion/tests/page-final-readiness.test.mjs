@@ -7,7 +7,7 @@ async function probe({
   origin="https://smartploy.komplyint.fi",
   signedIn=true,authSource="oidc",permission=true,enabled=true,
   nested=false,invalidWorkspace=false,denyServer=false,networkError=false,
-  previousAttempt=false
+  previousAttempt=false,omitPreviousFlag=false
 }={}){
   const prior={
     location:globalThis.location,window:globalThis.window,
@@ -30,7 +30,7 @@ async function probe({
       ok:!denyServer,async json(){return {
         operator_permission_reviewed:permission,
         trusted_one_use_browser_redemption_available:enabled,
-        previous_employer_attempt_reserved:previousAttempt
+        ...(!omitPreviousFlag ? {previous_employer_attempt_reserved:previousAttempt} : {})
       };}
     };
     throw Error("Unexpected endpoint");
@@ -101,4 +101,10 @@ test("an owner-scoped previously consumed claim survives popup restarts and over
     "/api/v1/session",
     "/api/v1/application-workspaces/"+WORKSPACE+"/final-action-readiness"
   ]);
+});
+
+test("older server response without durable attempt state is not a fresh final authorization",async()=>{
+  const {result}=await probe({omitPreviousFlag:true});
+  assert.equal(result.ready,false);
+  assert.equal(result.reason,"readiness_unavailable");
 });
