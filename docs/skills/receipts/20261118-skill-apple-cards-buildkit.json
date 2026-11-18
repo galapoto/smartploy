@@ -1,0 +1,173 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "193338f39123478917ed53cd4bd0037532888847",
+  "user_outcome": "Make skills and REA-first evidence mandatory for each SmartPloy change; apply pinned Apple/UI skills to actual application cards and Docker skill to production rebuild caches without sacrificing release safety.",
+  "components": [
+    {
+      "name": "governance",
+      "paths": [
+        "AGENTS.md"
+      ],
+      "skills": [
+        {
+          "name": "Installed skill-creator workflow",
+          "installed_uri": "skills://skill-creator",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read the canonical skill instruction entrypoint and built a concise per-component receipt contract rather than a new framework."
+        }
+      ],
+      "applied_method": "Integrated owner portfolio policy into SmartPloy instructions and exact per-component evidence fields.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Governance is text source and rule adoption, not a runtime or opaque code target.",
+      "reuse_provenance": "COPIED: none. ADAPTED existing AGENTS.md and linked current owner policy. Pinned skill sources and exact references.",
+      "tests": "CI new schema and negative tests enforce the actual receipt, no live release claim.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "ui",
+      "paths": [
+        "web/src/sp-v4-card-surfaces.css",
+        "web/src/sp-v4-card-surfaces.test.ts"
+      ],
+      "skills": [
+        {
+          "name": "Apple HIG foundations — color, motion, accessibility",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied content-over-chrome, semantic colors, visible keyboard focus and reduced-motion requirements to existing application method cards."
+        },
+        {
+          "name": "UI/UX Pro Max — card interaction and contrast",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "e59ff376a41f7ca47b7541ad5c116495cbade3ee",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Selected no new component library; adapted existing shadcn-style cards with non-looping hover elevation and responsive motion preferences."
+        },
+        {
+          "name": "Vercel Web Interface Guidelines",
+          "repository": "https://github.com/vercel-labs/agent-skills",
+          "commit": "1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62",
+          "path": "skills/web-design-guidelines/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Audited meaningful focus, reduced-motion, light/dark contrast and disabled-state preservation; wrote explicit CSS source tests."
+        }
+      ],
+      "applied_method": "Applied three pinned guidance skills to existing first-party shadcn-adapted application mode cards, with precise hover elevation, a focus ring, restrained glass surface and Reduce Motion; wrote source regression assertions.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Existing React/CSS UI source and first-party theme tokens are readable and already solve structure; no separate authorized binary or observed black-box application needed.",
+      "reuse_provenance": "COPIED: none. ADAPTED SmartPloy prior CSS and tests; shadcn/ui first-party adaptation already present. NEW: local CSS hover and focus deltas, no new package.",
+      "tests": "web/src/sp-v4-card-surfaces.test.ts plus full Vitest and Chromium light/dark/mobile browser acceptance.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "delivery",
+      "paths": [
+        "Dockerfile",
+        "web/Dockerfile"
+      ],
+      "skills": [
+        {
+          "name": "Docker Build Strategies — cache mounts and dependency layers",
+          "repository": "https://github.com/docker/skills",
+          "commit": "a65ae5b65d22f0613375d6c3e5ea8bb287698cc0",
+          "path": "skills/docker-build-strategies/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Adopted BuildKit cache mounts for pip and npm tarballs without changing pinned versions, final runtime images or approved deploy route."
+        }
+      ],
+      "applied_method": "Applied Docker BuildKit reusable cache mounts to existing pip and npm install steps, preserving nonroot API and multi-stage Caddy build.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Dockerfiles are readable first-party code and Docker has documented source patterns; REA would add cost and no evidence.",
+      "reuse_provenance": "COPIED: none. ADAPTED original SmartPloy Dockerfiles with Docker build-strategies cache-mount technique. NEW: only two BuildKit cache mount directives. No new dependency.",
+      "tests": "GitHub deploy-stack Compose build/migration/health and native Woodpecker production build; cold/warm speed gains not measured.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "build",
+      "paths": [
+        "scripts/check_component_skill_gate.py"
+      ],
+      "skills": [
+        {
+          "name": "Docker Build Strategies — cache mounts and dependency layers",
+          "repository": "https://github.com/docker/skills",
+          "commit": "a65ae5b65d22f0613375d6c3e5ea8bb287698cc0",
+          "path": "skills/docker-build-strategies/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Adopted BuildKit cache mounts for pip and npm tarballs without changing pinned versions, final runtime images or approved deploy route."
+        },
+        {
+          "name": "Installed skill-creator workflow",
+          "installed_uri": "skills://skill-creator",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Adapted reusable skill and provenance schema into a deterministic stdlib-only checker with no network dependency."
+        }
+      ],
+      "applied_method": "Added lean deterministic skill evidence coverage across changed code paths and checks exact pinned upstream skill file or installed URI.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "No executable black-box component; source and Python standard library sufficient. REA would not recover any missing behavior.",
+      "reuse_provenance": "COPIED: none. NEW small Python checker integrated in existing GitHub Actions test job; no extra runtime packages.",
+      "tests": "tests/test_component_skill_gate.py tests missing, forged and cross-component receipts.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "qa",
+      "paths": [
+        "tests/test_component_skill_gate.py"
+      ],
+      "skills": [
+        {
+          "name": "Vercel Web Interface Guidelines",
+          "repository": "https://github.com/vercel-labs/agent-skills",
+          "commit": "1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62",
+          "path": "skills/web-design-guidelines/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Audited meaningful focus, reduced-motion, light/dark contrast and disabled-state preservation; wrote explicit CSS source tests."
+        },
+        {
+          "name": "Installed skill-creator workflow",
+          "installed_uri": "skills://skill-creator",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied skill packaging and provenance validation principles to schema negative tests."
+        }
+      ],
+      "applied_method": "Applied source audit and schema-testing practices to assert legitimate skill links, REA decisions and actual diff coverage.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Test scaffolding is small, transparent and first-party; no black box needs reconstructing.",
+      "reuse_provenance": "COPIED: none. NEW offline pytest negative/positive coverage of skill evidence validator.",
+      "tests": "pytest -q tests/test_component_skill_gate.py and existing Python suite + Ruff lint.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "ci",
+      "paths": [
+        ".github/workflows/ci.yml"
+      ],
+      "skills": [
+        {
+          "name": "Docker Build Strategies — cache mounts and dependency layers",
+          "repository": "https://github.com/docker/skills",
+          "commit": "a65ae5b65d22f0613375d6c3e5ea8bb287698cc0",
+          "path": "skills/docker-build-strategies/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Adopted BuildKit cache mounts for pip and npm tarballs without changing pinned versions, final runtime images or approved deploy route."
+        },
+        {
+          "name": "Installed skill-creator workflow",
+          "installed_uri": "skills://skill-creator",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Required a real per-component receipt in the original CI job rather than silently skipping skill application."
+        }
+      ],
+      "applied_method": "Added mandatory provenance step using existing setup-python runner and checkout first-parent history.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Existing first-party GitHub Actions and Docker/Woodpecker workflows already exist; no need for REA runtime capture or new runner framework.",
+      "reuse_provenance": "COPIED: none. ADAPTED existing Actions test job with git first-parent checkout and stdlib gate; retained all prior test jobs.",
+      "tests": "Exact-commit GitHub Actions step plus native Woodpecker as qualified, with negative tests for forged evidence.",
+      "measured_seconds": "NOT_MEASURED"
+    }
+  ]
+}
