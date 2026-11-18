@@ -359,11 +359,24 @@ test("SP47 observation mode cannot be used to fill, upload, reserve or submit", 
 
 test("SP47 an old form inspection cannot reopen mutations after a newer receipt", async t => {
   const ui = await popup(t, { pageUrl: LEVER });
+  // The production inspector now reads the server-owned previous-attempt
+  // marker before touching any employer form. Keep this legacy race test
+  // offline and faithful to the signed-in first-party bridge.
+  const originalQuery=globalThis.chrome.tabs.query;
+  globalThis.chrome.tabs.query=async options=>options?.url ?
+    [{id:3,url:"https://smartploy.komplyint.fi/"}] : originalQuery(options);
   const execute = globalThis.chrome.scripting.executeScript;
   let release;
   let formReturned = false;
   const pending = new Promise(resolve => { release = resolve; });
   globalThis.chrome.scripting.executeScript = async request => {
+    if(request.func.name==="readOneJobFinalActionReadinessOnSmartPloy"){
+      ui.state.scripts.push(request);
+      assert.equal(request.target.tabId,3);
+      return [{frameId:0,result:{ready:false,
+        reason:"employer_permission_not_approved",
+        previous_employer_attempt_reserved:false}}];
+    }
     if (request.func.name !== "inspectForm") return execute(request);
     ui.state.scripts.push(request);
     await pending;
@@ -390,7 +403,9 @@ test("SP47 an old form inspection cannot reopen mutations after a newer receipt"
     ui.element(action).handlers.get("click")();
     await new Promise(resolve => setImmediate(resolve));
   }
-  assert.deepEqual(ui.state.scripts.map(call => call.func.name), ["inspectForm", "inspectReceipt"]);
+  assert.deepEqual(ui.state.scripts.map(call=>call.func.name),[
+    "readOneJobFinalActionReadinessOnSmartPloy","inspectForm","inspectReceipt"
+  ]);
   assert.equal(ui.state.externalRequests, 0);
   assert.equal(ui.local.writes + ui.session.writes, 0);
 });
