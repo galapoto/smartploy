@@ -16,6 +16,7 @@ import {
 } from "./review-bridge.mjs";
 import { verifyReviewOnSmartPloy } from "./page-review.mjs";
 import { reserveFinalClickOnSmartPloy } from "./page-final-claim.mjs";
+import { readOneJobFinalActionReadinessOnSmartPloy } from "./page-final-readiness.mjs";
 import { submitReviewedLeverOnce } from "./page-final-submit.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -544,35 +545,7 @@ async function inspectOwnFinalActionReadiness(workspaceId) {
     const firstParty = await signedInAppTab();
     const [reply] = await chrome.scripting.executeScript({
       target:{tabId:firstParty.id}, world:"ISOLATED",
-      func:async (id)=>{
-        if (!/^kit-[a-f0-9]{30}$/.test(id || "") ||
-            !["https://smartploy.komplyint.fi",
-              "https://smartploy.obumai.com"].includes(location.origin) ||
-            window.top !== window.self) {
-          return {ready:false,reason:"untrusted_account_context"};
-        }
-        try {
-          const response=await fetch(
-            "/api/v1/application-workspaces/"+encodeURIComponent(id)+
-            "/final-action-readiness",{
-              credentials:"same-origin",cache:"no-store",redirect:"error",
-              headers:{"Accept":"application/json"}
-            }
-          );
-          if(!response.ok) return {ready:false,reason:"readiness_unavailable"};
-          const result=await response.json();
-          return {
-            ready:result.operator_permission_reviewed===true &&
-              result.trusted_one_use_browser_redemption_available===true,
-            reason:result.operator_permission_reviewed!==true ?
-              "employer_permission_not_approved" :
-              result.trusted_one_use_browser_redemption_available!==true ?
-                "browser_final_click_disabled" : "ready"
-          };
-        } catch {
-          return {ready:false,reason:"readiness_unavailable"};
-        }
-      },
+      func:readOneJobFinalActionReadinessOnSmartPloy,
       args:[workspaceId]
     });
     return reply?.frameId===0 && reply?.result ?
