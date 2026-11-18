@@ -1370,6 +1370,18 @@ async function onSubmit() {
   } catch (error) {
     status(normalizeError(error) +
       " If a server or local attempt was reserved, DO NOT retry.");
+  } finally {
+    // The manual one-use final button and the integrated Start/Finish route
+    // share the same irreversible local+server claim; make that visible now.
+    if (attemptReserved) {
+      $("finishOneJob").disabled = true;
+      $("finishOneJob").textContent = "Attempt reserved — check confirmation";
+      $("startAutoApply").disabled = true;
+      $("receipt").disabled = false;
+      $("finalClaimInfo").textContent =
+        "This exact job has a consumed submission attempt. Use Check " +
+        "confirmation or My applications. Do not submit the same job again.";
+    }
   }
 }
 
