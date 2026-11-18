@@ -945,7 +945,8 @@ async function autoAttachSavedDocuments() {
  * Never infer sensitive answers or auto-submit without separate rights.
  */
 async function onStartAutoApply() {
-  if (startAutoApplyInFlight || oneJobClaimMayExist || attemptReserved) return;
+  if (startAutoApplyInFlight || completingOneJob ||
+      oneJobClaimMayExist || attemptReserved) return;
   startAutoApplyInFlight = true;
   $("startAutoApply").disabled = true;
   // Failed scans cannot reuse approval or indices from an earlier form.
@@ -1398,6 +1399,9 @@ async function onCompleteOneJob() {
       targetTabId === null || attemptReserved || oneJobClaimMayExist) return false;
   completingOneJob=true;
   $("finishOneJob").disabled=true;
+  // A second Start during asynchronous preflight/consent could replace the
+  // exact reviewed packet while the one-job claim is being reserved.
+  $("startAutoApply").disabled=true;
   const packet=currentPacket;
   const fingerprint=$("packet").value;
   try {
@@ -1569,6 +1573,7 @@ async function onCompleteOneJob() {
     oneJobFormSnapshotSha256="";
     const locked=attemptReserved || oneJobClaimMayExist || receiptOnly;
     $("finishOneJob").disabled=locked;
+    $("startAutoApply").disabled=locked || startAutoApplyInFlight;
     if(locked){
       $("finishOneJob").textContent="Attempt reserved — check confirmation";
       $("startAutoApply").disabled=true;
