@@ -33,6 +33,9 @@ let startAutoApplyInFlight = false;
 let completingOneJob = false;
 let oneJobFinalApproval = false;
 let oneJobSubmitWasAttempted = false;
+// Sticky for an uncertain first-party claim within this popup. The server
+// cross-device claim and chrome.storage.local remain the durable authorities.
+let oneJobClaimMayExist = false;
 let oneJobFormSnapshotSha256 = "";
 
 function clearReceiptObservation() {
@@ -50,7 +53,8 @@ function enterReceiptMode() {
   $("plan").hidden = true;
   $("questionPanel").hidden = true;
   for (const id of ["fill", "attach", "reviewQuestions", "fillQuestions",
-    "check", "approve", "reserveFinal", "submit"]) $(id).disabled = true;
+    "check", "approve", "reserveFinal", "submit",
+    "finishOneJob", "startAutoApply"]) $(id).disabled = true;
   $("submit").setAttribute("aria-disabled", "true");
 }
 
@@ -668,6 +672,24 @@ async function onInspect() {
   try {
     const tab = await activeTab();
     const pkt = validatePacket(packetText, tab.url);
+    // A prior final attempt consumes the normal review marker. Inspection
+    // must never reopen the employer form or offer a second final click.
+    if (oneJobClaimMayExist || await hasPriorLeverAttempt(pkt)) {
+      currentPacket = pkt;
+      targetTabId = tab.id;
+      inspectedUrl = tab.url;
+      attemptReserved = true;
+      enterReceiptMode();
+      $("submission").hidden = false;
+      $("finishOneJob").textContent = "Attempt reserved — check confirmation";
+      $("finalClaimInfo").textContent =
+        "This exact attempt was reserved or its outcome is uncertain. " +
+        "Do not fill, attach or submit again. Inspect the employer confirmation " +
+        "and check My applications for attempt status.";
+      $("receipt").disabled = false;
+      status("Recovery only: no new employer action is permitted for this packet.");
+      return;
+    }
     await requireVerifiedReview(chrome.storage?.session, pkt);
     // Read-only inspection keeps the existing owner/session marker; current
     // account facts are rechecked before EVERY employer-side mutation.
@@ -753,7 +775,8 @@ async function onInspect() {
 }
 
 async function onFill() {
-  if (receiptOnly || !currentPacket || !currentPlan) return false;
+  if (receiptOnly || !currentPacket || !currentPlan ||
+      attemptReserved || oneJobClaimMayExist) return false;
   if (!window.confirm(
     "Fill only the displayed approved fields on the selected employer page? " +
     "No documents will be uploaded and no application will be submitted."
@@ -797,7 +820,8 @@ async function onFill() {
  * Documents live only inside this invocation, never extension storage.
  */
 async function autoAttachSavedDocuments() {
-  if (!currentPacket || targetTabId === null || receiptOnly || attemptReserved) {
+  if (!currentPacket || targetTabId === null || receiptOnly ||
+      attemptReserved || oneJobClaimMayExist) {
     return {attached:0,reason:"No current reviewed application."};
   }
   const packet = currentPacket;
@@ -921,7 +945,7 @@ async function autoAttachSavedDocuments() {
  * Never infer sensitive answers or auto-submit without separate rights.
  */
 async function onStartAutoApply() {
-  if (startAutoApplyInFlight) return;
+  if (startAutoApplyInFlight || oneJobClaimMayExist || attemptReserved) return;
   startAutoApplyInFlight = true;
   $("startAutoApply").disabled = true;
   // Failed scans cannot reuse approval or indices from an earlier form.
@@ -985,12 +1009,14 @@ async function onStartAutoApply() {
     status(normalizeError(error));
   } finally {
     startAutoApplyInFlight = false;
-    $("startAutoApply").disabled = false;
+    $("startAutoApply").disabled =
+      attemptReserved || oneJobClaimMayExist || receiptOnly;
   }
 }
 
 async function onAttach() {
-  if (receiptOnly || !currentPacket || targetTabId === null || attemptReserved) return;
+  if (receiptOnly || !currentPacket || targetTabId === null ||
+      attemptReserved || oneJobClaimMayExist) return;
   preflightPassed = false;
   $("submit").disabled = true;
   $("approve").checked = false;
@@ -1090,7 +1116,8 @@ function currentPacketToJSON() {
    checked answer (including any reviewed ObumAI draft) and approves transfer.
    Legal, visa, salary, EEO, consent and unsupported controls stay human-only. */
 async function onReviewQuestions() {
-  if (receiptOnly || !currentPacket || targetTabId === null || attemptReserved) return;
+  if (receiptOnly || !currentPacket || targetTabId === null ||
+      attemptReserved || oneJobClaimMayExist) return;
   currentQuestionPlan = null;
   $("questionPanel").hidden = true;
   $("questionList").replaceChildren();
@@ -1160,7 +1187,7 @@ async function onReviewQuestions() {
 
 async function onFillQuestions() {
   if (receiptOnly || !currentPacket || !currentQuestionPlan || attemptReserved ||
-      $("questionPanel").hidden) return false;
+      oneJobClaimMayExist || $("questionPanel").hidden) return false;
   preflightPassed = false;
   $("submit").disabled = true;
   $("approve").checked = false;
@@ -1356,7 +1383,7 @@ async function onSubmit() {
  */
 async function onCompleteOneJob() {
   if (completingOneJob || receiptOnly || !currentPacket ||
-      targetTabId === null || attemptReserved) return false;
+      targetTabId === null || attemptReserved || oneJobClaimMayExist) return false;
   completingOneJob=true;
   $("finishOneJob").disabled=true;
   const packet=currentPacket;
@@ -1432,12 +1459,21 @@ async function onCompleteOneJob() {
     // The final executor also checks this exact digest after server reservation.
     oneJobFormSnapshotSha256=approvedFormSnapshotSha256;
     const firstParty=await signedInAppTab();
+    const claimBinding=await finalOneJobClaimBinding(packet);
+    // A missing response can mean PostgreSQL already consumed a claim.
+    // Lock this job BEFORE any network operation that may commit it.
+    oneJobClaimMayExist=true;
     const [response]=await chrome.scripting.executeScript({
       target:{tabId:firstParty.id},world:"ISOLATED",
       func:reserveFinalClickOnSmartPloy,
-      args:[await finalOneJobClaimBinding(packet)]
+      args:[claimBinding]
     });
     const verdict=response?.result;
+    if (response?.frameId===0 &&
+        verdict?.claim_reserved===false &&
+        verdict.reason==="unavailable_or_not_authorized") {
+      oneJobClaimMayExist=false;
+    }
     if (response?.frameId !== 0 || verdict?.claim_reserved !== true) {
       status("Cannot complete this job: independent employer authorization " +
         "or current applicant review was not confirmed (" +
@@ -1507,9 +1543,9 @@ async function onCompleteOneJob() {
         "). Check the current application receipt before taking any action; never resubmit.");
       return false;
     }
-    status("ONE JOB COMPLETE: exact employer confirmation reference " +
-      evidence.reference + " was observed and recorded in SmartPloy. " +
-      "External provider API acknowledgment remains unverified.",true);
+    status("Exact-job employer reference " +
+      evidence.reference + " was observed and saved in My applications. " +
+      "External provider API acknowledgment remains unverified; do not resubmit.",true);
     return true;
   } catch(error) {
     status("One-job AutoApply outcome incomplete or uncertain: "+
@@ -1519,7 +1555,17 @@ async function onCompleteOneJob() {
     completingOneJob=false;
     oneJobFinalApproval=false;
     oneJobFormSnapshotSha256="";
-    $("finishOneJob").disabled=false;
+    const locked=attemptReserved || oneJobClaimMayExist || receiptOnly;
+    $("finishOneJob").disabled=locked;
+    if(locked){
+      $("finishOneJob").textContent="Attempt reserved — check confirmation";
+      $("startAutoApply").disabled=true;
+      $("receipt").disabled=false;
+      $("finalClaimInfo").textContent=
+        "A one-use attempt is reserved or its state is uncertain. Do not " +
+        "press Submit again. Check this job's employer confirmation and " +
+        "My applications; retain any confirmation email.";
+    }
   }
 }
 
@@ -1773,6 +1819,11 @@ $("packet").addEventListener("input", () => {
   receiptOnly = false;
   currentPacket = null; currentPlan = null; currentQuestionPlan = null; targetTabId = null;
   preflightPassed = false; attemptReserved = false;
+  oneJobClaimMayExist = false;
+  $("finishOneJob").disabled = true;
+  $("finishOneJob").textContent = "Finish this application";
+  $("startAutoApply").disabled = false;
+  $("finalClaimInfo").textContent = "";
   $("plan").hidden = true; $("submission").hidden = true; $("receiptPanel").hidden = true;
   $("cvFile").value = ""; $("uploadInfo").textContent = ""; $("attach").disabled = false;
   $("reserveFinal").disabled = false; $("check").disabled = false;
