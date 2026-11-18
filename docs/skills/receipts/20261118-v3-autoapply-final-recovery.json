@@ -1,0 +1,142 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "00697f805584fc5c16ab08b82033b8175ec9257f",
+  "user_outcome": "One reviewed SmartPloy Lever application remains recovery-only after an irreversible or uncertain employer attempt; apply only relevant ObumAI 2027 V3 skills, REA and reuse methods to actual browser and CI source.",
+  "components": [
+    {
+      "name": "browser",
+      "paths": [
+        "browser-companion/popup.mjs",
+        "browser-companion/popup.css",
+        "browser-companion/tests/one-job-completion.test.mjs",
+        "browser-companion/tests/start-autoapply.test.mjs",
+        "browser-companion/tests/recovery-state.test.mjs"
+      ],
+      "skills": [
+        {
+          "name": "Apple HIG foundations — state clarity and accessible feedback",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied predictable disabled and irreversible action states, semantic feedback and reduced-motion-safe UI without decorative glass."
+        },
+        {
+          "name": "UI/UX Pro Max — visible interaction and disabled controls",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "e59ff376a41f7ca47b7541ad5c116495cbade3ee",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Reused existing theme tokens, kept one clear action, prevented disabled hover from masquerading as an enabled submit."
+        },
+        {
+          "name": "Web application testing — verify source and rendered behavior",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Used the existing Playwright runner to test authored popup HTML/CSS in real Chromium and source-executed no-retry paths with synthetic inputs."
+        }
+      ],
+      "applied_method": "Actual previously-submitted AutoApply flow now uses the existing local attempt marker and receipt-only mode to disable Finish/Start and all employer writes; disabled controls cannot look enabled on hover; tests exercise original popup functions.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Original Chrome companion and one-use claim are complete readable owner-authorized first-party source. The official morluto/rea skill explicitly says to skip REA for ordinary source-repository architecture; no authorized opaque browser target was supplied for this slice.",
+      "reuse_provenance": "COPIED: none. ADAPTED: galapoto/smartploy@00697f805584fc5c16ab08b82033b8175ec9257f browser-companion/popup.mjs::onInspect,onCompleteOneJob,onStartAutoApply,onFill,onFillQuestions,onSubmit and existing enterReceiptMode/hasPriorLeverAttempt, popup.css; NEW only safe claim-uncertain guard and regression tests.",
+      "tests": "node --test browser-companion/tests/*.test.mjs; VM controls assert one claim, no re-injection, no automatic retries, truthful receipt-only state. This is synthetic evidence, not employer acceptance.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "qa",
+      "paths": [
+        "web/browser-tests/companion-recovery-surface.e2e.ts",
+        "tests/test_component_skill_gate.py"
+      ],
+      "skills": [
+        {
+          "name": "Web application testing — verify source and rendered behavior",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Used the existing Playwright runner to test authored popup HTML/CSS in real Chromium and source-executed no-retry paths with synthetic inputs."
+        },
+        {
+          "name": "UI/UX Pro Max — visible interaction and disabled controls",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "e59ff376a41f7ca47b7541ad5c116495cbade3ee",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Reused existing theme tokens, kept one clear action, prevented disabled hover from masquerading as an enabled submit."
+        }
+      ],
+      "applied_method": "Used the approved Playwright existing test runner to load authored extension popup markup/style into Chromium, then exercise disabled hover, focus and Reduce Motion, and added native CI schema assertions.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Existing TypeScript Playwright and Python pytest frameworks already meet scoped requirements; REA has no opaque executable to inspect.",
+      "reuse_provenance": "COPIED: none. ADAPTED existing Playwright config and first-party HTML/CSS test method; NEW focused 2 browser acceptance cases and native gate regressions; no new npm or pip package.",
+      "tests": "web npm run test:e2e and pytest -q tests/test_component_skill_gate.py. Exact CI and real signed-in employer proof pending.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "ci",
+      "paths": [
+        ".woodpecker/smartploy.yaml"
+      ],
+      "skills": [
+        {
+          "name": "Web application testing — verify source and rendered behavior",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Used the existing Playwright runner to test authored popup HTML/CSS in real Chromium and source-executed no-retry paths with synthetic inputs."
+        }
+      ],
+      "applied_method": "Applied the actual webapp-testing skill's existing-server, browser-fixture, negative-test discipline to native CI by executing the existing per-component gate in the authoritative Woodpecker Python/Postgres job, comparing PR merge-base or release first-parent SHA.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Existing Woodpecker + Python gate are human-readable first-party source; REA cannot improve this normal CI file.",
+      "reuse_provenance": "COPIED: none. ADAPTED galapoto/smartploy@00697f805584fc5c16ab08b82033b8175ec9257f .woodpecker/smartploy.yaml. INTEGRATED pre-existing check_component_skill_gate.py; no new runners or secrets.",
+      "tests": "Woodpecker exact PR/main pipeline must PASS and preserve obumdelivery_ci_gate.py validate and final scripts.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "docs",
+      "paths": [
+        "docs/v4/SMARTPLOY_2027_V3_APPLICABILITY_20261118.md"
+      ],
+      "skills": [
+        {
+          "name": "PDF source inspection",
+          "installed_uri": "skills://pdfs",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read the owner supplied 24-page V3 PDF and extracted only the component, UI, reuse and CI practices applicable to SmartPloy, with page and source mapping."
+        }
+      ],
+      "applied_method": "Derived the SmartPloy-only method from owner PDF pp.2,5–7,16–18,20–24 without adopting the 16-product ObumAI interface inventory, ensuring V4 remains the execution authority.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Source is a readable owner-supplied PDF and current first-party spec, no opaque target; PDF text is reference material rather than donor implementation.",
+      "reuse_provenance": "COPIED: none. ADAPTED applicable owner plan requirements as a scoped instruction, no external copyrighted diagrams or assets.",
+      "tests": "Source linkage reviewed; owner plan adoption is tested by pytest policy presence, but does not make any AutoApply live.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "governance",
+      "paths": [
+        "AGENTS.md"
+      ],
+      "skills": [
+        {
+          "name": "PDF source inspection",
+          "installed_uri": "skills://pdfs",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read the owner supplied 24-page V3 PDF and extracted only the component, UI, reuse and CI practices applicable to SmartPloy, with page and source mapping."
+        }
+      ],
+      "applied_method": "Made V3 applicability durable in SmartPloy's repository instructions and preserved owner optional code peer reviewer rule and employer/consent gates.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Existing governance file is readable source; REA does not apply.",
+      "reuse_provenance": "COPIED: none. ADAPTED existing AGENTS.md component skill policy and pointed to exact scoped V3 mapping.",
+      "tests": "pytest -q tests/test_component_skill_gate.py and effective native Woodpecker gate.",
+      "measured_seconds": "NOT_MEASURED"
+    }
+  ]
+}
