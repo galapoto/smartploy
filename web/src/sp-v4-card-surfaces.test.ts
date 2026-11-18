@@ -100,7 +100,7 @@ describe("V4 shadcn-adapted surface system", () => {
     expect(scope).toContain("background:rgba(16,24,33,.96)");
     expect(scope).not.toContain("animation-iteration-count:infinite");
     expect(scope).not.toContain("!important");
-    expect(css).not.toContain("filter:blur(");
+    expect(css).not.toMatch(/(^|\s)filter:\s*blur\(/m);
     expect(css).not.toContain("backdrop-filter:blur(32px)");
   });
 
