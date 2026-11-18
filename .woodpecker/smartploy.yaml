@@ -39,8 +39,10 @@ steps:
       - |
         set -eu
         if [ "${CI_PIPELINE_EVENT:-}" = "pull_request" ]; then
+          # Woodpecker's PR checkout is intentionally shallow: comparing
+          # the two exact fetched trees requires no merge-base ancestry.
           git fetch --no-tags origin main
-          base="$(git merge-base HEAD FETCH_HEAD)"
+          base="$(git rev-parse FETCH_HEAD)"
         else
           base="$(git rev-parse HEAD^)"
         fi
