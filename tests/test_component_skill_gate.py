@@ -62,7 +62,9 @@ def test_skill_gate_accepts_complete_component_receipt(tmp_path):
 
 
 def test_skill_gate_rejects_missing_receipt_and_uncovered_components(tmp_path):
-    assert "require" in " ".join(gate.check(CHANGED, tmp_path)).lower()
+    missing = gate.check(CHANGED, tmp_path)
+    assert any("unreadable JSON" in message or "Missing component receipts" in message
+               for message in missing)
     sample = evidence()
     sample["components"] = sample["components"][:-1]
     write(tmp_path, sample)
