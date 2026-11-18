@@ -14,12 +14,17 @@ const source = popup.slice(begin, end);
 function mount(override = {}) {
   const button = {disabled:false};
   const uploadInfo = {textContent:""};
+  const finishOneJob = {disabled:false};
+  const finalClaimInfo = {textContent:""};
   const calls = [];
   const context = {
     startAutoApplyInFlight:false, currentPlan:null, currentQuestionPlan:null,
     currentPacket:null, targetTabId:null, inspectedUrl:"",
     receiptOnly:false, attemptReserved:false,
-    $:id=>{assert.ok(["startAutoApply","uploadInfo"].includes(id));return id==="startAutoApply" ? button : uploadInfo;},
+    $:id=>{
+      assert.ok(["startAutoApply","uploadInfo","finishOneJob","finalClaimInfo"].includes(id));
+      return {startAutoApply:button,uploadInfo,finishOneJob,finalClaimInfo}[id];
+    },
     onInspect:async()=>{
       calls.push("inspect");
       context.currentPlan={actions:[{key:"email"}]};
@@ -37,7 +42,7 @@ function mount(override = {}) {
     ...override,
   };
   runInNewContext(source+"\nthis.launch=onStartAutoApply;",context);
-  return {context,button,calls,launch:context.launch};
+  return {context,button,finishOneJob,finalClaimInfo,calls,launch:context.launch};
 }
 test("one visible Start chains observed exact-job inspect, consented fill, then read-only questions",async()=>{
   const {launch,calls,button}=mount();
@@ -60,16 +65,42 @@ test("ONE supported job: Start chains approved CV/letter, known questions and pe
         needsReview:[],humanOnly:[]};
     },
     onFillQuestions:async()=>{calls.push("fill-known-answers");return true;},
+    inspectOwnFinalActionReadiness:async()=>{calls.push("read-only-employer-rights");return {ready:true};},
     onCompleteOneJob:async()=>{calls.push("one-use-final-and-receipt");return true;},
     isLeverFinalProvider:()=>true,
   });
   await launch();
   assert.deepEqual(calls,[
     "inspect","fill","attach-reviewed-documents","questions",
-    "fill-known-answers","one-use-final-and-receipt"
+    "fill-known-answers","read-only-employer-rights","one-use-final-and-receipt"
   ]);
   assert.equal(button.disabled,false);
 });
+test("zero approved employer rights prepares the job but never reserves an irreversible attempt",async()=>{
+  const {launch,calls,button,finishOneJob,finalClaimInfo}=mount({
+    onReviewQuestions:async()=>{
+      calls.push("questions");
+      return {questions:[],needsReview:[],humanOnly:[]};
+    },
+    inspectOwnFinalActionReadiness:async()=>{
+      calls.push("read-only-employer-rights");
+      return {ready:false,reason:"employer_permission_not_approved"};
+    },
+    onCompleteOneJob:async()=>{calls.push("UNEXPECTED-FINAL");},
+    isLeverFinalProvider:()=>true,
+  });
+  await launch();
+  assert.deepEqual(calls.slice(0,4),[
+    "inspect","fill","attach-reviewed-documents","questions"
+  ]);
+  assert.equal(calls.includes("read-only-employer-rights"),true);
+  assert.equal(calls.includes("UNEXPECTED-FINAL"),false);
+  assert.equal(finishOneJob.disabled,true);
+  assert.match(finalClaimInfo.textContent,/not authorized/i);
+  assert.match(calls.at(-1),/submit personally|press its own submit/i);
+  assert.equal(button.disabled,false);
+});
+
 test("new employer question prevents the irreversible claim until applicant answers",async()=>{
   const {launch,calls}=mount({
     onReviewQuestions:async()=>{

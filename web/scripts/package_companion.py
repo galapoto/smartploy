@@ -30,7 +30,8 @@ FILES = (
     "page-attachment.mjs", "page-document-fetch.mjs",
     "page-receipt-import.mjs",
     "page-review.mjs", "review-bridge.mjs",
-    "page-final-claim.mjs", "page-final-submit.mjs", "attempt-lock.mjs",
+    "page-final-claim.mjs", "page-final-readiness.mjs",
+    "page-final-submit.mjs", "attempt-lock.mjs",
 )
 MAX_SOURCE_BYTES = 500_000
 ZIP_TIMESTAMP = (2026, 10, 1, 0, 0, 0)

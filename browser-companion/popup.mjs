@@ -16,6 +16,7 @@ import {
 } from "./review-bridge.mjs";
 import { verifyReviewOnSmartPloy } from "./page-review.mjs";
 import { reserveFinalClickOnSmartPloy } from "./page-final-claim.mjs";
+import { readOneJobFinalActionReadinessOnSmartPloy } from "./page-final-readiness.mjs";
 import { submitReviewedLeverOnce } from "./page-final-submit.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -535,6 +536,25 @@ async function signedInAppTab() {
   return items[0];
 }
 
+/** Read-only: learn whether THIS owned job can use the separate one-use
+ * browser final-click gate. Missing permission must not prevent reviewed
+ * field filling or an applicant's personal final Submit.
+ */
+async function inspectOwnFinalActionReadiness(workspaceId) {
+  try {
+    const firstParty = await signedInAppTab();
+    const [reply] = await chrome.scripting.executeScript({
+      target:{tabId:firstParty.id}, world:"ISOLATED",
+      func:readOneJobFinalActionReadinessOnSmartPloy,
+      args:[workspaceId]
+    });
+    return reply?.frameId===0 && reply?.result ?
+      reply.result : {ready:false,reason:"readiness_unavailable"};
+  } catch {
+    return {ready:false,reason:"readiness_unavailable"};
+  }
+}
+
 async function onVerifySmartPloyReview() {
   $("reviewInfo").textContent = "";
   try {
@@ -695,6 +715,7 @@ async function onInspect() {
     $("submission").hidden = candidate.actions.length > 0;
     const leverSubmit = isLeverFinalProvider(pkt.application_url);
     $("reserveFinal").disabled = !leverSubmit;
+    $("finishOneJob").disabled = !leverSubmit;
     $("check").disabled = !leverSubmit;
     $("approve").disabled = !leverSubmit;
     const providerName = new URL(pkt.application_url).hostname === "jobs.ashbyhq.com"
@@ -939,14 +960,26 @@ async function onStartAutoApply() {
       const completed=await onFillQuestions();
       if (!completed) return;
     }
-    // A complete supported Lever form can finish in this SAME Start call:
-    // exact dry-run, fresh approval, one-use claim, single final click, receipt.
+    // Real production can have ZERO employer-approved automatic final jobs.
+    // In that case, provide the useful reviewed application now instead of
+    // attempting a known-denied irreversible server action.
     if (isLeverFinalProvider(currentPacket.application_url)) {
+      const readiness=await inspectOwnFinalActionReadiness(currentPacket.workspace_id);
+      $("finishOneJob").disabled = !readiness.ready;
+      if (!readiness.ready) {
+        $("finalClaimInfo").textContent =
+          "This posting is not authorized for SmartPloy's final click. " +
+          "Your reviewed fields and PDFs are ready; submit personally.";
+        status("Application prepared. Review the exact employer form, press its " +
+          "own Submit button, then use Check confirmation and Save to My applications. " +
+          "No server attempt was consumed.",true);
+        return;
+      }
       await onCompleteOneJob();
     } else {
+      $("finishOneJob").disabled = true;
       status("Reviewed CV, letter and known answers are prepared. " +
-        "This employer uses a provider without independently authorized " +
-        "automatic final submission; review and submit personally.");
+        "Review and submit personally, then save a matching employer confirmation.");
     }
   } catch (error) {
     status(normalizeError(error));
@@ -1587,6 +1620,8 @@ async function onReceipt() {
         confirmed_visible: true,
       };
       $("receiptExport").value = JSON.stringify(receipt);
+      $("saveReceipt").disabled = false;
+      $("saveReceipt").textContent = "Save to My applications";
       $("receiptPanel").hidden = false;
     }
     status(
@@ -1594,6 +1629,114 @@ async function onReceipt() {
       finding.confirmed
     );
   } catch (error) { status(normalizeError(error)); }
+}
+
+let savingObservedReceipt = false;
+
+/** Close the manual-application loop without another site or copied JSON.
+ * Re-scan the SAME visible employer confirmation before and after consent.
+ * The POST stays on the existing signed-in SmartPloy tab and does not send
+ * anything to the employer or claim independent provider acknowledgment.
+ */
+async function onSaveObservedReceipt() {
+  if (savingObservedReceipt || $("receiptPanel").hidden ||
+      !$("receiptExport").value || $("saveReceipt").disabled) return false;
+  savingObservedReceipt=true;
+  $("saveReceipt").disabled=true;
+  let accountWriteAttempted=false;
+  try {
+    const packetText=$("packet").value;
+    const packet=validateReviewPacket(packetText);
+    const receiptText=$("receiptExport").value;
+    const receipt=JSON.parse(receiptText);
+    if (!receiptOnly || !currentPacket ||
+        JSON.stringify(currentPacket)!==JSON.stringify(packet) ||
+        receipt.schema!=="smartploy.browser_receipt.v1" ||
+        receipt.workspace_id!==packet.workspace_id ||
+        receipt.document_revision!==packet.revision ||
+        receipt.document_sha256!==packet.document_sha256 ||
+        receipt.application_url!==packet.application_url ||
+        receipt.confirmed_visible!==true ||
+        !/^[A-Za-z0-9][A-Za-z0-9._/-]{3,63}$/.test(receipt.reference || "") ||
+        !/^[a-f0-9]{64}$/.test(receipt.confirmation_page_sha256 || "") ||
+        !exactReceiptPage(receipt.confirmation_page_url,packet.application_url)) {
+      throw new PacketError("The observed receipt no longer matches this reviewed job.");
+    }
+    const initialTab=await activeTab();
+    if (initialTab.id!==targetTabId) {
+      throw new PacketError("Return to the original employer confirmation tab.");
+    }
+    const verifyVisible=async()=>{
+      const tab=await activeTab();
+      if (tab.id!==initialTab.id ||
+          !exactReceiptPage(tab.url,packet.application_url) ||
+          new URL(tab.url).origin+new URL(tab.url).pathname !==
+            receipt.confirmation_page_url) {
+        throw new PacketError("Employer confirmation tab or job changed.");
+      }
+      const [scan]=await chrome.scripting.executeScript({
+        target:{tabId:tab.id},world:"ISOLATED",func:inspectReceipt,
+        args:[packet.application_url]
+      });
+      const finding=scan?.result;
+      const after=await activeTab();
+      if (scan?.frameId!==0 || finding?.confirmed!==true ||
+          finding.reference!==receipt.reference ||
+          finding.confirmation_page_sha256!==receipt.confirmation_page_sha256 ||
+          finding.confirmation_page_url!==receipt.confirmation_page_url ||
+          after.id!==tab.id || after.url!==tab.url ||
+          packetText!==$("packet").value ||
+          receiptText!==$("receiptExport").value ||
+          currentPacket!==packet && JSON.stringify(currentPacket)!==JSON.stringify(packet)) {
+        throw new PacketError("The visible confirmation changed. Check it again.");
+      }
+    };
+    // A manually submitted job still needs the original reviewed-session
+    // marker; a prior server-claimed click uses its already recorded attempt.
+    if (!(await hasPriorLeverAttempt(packet))) {
+      await requireVerifiedReview(chrome.storage?.session,packet);
+    }
+    await verifyVisible();
+    if (!window.confirm(
+      "SAVE THIS EMPLOYER CONFIRMATION?\n\n" +
+      packet.company + " — " + packet.role_title + "\n" +
+      "Reference: " + receipt.reference + "\n\n" +
+      "I personally inspected this exact confirmation after submitting " +
+      "the application myself or approving SmartPloy's one-use click. " +
+      "Save an UNVERIFIED browser observation in My applications? " +
+      "No employer action or retry occurs."
+    )) return false;
+    await verifyVisible();
+    const firstParty=await signedInAppTab();
+    await verifyVisible();
+    accountWriteAttempted=true;
+    const [reply]=await chrome.scripting.executeScript({
+      target:{tabId:firstParty.id},world:"ISOLATED",
+      func:saveOneObservedReceiptOnSmartPloy,
+      args:[{workspace_id:packet.workspace_id,receipt,
+        confirm_user_observed:true}]
+    });
+    // After a possible account write, do not blindly retry on any uncertain
+    // response. Check the signed-in workspace's receipt before doing anything.
+    if (reply?.frameId!==0 || reply?.result?.saved!==true) {
+      status("Receipt save was not confirmed (" +
+        (reply?.result?.reason || "unknown") +
+        "). Check My applications before another attempt. " +
+        "No employer submission was made.");
+      return false;
+    }
+    $("saveReceipt").textContent="Saved to My applications";
+    status("Employer reference "+receipt.reference+
+      " saved to your SmartPloy application as a browser observation. " +
+      "Independent employer acknowledgment remains unverified.",true);
+    return true;
+  } catch(error) {
+    status(normalizeError(error));
+    return false;
+  } finally {
+    savingObservedReceipt=false;
+    if (!accountWriteAttempted) $("saveReceipt").disabled=false;
+  }
 }
 
 $("verifyReview").addEventListener("click", () => void onVerifySmartPloyReview());
@@ -1609,6 +1752,7 @@ $("fillQuestions").addEventListener("click", () => void onFillQuestions());
 $("check").addEventListener("click", () => void onPreflight());
 $("submit").addEventListener("click", () => void onSubmit());
 $("receipt").addEventListener("click", () => void onReceipt());
+$("saveReceipt").addEventListener("click", () => void onSaveObservedReceipt());
 $("copyReceipt").addEventListener("click", async () => {
   const value = $("receiptExport").value;
   if (!value) return;

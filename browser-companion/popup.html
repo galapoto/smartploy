@@ -20,7 +20,7 @@
       <button id="verifyReview" type="button" class="secondary">Verify review on signed-in SmartPloy</button>
       <p id="reviewInfo" role="status"></p>
       <button id="startAutoApply" type="button" class="start-autoapply">
-        Start AutoApply · complete this job
+        Start AutoApply · prepare and finish this job
       </button>
       <p class="muted">Use your saved profile, prepare and attach the job-specific CV and
         cover letter, and fill approved answers. New or sensitive questions pause for
@@ -104,9 +104,13 @@
         that you personally submitted it. Keep any confirmation email.</p>
       <label for="receiptExport">Copy this private observation into My applications</label>
       <textarea id="receiptExport" rows="5" readonly spellcheck="false"></textarea>
-      <button id="copyReceipt">Copy observed receipt</button>
-      <p class="muted">Then open the matching SmartPloy application draft and select
-        Import observed receipt. Do not share this reference in public chat.</p>
+      <button id="saveReceipt" type="button" class="start-autoapply">
+        Save to My applications
+      </button>
+      <button id="copyReceipt" type="button" class="secondary">Copy observation (fallback)</button>
+      <p class="muted">Save directly to your signed-in SmartPloy account, or use
+        the copy option if direct saving is unavailable. This records a
+        browser observation, not independent employer confirmation.</p>
     </section>
 
     <p id="feedback" role="status" aria-live="polite"></p>
