@@ -98,5 +98,25 @@ def test_skill_gate_rejects_wrong_source_coverage_and_fabricated_speed(tmp_path)
     assert gate.check(CHANGED, tmp_path)
 
 
+def test_skill_gate_requires_every_changed_path_not_just_component_label(tmp_path):
+    changed = [*CHANGED, "web/src/another-card.tsx"]
+    data = evidence()
+    write(tmp_path, data)
+    failures = gate.check(changed, tmp_path)
+    assert any("web/src/another-card.tsx" in message for message in failures)
+
+
+def test_skill_gate_requires_actual_evidence_for_claimed_execution(tmp_path):
+    data = evidence()
+    skill = data["components"][0]["skills"][0]
+    skill["mode"] = "EXECUTED"
+    write(tmp_path, data)
+    assert any("actual tool evidence" in message
+               for message in gate.check(CHANGED, tmp_path))
+    skill["execution_evidence"] = "Runner log proves this pinned skill command executed."
+    write(tmp_path, data)
+    assert gate.check(CHANGED, tmp_path) == []
+
+
 def test_non_code_receipt_change_does_not_recurse(tmp_path):
     assert gate.check([RECEIPT], tmp_path) == []
