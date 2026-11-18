@@ -54,6 +54,7 @@ function mount({localAttempt=true,uncertainClaim=false,serverAttempt=false,
     requireVerifiedReview:async()=>{records.push("incorrect-reenable-review");},
     chrome:{scripting:{executeScript:async()=>{records.push("incorrect-employer-injection");}}},
     status:v=>records.push(v),
+    normalizeError:error=>error?.message||"unknown",
     PacketError:class PacketError extends Error{},
   };
   runInNewContext(realFunctions+"\nthis.inspect=onInspect;",state);
