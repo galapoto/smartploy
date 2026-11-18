@@ -120,3 +120,25 @@ def test_skill_gate_requires_actual_evidence_for_claimed_execution(tmp_path):
 
 def test_non_code_receipt_change_does_not_recurse(tmp_path):
     assert gate.check([RECEIPT], tmp_path) == []
+
+
+def test_native_woodpecker_enforces_changed_component_receipts():
+    pipeline = (Path(__file__).resolve().parents[1] /
+                ".woodpecker/smartploy.yaml").read_text(encoding="utf-8")
+    assert "scripts/check_component_skill_gate.py --base" in pipeline
+    assert "git merge-base HEAD FETCH_HEAD" in pipeline
+    assert 'git rev-parse HEAD^' in pipeline
+    assert "scripts/obumdelivery_ci_gate.py validate" in pipeline
+    assert "scripts/obumdelivery_ci_gate.py final" in pipeline
+
+
+def test_smartploy_v3_adopts_skills_without_importing_obumai_interfaces():
+    root = Path(__file__).resolve().parents[1]
+    governance = (root / "AGENTS.md").read_text(encoding="utf-8")
+    adapted = (root / "docs/v4/SMARTPLOY_2027_V3_APPLICABILITY_20261118.md").read_text(encoding="utf-8")
+    assert "SMARTPLOY-2027-V3-APPLICABLE-001" in governance
+    for requirement in ["REA_NOT_APPLICABLE", "USER_VERIFIED",
+                        "Woodpecker", "AutoApply", "Cop", "one-use"]:
+        assert requirement.lower() in adapted.lower()
+    assert "P01–P16" in adapted
+    assert "not a new product blueprint" in adapted.lower()
