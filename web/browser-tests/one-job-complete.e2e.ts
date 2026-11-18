@@ -120,7 +120,7 @@ test("ONE job: saved profile→field fill→two PDF attachments→answers→revi
   await injectModule(page,"../../browser-companion/page-attachment.mjs",
     "export async function attachReviewedPdf(", "attachReviewedPdf");
   await injectModule(page,"../../browser-companion/page-questions.mjs",
-    "export function fillReviewedAnswers(", "fillReviewedAnswers");
+    "export async function fillReviewedAnswers(", "fillReviewedAnswers");
   await injectModule(page,"../../browser-companion/page-final-submit.mjs",
     "export async function submitReviewedLeverOnce(", "submitReviewedLeverOnce");
   await injectModule(smartPage,"../../browser-companion/page-final-claim.mjs",
