@@ -44,9 +44,16 @@ steps:
           git fetch --no-tags origin main
           base="$(git rev-parse FETCH_HEAD)"
         else
-          base="$(git rev-parse HEAD^)"
+          # Woodpecker also shallow-clones push events. Read the immutable
+          # first-parent SHA from the raw commit and fetch exactly that tree;
+          # do not ask Git to walk unavailable shallow ancestry.
+          base="$(git cat-file -p HEAD | sed -n 's/^parent //p' | head -n 1)"
+          test -n "$base"
+          git fetch --no-tags origin "$base"
+          test "$(git rev-parse FETCH_HEAD)" = "$base"
         fi
         test -n "$base"
+        git cat-file -e "$base^{tree}"
         python3 -B scripts/check_component_skill_gate.py --base "$base" --head HEAD
       # Deliberate RED identity probe: it MUST return exactly 41 and
       # never produce a successful source receipt. Check this on the
