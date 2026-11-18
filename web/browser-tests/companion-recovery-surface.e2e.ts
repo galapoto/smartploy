@@ -14,6 +14,9 @@ const css=readFileSync(new URL("../../browser-companion/popup.css",import.meta.u
 test("a previously claimed employer attempt cannot resemble an enabled final action",async({page})=>{
   await page.setContent(html);
   await page.addStyleTag({content:css});
+  // Reproduce the REAL post-claim screen: the submission panel has already
+  // been made visible by the original AutoApply inspect/submit workflow.
+  await page.locator("#submission").evaluate((section)=>{section.hidden=false;});
   const button=page.locator("#finishOneJob");
   await button.evaluate((element)=>{
     element.setAttribute("disabled","");
