@@ -12,7 +12,8 @@
         "browser-companion/tests/start-autoapply.test.mjs",
         "browser-companion/tests/recovery-state.test.mjs",
         "browser-companion/page-final-readiness.mjs",
-        "browser-companion/tests/page-final-readiness.test.mjs"
+        "browser-companion/tests/page-final-readiness.test.mjs",
+        "browser-companion/tests/manual-receipt.test.mjs"
       ],
       "skills": [
         {
@@ -44,7 +45,7 @@
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "Original Chrome companion and one-use claim are complete readable owner-authorized first-party source. The official morluto/rea skill explicitly says to skip REA for ordinary source-repository architecture; no authorized opaque browser target was supplied for this slice.",
       "reuse_provenance": "COPIED: none. ADAPTED: galapoto/smartploy@00697f805584fc5c16ab08b82033b8175ec9257f browser-companion/popup.mjs::onInspect,onCompleteOneJob,onStartAutoApply,onFill,onFillQuestions,onSubmit and existing enterReceiptMode/hasPriorLeverAttempt, popup.css; NEW only safe claim-uncertain guard and regression tests.",
-      "tests": "node --test browser-companion/tests/*.test.mjs; VM controls assert one claim, no re-injection, no automatic retries, truthful receipt-only state. This is synthetic evidence, not employer acceptance. Tests include server-only previously reserved claims after popup reload and fail-closed unavailable read-only status.",
+      "tests": "node --test browser-companion/tests/*.test.mjs; VM controls assert one claim, no re-injection, no automatic retries, truthful receipt-only state. This is synthetic evidence, not employer acceptance. Tests include server-only previously reserved claims after popup reload and fail-closed unavailable read-only status. Existing manual receipt race fixture now models the new read-only owner prior-attempt bridge while preserving unchanged employer receipt and no mutation assertions.",
       "measured_seconds": "NOT_MEASURED"
     },
     {
