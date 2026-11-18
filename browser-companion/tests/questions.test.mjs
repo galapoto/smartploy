@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   QuestionError, MAX_QUESTION_ANSWER, planReviewedQuestions,
-  validateReviewedAnswers, isSensitiveQuestion
+  validateReviewedAnswers, isSensitiveQuestion, suggestSavedAnswers
 } from "../questions.mjs";
 
 function row(overrides = {}) {
@@ -246,5 +246,32 @@ test("V4 option labels with immigration or legal semantics stay fully manual", (
     assert.equal(result.questions.length,0,label);
     assert.deepEqual(result.humanOnly,["Choose an option"],label);
     assert.equal(isSensitiveQuestion(row({label})),true,label);
+  }
+});
+
+test("profile-once dropdown suggests only an exact current employer option, never an alias", () => {
+  const select = row({
+    type:"select",label:"Where did you hear about this job?",
+    id:"source",name:"source",maxLength:-1,
+    options:[{value:"",label:"Choose",disabled:true},
+      {value:"job-site",label:"Career site",disabled:false},
+      {value:"employee-referral",label:"Employee referral",disabled:false}]
+  });
+  const plan=planReviewedQuestions([select]);
+  assert.equal(plan.questions.length,1);
+  const good=suggestSavedAnswers(plan,[{
+    question:select.label,answer:"employee-referral"
+  }]);
+  assert.equal(good.reused,1);
+  assert.deepEqual(good.values,["employee-referral"]);
+  assert.deepEqual(good.needsReview,[]);
+  for(const stale of ["Employee referral","employee","EMPLOYEE-REFERRAL",
+    "employee-referral ", "job-site "]) {
+    const result=suggestSavedAnswers(plan,[{
+      question:select.label,answer:stale
+    }]);
+    assert.equal(result.reused,0,stale);
+    assert.deepEqual(result.values,[""],stale);
+    assert.deepEqual(result.needsReview,[select.label],stale);
   }
 });

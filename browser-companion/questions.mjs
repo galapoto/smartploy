@@ -119,7 +119,7 @@ export function planReviewedQuestions(elements) {
     else questions.push(item);
   }
   if (questions.length > MAX_QUESTION_ITEMS) {
-    throw new QuestionError("Too many unanswered text questions. Finish this form manually.");
+    throw new QuestionError("Too many unanswered questions. Finish this form manually.");
   }
   return { questions, humanOnly, requiresManualReview: humanOnly.length > 0 };
 }
@@ -150,7 +150,9 @@ export function suggestSavedAnswers(plan, savedAnswers) {
     const value = byQuestion.get(key);
     if (!ambiguous.has(key) && typeof value === "string" &&
         !isSensitiveQuestion(item) && value.length > 0 &&
-        value.length <= item.max_answer_length) {
+        value.length <= item.max_answer_length &&
+        (item.type !== "select" ||
+         Boolean(uniqueApprovedOption(value, item.options)))) {
       reused++;
       return value;
     }
