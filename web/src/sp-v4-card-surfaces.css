@@ -553,7 +553,7 @@ html[data-smartploy-theme] .smartploy-app .studio-resume-card:focus-visible {
 }
 @media(prefers-reduced-motion:reduce) {
   html[data-smartploy-theme] .smartploy-app .studio-resume-card {
-    transition:none!important;
-    transform:none!important;
+    transition:none;
+    transform:none;
   }
 }
