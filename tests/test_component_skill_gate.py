@@ -127,7 +127,9 @@ def test_native_woodpecker_enforces_changed_component_receipts():
                 ".woodpecker/smartploy.yaml").read_text(encoding="utf-8")
     assert "scripts/check_component_skill_gate.py --base" in pipeline
     assert "git rev-parse FETCH_HEAD" in pipeline
-    assert 'git rev-parse HEAD^' in pipeline
+    assert "git cat-file -p HEAD" in pipeline
+    assert 'git fetch --no-tags origin "$base"' in pipeline
+    assert 'git cat-file -e "$base^{tree}"' in pipeline
     assert "scripts/obumdelivery_ci_gate.py validate" in pipeline
     assert "scripts/obumdelivery_ci_gate.py final" in pipeline
 
