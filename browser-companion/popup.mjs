@@ -672,9 +672,21 @@ async function onInspect() {
   try {
     const tab = await activeTab();
     const pkt = validatePacket(packetText, tab.url);
+    // An uncertain claim may exist only in PostgreSQL after the extension
+    // popup is closed or loses the response, so read owner-scoped server truth
+    // BEFORE rebuilding editable employer controls. Never guess from the
+    // final-click enabled flag; an existing claim takes precedence.
+    const remote=isLeverFinalProvider(pkt.application_url) ?
+      await inspectOwnFinalActionReadiness(pkt.workspace_id) : null;
+    if(remote && ["readiness_unavailable","sign_in_required",
+        "untrusted_account_context"].includes(remote.reason)) {
+      throw new PacketError("Cannot verify prior employer attempts from " +
+        "your signed-in SmartPloy account. Check My applications first.");
+    }
     // A prior final attempt consumes the normal review marker. Inspection
     // must never reopen the employer form or offer a second final click.
-    if (oneJobClaimMayExist || await hasPriorLeverAttempt(pkt)) {
+    if (oneJobClaimMayExist || remote?.previous_employer_attempt_reserved ||
+        await hasPriorLeverAttempt(pkt)) {
       currentPacket = pkt;
       targetTabId = tab.id;
       inspectedUrl = tab.url;
