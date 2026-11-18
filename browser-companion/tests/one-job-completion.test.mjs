@@ -19,6 +19,7 @@ function mount({
   allowReceipt=true,serverAllows=true,employerConfirms=true,
   actuallyClicked=true,changedProfile=false,
   changedAfterConsent=false,missingInitialSnapshot=false,
+  serverOutcomeUncertain=false,serverThrowsAfterClaim=false,
 }={}) {
   const records=[],nodes=new Map();
   const packet={
@@ -36,6 +37,7 @@ function mount({
   const context={
     completingOneJob:false,receiptOnly:false,
     currentPacket:packet,targetTabId:8,attemptReserved:false,
+    oneJobClaimMayExist:false,
     inspectedUrl:JOB,preflightPassed:false,oneJobFinalApproval:false,
     oneJobSubmitWasAttempted:false,oneJobFormSnapshotSha256:"",
     $:getNode,
@@ -76,8 +78,11 @@ function mount({
         if(p.func.name==="reserveFinalClickOnSmartPloy"){
           records.push("server-one-use-claim");
           assert.equal(p.target.tabId,3);
-          return [{frameId:0,result:{claim_reserved:serverAllows,
-            reason:"not_authorized",claim_id:"employer-claim-"+"f".repeat(32)}}];
+          if(serverThrowsAfterClaim) throw Error("The claim response was lost");
+          return [{frameId:0,result:{claim_reserved:serverAllows && !serverOutcomeUncertain,
+            reason:serverOutcomeUncertain?"outcome_uncertain_check_attempt_status":
+              "unavailable_or_not_authorized",
+            claim_id:"employer-claim-"+"f".repeat(32)}}];
         }
         if(p.func.name==="saveOneObservedReceiptOnSmartPloy"){
           records.push("save-owner-receipt");
@@ -175,4 +180,40 @@ test("applicant can decline receipt persistence after a real visible confirmatio
   assert.equal(await complete(),false);
   assert.equal(records.includes("inspect-visible-confirmation"),true);
   assert.equal(records.includes("save-owner-receipt"),false);
+});
+
+test("a real one-use click leaves Finish and Start disabled; receipt recovery stays available",async()=>{
+  const {complete,context,records}=mount();
+  assert.equal(await complete(),true);
+  assert.equal(context.oneJobClaimMayExist,true);
+  assert.equal(context.$("finishOneJob").disabled,true);
+  assert.match(context.$("finishOneJob").textContent,/check confirmation/i);
+  assert.equal(context.$("startAutoApply").disabled,true);
+  assert.equal(context.$("receipt").disabled,false);
+  assert.match(context.$("finalClaimInfo").textContent,/no[t]?\s+.*submit|do not/i);
+  assert.equal(await complete(),false);
+  assert.equal(records.filter(x=>x==="one-permitted-employer-click").length,1);
+});
+
+test("lost server response locks one-job repeat before a second irreversible claim",async()=>{
+  for(const option of [{serverOutcomeUncertain:true},{serverThrowsAfterClaim:true}]){
+    const {complete,context,records}=mount(option);
+    assert.equal(await complete(),false);
+    assert.equal(context.oneJobClaimMayExist,true);
+    assert.equal(context.$("finishOneJob").disabled,true);
+    assert.equal(context.$("startAutoApply").disabled,true);
+    assert.equal(context.$("receipt").disabled,false);
+    assert.equal(records.filter(x=>x==="server-one-use-claim").length,1);
+    assert.equal(records.includes("one-permitted-employer-click"),false);
+    assert.equal(await complete(),false);
+    assert.equal(records.filter(x=>x==="server-one-use-claim").length,1);
+  }
+});
+
+test("a definite rejected authorization does not pretend a claim was consumed",async()=>{
+  const {complete,context,records}=mount({serverAllows:false});
+  assert.equal(await complete(),false);
+  assert.equal(context.oneJobClaimMayExist,false);
+  assert.equal(context.$("startAutoApply").disabled,false);
+  assert.equal(records.includes("one-permitted-employer-click"),false);
 });
