@@ -1736,6 +1736,7 @@ async function onSaveObservedReceipt() {
     await verifyVisible();
     const firstParty=await signedInAppTab();
     await verifyVisible();
+    accountWriteAttempted=true;
     const [reply]=await chrome.scripting.executeScript({
       target:{tabId:firstParty.id},world:"ISOLATED",
       func:saveOneObservedReceiptOnSmartPloy,
@@ -1744,7 +1745,6 @@ async function onSaveObservedReceipt() {
     });
     // After a possible account write, do not blindly retry on any uncertain
     // response. Check the signed-in workspace's receipt before doing anything.
-    accountWriteAttempted=true;
     if (reply?.frameId!==0 || reply?.result?.saved!==true) {
       status("Receipt save was not confirmed (" +
         (reply?.result?.reason || "unknown") +
