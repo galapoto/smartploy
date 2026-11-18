@@ -1920,3 +1920,17 @@ describe("SP125: work-focused career banner, full logo and persistent theme", ()
     expect(api.startApplicationWorkspace).not.toHaveBeenCalled();
   });
 });
+
+describe("SmartPloy public ZITADEL entry", () => {
+  it("shows branded sign-in after an actual 401, not an outage screen", async () => {
+    vi.mocked(api.getSession).mockRejectedValue(
+      Object.assign(new Error("Authentication is required."), { status: 401 })
+    );
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Continue securely/ }).getAttribute("href"))
+      .toBe("/auth/login");
+    expect(screen.queryByTestId("application-editor")).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Main navigation" })).toBeNull();
+  });
+});
