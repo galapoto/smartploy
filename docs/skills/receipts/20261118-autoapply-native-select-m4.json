@@ -55,7 +55,8 @@
         "web/browser-tests/lever-questions.e2e.ts",
         "web/browser-tests/ashby-assisted-fill.e2e.ts",
         "web/browser-tests/greenhouse-reviewed-assist.e2e.ts",
-        "tests/test_companion_package.py"
+        "tests/test_companion_package.py",
+        "web/browser-tests/one-job-complete.e2e.ts"
       ],
       "skills": [
         {
@@ -71,7 +72,7 @@
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "Readable permitted first-party and MIT donor source; official morluto/rea SKILL guidance excludes ordinary repository analysis and no opaque authorized app is present.",
       "reuse_provenance": "COPIED unchanged donor galapoto/smartploy PR337@244d23159f81d099261889179faf630ee789c191 exact adapter, unit test and MIT notices. PORTED/ADAPTED PR337 questions, executor, stylesheet and original Chromium fixtures. ADAPTED current main popup.mjs, current deterministic packaging. Research origin vesaias/JobNavigator@623822529389d6919d86be07271e0ea94e20b514 extension/lib/autofill_match.js MIT; fuzzy/boolean inference removed. NEW saved-value exact guard/test.",
-      "tests": "node --test browser-companion/tests/*.test.mjs, existing Playwright Chromium supported Lever Ashby Greenhouse fixtures, exact host/permission and saved answer negative cases.",
+      "tests": "node --test browser-companion/tests/*.test.mjs, existing Playwright Chromium supported Lever Ashby Greenhouse fixtures, exact host/permission and saved answer negative cases. Real full one-job Chromium journey now injects the actual async reviewed-answer executor, not its older synchronous export.",
       "measured_seconds": "NOT_MEASURED"
     },
     {
