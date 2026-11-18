@@ -33,6 +33,21 @@ steps:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     commands:
       - python3 -B scripts/obumdelivery_ci_gate.py validate
+      # V3 component adoption is enforced by native Woodpecker too, not
+      # solely by GitHub Actions. PRs compare with main; release merges compare
+      # the exact first-parent commit. No credentials or added runners.
+      - |
+        set -eu
+        if [ "${CI_PIPELINE_EVENT:-}" = "pull_request" ]; then
+          # Woodpecker's PR checkout is intentionally shallow: comparing
+          # the two exact fetched trees requires no merge-base ancestry.
+          git fetch --no-tags origin main
+          base="$(git rev-parse FETCH_HEAD)"
+        else
+          base="$(git rev-parse HEAD^)"
+        fi
+        test -n "$base"
+        python3 -B scripts/check_component_skill_gate.py --base "$base" --head HEAD
       # Deliberate RED identity probe: it MUST return exactly 41 and
       # never produce a successful source receipt. Check this on the
       # native isolated worker, not only in GitHub/Python unit tests.

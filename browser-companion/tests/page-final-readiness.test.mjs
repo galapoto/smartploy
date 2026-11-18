@@ -6,7 +6,8 @@ const WORKSPACE="kit-"+"a".repeat(30);
 async function probe({
   origin="https://smartploy.komplyint.fi",
   signedIn=true,authSource="oidc",permission=true,enabled=true,
-  nested=false,invalidWorkspace=false,denyServer=false,networkError=false
+  nested=false,invalidWorkspace=false,denyServer=false,networkError=false,
+  previousAttempt=false,omitPreviousFlag=false
 }={}){
   const prior={
     location:globalThis.location,window:globalThis.window,
@@ -28,7 +29,8 @@ async function probe({
     if(url.endsWith("/final-action-readiness"))return {
       ok:!denyServer,async json(){return {
         operator_permission_reviewed:permission,
-        trusted_one_use_browser_redemption_available:enabled
+        trusted_one_use_browser_redemption_available:enabled,
+        ...(!omitPreviousFlag ? {previous_employer_attempt_reserved:previousAttempt} : {})
       };}
     };
     throw Error("Unexpected endpoint");
@@ -88,4 +90,21 @@ test("only OIDC sessions can request owner-specific authorization details",async
     assert.equal(result.ready,false);
     assert.deepEqual(calls.map(c=>c.url),["/api/v1/session"]);
   }
+});
+
+test("an owner-scoped previously consumed claim survives popup restarts and overrides enablement",async()=>{
+  const {result,calls}=await probe({previousAttempt:true});
+  assert.equal(result.ready,false);
+  assert.equal(result.previous_employer_attempt_reserved,true);
+  assert.equal(result.reason,"previous_employer_attempt_reserved");
+  assert.deepEqual(calls.map(c=>c.url),[
+    "/api/v1/session",
+    "/api/v1/application-workspaces/"+WORKSPACE+"/final-action-readiness"
+  ]);
+});
+
+test("older server response without durable attempt state is not a fresh final authorization",async()=>{
+  const {result}=await probe({omitPreviousFlag:true});
+  assert.equal(result.ready,false);
+  assert.equal(result.reason,"readiness_unavailable");
 });

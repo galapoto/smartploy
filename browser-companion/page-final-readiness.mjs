@@ -28,11 +28,21 @@ export async function readOneJobFinalActionReadinessOnSmartPloy(workspaceId) {
     );
     if(!response.ok) return denied("readiness_unavailable");
     const data=await response.json();
+    // Schema drift cannot silently erase the durable attempted-job flag.
+    // Old/unexpected server responses are UNKNOWN, never a fresh claim.
+    if(typeof data?.previous_employer_attempt_reserved!=="boolean") {
+      return denied("readiness_unavailable");
+    }
     const permitted=data?.operator_permission_reviewed===true;
     const enabled=data?.trusted_one_use_browser_redemption_available===true;
+    // A popup's local JS state resets when closed. The account-owned source
+    // of truth survives that reset and can never be treated as a new job.
+    const previous=data?.previous_employer_attempt_reserved===true;
     return {
-      ready:permitted && enabled,
-      reason:!permitted?"employer_permission_not_approved" :
+      ready:permitted && enabled && !previous,
+      previous_employer_attempt_reserved:previous,
+      reason:previous?"previous_employer_attempt_reserved" :
+        !permitted?"employer_permission_not_approved" :
         !enabled?"browser_final_click_disabled":"ready"
     };
   } catch {

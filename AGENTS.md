@@ -20,6 +20,14 @@ For **every changed component**, select, read, and genuinely **apply** the best-
 
 ---
 
+# SMARTPLOY-2027-V3-APPLICABLE-001 — owner V3 method adopted, not a new blueprint
+
+The owner-supplied *ObumAI 2027 Skill/REA First Interface and Fast Delivery Plan V3* becomes **mandatory SmartPloy implementation method** from this run onward, only in the scope documented at [SMARTPLOY_2027_V3_APPLICABILITY_20261118.md](docs/v4/SMARTPLOY_2027_V3_APPLICABILITY_20261118.md). Every AutoApply form, profile, document, browser companion, UI and delivery change must genuinely apply its matching vetted skills, REA/reuse-first proof, direct enabled/disabled/error/receipt interface states, keyboard and reduced-motion controls, actual browser observations and exact release evidence. Keep interfaces opaque where candidates read/edit legally consequential answers; no theater, ornamental blur, infinite worker loops, dependency bloat or copycat UI.
+
+**Current primary vertical slice:** one verified profile -> exact supported job -> two current reviewed documents -> approved answers -> independent one-use final action only where authorized -> same-case receipt/UNKNOWN recovery. Do not import the V3 plan's 16 ObumAI specialist interfaces, 15 internal agent identities, Core/Conductor infrastructure, Studio media or separate orchestration into SmartPloy. SmartPloy V4 remains the authoritative scope. Native Woodpecker + GitHub CI must enforce skill receipt eligibility for changed components, not only prose. Preserve the owner's optional independent code-review supersession and all original legal/consent, security and release controls; a different-identity design review, when requested, never substitutes for real application acceptance.
+
+---
+
 # Repository development instructions
 
 Preserve existing approval, privacy, security and release controls. This file grants no access to other repositories or production resources.
