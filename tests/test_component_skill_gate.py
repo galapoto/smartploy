@@ -126,7 +126,7 @@ def test_native_woodpecker_enforces_changed_component_receipts():
     pipeline = (Path(__file__).resolve().parents[1] /
                 ".woodpecker/smartploy.yaml").read_text(encoding="utf-8")
     assert "scripts/check_component_skill_gate.py --base" in pipeline
-    assert "git merge-base HEAD FETCH_HEAD" in pipeline
+    assert "git rev-parse FETCH_HEAD" in pipeline
     assert 'git rev-parse HEAD^' in pipeline
     assert "scripts/obumdelivery_ci_gate.py validate" in pipeline
     assert "scripts/obumdelivery_ci_gate.py final" in pipeline
