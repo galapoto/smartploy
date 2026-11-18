@@ -20,7 +20,7 @@ function mount(override = {}) {
   const context = {
     startAutoApplyInFlight:false, currentPlan:null, currentQuestionPlan:null,
     currentPacket:null, targetTabId:null, inspectedUrl:"",
-    receiptOnly:false, attemptReserved:false,
+    receiptOnly:false, attemptReserved:false, oneJobClaimMayExist:false,
     $:id=>{
       assert.ok(["startAutoApply","uploadInfo","finishOneJob","finalClaimInfo"].includes(id));
       return {startAutoApply:button,uploadInfo,finishOneJob,finalClaimInfo}[id];
@@ -230,4 +230,13 @@ test("unexpected inspection rejection restores controls and reports safe blocker
   await launch();
   assert.deepEqual(calls,["status:Please inspect the employer form manually."]);
   assert.equal(button.disabled,false);
+});
+
+test("Start never restarts a claimed or uncertain one-job employer attempt",async()=>{
+  for(const state of ["oneJobClaimMayExist","attemptReserved"]){
+    const {launch,context,calls}=mount();
+    context[state]=true;
+    await launch();
+    assert.deepEqual(calls,[]);
+  }
 });
