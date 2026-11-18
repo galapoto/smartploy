@@ -374,7 +374,11 @@ jobs:
               assert {'manifest.json', 'popup.mjs', 'icon128.png',
                       'page-document-fetch.mjs', 'page-attachment.mjs',
                       'INSTALL.txt', 'SHA256SUMS.txt'} <= names
-              assert all('..' not in name and '/' not in name for name in names)
+              assert {'adapters/approved-option.mjs', 'THIRD_PARTY_LICENSES.txt'} <= names
+              assert all('..' not in name and
+                         ('/' not in name or name == 'adapters/approved-option.mjs')
+                         for name in names)
+              assert b'MIT License' in extension.read('THIRD_PARTY_LICENSES.txt')
               manifest = json.loads(extension.read('manifest.json'))
               assert manifest['manifest_version'] == 3
               assert manifest['permissions'] == ['activeTab', 'scripting', 'storage']

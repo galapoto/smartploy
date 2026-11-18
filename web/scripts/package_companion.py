@@ -27,6 +27,7 @@ FILES = (
     "icon16.png", "icon32.png", "icon48.png", "icon128.png",
     "smartploy-mark-v2.svg",
     "logic.mjs", "upload.mjs", "questions.mjs", "page-questions.mjs",
+    "adapters/approved-option.mjs", "THIRD_PARTY_LICENSES.txt",
     "page-attachment.mjs", "page-document-fetch.mjs",
     "page-receipt-import.mjs",
     "page-review.mjs", "review-bridge.mjs",
