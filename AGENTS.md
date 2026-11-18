@@ -8,6 +8,18 @@ Canonical portfolio policy: https://github.com/galapoto/Projects/blob/main/docs/
 
 ---
 
+# COMPONENT-SKILLS-REA-SPEED-001 — mandatory per-component application (2026-11-18)
+
+For **every changed component**, select, read, and genuinely **apply** the best-fitting authorized/appropriately licensed real skill, not merely name it. Audit first-party existing code, branches, sibling repos, and suitable GitHub donor source before building original code. Evaluate `morluto/rea` on every analyzable reference and use it where authorized/technically useful; a truthful `REA_NOT_APPLICABLE` / `REA_BLOCKED` with evidence is required when it is not used. Never pretend a video, READMEs, reconstructed behavior or REA output is copied source.
+
+**Component-specific mandatory skills**: UI/UX includes pinned Apple HIG foundations + UI/UX Pro Max and web accessibility review, animations require motion/Reduce Motion evidence, cards/illustrations need an appropriate vetted design or vector-asset skill, backend/data/browser/QA require the best relevant source/reuse/testing skill, and Docker/CI/deploy require Docker build/CI/security skills. Apply the **method to the actual diff**; only copy fitting sources with compatible permission/license and sanitize before adopting. Avoid new dependencies when existing first-party CSS/React or APIs suffice.
+
+**Enforcement**: CI script `scripts/check_component_skill_gate.py` requires a changed `docs/skills/receipts/*.json` with traceable per-component skill/source SHA, integration and test evidence for changes to application components. Source-only prose is not acceptance. Do not claim an uninstalled skill executed; using its verified guidance through code review must be labeled `GUIDANCE_APPLIED`. Every run reports COPIED, PORTED, SANITIZED, ADAPTED, INTEGRATED, NEW, NOT_VERIFIED, REA decision, exact tests, measured or NOT_MEASURED build/deploy time and live release stage.
+
+**Canonical authority**: [COMPONENT-SKILLS-REA-SPEED-001](https://github.com/galapoto/Projects/blob/main/docs/governance/COMPONENT_SKILLS_REA_SPEED_2026_11_18.md). This method mandate does not supersede SmartPloy V4, privacy, employer submission permission, user consent, protected branch/CI gates, nor the owner policy making **independent code review optional**.
+
+---
+
 # Repository development instructions
 
 Preserve existing approval, privacy, security and release controls. This file grants no access to other repositories or production resources.

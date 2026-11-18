@@ -18,7 +18,10 @@ RUN apt-get update \
 WORKDIR /workspace
 COPY . /workspace
 
-RUN python -m pip install . \
+# Preserve runtime PIP_NO_CACHE_DIR while using an ephemeral BuildKit download
+# cache during the build. No pip cache is copied into the finished image.
+RUN --mount=type=cache,id=smartploy-pip312,target=/root/.cache/pip \
+    env -u PIP_NO_CACHE_DIR python -m pip install . \
     && chown -R smartploy:smartploy /workspace /home/smartploy
 
 USER smartploy

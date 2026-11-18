@@ -9,9 +9,13 @@ ENV VITE_SMARTPLOY_BUILD_REVISION=${APP_VERSION}
 # Neither Python nor extension sources are installed in the final Caddy image.
 RUN apk add --no-cache python3
 WORKDIR /workspace/web
-RUN npm install --global npm@10.9.2 --no-audit --no-fund
+# docker/skills docker-build-strategies: reuse npm tarballs across builds.
+# Never cache credentials or ship the cache mount in the final Caddy image.
+RUN --mount=type=cache,id=smartploy-npm22,target=/root/.npm \
+    npm install --global npm@10.9.2 --no-audit --no-fund
 COPY web/package.json web/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN --mount=type=cache,id=smartploy-npm22,target=/root/.npm \
+    npm ci --no-audit --no-fund
 COPY web/ ./
 COPY browser-companion/ /workspace/browser-companion/
 RUN npm run build \

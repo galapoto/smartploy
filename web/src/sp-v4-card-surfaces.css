@@ -518,3 +518,42 @@ html[data-smartploy-theme] .smartploy-app :is(
     .studio-review-queue-filters button
   ) {transition:none;transform:none}
 }
+
+/* 2026-11-18 / SKILL-CARD-APPLE-001.
+   GUIDANCE_APPLIED: Apple HIG foundations (motion, accessibility, materials)
+   and UI/UX Pro Max; ADAPTED the existing first-party shadcn-based card.
+   A restrained, non-looping elevation preview, a clear keyboard focus
+   ring and a single 96%-opaque glass surface. No new animation package,
+   low-contrast translucent card text, scrolling motion or fake action. */
+html[data-smartploy-theme] .smartploy-app .studio-resume-card {
+  transition:transform 180ms cubic-bezier(.2,.8,.2,1),
+    box-shadow 180ms ease,border-color 150ms ease;
+}
+html[data-smartploy-theme] .smartploy-app .studio-resume-card:focus-visible {
+  outline:3px solid var(--sp-ui-ring);
+  outline-offset:3px;
+}
+@media(hover:hover) and (prefers-reduced-motion:no-preference) {
+  html[data-smartploy-theme] .smartploy-app
+    .studio-resume-card:hover:not(:disabled) {
+    transform:translateY(-2px);
+    box-shadow:0 19px 32px -24px rgba(7,26,46,.56),
+      inset 0 1px 0 rgba(255,255,255,.16);
+  }
+}
+@supports(backdrop-filter:blur(8px)) {
+  html[data-smartploy-theme="light"] .smartploy-app .studio-resume-methods {
+    background:rgba(255,255,255,.96);
+    backdrop-filter:blur(8px);
+  }
+  html[data-smartploy-theme="dark"] .smartploy-app .studio-resume-methods {
+    background:rgba(16,24,33,.96);
+    backdrop-filter:blur(8px);
+  }
+}
+@media(prefers-reduced-motion:reduce) {
+  html[data-smartploy-theme] .smartploy-app .studio-resume-card {
+    transition:none;
+    transform:none;
+  }
+}

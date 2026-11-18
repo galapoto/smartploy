@@ -87,4 +87,21 @@ describe("V4 shadcn-adapted surface system", () => {
     ]) expect(css, selector).toContain(selector);
     expect(css).toContain("prefers-reduced-motion:reduce");
   });
+  it("applies audited Apple-style restrained motion and focus to real method cards", () => {
+    const scope = css.slice(css.indexOf("SKILL-CARD-APPLE-001"));
+    expect(scope).toContain(".studio-resume-card:focus-visible");
+    expect(scope).toContain("outline:3px solid var(--sp-ui-ring)");
+    expect(scope).toContain("prefers-reduced-motion:no-preference");
+    expect(scope).toContain("prefers-reduced-motion:reduce");
+    expect(scope).toContain("transition:none");
+    expect(scope).toContain("transform:none");
+    expect(scope).toContain("hover:not(:disabled)");
+    expect(scope).toContain("background:rgba(255,255,255,.96)");
+    expect(scope).toContain("background:rgba(16,24,33,.96)");
+    expect(scope).not.toContain("animation-iteration-count:infinite");
+    expect(scope).not.toContain("!important");
+    expect(css).not.toMatch(/(^|\s)filter:\s*blur\(/m);
+    expect(css).not.toContain("backdrop-filter:blur(32px)");
+  });
+
 });
