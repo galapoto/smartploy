@@ -71,6 +71,7 @@ def check(changed: list[str], root: Path) -> list[str]:
         return ["Changed components require a new/updated docs/skills/receipts/*.json"]
     errors: list[str] = []
     covered: set[str] = set()
+    covered_paths: set[str] = set()
     for path in candidates:
         if ".." in Path(path).parts or (root / path).is_symlink():
             errors.append(f"{path}: invalid receipt path")
@@ -105,6 +106,7 @@ def check(changed: list[str], root: Path) -> list[str]:
             ):
                 errors.append(f"{path}:{group}: paths must be exact changed files")
                 continue
+            covered_paths.update(touched)
             if not _text(record.get("applied_method")):
                 errors.append(f"{path}:{group}: actual skill application is required")
             skills = record.get("skills")
@@ -115,6 +117,10 @@ def check(changed: list[str], root: Path) -> list[str]:
                     if not isinstance(skill, dict) or skill.get("mode") not in SKILL_MODES:
                         errors.append(f"{path}:{group}: invalid skill usage mode")
                         continue
+                    if skill.get("mode") == "EXECUTED" and not _text(
+                        skill.get("execution_evidence")
+                    ):
+                        errors.append(f"{path}:{group}: executed skill requires actual tool evidence")
                     upstream = skill.get("repository")
                     uri = skill.get("installed_uri")
                     if not _text(skill.get("name")) or not _text(skill.get("applied")):
@@ -142,6 +148,12 @@ def check(changed: list[str], root: Path) -> list[str]:
             covered.add(group)
     if needed - covered:
         errors.append("Missing component receipts: " + ", ".join(sorted(needed - covered)))
+    uncovered_paths = sorted(
+        p for p in changed if component(p) is not None and p not in covered_paths
+    )
+    if uncovered_paths:
+        errors.append("Changed files without skill adoption evidence: " +
+                      ", ".join(uncovered_paths))
     return errors
 
 
