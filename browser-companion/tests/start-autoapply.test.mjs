@@ -157,7 +157,7 @@ test("successful zero-write real fill continues, while cancelled fill does not",
     const nodes=new Map(),writes=[];
     const url="https://jobs.lever.co/fictional/one/apply";
     const scope={
-      receiptOnly:false,
+      receiptOnly:false,attemptReserved:false,oneJobClaimMayExist:false,
       currentPacket:{application_url:url},
       currentPlan:{actions:[{key:"email"}]},
       targetTabId:7,inspectedUrl:url,
