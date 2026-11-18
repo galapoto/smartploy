@@ -152,7 +152,9 @@ async function mountReadiness({permission=true,enabled=true,frameId=0}={}){
       function readOneJobFinalActionReadinessOnSmartPloy(){},
     chrome:{scripting:{executeScript:async request=>{
       assert.equal(request.func.name,"readOneJobFinalActionReadinessOnSmartPloy");
-      assert.deepEqual(request.args,[WORKSPACE]);
+      // VM-created arrays have a different realm prototype. Compare values, not prototypes.
+      assert.equal(request.args.length,1);
+      assert.equal(request.args[0],WORKSPACE);
       calls.push("signed-in-first-party-readiness");
       return [{frameId,result:{
         ready:permission && enabled,
