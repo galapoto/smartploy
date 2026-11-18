@@ -1,7 +1,6 @@
 """Focused offline tests for fail-closed skill/REA change evidence."""
 from __future__ import annotations
 
-from copy import deepcopy
 import importlib.util
 import json
 from pathlib import Path
