@@ -1,0 +1,73 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "370122d32be0f5f82b71bdd95843fbb568784f04",
+  "user_outcome": "The revised signed-in SmartPloy AutoApply companion downloads as an identifiable Chrome manifest version 0.6.2 and includes the already reviewed CV-PDF plus exact Lever letter-text fallback without increasing permissions or claiming automatic Chrome updates.",
+  "components": [
+    {
+      "name": "browser",
+      "paths": [
+        "browser-companion/manifest.json"
+      ],
+      "skills": [
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied existing reviewed testing conventions: assert the actual deterministic ZIP version, exact bundled ESM content and fail-closed Chrome permissions, without claiming any external skill executed."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Existing readable first-party Chrome extension source, deterministic ZIP builder and package test completely cover the deliverable; no third-party reconstruction or REA is necessary.",
+      "measured_seconds": "NOT_MEASURED",
+      "applied_method": "Incremented only the Chrome manifest patch version and user-visible description for the reviewed already merged AutoApply source; retained existing host permissions and no background update mechanism.",
+      "reuse_provenance": "COPIED none; ADAPTED galapoto/smartploy@370122d32be0f5f82b71bdd95843fbb568784f04 browser-companion/manifest.json (version + concise description); REUSED unchanged web/scripts/package_companion.py vetted v3 deterministic bundle; no new source dependencies.",
+      "tests": "Existing test_companion_package deterministic ZIP and failed unauthorized permissions regression; native Chromium and Node CI."
+    },
+    {
+      "name": "qa",
+      "paths": [
+        "tests/test_companion_package.py"
+      ],
+      "skills": [
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied existing reviewed testing conventions: assert the actual deterministic ZIP version, exact bundled ESM content and fail-closed Chrome permissions, without claiming any external skill executed."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Existing readable first-party Chrome extension source, deterministic ZIP builder and package test completely cover the deliverable; no third-party reconstruction or REA is necessary.",
+      "measured_seconds": "NOT_MEASURED",
+      "applied_method": "Extended the original package test to verify 0.6.2 plus exact new source symbols in the actual ZIP, so old extension archives cannot silently masquerade as this release.",
+      "reuse_provenance": "COPIED none; ADAPTED galapoto/smartploy@370122d32be0f5f82b71bdd95843fbb568784f04 tests/test_companion_package.py existing ZIP contents validation; new assertions only.",
+      "tests": "pytest tests/test_companion_package.py plus complete Python and isolated deploy-stack CI, pending exact PR run."
+    },
+    {
+      "name": "docs",
+      "paths": [
+        "docs/v4/SP_V4_M2_COMPANION_VERSION_062_20261119.md"
+      ],
+      "skills": [
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied existing reviewed testing conventions: assert the actual deterministic ZIP version, exact bundled ESM content and fail-closed Chrome permissions, without claiming any external skill executed."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Existing readable first-party Chrome extension source, deterministic ZIP builder and package test completely cover the deliverable; no third-party reconstruction or REA is necessary.",
+      "measured_seconds": "NOT_MEASURED",
+      "applied_method": "Recorded exact first-party source provenance, version-specific user outcome, test artifact expectations, no Web Store/managed update claim, and production verification boundary.",
+      "reuse_provenance": "COPIED none; REFERENCED prior approved galapoto/smartploy@370122d32be0f5f82b71bdd95843fbb568784f04 V4 contract and PR #345 artifact flow; NEW scoped version pin delivery evidence.",
+      "tests": "Component evidence gate and reviewed source tests; actual hosted ZIP digest and signed-in browser version acceptance after a trusted production release remain NOT VERIFIED."
+    }
+  ]
+}

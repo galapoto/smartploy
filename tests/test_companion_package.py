@@ -78,7 +78,11 @@ def test_sp44_exact_source_allowlist_reproducible_zip_and_standalone_sha(tmp_pat
         assert manifest["manifest_version"] == 3
         assert manifest["permissions"] == ["activeTab", "scripting", "storage"]
         assert manifest["action"]["default_popup"] == "popup.html"
-        assert manifest["version"] == "0.6.1"
+        assert manifest["version"] == "0.6.2"
+        assert "exact Lever text" in manifest["description"]
+        assert b"export function verifyReviewedCoverLetterText" in zipfile_src.read("page-attachment.mjs")
+        assert b"verifyReviewedCoverLetterText" in zipfile_src.read("popup.mjs")
+        assert b"reviewed_cover_letter_pdf_missing_or_text_changed" in zipfile_src.read("page-final-submit.mjs")
         assert b"MIT License" in zipfile_src.read("THIRD_PARTY_LICENSES.txt")
         assert b"JobNavigator Contributors" in zipfile_src.read("THIRD_PARTY_LICENSES.txt")
         assert b"export function uniqueApprovedOption" in zipfile_src.read("adapters/approved-option.mjs")
