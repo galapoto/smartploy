@@ -1031,7 +1031,21 @@ async function onStartAutoApply() {
     // NEW/CHANGED ordinary questions or sensitive/consent controls require
     // applicant input and an explicit Finish click afterwards.
     if (reviewed.needsReview.length || reviewed.humanOnly.length) {
-      status("AutoApply prepared your documents and existing profile answers. " +
+      // Reuse approved ordinary answers even on mixed employer forms. New or
+      // protected questions must never be inferred from the candidate profile.
+      if (reviewed.reused > 0) {
+        // The existing reviewed-answer path requires applicant consent and
+        // fills only nonempty exact saved values; NEW answers remain blank.
+        if (!(await onFillQuestions())) return;
+        // A React employer form may reveal more questions or reset fields.
+        // Inspect again, without repeating the write or enabling submission.
+        if (!(await onReviewQuestions())) return;
+      }
+      status(reviewed.reused > 0 ?
+        "Previously approved ordinary answers were filled and rechecked. " +
+        "Review the remaining new, changed or sensitive employer questions. " +
+        "No final attempt was reserved." :
+        "AutoApply prepared your documents and existing profile answers. " +
         "Review these new or sensitive employer requirements, fill them truthfully, " +
         "then use Finish this one application. No final attempt was reserved.");
       return;
@@ -1253,7 +1267,7 @@ async function onReviewQuestions() {
     status(plan.questions.length ?
       "Review every proposed answer for accuracy, then approve a one-time fill. Sensitive questions remain manual." :
       "No safely eligible unanswered questions. Answer employer-specific requirements manually.", true);
-    return {...plan,needsReview:memory.needsReview};
+    return {...plan,needsReview:memory.needsReview,reused:memory.reused};
   } catch (error) { status(normalizeError(error)); return null; }
 }
 
