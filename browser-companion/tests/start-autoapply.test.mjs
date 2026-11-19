@@ -241,3 +241,80 @@ test("Start never restarts a claimed or uncertain one-job employer attempt",asyn
     assert.deepEqual(calls,[]);
   }
 });
+
+
+test("mixed employer questions use unchanged saved answers, rescan, and never claim final send", async()=>{
+  let scans=0;
+  const {launch,calls}=mount({
+    onReviewQuestions:async()=>{
+      calls.push("questions-"+(++scans));
+      return scans===1 ?
+        {questions:[{label:"Where did you find us?"},{label:"Why this team?"}],
+          needsReview:["Why this team?"],humanOnly:[],reused:1} :
+        {questions:[{label:"Why this team?"}],
+          needsReview:["Why this team?"],humanOnly:[],reused:0};
+    },
+    onFillQuestions:async()=>{calls.push("fill-approved-saved-answer");return true;},
+    inspectOwnFinalActionReadiness:async()=>{calls.push("FORBIDDEN-READINESS");return {ready:true};},
+    onCompleteOneJob:async()=>{calls.push("FORBIDDEN-FINAL");return true;},
+    isLeverFinalProvider:()=>true,
+  });
+  await launch();
+  assert.deepEqual(calls.slice(0,6),[
+    "inspect","fill","attach-reviewed-documents","questions-1",
+    "fill-approved-saved-answer","questions-2"
+  ]);
+  assert.equal(scans,2);
+  assert.equal(calls.some(x=>x.startsWith("FORBIDDEN")),false);
+  assert.match(calls.at(-1),/previously approved ordinary answers were filled/i);
+});
+
+test("protected employer questions remain human-only after filling a saved ordinary answer", async()=>{
+  let scans=0;
+  const {launch,calls}=mount({
+    onReviewQuestions:async()=>{
+      scans++;
+      calls.push("questions-"+scans);
+      return {questions:[{label:"How did you hear about us?"}],
+        needsReview:[],humanOnly:["Right to work?"],reused:scans===1?1:0};
+    },
+    onFillQuestions:async()=>{calls.push("fill-approved-saved-answer");return true;},
+    onCompleteOneJob:async()=>{calls.push("FORBIDDEN-FINAL");return true;},
+  });
+  await launch();
+  assert.equal(scans,2);
+  assert.equal(calls.includes("fill-approved-saved-answer"),true);
+  assert.equal(calls.includes("FORBIDDEN-FINAL"),false);
+  assert.match(calls.at(-1),/sensitive employer questions/i);
+});
+
+test("declined or uncertain saved answer fill stops before rescan or employer send", async()=>{
+  const {launch,calls}=mount({
+    onReviewQuestions:async()=>{
+      calls.push("questions");
+      return {questions:[{label:"Known"},{label:"Unknown"}],
+        needsReview:["Unknown"],humanOnly:[],reused:1};
+    },
+    onFillQuestions:async()=>{calls.push("consent-declined-or-unknown");return false;},
+    onCompleteOneJob:async()=>{calls.push("FORBIDDEN-FINAL");return true;},
+  });
+  await launch();
+  assert.deepEqual(calls,[
+    "inspect","fill","attach-reviewed-documents","questions",
+    "consent-declined-or-unknown"
+  ]);
+});
+
+test("new-only employer questions never invoke saved-answer fill", async()=>{
+  const {launch,calls}=mount({
+    onReviewQuestions:async()=>{
+      calls.push("questions");
+      return {questions:[{label:"Why this role?"}],
+        needsReview:["Why this role?"],humanOnly:[],reused:0};
+    },
+    onFillQuestions:async()=>{calls.push("FORBIDDEN-KNOWN-FILL");return true;},
+  });
+  await launch();
+  assert.equal(calls.includes("FORBIDDEN-KNOWN-FILL"),false);
+  assert.match(calls.at(-1),/new or sensitive employer requirements/i);
+});
