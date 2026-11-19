@@ -1,0 +1,53 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "89bdbe76347edf89bb8c2bf73fc93b16aea39f56",
+  "user_outcome": "A single AutoApply run fills previously approved exact ordinary profile answers even if the same employer form has new or protected questions, then re-inspects and hands the user only the remaining requirements without claiming final submission.",
+  "components": [
+    {
+      "name": "browser",
+      "paths": [
+        "browser-companion/popup.mjs",
+        "browser-companion/tests/start-autoapply.test.mjs",
+        "browser-companion/tests/questions.test.mjs"
+      ],
+      "skills": [
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied the repository's previously vetted browser testing guidance: mutate only the real first-party popup path, assert actual known/new question orchestration, preserve human-only controls, and require exact-source CI; no external skill runtime was executed."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "All behavior resides in readable, authorized first-party SmartPloy popup, questions validator and provider-specific page adapter at the pinned baseline; no opaque app, unknown binary or REA reconstruction is required.",
+      "measured_seconds": "NOT_MEASURED",
+      "applied_method": "Reused existing `onReviewQuestions`, `suggestSavedAnswers`, `validateReviewedAnswers`, `onFillQuestions` and real provider browser adapter; surfaced the already-calculated saved-answer reuse count, filled approved nonblank values with existing explicit consent on mixed forms, and re-inspected only once before safe handoff. Added positive, sensitive, changed-label and declined-consent regressions; no new browser permission.",
+      "reuse_provenance": "COPIED none; ADAPTED first-party https://github.com/galapoto/smartploy @ 89bdbe76347edf89bb8c2bf73fc93b16aea39f56 browser-companion/popup.mjs::onStartAutoApply,onReviewQuestions; REUSED unchanged browser-companion/questions.mjs::suggestSavedAnswers,validateReviewedAnswers and popup.mjs::onFillQuestions, page-questions.mjs::fillReviewedAnswers; NEW test assertions; no external donor imported.",
+      "tests": "node --test browser-companion/tests/start-autoapply.test.mjs browser-companion/tests/questions.test.mjs; full Node suite, Python/Chromium/web and both CI gates on exact PR head (NOT_VERIFIED when receipt created)."
+    },
+    {
+      "name": "docs",
+      "paths": [
+        "docs/v4/SP_V4_M2_MIXED_SAVED_ANSWERS_20261119.md"
+      ],
+      "skills": [
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied the repository's previously vetted browser testing guidance: mutate only the real first-party popup path, assert actual known/new question orchestration, preserve human-only controls, and require exact-source CI; no external skill runtime was executed."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "All behavior resides in readable, authorized first-party SmartPloy popup, questions validator and provider-specific page adapter at the pinned baseline; no opaque app, unknown binary or REA reconstruction is required.",
+      "measured_seconds": "NOT_MEASURED",
+      "applied_method": "Documented exact control-flow defect, pinned first-party reuse/source paths, kept approval and upload safety invariants, specified positive/negative acceptance and truthfully separated source-ready, CI, deployment and real ATS verification.",
+      "reuse_provenance": "COPIED none; REFERENCED exact first-party V4 plan and https://github.com/galapoto/smartploy @ 89bdbe76347edf89bb8c2bf73fc93b16aea39f56; NEW scoped execution evidence note; no third-party source copied.",
+      "tests": "scripts/check_component_skill_gate.py on exact PR synthetic merge, full CI regression checks; live real-ATS acceptance NOT_VERIFIED."
+    }
+  ]
+}
