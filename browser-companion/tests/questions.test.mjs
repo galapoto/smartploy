@@ -275,3 +275,25 @@ test("profile-once dropdown suggests only an exact current employer option, neve
     assert.deepEqual(result.needsReview,[select.label],stale);
   }
 });
+
+
+test("mixed exact saved and changed questions send only unchanged answer on first pass", () => {
+  const known = row({index:1,label:"Where did you hear about us?",
+    id:"source_details",name:"source_details"});
+  const changed = row({index:2,label:"Which team outcome best matches your experience?",
+    id:"team_outcome",name:"team_outcome"});
+  const plan = planReviewedQuestions([known,changed]);
+  const remembered = suggestSavedAnswers(plan, [
+    {question:"Where did you hear about us?",answer:"The employer career page"},
+    {question:"Which team result best matches your experience?",
+      answer:"This OLD wording must not be reused"}
+  ]);
+  assert.equal(remembered.reused,1);
+  assert.deepEqual(remembered.values,["The employer career page",""]);
+  assert.deepEqual(remembered.needsReview,[changed.label]);
+  const firstPass = validateReviewedAnswers(plan,remembered.values);
+  assert.equal(firstPass.length,1);
+  assert.equal(firstPass[0].label,known.label);
+  assert.equal(firstPass[0].value,"The employer career page");
+  assert.equal(firstPass.some(x=>x.label===changed.label),false);
+});
