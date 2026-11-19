@@ -45,11 +45,14 @@
       "measured_seconds": "NOT_MEASURED",
       "name": "qa",
       "paths": [
-        "web/browser-tests/one-job-complete.e2e.ts"
+        "web/browser-tests/one-job-complete.e2e.ts",
+        "web/browser-tests/lever-upload.e2e.ts",
+        "web/browser-tests/ashby-assisted-fill.e2e.ts",
+        "web/browser-tests/greenhouse-reviewed-assist.e2e.ts"
       ],
-      "applied_method": "Adapted existing source-injected Chromium one-job Lever fixture for supported CV-PDF+letter-text case, keeping submission inert and asserting actual live DOM setter results, read-only letter proof, existing PDF bytes and changed-letter preflight rejection.",
-      "reuse_provenance": "COPIED: none. ADAPTED galapoto/smartploy@6824a682fa28cd71b467f590b2873a6bce0554f6 web/browser-tests/one-job-complete.e2e.ts existing source-injection and Chromium test harness; new synthetic text-only test in same file. Employer and applicant are synthetic.",
-      "tests": "Playwright one-job original PDF+PDF simulated receipt and newly added PDF+approved text only dry-run; no live employer requests or account data; pending exact CI."
+      "applied_method": "Adapted existing source-injected Chromium one-job Lever fixture for supported CV-PDF+letter-text case, keeping submission inert and asserting actual live DOM setter results, read-only letter proof, existing PDF bytes and changed-letter preflight rejection. Updated three existing first-party Chromium fixtures that injected only one named ESM function; they now erase module export modifiers before executing the same real source in classic isolated test pages.",
+      "reuse_provenance": "COPIED: none. ADAPTED galapoto/smartploy@6824a682fa28cd71b467f590b2873a6bce0554f6 web/browser-tests/one-job-complete.e2e.ts existing source-injection and Chromium test harness; new synthetic text-only test in same file. Employer and applicant are synthetic. ADAPTED existing exact first-party Lever/Ashby/Greenhouse synthetic Chromium module execution fixtures; no donor or new dependency.",
+      "tests": "Playwright one-job original PDF+PDF simulated receipt and newly added PDF+approved text only dry-run; no live employer requests or account data; pending exact CI. Regressions: original Lever, Ashby, Greenhouse reviewed PDF attachment must continue to run actual existing helper source with the new second export present."
     },
     {
       "skills": [

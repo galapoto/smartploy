@@ -40,8 +40,8 @@ async function setup(page: Page) {
   // callback; only replace the module export for a synthetic page harness.
   const source = await readFile(new URL("../../browser-companion/page-attachment.mjs", import.meta.url), "utf8");
   await page.addScriptTag({
-    content: source.replace(
-      "export async function attachReviewedPdf(",
+    content: source.replace(/\bexport (?=(?:async )?function\b)/g, "").replace(
+      "async function attachReviewedPdf(",
       "window.attachReviewedPdf = async function attachReviewedPdf("
     )
   });

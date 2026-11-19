@@ -1049,7 +1049,7 @@ async function onStartAutoApply() {
       if (!readiness.ready) {
         $("finalClaimInfo").textContent =
           "This posting is not authorized for SmartPloy's final click. " +
-          "Your reviewed fields and PDFs are ready; submit personally.";
+          "Your reviewed CV and cover-letter content are ready; submit personally.";
         status("Application prepared. Review the exact employer form, press its " +
           "own Submit button, then use Check confirmation and Save to My applications. " +
           "No server attempt was consumed.",true);
