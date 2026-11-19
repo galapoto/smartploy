@@ -1042,9 +1042,8 @@ async function onStartAutoApply() {
         if (!(await onReviewQuestions())) return;
       }
       status(reviewed.reused > 0 ?
-        "Previously approved ordinary answers were filled and rechecked. " +
-        "Review the remaining new, changed or sensitive employer questions. " +
-        "No final attempt was reserved." :
+        "Saved answers filled. Review new or sensitive questions, and recheck " +
+        "the employer form. No application was submitted." :
         "AutoApply prepared your documents and existing profile answers. " +
         "Review these new or sensitive employer requirements, fill them truthfully, " +
         "then use Finish this one application. No final attempt was reserved.");
