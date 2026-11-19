@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SmartPloy Apply Companion",
-  "version": "0.6.1",
-  "description": "Profile-once reviewed Lever/Ashby/Greenhouse form filling, exact CV and letter PDF attachment from your signed-in SmartPloy tab. Final send requires separate authorization.",
+  "version": "0.6.2",
+  "description": "Reviewed job forms: CV PDF, letter PDF or exact Lever text, and saved answers. Employer submission needs separate approval.",
   "permissions": [
     "activeTab",
     "scripting",
