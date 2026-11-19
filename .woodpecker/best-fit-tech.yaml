@@ -1,0 +1,9 @@
+# BEST-FIT-TECH-001 native Woodpecker first-read instructions gate.
+# No protected status is implied until the operator makes it required.
+when:
+  - event: [push, pull_request]
+steps:
+  - name: best-fit-bootstrap
+    image: python:3.12-alpine
+    commands:
+      - python3 quality/best_fit_gate.py --root . --bootstrap-only
