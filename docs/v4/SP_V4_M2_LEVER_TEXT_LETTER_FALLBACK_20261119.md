@@ -1,0 +1,26 @@
+# SmartPloy V4 — exact Lever reviewed-letter text fallback (19 November 2026)
+
+**Execution authority:** `docs/v4/SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md` §§1.1,4–7,12,14 and `docs/v4/SP_V4_NEXT_RUN_ONE_PROFILE_COMPLETE_APPLICATION_EXECUTION_20261113.md`, steps 2–7; stricter private session, ATS employer permission, review, durable one-use claim and no-fake-receipt requirements are preserved.
+
+**Single user outcome:** On an exact reviewed Lever application, the candidate's approved CV PDF is placed in the employer's unique resume upload field and the previously reviewed cover-letter text is used *only if the employer has one uniquely identified, visible, enabled, named cover-letter text control owned by the final application form and **no** dedicated letter PDF input*. The candidate does not need to invent or upload a nonexistent cover-letter file field.
+
+## Real defect in prior production SHA
+
+At baseline main/live `6824a682fa28cd71b467f590b2873a6bce0554f6`, `browser-companion/popup.mjs::autoAttachSavedDocuments` returned `ready:false` on every Lever form lacking a dedicated cover-letter PDF upload, even if `planFields` had already filled an approved cover-letter text area. Meanwhile the final Lever helper required an attached letter PDF merely because SmartPloy always renders a PDF, without considering the employer form's actual supported mode. This stopped one-profile AutoApply before ordinary saved-question review.
+
+## Reuse-first implementation trace
+
+- **Original project:** https://github.com/galapoto/smartploy, exact baseline commit `6824a682fa28cd71b467f590b2873a6bce0554f6`. First-party `browser-companion/logic.mjs::identifyField,planFields`, `popup.mjs::onFill,autoAttachSavedDocuments`, `page-attachment.mjs::attachReviewedPdf`, `page-final-submit.mjs::submitReviewedLeverOnce`, `smartploy/browser_handoff.py::make_browser_packet`, and existing `web/browser-tests/one-job-complete.e2e.ts` remain authoritative. **COPIED unchanged:** none.
+- **ADAPTED:** `popup.mjs` now inspects the existing reviewed text when `chooseCoverLetterField` finds no upload field, verifies the same exact letter **again after** CV attachment (reactive ATS fields can change), and reports one local CV PDF placement separately from employer acceptance.
+- **NEW, minimal:** `page-attachment.mjs::verifyReviewedCoverLetterText` is a standalone **read-only** exact-job verifier reused via the existing Chrome `scripting.executeScript` transport. It never submits, uploads, reads credentials or persists personal data.
+- **SANITIZED:** Reject wrong/sibling/non-HTTPS URL, iframe, ambiguous/duplicated/human-only field, missing/modified reviewed text, renamed/disabled/hidden/foreign-owned text field, and any dedicated letter file input (even if empty). A PDF upload is still required when such a field exists.
+- **INTEGRATED:** `page-final-submit.mjs` accepts the verified text-only employer route with the current approved CV and packet-bound letter PDF fingerprints; the unchanged two-phase dry-run, employer permission, one-use server claim, snapshot hash, no-retry and correlated receipt rules remain mandatory. Source contains **no** permission flag changes and no new dependencies.
+- **QA:** `browser-companion/tests/letter-text-fallback.test.mjs` and extended `page-final-submit.test.mjs` verify exact text and negative cases. `web/browser-tests/one-job-complete.e2e.ts` adds genuine Chromium DOM input, PDF FileList placement, text-only final **dry-run** and changed-letter rejection. Both existing two-PDF route and next text-only route must pass.
+- **REA:** not used because permitted full first-party source and working browser adapter were directly available; reconstruction of opaque code would reduce provenance confidence. Other donor: **none**. No invented reuse percentage or time saving.
+- **Destination:** https://github.com/galapoto/smartploy, branch `feat/v4-lever-reviewed-letter-text-fallback-20261119`, original files in-place; no new application executor.
+
+## Exact outcome boundaries and promotion gate
+
+**COMMITTED:** source candidate and tests. **CI:** not verified at document authoring; requires fresh GitHub Actions and native Woodpecker PR checks on exact head. **MERGED/DEPLOYED:** not yet. **REAL SIGNED-IN LEVER FORM:** not verified; Chromium fixture is synthetic and does not contact an employer. Do not claim employer application submitted from a local file transfer. If CI qualifies, merge and deploy the immutable merged-main commit with the existing backup-first OIDC `deploy.sh`, `release-evidence.sh --online`, and public revision/provenance checks. Real production acceptance requires consented owner sign-in, exact live application URL, verified local file and letter field, saved question and changed-question handoff, mobile/desktop UX, refresh/reconciliation and independent acknowledgement if sent.
+
+**Supported behavior:** existing PDF+PDF employer forms remain unchanged. PDF+reviewed letter TEXT is a genuine additional supported *review* mode. A form with neither dedicated letter PDF input nor exact approved text control remains manual. Automatic employer submission remains disabled unless separately permitted by existing server-side policy.

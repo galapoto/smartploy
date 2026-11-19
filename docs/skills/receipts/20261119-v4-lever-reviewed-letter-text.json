@@ -1,0 +1,77 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "6824a682fa28cd71b467f590b2873a6bce0554f6",
+  "user_outcome": "Reuse reviewed contact and cover-letter text with the exact CV PDF on a supported Lever form lacking a letter upload control, stopping on changed or unsafe form state without falsely claiming employer submission.",
+  "components": [
+    {
+      "skills": [
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Used first-party V4 skill guidance to exercise real Chromium DOM and file control, add negative right-job/account and reactive mutation tests, and distinguish synthetic from live acceptance; no external skill runtime was invoked."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Complete authorized first-party SmartPloy source already implements reviewed form fill, document render/transfer and one-use submit boundaries; no opaque third-party behavior warrants reconstruction.",
+      "measured_seconds": "NOT_MEASURED",
+      "name": "browser",
+      "paths": [
+        "browser-companion/page-attachment.mjs",
+        "browser-companion/popup.mjs",
+        "browser-companion/page-final-submit.mjs",
+        "browser-companion/tests/page-final-submit.test.mjs",
+        "browser-companion/tests/letter-text-fallback.test.mjs"
+      ],
+      "applied_method": "Reused existing v0.6.1 Chrome upload, contact planner, owner review, approved packet and final dry-run; added read-only strict text control verifier, two rechecks around CV transfer and exact text-only fallback; failed closed for any existing dedicated letter PDF upload.",
+      "reuse_provenance": "COPIED: none. ADAPTED first-party galapoto/smartploy@6824a682fa28cd71b467f590b2873a6bce0554f6 browser-companion/popup.mjs::autoAttachSavedDocuments and page-final-submit.mjs::submitReviewedLeverOnce; REUSED unchanged logic.mjs::planFields, upload.mjs::chooseCoverLetterField and existing PDF attachment. NEW verifier in existing page-attachment.mjs; no third-party code imported.",
+      "tests": "Node source-executed exact Lever text fallback, duplicate/renamed/disabled/foreign form, CV hash drift, letter text changed, existing PDF input cannot bypass, original two-PDF and no-retry tests; exact CI pending at creation."
+    },
+    {
+      "skills": [
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Used first-party V4 skill guidance to exercise real Chromium DOM and file control, add negative right-job/account and reactive mutation tests, and distinguish synthetic from live acceptance; no external skill runtime was invoked."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Complete authorized first-party SmartPloy source already implements reviewed form fill, document render/transfer and one-use submit boundaries; no opaque third-party behavior warrants reconstruction.",
+      "measured_seconds": "NOT_MEASURED",
+      "name": "qa",
+      "paths": [
+        "web/browser-tests/one-job-complete.e2e.ts"
+      ],
+      "applied_method": "Adapted existing source-injected Chromium one-job Lever fixture for supported CV-PDF+letter-text case, keeping submission inert and asserting actual live DOM setter results, read-only letter proof, existing PDF bytes and changed-letter preflight rejection.",
+      "reuse_provenance": "COPIED: none. ADAPTED galapoto/smartploy@6824a682fa28cd71b467f590b2873a6bce0554f6 web/browser-tests/one-job-complete.e2e.ts existing source-injection and Chromium test harness; new synthetic text-only test in same file. Employer and applicant are synthetic.",
+      "tests": "Playwright one-job original PDF+PDF simulated receipt and newly added PDF+approved text only dry-run; no live employer requests or account data; pending exact CI."
+    },
+    {
+      "skills": [
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Used first-party V4 skill guidance to exercise real Chromium DOM and file control, add negative right-job/account and reactive mutation tests, and distinguish synthetic from live acceptance; no external skill runtime was invoked."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Complete authorized first-party SmartPloy source already implements reviewed form fill, document render/transfer and one-use submit boundaries; no opaque third-party behavior warrants reconstruction.",
+      "measured_seconds": "NOT_MEASURED",
+      "name": "docs",
+      "paths": [
+        "docs/v4/SP_V4_M2_LEVER_TEXT_LETTER_FALLBACK_20261119.md"
+      ],
+      "applied_method": "Documented exact V4 authority, original source SHA/path, observed failure, copied-vs-adapted provenance, REA decision, negative test matrix and promotion evidence without inventing deployment or live employer acceptance.",
+      "reuse_provenance": "COPIED: none. REFERENCED binding first-party galapoto/smartploy@6824a682fa28cd71b467f590b2873a6bce0554f6 docs/v4/SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md and docs/v4/SP_V4_NEXT_RUN_ONE_PROFILE_COMPLETE_APPLICATION_EXECUTION_20261113.md; NEW scoped delivery evidence in project.",
+      "tests": "Component evidence gate must cover each changed path, GitHub and Woodpecker CI on the exact candidate; production and signed-in real ATS acceptance remain NOT VERIFIED."
+    }
+  ]
+}
