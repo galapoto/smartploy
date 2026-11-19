@@ -7,3 +7,5 @@ steps:
     image: python:3.12-alpine
     commands:
       - python3 quality/best_fit_gate.py --root . --bootstrap-only
+      - git fetch --no-tags origin "${CI_REPO_DEFAULT_BRANCH:-main}"
+      - python3 quality/best_fit_gate.py --root . --git-base "origin/${CI_REPO_DEFAULT_BRANCH:-main}" --bootstrap-only
