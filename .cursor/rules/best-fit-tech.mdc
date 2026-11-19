@@ -1,0 +1,5 @@
+---
+description: Mandatory best-fit engineering gate
+alwaysApply: true
+---
+BEST-FIT-TECH-001: Before starting OR continuing any code task, read root AGENTS.md and latest approved project spec/security rules plus https://github.com/obumai/obum-delivery/blob/main/docs/BEST_FIT_TECH_001.md . In the first substantive response state `BEST-FIT-TECH-001 acknowledged` with user outcome, source/reuse, actually executed skill, missing-tool resolution, tests, release holds. Choose strongest suitable permitted tech/language/design/text/color; obtain pinned compilers/SDKs in authorized isolation or ask for minimal intervention; prove visual/a11y, functional, security, performance/recovery and deployed user outcome. Do not claim merely cited skills or mock output as execution. Preserve stricter local rules.
