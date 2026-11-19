@@ -3,7 +3,7 @@
    The final action is only possible after an exact one-job approval. */
 import { PacketError, planFields, validatePacket } from "./logic.mjs";
 import { UploadError, chooseResumeField, chooseCoverLetterField, encodePdfBase64, exactLeverForm, exactAssistedForm, exactGreenhouseForm, exactReceiptPage, isLeverFinalProvider, MAX_PDF_BYTES, validatePdf } from "./upload.mjs";
-import { attachReviewedPdf } from "./page-attachment.mjs";
+import { attachReviewedPdf, verifyReviewedCoverLetterText } from "./page-attachment.mjs";
 import { readOwnReviewedPdf } from "./page-document-fetch.mjs";
 import { saveOneObservedReceiptOnSmartPloy } from "./page-receipt-import.mjs";
 import { QuestionError, planReviewedQuestions, suggestSavedAnswers, validateReviewedAnswers } from "./questions.mjs";
@@ -869,6 +869,7 @@ async function autoAttachSavedDocuments() {
     const cvTarget = chooseResumeField(form.result.elements);
     let letterTarget = null;
     let letterNote = "";
+    let reviewedLetterTextOnly = false;
     try {
       letterTarget = chooseCoverLetterField(form.result.elements);
     } catch (error) {
@@ -878,10 +879,20 @@ async function autoAttachSavedDocuments() {
       } else throw error;
     }
     if (!letterTarget && isLeverFinalProvider(packet.application_url)) {
-      return {attached:0,ready:false,
-        reason:"This Lever form has no separate cover-letter PDF upload. " +
-          "The one-job two-PDF AutoApply contract cannot submit without " +
-          "both attachments. Select a supported posting or complete this one manually."};
+      // Reuse the earlier reviewed contact/letter fill instead of demanding
+      // an employer upload field that does not exist. Require one exact
+      // visible field owned by the real Lever final form, never a generic
+      // additional-information box or an altered/missing letter.
+      const [proof] = await chrome.scripting.executeScript({
+        target:{tabId:tab.id},func:verifyReviewedCoverLetterText,
+        args:[packet.application_url,tab.url,packet.fields.cover_letter]
+      });
+      if (!proof?.result?.ready) {
+        return {attached:0,ready:false,reason:proof?.result?.reason ||
+          "Reviewed letter text could not be verified; review the employer form manually."};
+      }
+      reviewedLetterTextOnly = true;
+      letterNote = "The exact reviewed cover-letter text is present in the employer form.";
     }
     const docs = [{
       kind:"cv",target:cvTarget,sha256:packet.cv_pdf_sha256,size:packet.cv_pdf_size
@@ -952,9 +963,32 @@ async function autoAttachSavedDocuments() {
       }
       attached++;
     }
+    if (reviewedLetterTextOnly) {
+      // A reactive upload handler may clear or replace letter text after the
+      // CV FileList change. Do not mark the case ready or repeat a CV upload.
+      const check = await activeTab();
+      validatePacket(currentPacketToJSON(),check.url);
+      await requireVerifiedReview(chrome.storage?.session,packet);
+      await requireFreshOwnerReview(packet);
+      if (packet !== currentPacket || check.id !== tab.id ||
+          check.url !== tab.url || await hasPriorLeverAttempt(packet)) {
+        return {attached,ready:false,reason:
+          "The employer job or reviewed applicant packet changed after CV attachment. Inspect without re-uploading."};
+      }
+      const [after] = await chrome.scripting.executeScript({
+        target:{tabId:tab.id},func:verifyReviewedCoverLetterText,
+        args:[packet.application_url,tab.url,packet.fields.cover_letter]
+      });
+      if (!after?.result?.ready) {
+        return {attached,ready:false,reason:
+          "CV was locally attached but reviewed letter text changed or disappeared. Inspect it without re-uploading."};
+      }
+    }
     return {attached,ready:attached===prepared.length,
       reason:attached+" reviewed PDF attachment(s) placed locally. " +
-      (letterNote || "Check both employer upload indicators before finishing.")};
+      (reviewedLetterTextOnly ? "Exact approved cover-letter text verified. " : "") +
+      (letterNote || "Check both employer upload indicators before finishing.") +
+      " Local placement is not employer upload acknowledgment."};
   } catch(error) {
     return {attached:0,reason:normalizeError(error)};
   }
@@ -987,8 +1021,8 @@ async function onStartAutoApply() {
     const attachment = await autoAttachSavedDocuments();
     $("uploadInfo").textContent = attachment.reason;
     if (!attachment.ready) {
-      status("The current CV and any dedicated cover-letter PDF must be attached " +
-        "to the correct employer inputs before application automation can continue. " +
+      status("The current CV upload and reviewed letter field must be verified " +
+        "before application automation can continue. " +
         (attachment.reason || "Review attachment status and resume manually."));
       return;
     }
