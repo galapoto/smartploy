@@ -285,7 +285,7 @@ test("protected employer questions remain human-only after filling a saved ordin
   assert.equal(scans,2);
   assert.equal(calls.includes("fill-approved-saved-answer"),true);
   assert.equal(calls.includes("FORBIDDEN-FINAL"),false);
-  assert.match(calls.at(-1),/sensitive employer questions/i);
+  assert.match(calls.at(-1),/new or sensitive questions/i);
 });
 
 test("declined or uncertain saved answer fill stops before rescan or employer send", async()=>{
