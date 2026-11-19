@@ -32,3 +32,10 @@
 - Regression objectives: known saved field fills despite a second new field; changed label cannot reuse an old answer; sensitive questions stay human-only; cancelled/uncertain known-answer fill stops; no final claim even after successful reinspection.
 - At documentation authoring: **SOURCE COMMITTED on feature branch**, exact-head CI **NOT VERIFIED**, production deployment **NOT VERIFIED**, actual signed-in employer form and employer receipt **NOT VERIFIED**. Update actual evidence only after checking results.
 - Production promotion continues to require exact merged-main SHA, backup-first OIDC deploy, public package and release evidence, signed-in application UI and owner-authorized employer review. Branch merge is not a live release.
+
+
+## Latest main policy and interface-copy review
+
+The feature branch merges updated `main@7f4dfba993d992de2ab109af947831bd51d06a9c` as an actual Git parent, preserving the exact new `AGENTS.md` typography/design directive without introducing a governance diff. The newer policy is `galapoto/Projects/docs/governance/TYPE_TASTE_UI_2026_11_19.md`.
+
+**Pinned guidance read:** `raintree-technology/hig-doctor@a0f1e4ec3c5ada82e538710b54a344db63189d8b`, `skills/hig-foundations/SKILL.md` and `references/writing.md` (clear, action-oriented user feedback, explicit next step); `wondelai/skills@c5265583b1a9740f06831e1d3e89b35bba3eb430`, `plugins/ux-design/skills/web-typography/SKILL.md` (readability constraints, not used to change font styling). **GUIDANCE_APPLIED:** the existing popup status message is shortened to say that saved answers were filled, remaining questions require review, and no application was submitted. All existing `role=status` and focus/copy semantics remain unchanged. No CSS, font, asset, color, motion or responsive behavior changed, so visual metrics and snapshots are **NOT_MEASURED / NOT_APPLICABLE** to this text-only delta. We did not execute or install an external design runtime or copy any Apple assets.
