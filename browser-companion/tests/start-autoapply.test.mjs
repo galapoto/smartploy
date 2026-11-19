@@ -266,7 +266,7 @@ test("mixed employer questions use unchanged saved answers, rescan, and never cl
   ]);
   assert.equal(scans,2);
   assert.equal(calls.some(x=>x.startsWith("FORBIDDEN")),false);
-  assert.match(calls.at(-1),/previously approved ordinary answers were filled/i);
+  assert.match(calls.at(-1),/saved answers filled/i);
 });
 
 test("protected employer questions remain human-only after filling a saved ordinary answer", async()=>{
