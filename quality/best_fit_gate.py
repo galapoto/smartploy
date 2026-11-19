@@ -3,12 +3,86 @@
 import argparse
 import json
 import pathlib
+import subprocess
 import sys
 
 POLICY = 'BEST-FIT-TECH-001'
 AGENT_PATHS = ('AGENTS.md', 'CLAUDE.md', 'GEMINI.md',
                '.github/copilot-instructions.md', '.cursor/rules/best-fit-tech.mdc')
 CHECKS = ('functional', 'security', 'recovery', 'visual', 'accessibility', 'performance')
+
+CODE_EXTENSIONS = frozenset((
+    '.py', '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.html', '.css',
+    '.go', '.rs', '.c', '.h', '.cpp', '.hpp', '.java', '.kt', '.swift',
+    '.vue', '.svelte', '.sql', '.sh', '.tf', '.toml',
+))
+EXEMPT_PREFIXES = ('docs/', 'quality/', 'tests/', 'templates/',
+                   '.github/', '.woodpecker/', '.cursor/', 'test/',
+                   'scripts/bootstrap_best_fit.py')
+EXEMPT_FILES = frozenset(('AGENTS.md', 'CLAUDE.md', 'GEMINI.md',
+                          'README.md', 'LICENSE', '.gitignore'))
+CODE_BASENAMES = frozenset(('Dockerfile', 'Containerfile', 'package.json',
+                            'package-lock.json', 'go.mod', 'Cargo.toml'))
+
+
+def is_product_code(value):
+    """Exclude policy-only changes but detect actual product/runtime changes."""
+    if not isinstance(value, str) or not value or value.startswith('/'):
+        return False
+    path = pathlib.PurePosixPath(value)
+    if '..' in path.parts or value in EXEMPT_FILES:
+        return False
+    if any(value.startswith(prefix) for prefix in EXEMPT_PREFIXES):
+        return False
+    return path.suffix.lower() in CODE_EXTENSIONS or path.name in CODE_BASENAMES
+
+
+def git_changed_files(root, base):
+    """Compute full PR source difference; missing/untrusted merge base fails closed."""
+    if not isinstance(base, str) or not base or base.startswith('-') or any(c.isspace() for c in base):
+        raise ValueError('invalid git base ref')
+    cmd = ['git', '-C', str(root), 'diff', '--name-only',
+           '--diff-filter=ACMR', base + '...HEAD', '--']
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=30)
+    if result.returncode != 0:
+        raise ValueError('git base not available; fetch approved base before gate: ' + result.stderr.strip()[:250])
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def check_changed_components(root, changed, evidence_dir='quality/evidence'):
+    """Require complete per-feature evidence for every changed application code path."""
+    changes = sorted({path for path in changed if is_product_code(path)})
+    if not changes:
+        return []
+    folder = root / evidence_dir
+    if not folder.is_dir():
+        return ['PRODUCT_CHANGE_WITHOUT_EVIDENCE_DIR: ' + ', '.join(changes)]
+    declared = set()
+    errors = []
+    for item in sorted(folder.rglob('*.json')):
+        rel = item.relative_to(root).as_posix()
+        if item.is_symlink():
+            errors.append('EVIDENCE_SYMLINK_FORBIDDEN: ' + rel)
+            continue
+        try:
+            doc = json.loads(item.read_text(encoding='utf-8'))
+        except (OSError, ValueError) as exc:
+            errors.append('INVALID_EVIDENCE_JSON: ' + rel + ': ' + str(exc))
+            continue
+        paths = doc.get('changed_files') if isinstance(doc, dict) else None
+        if not isinstance(paths, list) or not paths:
+            errors.append('MISSING_CHANGED_FILES: ' + rel)
+            continue
+        related = [path for path in paths if path in changes]
+        if not related:
+            continue
+        errors.extend(rel + ': ' + problem for problem in check_evidence(root, rel))
+        declared.update(related)
+    missing = sorted(set(changes) - declared)
+    if missing:
+        errors.append('PRODUCT_FILES_WITHOUT_VERIFIED_EVIDENCE: ' + ', '.join(missing))
+    return errors
+
 
 
 def check_repo(root):
@@ -105,13 +179,23 @@ def main(argv=None):
     p.add_argument('--root', default='.')
     p.add_argument('--evidence', help='relative JSON evidence file for one component')
     p.add_argument('--bootstrap-only', action='store_true')
+    p.add_argument('--git-base', help='full PR base ref for automatic source-change evidence verification')
+    p.add_argument('--changed-file', action='append', default=[], help='additional explicit changed code path')
     args = p.parse_args(argv)
     root = pathlib.Path(args.root).resolve()
     errors = check_repo(root)
     if args.evidence:
         errors.extend(check_evidence(root, args.evidence))
-    elif not args.bootstrap_only:
-        errors.append('EVIDENCE_REQUIRED: pass --evidence, or --bootstrap-only for repository adoption')
+    changed = list(args.changed_file)
+    if args.git_base:
+        try:
+            changed.extend(git_changed_files(root, args.git_base))
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            errors.append('UNVERIFIED_GIT_BASE: ' + str(exc))
+    if changed:
+        errors.extend(check_changed_components(root, changed))
+    if not args.evidence and not args.bootstrap_only and not args.git_base and not changed:
+        errors.append('EVIDENCE_REQUIRED: pass --evidence, --git-base or --changed-file, or explicitly --bootstrap-only')
     print(json.dumps({'policy': POLICY, 'result': 'PASS' if not errors else 'FAIL',
                       'root': str(root), 'errors': errors}, sort_keys=True))
     return 0 if not errors else 1
