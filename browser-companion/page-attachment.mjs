@@ -193,3 +193,83 @@ export async function attachReviewedPdf(payload) {
     return { status: "ambiguous", reason: "Attachment may have triggered employer processing. Inspect the page before doing anything else." };
   }
 }
+
+
+/* SP-V4-ONE-PROFILE-APPLY-001: read-only, exact approved letter text proof.
+   Chrome serializes this standalone function into an employer tab. It never
+   writes, uploads, calls a network API or consumes final-submit permission.
+   A text fallback is valid only if the employer has NO dedicated letter
+   upload field and the reviewed text is visibly present in the ONE final
+   Lever form, with its original exact account-approved value. */
+export function verifyReviewedCoverLetterText(applicationUrl, inspectedUrl, approvedText) {
+  const deny = (reason) => ({ready:false,reason});
+  if (typeof approvedText !== "string" || approvedText.trim().length < 60 ||
+      approvedText.length > 10000 || typeof inspectedUrl !== "string") {
+    return deny("Approved cover-letter text is missing or invalid.");
+  }
+  let here, intended;
+  try {
+    here = new URL(location.href);
+    intended = new URL(applicationUrl);
+  } catch { return deny("Employer application URL is invalid."); }
+  const posting = intended.pathname.replace(/\/apply\/?$/, "").replace(/\/+$/, "");
+  if (location.href !== inspectedUrl || here.protocol !== "https:" ||
+      intended.protocol !== "https:" ||
+      !["jobs.lever.co","jobs.eu.lever.co"].includes(here.hostname) ||
+      here.origin !== intended.origin || here.search || here.hash ||
+      intended.search || intended.hash ||
+      here.username || here.password || intended.username || intended.password ||
+      here.port || intended.port ||
+      !/^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(posting) ||
+      ![posting+"/apply",posting+"/apply/"].includes(here.pathname) ||
+      (typeof window !== "undefined" && window.top !== window.self)) {
+    return deny("Selected employer job or browser context changed.");
+  }
+  const visible = (el) => Boolean(el && !el.closest?.("[hidden],[aria-hidden='true'],[inert]") &&
+    getComputedStyle(el).display !== "none" &&
+    getComputedStyle(el).visibility !== "hidden" &&
+    el.getClientRects().length > 0);
+  const submitButtons = Array.from(document.querySelectorAll('button,input[type="submit"]'))
+    .filter(el => visible(el) && !el.disabled &&
+      ["submit application","send application","lähetä hakemus","skicka ansökan"]
+        .includes(String(el.innerText || el.value || el.getAttribute("aria-label") || "")
+          .replace(/\s+/g, " ").trim().toLowerCase()));
+  if (submitButtons.length !== 1) {
+    return deny("Unique employer submission form could not be identified.");
+  }
+  const form = submitButtons[0].closest("form");
+  if (!form || !visible(form)) return deny("Reviewed employer form is unavailable.");
+  const all = Array.from(document.querySelectorAll("input,textarea,select"));
+  if (all.length > 250) return deny("Employer form exceeds the safe field limit.");
+  const labelFor = (el) => String(el.labels?.[0]?.innerText ||
+    el.getAttribute("aria-label") ||
+    (el.id ? document.querySelector('label[for="'+CSS.escape(el.id)+'"]')?.innerText : "") ||
+    el.getAttribute("placeholder") || el.name || el.id || "").trim().slice(0,150);
+  const approvedLetterField = (el) => {
+    const meaning = [labelFor(el),el.name,el.id].join(" ")
+      .normalize("NFKC").replace(/([a-z0-9])([A-Z])/g,"$1 $2")
+      .replace(/[^\p{L}\p{N}]+/gu," ").toLowerCase().trim();
+    return /(^|\s)(cover letter|application letter|motivation letter|saatekirje|hakemuskirje|personligt brev)(\s|$)/u.test(meaning) &&
+      !/(^|\s)(cv|resume|résumé|passport|identity|photo|reference|salary|visa|consent|privacy|attestation|signature|disability)(\s|$)/u.test(meaning);
+  };
+  // A dedicated letter input must use the separately reviewed PDF, even when
+  // it is hidden, disabled, occupied, or owned by another form.
+  if (all.some(el => el.type === "file" && approvedLetterField(el))) {
+    return deny("Employer provides a separate cover-letter upload; use the reviewed PDF.");
+  }
+  const candidates = all.filter(el =>
+    (el.tagName === "TEXTAREA" ||
+      (el.tagName === "INPUT" && (el.type || "").toLowerCase() === "text")) &&
+    approvedLetterField(el));
+  if (candidates.length !== 1) {
+    return deny("An exact unique employer cover-letter text field was not found.");
+  }
+  const field = candidates[0];
+  if (!visible(field) || field.disabled || field.matches(":disabled") ||
+      field.readOnly || !field.isConnected || field.form !== form ||
+      field.closest("form") !== form || !String(field.name || "").trim() ||
+      String(field.value || "").trim() !== approvedText.trim()) {
+    return deny("Approved cover-letter text is missing, altered, or not in the submitted form.");
+  }
+  return {ready:true,mode:"reviewed_cover_letter_text"};
+}

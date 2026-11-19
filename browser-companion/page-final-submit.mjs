@@ -192,11 +192,18 @@ export async function submitReviewedLeverOnce(expected) {
       return fail("reviewed_cover_letter_changed_or_unverifiable");
     }
   }
-  // The ONE-JOB acceptance contract requires actual current CV AND letter
-  // PDFs in distinct employer file controls; prose cannot silently replace a
-  // separately approved attachment merely because its text matches.
-  if (hasReviewedLetter && !attachedLetter) {
-    return fail("reviewed_cover_letter_pdf_missing");
+  // A dedicated employer letter upload remains mandatory when it exists.
+  // If no such input exists, allow ONLY one named, visible, enabled text
+  // control owned by the exact submitted form with the full current reviewed
+  // letter. The packet's PDF digest remains bound even in text-only ATS.
+  const reviewedLetterTextOnly = hasReviewedLetter && !letterFileInput &&
+    letterTexts.length === 1 && visible(letterTexts[0]) &&
+    letterTexts[0].form === form && !letterTexts[0].disabled &&
+    !letterTexts[0].matches?.(":disabled") && !letterTexts[0].readOnly &&
+    Boolean(String(letterTexts[0].name || "").trim()) &&
+    String(letterTexts[0].value || "").trim() === expected.cover_letter.trim();
+  if (hasReviewedLetter && !attachedLetter && !reviewedLetterTextOnly) {
+    return fail("reviewed_cover_letter_pdf_missing_or_text_changed");
   }
   if (attachedLetter && (
     !visible(letterFileInput) || !submittedFileControl(letterFileInput) ||
@@ -336,6 +343,11 @@ export async function submitReviewedLeverOnce(expected) {
       (letterTexts.length === 1 &&
        String(letterTexts[0].value || "").trim() &&
        String(letterTexts[0].value || "").trim() !== expected.cover_letter.trim()) ||
+      (reviewedLetterTextOnly &&
+       (!visible(letterTexts[0]) || letterTexts[0].form !== form ||
+        letterTexts[0].disabled || letterTexts[0].matches?.(":disabled") ||
+        letterTexts[0].readOnly || !String(letterTexts[0].name || "").trim() ||
+        String(letterTexts[0].value || "").trim() !== expected.cover_letter.trim())) ||
       (attachedLetter && (
         letterFileInput?.files?.length !== 1 ||
         letterFileInput.files[0] !== attachedLetter

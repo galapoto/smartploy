@@ -33,7 +33,8 @@ async function withFakeEmployer({
   mutateDuringCvRead = null, reviewedLetterAttached = false,
   approveLetter = false, reviewedLetterBytes = letterPdf,
   formTarget = "", buttonFormTarget = "", baseTarget = "",
-  requiredRadioChoice = null,
+  requiredRadioChoice = null, noLetterFileField = false,
+  textForeignForm = false, textDisabled = false, textNameless = false,
   cvDisabled = false, letterDisabled = false,
   cvForeignForm = false, letterForeignForm = false,
   cvAncestorDisabled = false, letterAncestorDisabled = false,
@@ -95,6 +96,7 @@ async function withFakeEmployer({
       }] : [],
       labels:[{innerText:"Cover letter"}]}),
   ];
+  if (noLetterFileField) inputs.pop(); // No PDF field exists on this ATS job.
   const form = {
     closest: () => null, getClientRects: () => [{}],
     querySelectorAll: () => inputs,
@@ -106,14 +108,19 @@ async function withFakeEmployer({
   // Real HTMLInputElement.form can differ from its DOM ancestor via the
   // "form" attribute. Model actual submission ownership for both PDF files.
   for(const element of inputs) element.form=form;
+  inputs[2].name=textNameless ? "" : "coverLetterText";
+  inputs[2].disabled=textDisabled;
+  if(textForeignForm) inputs[2].form={};
   inputs[3].name=cvNameless ? "" : "resume";
-  inputs[9].name=letterNameless ? "" : "coverLetter";
   inputs[3].matches=(selector)=>selector === ":disabled" && cvAncestorDisabled;
-  inputs[9].matches=(selector)=>selector === ":disabled" && letterAncestorDisabled;
   inputs[3].disabled=cvDisabled;
-  inputs[9].disabled=letterDisabled;
   if(cvForeignForm) inputs[3].form={};
-  if(letterForeignForm) inputs[9].form={};
+  if(!noLetterFileField){
+    inputs[9].name=letterNameless ? "" : "coverLetter";
+    inputs[9].matches=(selector)=>selector === ":disabled" && letterAncestorDisabled;
+    inputs[9].disabled=letterDisabled;
+    if(letterForeignForm) inputs[9].form={};
+  }
   const button = {
     innerText: submitLabel,
     disabled: false,
@@ -424,4 +431,55 @@ test("stable Finnish and Swedish Lever job applications permit only one reviewed
     assert.equal(r.clicks, 1);
     assert.equal(r.repeated.attempted, false);
   }
+});
+
+
+test("V4 Lever text-only field is accepted with exact reviewed letter and current CV PDF",async()=>{
+  const r=await withFakeEmployer({
+    approveLetter:true,noLetterFileField:true,
+    letterValue:letter,usePinnedSnapshot:true
+  });
+  assert.equal(r.result.attempted,true,r.result.reason);
+  assert.equal(r.clicks,1);
+  assert.equal(r.result.provider_acknowledged,false);
+  assert.equal(r.repeated.reason,"employer_form_already_attempted");
+});
+
+test("text-only fallback never guesses, changes a cover letter or borrows another form",async()=>{
+  for(const config of [
+    {letterValue:""},
+    {letterValue:"A different employer-controlled motivation letter"},
+    {textForeignForm:true},
+    {textDisabled:true},
+    {textNameless:true},
+    {approveLetter:false,letterValue:""},
+  ]){
+    const r=await withFakeEmployer({
+      approveLetter:true,noLetterFileField:true,...config
+    });
+    assert.equal(r.result.attempted,false,JSON.stringify(config));
+    assert.equal(r.clicks,0,JSON.stringify(config));
+    assert.equal(r.marker,false,JSON.stringify(config));
+  }
+});
+
+test("reviewed text-only letter changed during CV hashing never consumes employer attempt",async()=>{
+  const r=await withFakeEmployer({
+    approveLetter:true,noLetterFileField:true,letterValue:letter,
+    mutateDuringCvRead:(inputs)=>{inputs[2].value="Late employer edit";}
+  });
+  assert.equal(r.result.attempted,false);
+  assert.equal(r.result.reason,"employer_form_changed");
+  assert.equal(r.clicks,0);
+  assert.equal(r.marker,false);
+});
+
+test("an existing but empty employer letter PDF input cannot be bypassed with matching text",async()=>{
+  const r=await withFakeEmployer({
+    approveLetter:true,noLetterFileField:false,letterValue:letter,
+    reviewedLetterAttached:false,
+  });
+  assert.equal(r.result.attempted,false);
+  assert.match(r.result.reason,/reviewed_cover_letter_pdf_missing/);
+  assert.equal(r.clicks,0);
 });

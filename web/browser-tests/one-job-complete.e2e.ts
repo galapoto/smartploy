@@ -26,9 +26,13 @@ const ANSWER="The employer's careers page";
 async function injectModule(page:Page,path:string,exportSignature:string,globalName:string) {
   const src=await readFile(new URL(path,import.meta.url),"utf8");
   expect(src.includes(exportSignature)).toBe(true);
+  // The existing reviewed PDF module now exports both the PDF uploader
+  // and a read-only letter-text check. Strip only ESM function export tokens
+  // before injecting in a classic browser script; preserve source behavior.
+  const plain=src.replace(/\bexport (?=(?:async )?function\b)/g,"");
+  const fn=exportSignature.replace(/^export /,"");
   await page.addScriptTag({
-    content:src.replace(exportSignature,
-      "window."+globalName+" = "+exportSignature.replace(/^export /,""))
+    content:plain.replace(fn,"window."+globalName+" = "+fn)
   });
 }
 
@@ -258,4 +262,91 @@ test("ONE job: saved profile→field fill→two PDF attachments→answers→revi
   expect(retry.attempted).toBe(false);
   submitClicks=await page.evaluate(()=> (window as any).employerSubmitClicks);
   expect(submitClicks).toBe(1);
+});
+
+
+test("ONE Lever form without letter upload: reviewed letter TEXT + exact CV PDF reach final dry-run, no send",async({page})=>{
+  let employerSubmits=0;
+  await page.route("**/*",async route=>{
+    if(route.request().url()!==JOB) {
+      await route.abort();
+      return;
+    }
+    await route.fulfill({status:200,contentType:"text/html",body:
+      '<!doctype html><html><body><form id="application" method="post">'+
+      '<label for="applicant_name">Full name</label>'+
+      '<input id="applicant_name" name="fullName" autocomplete="name" required />'+
+      '<label for="applicant_email">Email</label>'+
+      '<input id="applicant_email" name="email" type="email" autocomplete="email" required />'+
+      '<label for="cover_letter_text">Cover letter</label>'+
+      '<textarea id="cover_letter_text" name="coverLetterText" required></textarea>'+
+      '<label for="resume_file">CV / Résumé</label>'+
+      '<input id="resume_file" name="resume" type="file" accept="application/pdf" required />'+
+      '<button type="submit">Submit application</button></form>'+
+      '<script>window.employerSubmits=0;document.querySelector("form")'+
+      '.addEventListener("submit",e=>{e.preventDefault();window.employerSubmits++;});</script>'+
+      '</body></html>'
+    });
+  });
+  await page.goto(JOB);
+  const popupSrc=await readFile(new URL("../../browser-companion/popup.mjs",import.meta.url),"utf8");
+  await injectPopupFunction(page,popupSrc,"function inspectForm() {",
+    "\n/* Strictly fill only","inspectForm");
+  await injectPopupFunction(page,popupSrc,"async function fillPlanned(",
+    "\nfunction inspectFinalSubmit(","fillPlanned");
+  await injectModule(page,"../../browser-companion/page-attachment.mjs",
+    "export async function attachReviewedPdf(","attachReviewedPdf");
+  await injectModule(page,"../../browser-companion/page-attachment.mjs",
+    "export function verifyReviewedCoverLetterText(","verifyReviewedCoverLetterText");
+  await injectModule(page,"../../browser-companion/page-final-submit.mjs",
+    "export async function submitReviewedLeverOnce(","submitReviewedLeverOnce");
+  const before=await page.evaluate(()=>(window as any).inspectForm());
+  const packet={fields:{full_name:NAME,email:EMAIL,cover_letter:LETTER_TEXT}};
+  const planned=planFields(before.elements,packet as any);
+  expect(planned.actions.map(x=>x.key).sort()).toEqual(
+    ["cover_letter","email","full_name"]);
+  const filled=await page.evaluate(async ({actions,url})=>
+    (window as any).fillPlanned(actions,url),{actions:planned.actions,url:JOB});
+  expect(filled.blocker).toBe("");
+  expect(filled.filled).toBe(3);
+  const letterReady=await page.evaluate(({url,text})=>
+    (window as any).verifyReviewedCoverLetterText(url,url,text),{
+      url:JOB,text:LETTER_TEXT
+    });
+  expect(letterReady.ready,letterReady.reason).toBe(true);
+  const cvTarget=chooseResumeField(before.elements);
+  const upload=await page.evaluate(v=>
+    (window as any).attachReviewedPdf(v),{
+      application_url:JOB,inspected_url:JOB,...cvTarget,kind:"cv",
+      file_name:"SmartPloy-CV.pdf",size:CV.length,
+      sha256:sha(CV),base64:CV.toString("base64")
+    });
+  expect(upload.status,upload.reason).toBe("attached_locally");
+  const stillReady=await page.evaluate(({url,text})=>
+    (window as any).verifyReviewedCoverLetterText(url,url,text),{
+      url:JOB,text:LETTER_TEXT
+    });
+  expect(stillReady.ready,stillReady.reason).toBe(true);
+  const binding={
+    application_url:JOB,cv_pdf_sha256:sha(CV),cv_pdf_size:CV.length,
+    letter_pdf_sha256:sha(LETTER),letter_pdf_size:LETTER.length,
+    email:EMAIL,full_name:NAME,cover_letter:LETTER_TEXT
+  };
+  const dry=await page.evaluate(v=>
+    (window as any).submitReviewedLeverOnce({...v,dry_run:true}),binding);
+  expect(dry.preflight_ready,dry.reason).toBe(true);
+  expect(await page.evaluate(()=>(window as any).employerSubmits)).toBe(0);
+  await page.locator("#cover_letter_text").fill("Changed after review");
+  const changed=await page.evaluate(({v,sha})=>
+    (window as any).submitReviewedLeverOnce({
+      ...v,dry_run:true,expected_form_snapshot_sha256:sha
+    }),{v:binding,sha:dry.form_snapshot_sha256});
+  expect(changed.preflight_ready).not.toBe(true);
+  const rejected=await page.evaluate(({url,text})=>
+    (window as any).verifyReviewedCoverLetterText(url,url,text),{
+      url:JOB,text:LETTER_TEXT
+    });
+  expect(rejected.ready).toBe(false);
+  expect(await page.evaluate(()=>(window as any).employerSubmits)).toBe(0);
+  expect(employerSubmits).toBe(0);
 });

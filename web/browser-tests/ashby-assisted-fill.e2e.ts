@@ -52,7 +52,7 @@ async function setup(page:Page) {
   await page.addScriptTag({content:questions+"\nwindow.fillReviewedAnswers=fillReviewedAnswers;"});
   const attachment=(await readFile(
     new URL("../../browser-companion/page-attachment.mjs",import.meta.url),"utf8"
-  )).replace("export async function attachReviewedPdf","async function attachReviewedPdf");
+  )).replace(/\bexport (?=(?:async )?function\b)/g,"");
   await page.addScriptTag({content:attachment+"\nwindow.attachReviewedPdf=attachReviewedPdf;"});
   return ()=>outside;
 }
