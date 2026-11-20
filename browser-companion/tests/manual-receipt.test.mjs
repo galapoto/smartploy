@@ -370,6 +370,15 @@ test("SP47 an old form inspection cannot reopen mutations after a newer receipt"
   let formReturned = false;
   const pending = new Promise(resolve => { release = resolve; });
   globalThis.chrome.scripting.executeScript = async request => {
+    if(request.func.name==="inspectOwnWorkspaceOnSmartPloy"){
+      // A second SmartPloy tab is allowed only after the real popup
+      // probes the exact account-owned workspace, revision and job.
+      ui.state.scripts.push(request);
+      assert.equal(request.target.tabId,3);
+      assert.equal(request.args[0].workspace_id,ui.original.workspace_id);
+      assert.equal(request.args[0].application_url,ui.original.application_url);
+      return [{frameId:0,result:{owner_verified:true}}];
+    }
     if(request.func.name==="readOneJobFinalActionReadinessOnSmartPloy"){
       ui.state.scripts.push(request);
       assert.equal(request.target.tabId,3);
@@ -404,6 +413,7 @@ test("SP47 an old form inspection cannot reopen mutations after a newer receipt"
     await new Promise(resolve => setImmediate(resolve));
   }
   assert.deepEqual(ui.state.scripts.map(call=>call.func.name),[
+    "inspectOwnWorkspaceOnSmartPloy",
     "readOneJobFinalActionReadinessOnSmartPloy","inspectForm","inspectReceipt"
   ]);
   assert.equal(ui.state.externalRequests, 0);
