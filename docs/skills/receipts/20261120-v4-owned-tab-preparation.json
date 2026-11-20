@@ -9,7 +9,9 @@
         "browser-companion/popup.mjs",
         "browser-companion/tests/owner-tab-selection.test.mjs",
         "browser-companion/tests/real-receipt-save.test.mjs",
-        "browser-companion/tests/manual-receipt.test.mjs"
+        "browser-companion/tests/manual-receipt.test.mjs",
+        "browser-companion/page-workspace-owner.mjs",
+        "browser-companion/manifest.json"
       ],
       "skills": [
         {
@@ -32,9 +34,53 @@
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "The multi-tab owner-selection defect and full authority boundary are visible in owned first-party popup/page-review, workspace API and current browser tests; no comparable opaque program or reconstructed source is needed.",
       "measured_seconds": "NOT_MEASURED",
-      "applied_method": "Applied TDD to the REAL popup: initial source at 55b0878164533005c4771728af36e98e5f8ea74e returned 'Keep exactly one signed-in SmartPloy tab' and multiple new Node tests failed in GitHub Actions RED run 1507. Minimal change now checks signed-in exact owner/workspace/revision/job per first-party tab; reuses existing server-reviewed packet proof for sensitive PDF/form writes, returns only owner_tab_id for document reads, and keeps one-use gates, manual review and signed-in receipt persistence unchanged. No new host permission or third-party dependency. Updated two existing receipt tests for the renamed readiness helper, distinguishing safe isolated-world owner GETs from popup-side fetching and proving the old receipt/inspection race remains protected. Corrected a synthetic VM fixture missing its standard URL global rather than weakening the browser checks.",
-      "reuse_provenance": "COPIED none; ADAPTED first-party galapoto/smartploy@55b0878164533005c4771728af36e98e5f8ea74e browser-companion/popup.mjs::signedInAppTab,requireFreshOwnerReview,autoAttachSavedDocuments,inspectOwnFinalActionReadiness plus new pure isolated owner/workspace probe. REUSED unchanged page-review.mjs::verifyReviewOnSmartPloy, page-document-fetch.mjs::readOwnReviewedPdf and smartploy/api.py::get_application_workspace. NEW Node regression tests. No donor code imported; no REA reconstruction.",
-      "tests": "Observed initial RED GitHub Actions run 1507 web: old singleton-tab error. After production patch GH run 1510 web: 170/173 pass; diagnosed 3 failures (1 new VM URL mock, 1 legacy receipt source-function locator, 1 legacy race fixture missing new exact owner proof). Fixed tests at their true boundaries, without weakening employer or account constraints. Follow-up exact-head full GitHub Actions and Woodpecker CI pending; signed-in employer NOT_VERIFIED."
+      "applied_method": "Applied TDD to the REAL popup: initial source at 55b0878164533005c4771728af36e98e5f8ea74e returned 'Keep exactly one signed-in SmartPloy tab' and multiple new Node tests failed in GitHub Actions RED run 1507. Minimal change now checks signed-in exact owner/workspace/revision/job per first-party tab; reuses existing server-reviewed packet proof for sensitive PDF/form writes, returns only owner_tab_id for document reads, and keeps one-use gates, manual review and signed-in receipt persistence unchanged. No new host permission or third-party dependency. Updated two existing receipt tests for the renamed readiness helper, distinguishing safe isolated-world owner GETs from popup-side fetching and proving the old receipt/inspection race remains protected. Corrected a synthetic VM fixture missing its standard URL global rather than weakening the browser checks. Important security refinement from real Python CI: moved same-origin read-only fetch into standalone `browser-companion/page-workspace-owner.mjs`, keeping popup.mjs free of fetch, XHR and unsafe browser APIs. Updated reviewed extension ZIP version v0.6.3 and explicit source allowlist; no extra permission.",
+      "reuse_provenance": "COPIED none; ADAPTED first-party galapoto/smartploy@55b0878164533005c4771728af36e98e5f8ea74e browser-companion/popup.mjs::signedInAppTab,requireFreshOwnerReview,autoAttachSavedDocuments,inspectOwnFinalActionReadiness plus new pure isolated owner/workspace probe. REUSED unchanged page-review.mjs::verifyReviewOnSmartPloy, page-document-fetch.mjs::readOwnReviewedPdf and smartploy/api.py::get_application_workspace. NEW Node regression tests. No donor code imported; no REA reconstruction. ADAPTED import-only `popup.mjs`; NEW bounded standalone owner probe from existing on-origin workspace GET pattern and strict test coverage; browser manifest new v0.6.3 version.",
+      "tests": "Observed initial RED GitHub Actions run 1507 web: old singleton-tab error. After production patch GH run 1510 web: 170/173 pass; diagnosed 3 failures (1 new VM URL mock, 1 legacy receipt source-function locator, 1 legacy race fixture missing new exact owner proof). Fixed tests at their true boundaries, without weakening employer or account constraints. Follow-up exact-head full GitHub Actions and Woodpecker CI pending; signed-in employer NOT_VERIFIED. Run 1514 full Python identified the popup contains forbidden fetch (1 safety gate fail), while web/Chromium/deploy-stack were green. Split read-only owner probe into separate allowlisted ISOLATED-world module, keep popup network-free; latest exact HEAD CI pending."
+    },
+    {
+      "name": "build",
+      "paths": [
+        "web/scripts/package_companion.py"
+      ],
+      "skills": [
+        {
+          "name": "Test-driven development",
+          "repository": "https://github.com/obra/superpowers",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Regression-first: observed failing singleton tab and subsequent security gate. Reused existing package allowlist, added new first-party isolated owner probe to exact signed-off distributable; pinned version to distinguish static unpacked builds. Re-run package integration/negative tests and full CI."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Existing first-party deterministic stdlib-only Chrome MV3 ZIP packager and exact reviewed allowlist already implemented and are readable. New owner probe must be explicitly allowlisted rather than introducing another packaging framework.",
+      "measured_seconds": "NOT_MEASURED",
+      "applied_method": "Updated only the review allowlist to package the new `page-workspace-owner.mjs` first-party isolated owner probe. Preserved no external JS import, no wildcard permissions and deterministic ZIP SHA and file manifest verification. Real Python CI previously correctly rejected popup source containing fetch, so moved all read-only network operations into isolated module before release qualification.",
+      "reuse_provenance": "COPIED none; ADAPTED existing galapoto/smartploy@55b0878164533005c4771728af36e98e5f8ea74e web/scripts/package_companion.py::FILES; no new packaging tools or dependencies; INTEGRATED first-party owner-check standalone module.",
+      "tests": "tests/test_companion_package.py deterministic ZIP, same-source file list, revocation/permission negative cases; web build Node/Chromium checks and native Woodpecker. Latest full CI pending."
+    },
+    {
+      "name": "qa",
+      "paths": [
+        "tests/test_companion_package.py"
+      ],
+      "skills": [
+        {
+          "name": "Test-driven development",
+          "repository": "https://github.com/obra/superpowers",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Regression-first: observed failing singleton tab and subsequent security gate. Reused existing package allowlist, added new first-party isolated owner probe to exact signed-off distributable; pinned version to distinguish static unpacked builds. Re-run package integration/negative tests and full CI."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Existing in-repo pytest integration suite directly executes signed-off first-party packager and verifies immutable ZIP; no opaque reference or third-party skill runtime required.",
+      "measured_seconds": "NOT_MEASURED",
+      "applied_method": "Updated precise ZIP version assertion for v0.6.3 and added assertions that reviewed first-party owner module is actually packaged with exported exact read-only browser function; preserved all fail-closed permissions, icons, hashes, no external JavaScript or background service worker tests.",
+      "reuse_provenance": "COPIED none; ADAPTED first-party tests/test_companion_package.py at exact approved base SHA; no new fixture framework or donor code.",
+      "tests": "pytest -q tests/test_companion_package.py and complete native CI; initial RED shown in old Python security gate, final updated exact-head results pending."
     },
     {
       "name": "docs",
