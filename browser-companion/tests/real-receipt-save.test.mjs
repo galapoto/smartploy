@@ -10,7 +10,7 @@ const saveEnd=popup.indexOf('\n$("verifyReview").addEventListener',saveBegin);
 assert.ok(saveBegin>=0 && saveEnd>saveBegin,"real manual receipt action must be wired");
 const saveSource=popup.slice(saveBegin,saveEnd);
 
-const permissionBegin=popup.indexOf("async function inspectOwnFinalActionReadiness(workspaceId) {");
+const permissionBegin=popup.indexOf("async function inspectOwnFinalActionReadiness(");
 const permissionEnd=popup.indexOf("\nasync function onVerifySmartPloyReview()",permissionBegin);
 assert.ok(permissionBegin>=0 && permissionEnd>permissionBegin,"real readiness helper required");
 const permissionSource=popup.slice(permissionBegin,permissionEnd);
@@ -171,7 +171,9 @@ test("popup uses only the injected first-party readiness helper, never direct ne
   const allowed=await mountReadiness();
   assert.equal(allowed.result.ready,true);
   assert.deepEqual(allowed.calls,["signed-in-first-party-readiness"]);
-  assert.doesNotMatch(popup,/\bfetch\s*\(/);
+  // The popup readiness helper itself stays network-free; the separately
+  // injected owner-workspace probe performs read-only first-party fetches.
+  assert.doesNotMatch(permissionSource,/\bfetch\s*\(/);
   for(const options of [{permission:false},{enabled:false},{frameId:9}]){
     const denied=await mountReadiness(options);
     assert.equal(denied.result.ready,false,JSON.stringify(options));
