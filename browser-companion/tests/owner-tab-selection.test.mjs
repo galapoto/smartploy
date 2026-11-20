@@ -34,6 +34,7 @@ function mountSelector(probe) {
   const code=sliceBetween("async function signedInAppTab(","\n/** Read-only: learn");
   const scope={
     PacketError,isSmartPloyTab,
+    inspectOwnWorkspaceOnSmartPloy:function inspectOwnWorkspaceOnSmartPloy(){},
     chrome:{
       tabs:{query:async()=>ownerTabs},
       scripting:{executeScript:async(request)=>{
@@ -159,7 +160,7 @@ test("automatic current-PDF transfer uses matching verified tab, not a tab-count
     "\n/** One applicant-approved AutoApply preparation action");
   const calls=[];
   const scope={
-    PacketError,UploadError:class UploadError extends Error{},
+    PacketError,
     receiptOnly:false,attemptReserved:false,oneJobClaimMayExist:false,
     currentPacket:packet,targetTabId:9,inspectedUrl:job,
     chrome:{storage:{session:{}},
