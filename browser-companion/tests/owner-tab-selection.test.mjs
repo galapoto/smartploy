@@ -160,7 +160,7 @@ test("automatic current-PDF transfer uses matching verified tab, not a tab-count
     "\n/** One applicant-approved AutoApply preparation action");
   const calls=[];
   const scope={
-    PacketError,
+    URL,PacketError,
     receiptOnly:false,attemptReserved:false,oneJobClaimMayExist:false,
     currentPacket:packet,targetTabId:9,inspectedUrl:job,
     chrome:{storage:{session:{}},
