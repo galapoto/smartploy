@@ -1,0 +1,59 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "55b0878164533005c4771728af36e98e5f8ea74e",
+  "user_outcome": "A verified candidate with more than one SmartPloy tab can use the exact signed-in account owner, reviewed CV/letter and saved-question workflow for one employer application without closing safe extra tabs, while cross-account and stale-job transfers remain blocked.",
+  "components": [
+    {
+      "name": "browser",
+      "paths": [
+        "browser-companion/tests/owner-tab-selection.test.mjs"
+      ],
+      "skills": [
+        {
+          "name": "Test-driven development",
+          "repository": "https://github.com/obra/superpowers",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read this exact pinned source and writing-good-tests.md. First authored a regression against the real signedInAppTab and reviewed attachment/origin functions before touching production source, asserting owner selection, exact job/revision proof and transfer tab identity. Run RED CI then fix minimally and require exact-head GREEN."
+        },
+        {
+          "name": "Web application testing",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/webapp-testing/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Use first-party companion VM and Chromium fixtures rather than mock UI-only claims, with wrong-account, wrong-revision, stale-job, signed-out and duplicate-tab fail-closed cases. No external testing runtime executed."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "The multi-tab owner-selection defect and full authority boundary are visible in owned first-party popup/page-review, workspace API and current browser tests; no comparable opaque program or reconstructed source is needed.",
+      "measured_seconds": "NOT_MEASURED",
+      "applied_method": "Regression authored FIRST against actual popup code, verifying exact first-party account/workspace selection and refusing unrelated logged-in users; TDD RED expected until existing popup is adapted. Then rerun targeted suite and full project CI without changing submission authority.",
+      "reuse_provenance": "COPIED none; REUSED galapoto/smartploy@55b0878164533005c4771728af36e98e5f8ea74e browser-companion/popup.mjs, page-review.mjs::verifyReviewOnSmartPloy, page-document-fetch.mjs and smartploy/api.py owner-scoped workspace read; NEW test assertions; no external donor source copied.",
+      "tests": "Node browser-companion/tests/owner-tab-selection.test.mjs RED expected on original popup; then GREEN and exact-head CI are not yet verified."
+    },
+    {
+      "name": "docs",
+      "paths": [
+        "docs/v4/SP_V4_M2_MULTIPLE_OWNER_TABS_20261120.md"
+      ],
+      "skills": [
+        {
+          "name": "Test-driven development",
+          "repository": "https://github.com/obra/superpowers",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Documented the exact source-level failure, test-first RED/GREEN acceptance, provenance, negative security tests and strict release evidence. No source copied."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "This document traces the already accessible first-party source, a known failing multi-tab branch, and original V4 acceptance; no licensed external code needed.",
+      "measured_seconds": "NOT_MEASURED",
+      "applied_method": "Documented actual defect, reason it is unnecessary friction, precise owner/packet/security invariants, test-first positive/negative cases and release truth without substituting a new architecture.",
+      "reuse_provenance": "COPIED none; reviewed unchanged V4, owner/extension code at exact main SHA; wrote only evidence/acceptance prose.",
+      "tests": "scripts/check_component_skill_gate.py and merged-main CI pending; external employer receipt NOT_VERIFIED."
+    }
+  ]
+}
