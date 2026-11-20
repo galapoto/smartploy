@@ -7,7 +7,9 @@
       "name": "browser",
       "paths": [
         "browser-companion/popup.mjs",
-        "browser-companion/tests/owner-tab-selection.test.mjs"
+        "browser-companion/tests/owner-tab-selection.test.mjs",
+        "browser-companion/tests/real-receipt-save.test.mjs",
+        "browser-companion/tests/manual-receipt.test.mjs"
       ],
       "skills": [
         {
@@ -30,9 +32,9 @@
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "The multi-tab owner-selection defect and full authority boundary are visible in owned first-party popup/page-review, workspace API and current browser tests; no comparable opaque program or reconstructed source is needed.",
       "measured_seconds": "NOT_MEASURED",
-      "applied_method": "Applied TDD to the REAL popup: initial source at 55b0878164533005c4771728af36e98e5f8ea74e returned 'Keep exactly one signed-in SmartPloy tab' and multiple new Node tests failed in GitHub Actions RED run 1507. Minimal change now checks signed-in exact owner/workspace/revision/job per first-party tab; reuses existing server-reviewed packet proof for sensitive PDF/form writes, returns only owner_tab_id for document reads, and keeps one-use gates, manual review and signed-in receipt persistence unchanged. No new host permission or third-party dependency.",
+      "applied_method": "Applied TDD to the REAL popup: initial source at 55b0878164533005c4771728af36e98e5f8ea74e returned 'Keep exactly one signed-in SmartPloy tab' and multiple new Node tests failed in GitHub Actions RED run 1507. Minimal change now checks signed-in exact owner/workspace/revision/job per first-party tab; reuses existing server-reviewed packet proof for sensitive PDF/form writes, returns only owner_tab_id for document reads, and keeps one-use gates, manual review and signed-in receipt persistence unchanged. No new host permission or third-party dependency. Updated two existing receipt tests for the renamed readiness helper, distinguishing safe isolated-world owner GETs from popup-side fetching and proving the old receipt/inspection race remains protected. Corrected a synthetic VM fixture missing its standard URL global rather than weakening the browser checks.",
       "reuse_provenance": "COPIED none; ADAPTED first-party galapoto/smartploy@55b0878164533005c4771728af36e98e5f8ea74e browser-companion/popup.mjs::signedInAppTab,requireFreshOwnerReview,autoAttachSavedDocuments,inspectOwnFinalActionReadiness plus new pure isolated owner/workspace probe. REUSED unchanged page-review.mjs::verifyReviewOnSmartPloy, page-document-fetch.mjs::readOwnReviewedPdf and smartploy/api.py::get_application_workspace. NEW Node regression tests. No donor code imported; no REA reconstruction.",
-      "tests": "RED verified GitHub Actions run 1507 web job, including exact regression `Keep exactly one signed-in SmartPloy tab open`; subsequent GREEN targeted/full Node, browser, web, Python, native Woodpecker and final SHA release NOT_VERIFIED when receipt updated."
+      "tests": "Observed initial RED GitHub Actions run 1507 web: old singleton-tab error. After production patch GH run 1510 web: 170/173 pass; diagnosed 3 failures (1 new VM URL mock, 1 legacy receipt source-function locator, 1 legacy race fixture missing new exact owner proof). Fixed tests at their true boundaries, without weakening employer or account constraints. Follow-up exact-head full GitHub Actions and Woodpecker CI pending; signed-in employer NOT_VERIFIED."
     },
     {
       "name": "docs",
