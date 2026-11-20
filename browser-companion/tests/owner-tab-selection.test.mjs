@@ -73,11 +73,10 @@ test("no matching signed-in owner is fail-closed, never select another account",
 function mountWorkspaceProbe({origin="https://smartploy.komplyint.fi",
   auth=true,workspaceId=packet.workspace_id,revision=3,applicationUrl=job,
   workspaceStatus=200}={}){
-  const begin=source.indexOf("async function inspectOwnWorkspaceOnSmartPloy(");
+  const isolated=readFileSync(new URL("../page-workspace-owner.mjs",import.meta.url),"utf8");
+  const begin=isolated.indexOf("export async function inspectOwnWorkspaceOnSmartPloy(");
   assert.ok(begin>0,"real isolated-world owner/workspace probe is required");
-  const end=source.indexOf("\nasync function signedInAppTab(",begin);
-  assert.ok(end>begin,"probe must remain standalone before tab selection");
-  const code=source.slice(begin,end),requests=[];
+  const code=isolated.slice(begin).replace("export async function", "async function"),requests=[];
   const frame={};frame.top=frame;frame.self=frame;
   const scope={URL,encodeURIComponent,
     location:{origin,protocol:"https:"},window:frame,
