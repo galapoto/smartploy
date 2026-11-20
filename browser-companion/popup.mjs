@@ -470,29 +470,45 @@ async function requireFreshOwnerReview(packet) {
   const owned = (await chrome.tabs.query({
     url:["https://smartploy.komplyint.fi/*","https://smartploy.obumai.com/*"]
   })).filter(item=>item?.id && item?.url && isSmartPloyTab(item.url));
-  if (owned.length !== 1) {
-    throw new PacketError("Keep one signed-in SmartPloy tab open to check the current profile and documents.");
+  if (!owned.length) {
+    throw new PacketError(
+      "Open the SmartPloy account owning this reviewed application before transferring data.");
   }
-  const [reply] = await chrome.scripting.executeScript({
-    target:{tabId:owned[0].id},world:"ISOLATED",
-    func: verifyReviewOnSmartPloy,args:[{
-      workspace_id:packet.workspace_id,
-      expected_revision:packet.revision,
-      expected_document_sha256:packet.document_sha256,
-      expected_cv_pdf_sha256:packet.cv_pdf_sha256,
-      expected_cv_pdf_size:packet.cv_pdf_size,
-      expected_fields_sha256:await approvedFieldsSha256(packet.fields),
-      expected_application_url_sha256:await sha256Text(packet.application_url),
-      expected_letter_pdf_sha256:packet.letter_pdf_sha256,
-      expected_letter_pdf_size:packet.letter_pdf_size,
-      expected_saved_answers_sha256:approvedHash
-    }]
-  });
-  if (reply?.frameId !== 0 || !reply?.result?.review_verified ||
-      reply.result.bound_profile_and_letter !== true) {
-    throw new PacketError("The approved profile or CV/letter is stale. Return to SmartPloy and review it again.");
+  // An open first-party tab is NOT proof of account ownership. Match the
+  // current reviewed packet via the existing owner-scoped API on each tab.
+  // This permits multiple legitimate tabs without ever selecting by order.
+  const binding = {
+    workspace_id:packet.workspace_id,
+    expected_revision:packet.revision,
+    expected_document_sha256:packet.document_sha256,
+    expected_cv_pdf_sha256:packet.cv_pdf_sha256,
+    expected_cv_pdf_size:packet.cv_pdf_size,
+    expected_fields_sha256:await approvedFieldsSha256(packet.fields),
+    expected_application_url_sha256:await sha256Text(packet.application_url),
+    expected_letter_pdf_sha256:packet.letter_pdf_sha256,
+    expected_letter_pdf_size:packet.letter_pdf_size,
+    expected_saved_answers_sha256:approvedHash
+  };
+  for (const tab of owned) {
+    try {
+      const [reply] = await chrome.scripting.executeScript({
+        target:{tabId:tab.id},world:"ISOLATED",
+        func:verifyReviewOnSmartPloy,args:[binding]
+      });
+      if (reply?.frameId === 0 && reply?.result?.review_verified === true &&
+          reply.result.bound_profile_and_letter === true) {
+        // Internal tab routing metadata only: never saved or returned to
+        // the employer. The verdict itself still contains no private facts.
+        return {...reply.result,owner_tab_id:tab.id};
+      }
+    } catch {
+      // A closed/signed-out tab is not a reason to reject another tab that
+      // can prove this EXACT account, revision and document fingerprints.
+    }
   }
-  return reply.result;
+  throw new PacketError(
+    "No signed-in SmartPloy tab verifies this exact reviewed application. " +
+    "Open the correct account and review the current CV and letter again.");
 }
 
 /** One exact reviewed form binding for both harmless preflight and final click.
@@ -538,24 +554,87 @@ async function finalOneJobClaimBinding(packet) {
   };
 }
 
-async function signedInAppTab() {
+/** Isolated-world READ-ONLY owner check, usable even AFTER a claimed final
+ * employer attempt when a previous pending review may no longer exist.
+ * Return one boolean, never the account, job details, document or session.
+ */
+async function inspectOwnWorkspaceOnSmartPloy(spec) {
+  const denied=()=>({owner_verified:false});
+  if (!spec || typeof spec !== "object" ||
+      !/^kit-[a-f0-9]{30}$/.test(spec.workspace_id || "") ||
+      !Number.isInteger(spec.revision) || spec.revision < 1 ||
+      typeof spec.application_url !== "string" ||
+      spec.application_url.length < 14 || spec.application_url.length > 1500 ||
+      !["https://smartploy.komplyint.fi",
+        "https://smartploy.obumai.com"].includes(location.origin) ||
+      location.protocol !== "https:" ||
+      window.top !== window.self) return denied();
+  try {
+    const options={
+      credentials:"same-origin",cache:"no-store",redirect:"error",
+      headers:{"Accept":"application/json"}
+    };
+    const session=await fetch("/api/v1/session",options);
+    if (!session.ok) return denied();
+    const account=await session.json();
+    if (account.authenticated !== true || account.auth_source !== "oidc")
+      return denied();
+    // The existing backend GET enforces tenant ownership. Never infer
+    // ownership from a matching domain or a packet supplied by the popup.
+    const response=await fetch(
+      "/api/v1/application-workspaces/"+
+        encodeURIComponent(spec.workspace_id),options
+    );
+    if (!response.ok) return denied();
+    const workspace=(await response.json())?.workspace;
+    return {owner_verified:
+      workspace?.workspace_id === spec.workspace_id &&
+      workspace?.revision === spec.revision &&
+      workspace?.application_url === spec.application_url
+    };
+  } catch { return denied(); }
+}
+
+async function signedInAppTab(packet) {
+  if (!packet || !/^kit-[a-f0-9]{30}$/.test(packet.workspace_id || "") ||
+      !Number.isInteger(packet.revision) ||
+      typeof packet.application_url !== "string") {
+    throw new PacketError("Select an exact reviewed SmartPloy application first.");
+  }
   const items=(await chrome.tabs.query({
     url:["https://smartploy.komplyint.fi/*","https://smartploy.obumai.com/*"]
   })).filter(tab=>tab?.id && tab?.url && isSmartPloyTab(tab.url));
-  if (items.length !== 1)
-    throw new PacketError(
-      "Keep exactly one signed-in SmartPloy tab open for this application."
-    );
-  return items[0];
+  if (!items.length)
+    throw new PacketError("Open your signed-in SmartPloy application tab.");
+  for (const tab of items) {
+    try {
+      const [reply]=await chrome.scripting.executeScript({
+        target:{tabId:tab.id},world:"ISOLATED",
+        func:inspectOwnWorkspaceOnSmartPloy,
+        args:[{
+          workspace_id:packet.workspace_id,
+          revision:packet.revision,
+          application_url:packet.application_url
+        }]
+      });
+      if (reply?.frameId===0 && reply?.result?.owner_verified===true)
+        return tab;
+    } catch {
+      // Only a tab proving the signed-in owner and exact job can be chosen.
+    }
+  }
+  throw new PacketError(
+    "No signed-in SmartPloy tab owns this exact job and revision. " +
+    "Open the matching application; unrelated tabs can remain open.");
 }
 
 /** Read-only: learn whether THIS owned job can use the separate one-use
  * browser final-click gate. Missing permission must not prevent reviewed
  * field filling or an applicant's personal final Submit.
  */
-async function inspectOwnFinalActionReadiness(workspaceId) {
+async function inspectOwnFinalActionReadiness(workspaceId,packet) {
   try {
-    const firstParty = await signedInAppTab();
+    const firstParty = await signedInAppTab(packet);
     const [reply] = await chrome.scripting.executeScript({
       target:{tabId:firstParty.id}, world:"ISOLATED",
       func:readOneJobFinalActionReadinessOnSmartPloy,
@@ -686,7 +765,7 @@ async function onInspect() {
     // BEFORE rebuilding editable employer controls. Never guess from the
     // final-click enabled flag; an existing claim takes precedence.
     const remote=isLeverFinalProvider(pkt.application_url) ?
-      await inspectOwnFinalActionReadiness(pkt.workspace_id) : null;
+      await inspectOwnFinalActionReadiness(pkt.workspace_id,pkt) : null;
     if(remote && ["readiness_unavailable","sign_in_required",
         "untrusted_account_context"].includes(remote.reason)) {
       throw new PacketError("Cannot verify prior employer attempts from " +
@@ -853,7 +932,7 @@ async function autoAttachSavedDocuments() {
     const tab = await activeTab();
     validatePacket(currentPacketToJSON(),tab.url);
     await requireVerifiedReview(chrome.storage?.session,packet);
-    await requireFreshOwnerReview(packet);
+    const ownerProof=await requireFreshOwnerReview(packet);
     if (tab.id !== targetTabId || tab.url !== inspectedUrl ||
         !exactAssistedForm(tab.url,packet.application_url) ||
         await hasPriorLeverAttempt(packet)) {
@@ -901,19 +980,14 @@ async function autoAttachSavedDocuments() {
       kind:"letter",target:letterTarget,
       sha256:packet.letter_pdf_sha256,size:packet.letter_pdf_size
     });
-    const ownedTabs = (await chrome.tabs.query({
-      url:["https://smartploy.komplyint.fi/*","https://smartploy.obumai.com/*"]
-    })).filter(item=>item?.id && isSmartPloyTab(item.url));
-    if (ownedTabs.length !== 1) {
-      throw new UploadError(
-        "Keep exactly one signed-in SmartPloy tab open so " +
-        "SmartPloy can retrieve your existing CV and letter automatically."
-      );
+    if (!Number.isInteger(ownerProof.owner_tab_id) ||
+        ownerProof.owner_tab_id <= 0) {
+      throw new UploadError("Exact owner verification did not identify a valid SmartPloy tab.");
     }
     const prepared = [];
     for (const doc of docs) {
       const [reply] = await chrome.scripting.executeScript({
-        target:{tabId:ownedTabs[0].id},
+        target:{tabId:ownerProof.owner_tab_id},
         func:readOwnReviewedPdf,
         args:[{
           workspace_id:packet.workspace_id,kind:doc.kind,
@@ -1057,7 +1131,7 @@ async function onStartAutoApply() {
     // In that case, provide the useful reviewed application now instead of
     // attempting a known-denied irreversible server action.
     if (isLeverFinalProvider(currentPacket.application_url)) {
-      const readiness=await inspectOwnFinalActionReadiness(currentPacket.workspace_id);
+      const readiness=await inspectOwnFinalActionReadiness(currentPacket.workspace_id,currentPacket);
       $("finishOneJob").disabled = !readiness.ready;
       if (!readiness.ready) {
         $("finalClaimInfo").textContent =
@@ -1558,7 +1632,7 @@ async function onCompleteOneJob() {
     // Never replace the applicant-approved digest with a newer preclaim state.
     // The final executor also checks this exact digest after server reservation.
     oneJobFormSnapshotSha256=approvedFormSnapshotSha256;
-    const firstParty=await signedInAppTab();
+    const firstParty=await signedInAppTab(packet);
     const claimBinding=await finalOneJobClaimBinding(packet);
     // A missing response can mean PostgreSQL already consumed a claim.
     // Lock this job BEFORE any network operation that may commit it.
@@ -1630,7 +1704,7 @@ async function onCompleteOneJob() {
         "saved to SmartPloy. You can copy the observation below.");
       return false;
     }
-    const appTab=await signedInAppTab();
+    const appTab=await signedInAppTab(packet);
     const [result]=await chrome.scripting.executeScript({
       target:{tabId:appTab.id},world:"ISOLATED",
       func:saveOneObservedReceiptOnSmartPloy,
@@ -1854,7 +1928,7 @@ async function onSaveObservedReceipt() {
       "No employer action or retry occurs."
     )) return false;
     await verifyVisible();
-    const firstParty=await signedInAppTab();
+    const firstParty=await signedInAppTab(packet);
     await verifyVisible();
     accountWriteAttempted=true;
     const [reply]=await chrome.scripting.executeScript({
