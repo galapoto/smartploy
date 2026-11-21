@@ -63,7 +63,8 @@
     {
       "name": "qa",
       "paths": [
-        "tests/test_companion_package.py"
+        "tests/test_companion_package.py",
+        "tests/test_browser_review_bridge_contract.py"
       ],
       "skills": [
         {
@@ -78,9 +79,9 @@
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "Existing in-repo pytest integration suite directly executes signed-off first-party packager and verifies immutable ZIP; no opaque reference or third-party skill runtime required.",
       "measured_seconds": "NOT_MEASURED",
-      "applied_method": "Updated precise ZIP version assertion for v0.6.3 and added assertions that reviewed first-party owner module is actually packaged with exported exact read-only browser function; preserved all fail-closed permissions, icons, hashes, no external JavaScript or background service worker tests.",
+      "applied_method": "Updated precise ZIP version assertion for v0.6.3 and added assertions that reviewed first-party owner module is actually packaged with exported exact read-only browser function; preserved all fail-closed permissions, icons, hashes, no external JavaScript or background service worker tests. Updated existing Python security review assertion to match the actual unmodified `verifyReviewOnSmartPloy` call despite equivalent JavaScript whitespace. Preserved the full `fetch` prohibition in popup, requirement for one-use claim and exact owner review.",
       "reuse_provenance": "COPIED none; ADAPTED first-party tests/test_companion_package.py at exact approved base SHA; no new fixture framework or donor code.",
-      "tests": "pytest -q tests/test_companion_package.py and complete native CI; initial RED shown in old Python security gate, final updated exact-head results pending."
+      "tests": "pytest -q tests/test_companion_package.py and complete native CI; initial RED shown in old Python security gate, final updated exact-head results pending. Exact PR head ad4a984 GH Actions #1519 Python: 1410 passed, one failed solely due `func:` whitespace in test_browser_review_bridge_contract.py; web/Chromium/deploy-stack PASS. Corrected assertion to regular expression with exact identifier, CI new head pending."
     },
     {
       "name": "docs",
