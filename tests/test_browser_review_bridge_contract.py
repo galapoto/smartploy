@@ -6,6 +6,7 @@ can lead to a final employer action.
 """
 from pathlib import Path
 import json
+import re
 
 EXT=Path(__file__).resolve().parents[1]/"browser-companion"
 
@@ -28,7 +29,9 @@ def test_exact_existing_mv3_capabilities_and_first_party_claim_gate():
     assert "func: reserveFinalClickOnSmartPloy" in popup
     assert "func: submitReviewedLeverOnce" in popup
     assert 'disabled aria-disabled="true"' in markup
-    assert "func: verifyReviewOnSmartPloy" in popup
+    # Keep the actual first-party review gate; whitespace around a JS
+    # property colon must not control security qualification.
+    assert re.search(r"\bfunc:\s*verifyReviewOnSmartPloy\b", popup)
     assert 'world: "ISOLATED"' in popup
     assert "chrome.storage.session" in popup
     assert 'verifyReview").addEventListener' in popup
