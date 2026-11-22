@@ -29,7 +29,7 @@ FILES = (
     "logic.mjs", "upload.mjs", "questions.mjs", "page-questions.mjs",
     "adapters/approved-option.mjs", "THIRD_PARTY_LICENSES.txt",
     "page-attachment.mjs", "page-document-fetch.mjs",
-    "page-receipt-import.mjs",
+    "page-receipt-import.mjs", "page-workspace-owner.mjs",
     "page-review.mjs", "review-bridge.mjs",
     "page-final-claim.mjs", "page-final-readiness.mjs",
     "page-final-submit.mjs", "attempt-lock.mjs",
