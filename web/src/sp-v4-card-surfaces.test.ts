@@ -26,7 +26,8 @@ describe("V4 shadcn-adapted surface system", () => {
     expect(css).toContain(".flow-primary-next-copy strong");
     expect(css).toContain("background-image:none");
     expect(css).toContain("color:var(--sp-ui-muted)");
-    expect(css).toContain("border-left:3px solid var(--sp-ui-accent)");
+    expect(css).toContain("border:1px solid var(--sp-ui-accent)");
+    expect(css).not.toContain("border-left:3px solid var(--sp-ui-accent)");
   });
 
   it("preserves disabled method cards, warning/error meaning and unambiguous selection", () => {
