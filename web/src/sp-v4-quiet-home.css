@@ -1,0 +1,417 @@
+/* SmartPloy V4 / QUIET-HOME / 2026-11-23
+   Actually applied: Anthropic Frontend Design (one focal action, cut generic cards),
+   Impeccable Distill & Operate (remove excess, honest status),
+   UI/UX Pro Max (contrast, 44px targets, keyboard/mobile),
+   Taste (one section, real first-party app and no decorative assets).
+   Original SmartPloy theme tokens/fonts/React handlers reused; no donor UI copied. */
+
+/* A deliberate single-column work surface, not a dashboard or landing montage. */
+html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard {
+  width:min(100%,900px);
+  max-width:900px;
+  margin:clamp(36px,6vw,82px) auto 50px;
+  display:flex;
+  flex-direction:column;
+  gap:24px;
+  min-width:0;
+  font-family:"Manrope","Segoe UI",sans-serif;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-home {
+  min-width:0;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-hero {
+  padding:0 0 clamp(20px,3.2vw,40px);
+  margin:0;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-hero h1 {
+  font:400 clamp(44px,5.2vw,70px)/1.09 "EB Garamond",Georgia,serif;
+  letter-spacing:-.025em;
+  color:var(--sp-ui-ink);
+  margin:0;
+  text-wrap:balance;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-task {
+  background:var(--sp-ui-card);
+  border:1px solid var(--sp-ui-card-border);
+  border-radius:20px;
+  padding:clamp(26px,4.2vw,50px);
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-task h2 {
+  color:var(--sp-ui-ink);
+  font:700 clamp(25px,2.7vw,35px)/1.22 "Manrope","Segoe UI",sans-serif;
+  letter-spacing:-.035em;
+  text-wrap:balance;
+  margin:0 0 12px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-description {
+  max-width:53ch;
+  color:var(--sp-ui-muted);
+  font:400 17px/1.58 "Manrope","Segoe UI",sans-serif;
+  margin:0 0 29px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-status {
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  margin:0 0 19px;
+  font:700 14px/1.4 "Manrope","Segoe UI",sans-serif;
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-status svg {
+  color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-primary {
+  appearance:none;
+  display:inline-flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:24px;
+  min-height:56px;
+  min-width:min(100%,290px);
+  max-width:100%;
+  padding:14px 21px;
+  border-radius:11px;
+  border:1px solid var(--sp-ui-accent);
+  background:var(--sp-ui-accent);
+  color:#092335;
+  font:700 16px/1.4 "Manrope","Segoe UI",sans-serif;
+  text-align:left;
+  cursor:pointer;
+  transition:filter 150ms ease,box-shadow 150ms ease;
+}
+html[data-smartploy-theme="light"] .smartploy-app .sp-solo-primary {
+  color:white;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-primary:hover:not(:disabled) {
+  filter:brightness(1.06);
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-primary:active:not(:disabled) {
+  filter:brightness(.96);
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-primary:disabled {
+  opacity:.65;
+  cursor:not-allowed;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-links {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px 21px;
+  margin:22px 0 0;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-links button,
+html[data-smartploy-theme] .smartploy-app .sp-solo-back {
+  display:inline-flex;
+  align-items:center;
+  justify-content:flex-start;
+  gap:8px;
+  min-height:44px;
+  padding:8px 0;
+  background:transparent;
+  color:var(--sp-ui-ink);
+  border:0;
+  border-bottom:1px solid transparent;
+  text-decoration:underline;
+  text-decoration-color:var(--sp-ui-card-border);
+  text-underline-offset:5px;
+  font:600 14px/1.45 "Manrope","Segoe UI",sans-serif;
+  cursor:pointer;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-links button:hover:not(:disabled),
+html[data-smartploy-theme] .smartploy-app .sp-solo-back:hover {
+  color:var(--sp-ui-accent);
+  text-decoration-color:currentColor;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-links button:disabled {
+  opacity:.55;
+  cursor:wait;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-privacy {
+  color:var(--sp-ui-muted);
+  font-size:14px;
+  line-height:1.5;
+  margin:28px 0 0;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-home :is(
+  .sp-solo-primary,.sp-solo-links button,.sp-solo-back,.flow-start-card
+):focus-visible {
+  outline:3px solid var(--sp-ui-ring);
+  outline-offset:4px;
+}
+
+/* Step two: use the SAME certified StartChoices mode buttons in a quiet list.
+   Remove redundant progress display, nested card buttons and repeated CV state.
+   No employer send permissions, modes or document logic are changed. */
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods .flow-start {
+  width:100%;
+  max-width:none;
+  margin:0;
+  padding:0;
+  background:transparent;
+  border:0;
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods .flow-start :is(
+  .flow-start-heading,.flow-start-progress,.flow-start-ready,
+  .flow-start-cv-actions,.flow-start-method-heading,
+  .sp-clarity-secondary-actions
+) {
+  display:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-task .sp-solo-back {
+  margin:0 0 19px;
+  color:var(--sp-ui-muted);
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods .flow-start-grid.flow-start-grid-methods {
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  margin:20px 0 0;
+  padding:0;
+  gap:0;
+  border-top:1px solid var(--sp-ui-card-border);
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+.flow-start-grid-methods .flow-start-card[data-flow-mode] {
+  position:relative;
+  display:grid;
+  grid-template-columns:30px minmax(0,1fr) 22px;
+  grid-template-rows:auto auto;
+  align-items:center;
+  text-align:left;
+  gap:4px 17px;
+  min-height:90px;
+  width:100%;
+  padding:18px 5px;
+  margin:0;
+  color:var(--sp-ui-ink);
+  background:transparent;
+  background-image:none;
+  border:0;
+  border-bottom:1px solid var(--sp-ui-card-border);
+  border-radius:0;
+  box-shadow:none;
+  cursor:pointer;
+  transform:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+.flow-start-grid-methods .flow-start-card[data-featured="guided"] {
+  background:transparent;
+  border-color:var(--sp-ui-card-border);
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+.flow-start-grid-methods .flow-start-card[data-flow-mode]:hover {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  box-shadow:none;
+  transform:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+.flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:first-child {
+  grid-column:1;
+  grid-row:1 / span 2;
+  width:24px;
+  height:24px;
+  align-self:center;
+  padding:0;
+  background:transparent;
+  color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+.flow-start-grid-methods .flow-start-card[data-flow-mode] > strong {
+  grid-column:2;
+  grid-row:1;
+  font:700 17px/1.4 "Manrope","Segoe UI",sans-serif;
+  color:var(--sp-ui-ink);
+  letter-spacing:-.016em;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+.flow-start-grid-methods .flow-start-card[data-flow-mode] > span:not(.flow-card-cta):not(.flow-start-index) {
+  grid-column:2;
+  grid-row:2;
+  font:400 15px/1.47 "Manrope","Segoe UI",sans-serif;
+  color:var(--sp-ui-muted);
+  opacity:1;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+.flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:last-child {
+  grid-column:3;
+  grid-row:1 / span 2;
+  align-self:center;
+  display:block;
+  margin:0;
+  color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+.flow-start-grid-methods .flow-start-card[data-flow-mode] :is(.flow-start-index,.flow-card-cta,small) {
+  display:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-methods .flow-start-privacy {
+  font:400 14px/1.55 "Manrope","Segoe UI",sans-serif;
+  color:var(--sp-ui-muted);
+  margin:22px 0 0;
+  max-width:62ch;
+}
+
+/* Four genuine navigation destinations, with the rest one disclosure away. */
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .sp-solo-nav-more {
+  margin:8px 0 0;
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .sp-solo-nav-more > summary {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-height:44px;
+  padding:11px 12px;
+  cursor:pointer;
+  list-style:none;
+  font-size:14px;
+  color:var(--sp-ui-muted);
+  background:transparent;
+  border:1px solid transparent;
+  border-radius:10px;
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .sp-solo-nav-more > summary::-webkit-details-marker {
+  display:none;
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .sp-solo-more-chevron {
+  margin-left:auto;
+  transition:transform 160ms ease;
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .sp-solo-nav-more[open] .sp-solo-more-chevron {
+  transform:rotate(90deg);
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .sp-solo-nav-extra {
+  padding:6px 0 0 8px;
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .sp-solo-nav-more > summary:focus-visible {
+  outline:3px solid var(--sp-ui-ring);
+  outline-offset:2px;
+}
+html[data-smartploy-theme] .smartploy-app.sp126-sidebar-collapsed
+.sidebar-nav .sp-solo-nav-more > summary {
+  justify-content:center;
+}
+html[data-smartploy-theme] .smartploy-app.sp126-sidebar-collapsed
+.sidebar-nav .sp-solo-more-chevron {
+  display:none;
+}
+
+/* The top bar supports finding jobs and checking account/theme without
+   repeating location, second-brand, status and sources on the first screen.
+   ObumAI remains in the accessible "More tools" menu and original other pages. */
+html[data-smartploy-theme] .smartploy-app .site-header.sp-solo-header
+:is(.header-country,.connection-status,.obumai-brand) {
+  display:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard .sp-solo-overview {
+  width:100%;
+  max-width:100%;
+  margin-top:clamp(42px,7vw,85px);
+  border:0;
+  background:transparent;
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard .sp-solo-overview > summary {
+  width:max-content;
+  max-width:100%;
+  min-height:46px;
+  padding:8px 0;
+  font-size:14px;
+  font-weight:600;
+  color:var(--sp-ui-muted);
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard .sp-solo-overview > summary:hover {
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard .sp-solo-overview .sp-clarity-overview-body {
+  padding:18px 0;
+}
+
+/* Render honest release mismatches and upgrades clearly; a passing version
+   badge is not a task and should not compete with the main CTA. */
+html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard .release-status-aligned,
+html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard .release-status-development {
+  display:none;
+}
+
+/* Analytics never sit beside the first task; when opened, the optional
+   dashboard itself must reflow without introducing sideways scroll. */
+@media(max-width:1100px) {
+  html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard
+  .sp-clarity-overview-body .dashboard-side {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+@media(max-width:640px) {
+  html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard
+  .sp-clarity-overview-body .dashboard-side,
+  html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard
+  .sp-clarity-overview-body .stats-grid {
+    grid-template-columns:minmax(0,1fr);
+  }
+}
+
+/* No fixed width, accidental 320px overflow or disappearing actions. */
+@media(max-width:850px) {
+  html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard {
+    width:100%;
+    margin:25px auto 36px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-solo-hero {
+    padding-bottom:19px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-solo-task {
+    padding:clamp(22px,4.2vw,32px);
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-solo-hero h1 {
+    font-size:clamp(40px,7vw,58px);
+  }
+}
+@media(max-width:600px) {
+  html[data-smartploy-theme] .smartploy-app .sp-solo-hero h1 {
+    font-size:44px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-solo-task {
+    padding:22px 18px;
+    border-radius:15px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-solo-task h2 {
+    font-size:25px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-solo-description {
+    font-size:16px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-solo-primary {
+    width:100%;
+    min-width:0;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-solo-links {
+    align-items:flex-start;
+    flex-direction:column;
+    gap:1px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+  .flow-start-grid-methods .flow-start-card[data-flow-mode] {
+    grid-template-columns:26px minmax(0,1fr) 19px;
+    gap:3px 11px;
+    padding:15px 0;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+  .flow-start-grid-methods .flow-start-card[data-flow-mode] > strong {
+    font-size:15px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+  .flow-start-grid-methods .flow-start-card[data-flow-mode] > span:not(.flow-card-cta):not(.flow-start-index) {
+    font-size:14px;
+  }
+}
+@media(prefers-reduced-motion:reduce) {
+  html[data-smartploy-theme] .smartploy-app .sp-solo-primary,
+  html[data-smartploy-theme] .smartploy-app .sp-solo-methods
+  .flow-start-grid-methods .flow-start-card[data-flow-mode],
+  html[data-smartploy-theme] .smartploy-app .sidebar-nav .sp-solo-more-chevron {
+    transition:none;
+    transform:none;
+  }
+}

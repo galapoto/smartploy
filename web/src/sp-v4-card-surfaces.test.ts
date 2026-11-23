@@ -11,7 +11,9 @@ describe("V4 shadcn-adapted surface system", () => {
     const surfaces = entry.indexOf('import "./sp-v4-card-surfaces.css";');
     expect(original).toBeGreaterThanOrEqual(0);
     expect(surfaces).toBeGreaterThan(original);
-    expect(entry.slice(surfaces).trim()).toBe('import "./sp-v4-card-surfaces.css";\n\nReactDOM.createRoot(document.getElementById("root")!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);');
+    const quiet = entry.indexOf('import "./sp-v4-quiet-home.css";');
+    expect(quiet).toBeGreaterThan(surfaces);
+    expect(entry.slice(quiet).trim()).toBe('import "./sp-v4-quiet-home.css";\n\nReactDOM.createRoot(document.getElementById("root")!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);');
     expect(css).not.toContain("@import");
     expect(css).not.toContain("!important");
   });
@@ -24,7 +26,8 @@ describe("V4 shadcn-adapted surface system", () => {
     expect(css).toContain(".flow-primary-next-copy strong");
     expect(css).toContain("background-image:none");
     expect(css).toContain("color:var(--sp-ui-muted)");
-    expect(css).toContain("border-left:3px solid var(--sp-ui-accent)");
+    expect(css).toContain("border:1px solid var(--sp-ui-accent)");
+    expect(css).not.toContain("border-left:3px solid var(--sp-ui-accent)");
   });
 
   it("preserves disabled method cards, warning/error meaning and unambiguous selection", () => {

@@ -379,13 +379,20 @@ async function evidence(page: Page, filename: string) {
   await mkdir("browser-evidence", { recursive: true });
   await page.screenshot({ path: "browser-evidence/" + filename, fullPage: true });
 }
+/* The menu is a native keyboard-operable disclosure, never a hidden-action bypass. */
+async function openMoreTools(page: Page) {
+  const extra = page.locator(".sp-solo-nav-more");
+  if (!(await extra.evaluate(node => node.hasAttribute("open")))) {
+    await extra.locator("summary").click();
+  }
+}
 
 
 test("SP69: first-use Upload CV first is a working button and leads to explicit method choice", async ({ page }) => {
   const state = await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.getByRole("button", { name: /Upload CV first/i })).toBeVisible();
-  await page.getByRole("button", { name: /Upload CV first/i }).click();
+  await page.locator(".sp-solo-home").getByRole("button", { name: /Upload your CV/i }).click();
   await page.locator("input[aria-label='Select CV to upload']").setInputFiles({
     name: "Newcomer-Synthetic-CV.docx",
     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -599,7 +606,7 @@ test("SP94: private quick preparation works then Assisted/Automatic completion s
   // A fresh browser load has no remembered method, but the private
   // application survives in the owner's server-side workspace.
   await page.reload();
-  await page.getByRole("button", { name: "My applications" }).click();
+  await page.getByRole("navigation", {name:"Main navigation"}).getByRole("button", { name: "My applications" }).click();
   const resume = page.getByRole("region", { name: "Choose how to finish saved applications" });
   await expect(resume).toBeVisible();
   const methods = resume.getByRole("group", { name: "Choose application completion method" });
@@ -638,7 +645,7 @@ test("existing job-search cards open the requested assisted journey without crea
     cvFilename: "Synthetic-CV.pdf",
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Find jobs", exact: true }).click();
+  await page.getByRole("navigation", {name:"Main navigation"}).getByRole("button", { name: "Find jobs", exact: true }).click();
   const analystCard = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
   await analystCard.getByRole("button", { name: /Apply with AI/i }).click();
   await expect(page.locator(".application-flow").getByRole("heading", { name: "Apply with confidence" })).toBeVisible();
@@ -653,7 +660,7 @@ test("V4: Jobs-card AutoApply prepares and opens ONLY the selected private appli
     cvFilename: "Synthetic-CV.pdf",
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Find jobs", exact: true }).click();
+  await page.getByRole("navigation", {name:"Main navigation"}).getByRole("button", { name: "Find jobs", exact: true }).click();
   const card = page.locator(".search-result-card").filter({ hasText: "Junior Data Analyst" });
   await expect(card.getByRole("button", { name: "AutoApply" })).toBeEnabled();
   await card.getByRole("button", { name: "AutoApply" }).click();
@@ -697,7 +704,7 @@ test("SP93 production build shows all three CV-locked methods with the full side
   expect(bounds?.width).toBeGreaterThan(20);
   expect(bounds?.height).toBeGreaterThan(20);
   await expect(page.getByRole("button", { name: /Upload CV first/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Create CV from scratch/i })).toBeVisible();
+  await expect(page.locator(".sp-solo-home").getByRole("button", { name: /Create a CV/i })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Apply for jobs" })).toBeVisible();
   for (const mode of ["manual", "assisted", "automatic"]) {
@@ -721,7 +728,7 @@ test("SP93 production build shows all three CV-locked methods with the full side
 test("general browsing needs no CV; Settings switches into and out of personalized matching", async ({ page }) => {
   const state = await installSyntheticApi(page);
   await page.goto("/");
-  await page.getByRole("button", { name: /Just find jobs/i }).click();
+  await page.locator(".sp-solo-links").getByRole("button", { name: "Find jobs" }).click();
   await expect(page.getByRole("heading", { name: "IT, data & planning jobs in Finland" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await expect(page.getByText("Software Tester")).toBeVisible();
@@ -731,6 +738,7 @@ test("general browsing needs no CV; Settings switches into and out of personaliz
   expect(state.lastSave?.roles).toEqual([]);
   await evidence(page, "synthetic-general-search.png");
 
+  await openMoreTools(page);
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
   await page.getByPlaceholder(/Data analyst, Junior software tester/i).fill("Data Analyst");
@@ -741,6 +749,7 @@ test("general browsing needs no CV; Settings switches into and out of personaliz
   expect(state.preferences.roles).toEqual(["Data Analyst"]);
   await evidence(page, "synthetic-personalized-search.png");
 
+  await openMoreTools(page);
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /General job search/i }).check();
   await page.getByRole("button", { name: /Save search preferences/i }).click();
@@ -775,6 +784,7 @@ test("Settings save is not overwritten by a manual refresh during an in-flight w
 
   await page.goto("/");
   await expect(page.getByText("87% search match")).toBeVisible();
+  await openMoreTools(page);
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /General job search/i }).check();
   const readsBeforeSave = preferenceReads;
@@ -836,6 +846,7 @@ test("identity switch while search Settings PUT is in flight fails closed in the
 
   await page.goto("/");
   await expect(page.getByText("87% search match")).toBeVisible();
+  await openMoreTools(page);
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /General job search/i }).check();
   await page.getByRole("button", { name: /Save search preferences/i }).click();
@@ -860,6 +871,7 @@ test("identity switch while search Settings PUT is in flight fails closed in the
   // preferences; no stale account A save result can switch B into General.
   await page.getByRole("button", { name: /Try again/i }).click();
   await expect(page.getByText("87% search match")).toBeVisible();
+  await openMoreTools(page);
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await expect(page.getByRole("radio", { name: /Personalized jobs/i })).toBeChecked();
   await expect(page.getByPlaceholder(/Data analyst, Junior software tester/i))
@@ -872,7 +884,7 @@ test("saved private jobs do not enter ATS discovery and vanish after account swi
   });
   await page.goto("/");
   await expect(page.getByText("General listing")).toHaveCount(2);
-  await page.getByRole("button", { name: "Find jobs", exact: true }).click();
+  await page.getByRole("navigation", {name:"Main navigation"}).getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your saved opportunities" })).toBeVisible();
   await page.getByRole("button", { name: "Save job" }).first().click();
   const modal = page.getByRole("dialog", { name: "Save an opportunity" });
@@ -895,7 +907,7 @@ test("saved private jobs do not enter ATS discovery and vanish after account swi
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   await expect(page.locator(".flow-start-grid-methods .flow-start-card")).toHaveCount(3);
   await expect(page.locator('.flow-start-card[data-flow-mode="automatic"]')).toBeDisabled();
-  await page.getByRole("button", { name: "Find jobs", exact: true }).click();
+  await page.getByRole("navigation", {name:"Main navigation"}).getByRole("button", { name: "Find jobs", exact: true }).click();
   await expect(page.getByText("PRIVATE-BOOKMARK-A")).toHaveCount(0);
   await expect(page.getByText(/No private saved jobs yet/i)).toBeVisible();
   expect(state.privateSavedJobs["synthetic-user-b"]).toBeUndefined();
@@ -914,6 +926,7 @@ test("a same-email account change resets unsaved criteria and private CV details
   // keyboard-operable overview, no longer repeated beside first actions.
   await page.locator(".sp-clarity-overview > summary").click();
   await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toBeVisible();
+  await openMoreTools(page);
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
   await page.getByPlaceholder(/Data analyst, Junior software tester/i).fill("UNSAVED ACCOUNT A ONLY");
@@ -927,6 +940,7 @@ test("a same-email account change resets unsaved criteria and private CV details
   // Switching signed-in accounts always closes the previous account's
   // editor/Settings and returns to the new user's clean dashboard.
   await expect(page.getByRole("heading", { name: "CV connected. Choose how to apply." })).toBeVisible();
+  await openMoreTools(page);
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await expect(page.getByRole("radio", { name: /General job search/i })).toBeChecked();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
@@ -985,7 +999,7 @@ test("a delayed application-draft response is discarded after same-email account
   expect(calls).toBe(1);
   await page.getByRole("button", { name: /Try again/i }).click();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
-  await page.getByRole("button", { name: "My applications" }).click();
+  await page.getByRole("navigation", {name:"Main navigation"}).getByRole("button", { name: "My applications" }).click();
   await expect(page.getByRole("heading", { name: "My applications" })).toBeVisible();
   await expect(page.getByText("PRIVATE-ACCOUNT-A-DRAFT-NEVER-RENDER")).toHaveCount(0);
 });
@@ -1023,7 +1037,7 @@ test("same-email account switch removes the previous user's private application 
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "My applications" }).click();
+  await page.getByRole("navigation", {name:"Main navigation"}).getByRole("button", { name: "My applications" }).click();
   await expect(page.getByRole("textbox", { name: "Editable CV text" }))
     .toHaveValue("ACCOUNT-A-PRIVATE-CV-TEXT");
   await page.getByRole("textbox", { name: "Editable cover letter text" })
@@ -1039,7 +1053,7 @@ test("same-email account switch removes the previous user's private application 
   await expect(page.getByRole("textbox", { name: "Editable CV text" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "CV connected. Choose how to apply." })).toBeVisible();
   await expect(page.getByText("ACCOUNT-A-CV.pdf")).toHaveCount(0);
-  await page.getByRole("button", { name: "My applications" }).click();
+  await page.getByRole("navigation", {name:"Main navigation"}).getByRole("button", { name: "My applications" }).click();
   await expect(page.getByRole("textbox", { name: "Editable CV text" }))
     .toHaveValue("ACCOUNT-B-PRIVATE-CV-TEXT");
   await expect(page.getByRole("textbox", { name: "Editable cover letter text" }))
@@ -1056,7 +1070,7 @@ test("mobile onboarding remains usable when the optional local AI endpoint fails
   await expect(page.locator(".site-header .sp-mobile-brand-mark")).toBeVisible();
   await expect(page.locator(".site-header .sp-mobile-brand")).toContainText("SmartPloy");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
-  await page.getByRole("button", { name: /Just find jobs/i }).click();
+  await page.locator(".sp-solo-links").getByRole("button", { name: "Find jobs" }).click();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await expect(page.getByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeVisible();
   await expect(page.getByText(/search match/i)).toHaveCount(0);
@@ -1073,6 +1087,7 @@ test("SP97: Career tools provides a truthful private AI entry but never bypasses
   });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
+  await openMoreTools(page);
   await page.getByRole("button", { name: "CV & AI tools" }).click();
   const readiness = page.getByLabel("Private AI writing readiness");
   await expect(readiness).toBeVisible();
@@ -1412,7 +1427,7 @@ test("SP128 phone can open all job results from the compact home", async ({ page
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.locator(".sp126-job-results")).toBeHidden();
-  await page.getByRole("button", { name: /Just find jobs/ }).click();
+  await page.locator(".sp-solo-links").getByRole("button", { name: "Find jobs" }).click();
   await expect(page.getByRole("heading", { name: "Find jobs" })).toBeVisible();
   await expect(page.getByText("Junior Data Analyst")).toBeVisible();
   await expect(page.locator(".sp126-dashboard-aside")).toHaveCount(0);
@@ -1488,7 +1503,7 @@ test("SP156 Komplyint typography is self-hosted and banner has one clear heading
   expect(families.overflow).toBe(false);
   // First-use light/mobile mode must never show invisible white-on-white text.
   await page.setViewportSize({ width: 390, height: 844 });
-  const cvAlternative = page.getByRole("button", { name: /Create CV from scratch/i });
+  const cvAlternative = page.locator(".sp-solo-home").getByRole("button", { name: /Create a CV/i });
   await expect(cvAlternative).toBeVisible();
   await expect(cvAlternative).toHaveCSS("color", "rgb(14, 38, 54)");
   await expect(cvAlternative).toHaveCSS("background-color", "rgb(255, 255, 255)");
@@ -1753,101 +1768,79 @@ test("V4 M1: remaining pale workflow panels and editors contrast in real Chromiu
 });
 
 
-/* V4 UX VIDEO CLARITY: inspect the REAL built React/CSS at ordinary desktop
- * and phone dimensions. Network/API fixtures are synthetic; no employer
- * request, applicant mutation, final submission or screenshot invention.
+/* V4 quiet home is the actual browser-rendered destination, not a mockup.
+ * This test uses a real React/Vite build and only synthetic account/API data.
+ * No employer URL is visited or application submission attempted.
  */
-test("V4 clarity: task and job hierarchy is readable; overview is an opt-in disclosure", async ({ page }) => {
+test("V4 quiet home: one primary CV action, clear sidebar, optional tools",async({page})=>{
   await page.setViewportSize({width:1440,height:900});
-  await installSyntheticApi(page,{
-    initial:{completed:true,mode:"personalized",revision:1},
-    cvFilename:"Reviewed-Synthetic-CV.pdf"
-  });
+  await installSyntheticApi(page);
   await page.goto("/");
-  const shell=page.locator(".sp-clarity-home");
-  await expect(shell).toBeVisible();
-  const hero=page.locator(".sp125-career-cover");
-  await expect(hero.getByRole("heading",{name:"Apply with confidence",level:1})).toBeVisible();
-  const start=shell.locator(".flow-start");
-  await expect(start.getByRole("heading",{name:/CV connected/,level:2})).toBeVisible();
-  await expect(start.getByRole("heading",{name:"How would you like to apply?",level:3})).toBeVisible();
-  await expect(start.locator(".flow-start-card")).toHaveCount(3);
-  await expect(start.locator('.flow-start-card[data-featured="guided"]')).toBeVisible();
-  const jobs=shell.locator(".sp126-job-results");
-  await expect(jobs.getByRole("heading",{name:"Recommended opportunities"})).toBeVisible();
-  const overview=shell.locator(".sp-clarity-overview");
-  await expect(overview).not.toHaveAttribute("open","");
-  await expect(overview.locator(".stat-card").first()).toBeHidden();
-  const measurement=await page.evaluate(()=>{
-    const measured=(selector:string)=>{
-      const el=document.querySelector(selector) as HTMLElement;
-      if(!el)throw Error("Missing real UI "+selector);
-      return {size:parseFloat(getComputedStyle(el).fontSize),
-        lh:parseFloat(getComputedStyle(el).lineHeight)};
-    };
-    const layout=document.querySelector(".sp-clarity-home") as HTMLElement;
-    const first=layout.querySelector(".flow-start") as HTMLElement;
-    const next=layout.querySelector(".sp126-job-results") as HTMLElement;
-    const later=layout.querySelector(".sp-clarity-overview") as HTMLElement;
-    return {
-      root:measured(".smartploy-app"),
-      description:measured(".flow-start-heading > p"),
-      method:measured(".flow-start-card > strong"),
-      job:measured(".job-details h3"),
-      columnCount:getComputedStyle(layout).gridTemplateColumns.split(" ").length,
-      order:[first,next,later].map(e=>e.getBoundingClientRect().top),
-      overflow:document.documentElement.scrollWidth>innerWidth+1
-    };
-  });
-  expect(measurement.root.size).toBeGreaterThanOrEqual(16);
-  expect(measurement.description.size).toBeGreaterThanOrEqual(16);
-  expect(measurement.description.lh/measurement.description.size).toBeGreaterThanOrEqual(1.45);
-  expect(measurement.method.size).toBeGreaterThanOrEqual(18);
-  expect(measurement.job.size).toBeGreaterThanOrEqual(18);
-  expect(measurement.columnCount).toBe(1);
-  expect(measurement.order[0]).toBeLessThan(measurement.order[1]);
-  expect(measurement.order[1]).toBeLessThan(measurement.order[2]);
-  expect(measurement.overflow).toBe(false);
-  await overview.locator("summary").focus();
+  const home=page.locator(".sp-solo-home");
+  await expect(home).toBeVisible();
+  await expect(home.getByRole("heading",{name:"Apply with confidence",level:1})).toBeVisible();
+  await expect(home.getByRole("heading",{name:"Start with your CV.",level:2})).toBeVisible();
+  await expect(home.getByRole("button",{name:"Upload your CV"})).toBeVisible();
+  await expect(home.locator(".flow-start-card")).toHaveCount(0);
+  await expect(page.locator(".sp126-job-results")).toHaveCount(0);
+  await expect(page.locator(".sidebar-nav > .nav-item")).toHaveCount(4);
+  const tools=page.locator(".sidebar-nav .sp-solo-nav-more");
+  await expect(tools).not.toHaveAttribute("open","");
+  await tools.locator("summary").focus();
   await page.keyboard.press("Enter");
-  await expect(overview).toHaveAttribute("open","");
-  await expect(overview.locator(".stat-card")).toHaveCount(4);
-  await expect(overview.getByRole("heading",{name:"Your profile"})).toBeVisible();
-  await evidence(page,"sp-v4-clarity-20261123-desktop-light.png");
+  await expect(tools).toHaveAttribute("open","");
+  await expect(tools.getByRole("button",{name:"My CV & documents"})).toBeVisible();
+  await expect(tools.getByRole("button",{name:"Advanced settings"})).toBeVisible();
+  await evidence(page,"sp-v4-quiet-first-desktop-light.png");
   await page.getByRole("button",{name:"Switch to dark mode"}).click();
   await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme","dark");
-  await expect(start.locator('.flow-start-card[data-featured="guided"]')).toHaveCSS(
-    "border-top-color", /rgb\(/);
-  await evidence(page,"sp-v4-clarity-20261123-desktop-dark.png");
+  await evidence(page,"sp-v4-quiet-first-desktop-dark.png");
 });
-test("V4 clarity: 320/390px phone retains accessible CV gate and never overflows",async({page})=>{
+
+test("V4 quiet home: saved CV offers one action then three reviewed routes",async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await installSyntheticApi(page,{initial:{completed:true,mode:"personalized",revision:1},
+    cvFilename:"Reviewed-Synthetic-CV.pdf"});
+  await page.goto("/");
+  const home=page.locator(".sp-solo-home");
+  await expect(home.getByRole("heading",{name:"Ready to apply?"})).toBeVisible();
+  await expect(home.getByRole("button",{name:"Choose how to apply"})).toBeVisible();
+  await expect(home.locator(".flow-start-card")).toHaveCount(0);
+  await expect(page.locator(".sp126-job-results")).toHaveCount(0);
+  await home.getByRole("button",{name:"Choose how to apply"}).click();
+  await expect(home.getByRole("heading",{name:"How would you like to apply?",level:2})).toBeVisible();
+  const modes=home.locator(".flow-start-card[data-flow-mode]");
+  await expect(modes).toHaveCount(3);
+  for(const card of await modes.all())await expect(card).toBeEnabled();
+  await evidence(page,"sp-v4-quiet-methods-desktop.png");
+  await home.locator('.flow-start-card[data-flow-mode="assisted"]').click();
+  await expect(page.getByRole("heading",{name:/Choose how to apply|Application|Prepare/i}).first()).toBeVisible();
+  await expect(page.locator(".sp-solo-home")).toHaveCount(0);
+});
+
+test("V4 quiet home: no horizontal overflow on 320 and 390px phones",async({page})=>{
   await installSyntheticApi(page);
   for(const width of [320,390]){
     await page.setViewportSize({width,height:740});
     await page.goto("/");
-    await expect(page.getByRole("heading",{name:"Apply with confidence",level:1})).toBeVisible();
-    await expect(page.getByRole("heading",{name:"Start with your CV.",level:2})).toBeVisible();
-    await expect(page.locator(".sp-clarity-home .sp-clarity-overview")).toBeHidden();
-    await expect(page.locator(".sp-clarity-home .sp126-job-results")).toBeHidden();
-    const controls=page.locator(".sp-clarity-home .flow-start-card[data-flow-mode]");
-    await expect(controls).toHaveCount(3);
-    for(const btn of await controls.all())await expect(btn).toBeDisabled();
-    const dimensions=await page.evaluate(()=>{
-      const cards=Array.from(document.querySelectorAll<HTMLElement>(
-        ".sp-clarity-home .flow-start-card[data-flow-mode]"));
-      return {
-        overflow:document.documentElement.scrollWidth>window.innerWidth+1,
-        hero:document.querySelector(".sp125-career-cover")!.getBoundingClientRect().height,
-        heights:cards.map(el=>el.getBoundingClientRect().height),
-        columns:getComputedStyle(cards[0]).gridTemplateColumns.split(" ").length
-      };
+    const home=page.locator(".sp-solo-home");
+    await expect(home.getByRole("heading",{name:"Apply with confidence"})).toBeVisible();
+    await expect(home.getByRole("button",{name:"Upload your CV"})).toBeVisible();
+    await expect(home.getByRole("button",{name:"Find jobs"})).toBeVisible();
+    await expect(home.locator(".flow-start-card")).toHaveCount(0);
+    const dims=await page.evaluate(()=>{
+      const main=document.querySelector(".sp-solo-dashboard") as HTMLElement;
+      const primary=document.querySelector(".sp-solo-primary") as HTMLElement;
+      const title=document.querySelector(".sp-solo-hero h1") as HTMLElement;
+      return {overflow:document.documentElement.scrollWidth>innerWidth+1,
+        primaryHeight:primary.getBoundingClientRect().height,
+        titleSize:parseFloat(getComputedStyle(title).fontSize),
+        pageWidth:main.getBoundingClientRect().width};
     });
-    expect(dimensions.overflow).toBe(false);
-    expect(dimensions.hero).toBeLessThanOrEqual(145);
-    expect(dimensions.heights.every(h=>h<=170)).toBe(true);
-    expect(dimensions.columns).toBe(3);
-    await expect(page.getByRole("button",{name:/Upload CV first/})).toBeVisible();
-    await expect(page.getByRole("button",{name:/Just find jobs/})).toBeVisible();
-    await evidence(page,"sp-v4-clarity-20261123-phone-"+width+".png");
+    expect(dims.overflow).toBe(false);
+    expect(dims.primaryHeight).toBeGreaterThanOrEqual(44);
+    expect(dims.titleSize).toBeGreaterThanOrEqual(40);
+    expect(dims.pageWidth).toBeLessThanOrEqual(width);
+    await evidence(page,"sp-v4-quiet-first-phone-"+width+".png");
   }
 });
