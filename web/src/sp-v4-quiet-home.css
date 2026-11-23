@@ -335,6 +335,23 @@ html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard .release-status-dev
   display:none;
 }
 
+/* Analytics never sit beside the first task; when opened, the optional
+   dashboard itself must reflow without introducing sideways scroll. */
+@media(max-width:1100px) {
+  html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard
+  .sp-clarity-overview-body .dashboard-side {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+@media(max-width:640px) {
+  html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard
+  .sp-clarity-overview-body .dashboard-side,
+  html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard
+  .sp-clarity-overview-body .stats-grid {
+    grid-template-columns:minmax(0,1fr);
+  }
+}
+
 /* No fixed width, accidental 320px overflow or disappearing actions. */
 @media(max-width:850px) {
   html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard {
