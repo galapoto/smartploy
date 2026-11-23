@@ -189,7 +189,7 @@ describe("SP127: mobile-first persistent shell and nonblocking startup", () => {
     expect(document.querySelector(".loading-screen")).toBeNull();
     expect(document.querySelector(".spinner")).toBeNull();
     expect(document.querySelector(".sp-boot-header .sp-boot-logo")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(within(screen.getByRole("navigation", {name:"Main navigation"})).getByRole("button", { name: "Find jobs" }));
     expect(screen.getByText("Find jobs will open when ready")).toBeTruthy();
     // Do not render private profile or employer actions before server identity.
     expect(screen.queryByText("test@smartploy.invalid")).toBeNull();
@@ -221,7 +221,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     );
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Upload your CV/i })).toBeTruthy();
+    expect(within(document.querySelector(".sp-solo-home") as HTMLElement).getByRole("button", { name: /Upload your CV/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Create a CV/i })).toBeTruthy();
     expect(screen.getByText(/Nothing is sent to an employer without your approval/i)).toBeTruthy();
     const sidebar = screen.getByRole("navigation", { name: "Main navigation" });
@@ -992,7 +992,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(screen.queryByTestId("application-editor")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "My applications" }));
+    fireEvent.click(within(screen.getByRole("navigation", {name:"Main navigation"})).getByRole("button", { name: "My applications" }));
     expect((await screen.findByTestId("application-editor")).getAttribute("data-workspace")).toBe("");
   });
 
@@ -1045,7 +1045,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "My CV & documents" }));
     expect((await screen.findAllByText("SYNTHETIC-READY-CV.pdf")).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(within(screen.getByRole("navigation", {name:"Main navigation"})).getByRole("button", { name: "Find jobs" }));
     expect(await screen.findByText("Private saved QA opportunity")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Check posting/ }).getAttribute("href"))
       .toBe("https://jobs.example.fi/qa");
@@ -1063,7 +1063,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     }];
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(within(screen.getByRole("navigation", {name:"Main navigation"})).getByRole("button", { name: "Find jobs" }));
     expect(await screen.findByText("Untrusted saved job")).toBeTruthy();
     expect(screen.queryByRole("link", { name: /Check posting/ })).toBeNull();
     expect(screen.getByText("Posting link unavailable")).toBeTruthy();
@@ -1103,7 +1103,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(within(screen.getByRole("navigation", {name:"Main navigation"})).getByRole("button", { name: "Find jobs" }));
     expect(screen.getByRole("heading", { name: "Your saved opportunities" })).toBeTruthy();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Save job" })[0]);
@@ -1159,7 +1159,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     vi.mocked(api.getSearchPreferences).mockImplementationOnce(() =>
       new Promise<SearchPreferences>((resolve) => { finishReload = resolve; })
     );
-    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(within(screen.getByRole("navigation", {name:"Main navigation"})).getByRole("button", { name: "Find jobs" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Save job" })[0]);
     fireEvent.change(screen.getByPlaceholderText("e.g. Junior Data Analyst"), {
       target: { value: "PRIVATE-ACCOUNT-A-JOB" },
@@ -1183,7 +1183,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     fireEvent.click(screen.getByRole("button", { name: /Try again/i }));
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
     expect(screen.queryByText(/Job saved privately to your account/i)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(within(screen.getByRole("navigation", {name:"Main navigation"})).getByRole("button", { name: "Find jobs" }));
     expect(screen.queryByText("PRIVATE-ACCOUNT-A-JOB")).toBeNull();
     expect(screen.getByText(/No private saved jobs yet/i)).toBeTruthy();
   });
@@ -1208,13 +1208,13 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     }));
     render(<App />);
     expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(within(screen.getByRole("navigation", {name:"Main navigation"})).getByRole("button", { name: "Find jobs" }));
     expect(await screen.findByText("SECRET-A-BOOKMARK")).toBeTruthy();
 
     currentUser = "b";
     fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
     await waitFor(() => expect(screen.queryByText("SECRET-A-BOOKMARK")).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(within(screen.getByRole("navigation", {name:"Main navigation"})).getByRole("button", { name: "Find jobs" }));
     expect(screen.getByText(/No private saved jobs yet/i)).toBeTruthy();
     expect(screen.queryByText("SECRET-A-BOOKMARK")).toBeNull();
   });
