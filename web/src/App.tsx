@@ -1520,7 +1520,7 @@ export default function App() {
           <FinlandPageIdentity />
           {/* Keep CV -> Manual/Assisted/Auto directly after the compact cover.
               No lost actions, secondary landing page, or duplicate mode selector. */}
-          <div className={cx("sp126-dashboard-layout", !cv.present && !preferences?.completed && "sp-home-setup")}>
+          <div className={cx("sp126-dashboard-layout", "sp-clarity-home", !cv.present && !preferences?.completed && "sp-home-setup")}>
             <div className="sp126-dashboard-main">
           <StartChoices onMode={(choice) => startApplyFlow(choice)}
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
@@ -1532,7 +1532,16 @@ export default function App() {
             <SearchSetup key={accountViewKey} initial={preferences}
               onSave={saveSearchPreferences}/>
           </details> : null}
-          <ReleaseStatus apiRevision={health?.release_revision} />
+          <div className="sp126-job-results">{jobsSection}</div>
+          <details className="sp-clarity-overview" aria-label="Workspace overview">
+            <summary>
+              <LayoutDashboard size={20} aria-hidden="true" />
+              <span>Workspace overview</span>
+              <small>Profile, applications &amp; tools</small>
+              <ChevronRight size={18} aria-hidden="true" />
+            </summary>
+            <div className="sp-clarity-overview-body">
+              <ReleaseStatus apiRevision={health?.release_revision} />
           <div className="stats-grid">
             <Stat label={preferences?.mode === "general" ? "Available jobs" : "Preference matches"}
               value={preferences?.mode === "general" ? discovery?.available_count || 0 : discovery?.recommendations.length || 0}
@@ -1545,9 +1554,10 @@ export default function App() {
             <Stat label="Awaiting review" value={counts.awaiting_review} note="Drafts, not submitted" icon={Clock3} tone="violet" onClick={() => navigate("applications")} />
             <Stat label="Actually submitted" value={counts.actually_submitted} note="Evidence of submission" icon={CheckCircle2} tone="green" onClick={() => navigate("applications")} />
           </div>
-          <div className="sp126-job-results">{jobsSection}</div>
+              <div className="sp126-dashboard-aside">{sidePanel}</div>
             </div>
-            <div className="sp126-dashboard-aside">{sidePanel}</div>
+          </details>
+            </div>
           </div>
         </> : null}
         {page !== "dashboard" ? <>
