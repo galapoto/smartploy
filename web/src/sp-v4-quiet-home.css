@@ -14,7 +14,7 @@ html[data-smartploy-theme] .smartploy-app .sp-solo-dashboard {
   flex-direction:column;
   gap:24px;
   min-width:0;
-  font-family:"Lato","Segoe UI",sans-serif;
+  font-family:"Manrope","Segoe UI",sans-serif;
 }
 html[data-smartploy-theme] .smartploy-app .sp-solo-home {
   min-width:0;
@@ -47,7 +47,7 @@ html[data-smartploy-theme] .smartploy-app .sp-solo-task h2 {
 html[data-smartploy-theme] .smartploy-app .sp-solo-description {
   max-width:53ch;
   color:var(--sp-ui-muted);
-  font:400 17px/1.58 "Lato","Segoe UI",sans-serif;
+  font:400 17px/1.58 "Manrope","Segoe UI",sans-serif;
   margin:0 0 29px;
 }
 html[data-smartploy-theme] .smartploy-app .sp-solo-status {
@@ -229,7 +229,7 @@ html[data-smartploy-theme] .smartploy-app .sp-solo-methods
 .flow-start-grid-methods .flow-start-card[data-flow-mode] > span:not(.flow-card-cta):not(.flow-start-index) {
   grid-column:2;
   grid-row:2;
-  font:400 15px/1.47 "Lato","Segoe UI",sans-serif;
+  font:400 15px/1.47 "Manrope","Segoe UI",sans-serif;
   color:var(--sp-ui-muted);
   opacity:1;
 }
@@ -247,7 +247,7 @@ html[data-smartploy-theme] .smartploy-app .sp-solo-methods
   display:none;
 }
 html[data-smartploy-theme] .smartploy-app .sp-solo-methods .flow-start-privacy {
-  font:400 14px/1.55 "Lato","Segoe UI",sans-serif;
+  font:400 14px/1.55 "Manrope","Segoe UI",sans-serif;
   color:var(--sp-ui-muted);
   margin:22px 0 0;
   max-width:62ch;
