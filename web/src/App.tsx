@@ -1514,7 +1514,7 @@ export default function App() {
         {page === "dashboard" ? <>
           <section className="sp125-career-cover" aria-label="Career search and applications banner">
             <div className="sp125-career-copy">
-              <h2>Apply with confidence</h2>
+              <h1>Apply with confidence</h1>
             </div>
           </section>
           <FinlandPageIdentity />
