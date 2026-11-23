@@ -67,7 +67,7 @@ export default function StartChoices(props: {
     </>}
     <div className="flow-start-method-heading">
       <div>
-        <h2>How would you like to apply?</h2>
+        <h3>How would you like to apply?</h3>
         <p>{hasCV
           ? "Select one path to continue."
           : "Connect a CV to unlock these choices."}</p>
