@@ -119,8 +119,7 @@ html[data-smartploy-theme] .smartploy-app :is(
 /* The exact screenshot regression: the next-action panel is now an accessible
    dark/white card, never a mint banner with nearly invisible white text. */
 html[data-smartploy-theme] .smartploy-app .flow-primary-next {
-  border:1px solid var(--sp-ui-card-border);
-  border-left:3px solid var(--sp-ui-accent);
+  border:1px solid var(--sp-ui-accent);
   border-radius:16px;
   padding:clamp(15px,1.6vw,23px);
   box-shadow:var(--sp-ui-shadow);
