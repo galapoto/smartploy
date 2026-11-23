@@ -9,7 +9,9 @@ describe("SP91 SmartPloy Career Atlas entrypoint", () => {
   it("distinguishes Manual, Assisted and Automatic without changing their permissions", () => {
     const onMode = vi.fn();
     render(<StartChoices cvPresent onMode={onMode} onBrowse={vi.fn()} />);
-    expect(screen.getByText("SMARTPLOY / APPLICATION WORKSPACE")).toBeTruthy();
+    expect(screen.getByRole("heading",{name:"CV connected. Choose how to apply.",level:2})).toBeTruthy();
+    expect(screen.getByRole("heading",{name:"How would you like to apply?",level:3})).toBeTruthy();
+    expect(screen.queryByText("SMARTPLOY / APPLICATION WORKSPACE")).toBeNull();
     const modes = ["manual", "assisted", "automatic"];
     for (const mode of modes) {
       const button = document.querySelector(`button.flow-start-card[data-flow-mode="${mode}"]`);
