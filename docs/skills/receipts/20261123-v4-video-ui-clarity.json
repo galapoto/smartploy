@@ -10,7 +10,9 @@
         "web/src/StartChoices.tsx",
         "web/src/StartChoices.test.tsx",
         "web/src/styles.css",
-        "web/src/sp-v4-card-surfaces.css"
+        "web/src/sp-v4-card-surfaces.css",
+        "web/src/ApplicationJourney.test.tsx",
+        "web/src/CareerAtlas.test.tsx"
       ],
       "skills": [
         {
@@ -83,7 +85,7 @@
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "The user's video is a visual retail interaction reference, not an authorized source-code binary or analyzable private application. Exact current first-party SmartPloy React/CSS and tests are already available; reverse engineering the unrelated retail design would add licensing, uncertainty and delay without better functional reuse. No user/video assets or code copied.",
       "measured_seconds": "NOT_MEASURED",
-      "tests": "New V4 StartChoices unit checks original CV gating, real callback, heading hierarchy. Existing UI source/contrast/typography tests, vite typecheck/build and full Vitest and Chromium 320/390/1440 real element layout/keyboard/theme/screenshots required. CI exact-head not yet verified as receipt authored; no production promotion yet."
+      "tests": "New V4 StartChoices unit checks original CV gating, real callback, heading hierarchy. Existing UI source/contrast/typography tests, vite typecheck/build and full Vitest and Chromium 320/390/1440 real element layout/keyboard/theme/screenshots required. CI exact-head not yet verified as receipt authored; no production promotion yet. GitHub initial exact head run #1523 exposed two older unit assertions tied to deliberately removed redundant masthead/old status copy; updated those tests to require meaningful CV/mode hierarchy and an explicit no-employer-send status. Initial native Woodpecker #366 stopped on a too-short upstream skill name in evidence; corrected to full source skill name. All post-fix exact-head CI pending."
     },
     {
       "name": "qa",
