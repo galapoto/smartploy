@@ -1,3 +1,14 @@
+<!-- BEST-FIT-TECH-001: mandatory first-read portfolio engineering gate, 2026-11-19 -->
+## BEST-FIT-TECH-001 — mandatory before every new or resumed AI coding task
+
+**FIRST RESPONSE:** Acknowledge `BEST-FIT-TECH-001 acknowledged` with this repository, the latest approved specification/requirement, a real user action→result, checked existing/sibling implementations, applicable and actually run skills, needed toolchain, tests, deployment/hold. Do not claim to have read files unavailable to the agent.
+
+**EXECUTE, DO NOT JUST DOCUMENT:** Read the [canonical BEST-FIT-TECH-001 standard](https://github.com/obumai/obum-delivery/blob/main/docs/BEST_FIT_TECH_001.md) and this repository's stricter project rules. Inspect current repo, branches, history and approved requirements; compare fit-for-purpose existing code and compatible licensed donors before building; assess authorized REA; choose the best suitable languages, libraries, typography, palette, UI geometry, icons and workflows, not the most familiar stack. Run relevant approved skills on the real changed component; attach versioned execution proof, not a PDF reference. If a compiler/SDK/runner is missing, search existing environments, install reviewed pinned tools in authorized isolation, run code and tests; ask for the narrowest owner action only for permissions/payment/credentials or unresolvable access.
+
+**PROVE ACTUAL QUALITY:** Keep source/license provenance (COPIED/PORTED/SANITIZED/ADAPTED/INTEGRATED/NEW; `Copied: none` when appropriate); real-browser screenshots and visual/a11y checks for UI, verified typed/negative/security/performance/recovery tests for backend, real origin/result and exact-SHA qualified release with rollback. A decorative microphone ring or fake activity is unacceptable. Submit a compact per-feature evidence record against the existing native delivery gates. NO made-up success, unchecked skills, silent security bypass, unapproved deployment, or endless planning. Preserve later owner-approved specification, incident holds, native CI, protected-branch rules and owner-optional independent *code* review policy.
+
+<!-- /BEST-FIT-TECH-001 -->
+
 # Owner policy supersession — effective 2026-11-18
 
 **OWNER-REVIEW-OPTIONAL-2026-11-18:** An independent human code reviewer, reviewer assignment, and a separate reviewer approval are **NOT mandatory** for implementation, PR merge or software deployment. The project agent/authorized maintainer must conduct direct technical review and complete the applicable tests, security/privacy checks, exact-SHA build, release evidence and rollback verification. An independent peer review is optional if expressly wanted, never a standing blocker.
