@@ -35,6 +35,7 @@ export default function HomeLanding(props: {
           <ArrowLeft size={17} aria-hidden="true" /> Back
         </button>
         <div className="sp-solo-methods" id="sp-solo-methods">
+          <h2>How would you like to apply?</h2>
           <StartChoices cvPresent
             onMode={props.onMode}
             onBrowse={props.onBrowse}
@@ -54,8 +55,7 @@ export default function HomeLanding(props: {
         <button type="button" className="sp-solo-primary"
           onClick={ready ? () => setChoosingMethod(true) : props.onUpload}
           disabled={!ready && props.busyCV}
-          aria-expanded={ready ? false : undefined}
-          aria-controls={ready ? "sp-solo-methods" : undefined}>
+          >
           {ready ? "Choose how to apply" : props.busyCV ? "Uploading CV…" : "Upload your CV"}
           {ready ? <ArrowRight size={19} aria-hidden="true"/> :
             <UploadCloud size={19} aria-hidden="true"/>}
