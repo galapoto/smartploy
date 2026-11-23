@@ -4,7 +4,17 @@ on:
   push:
     branches:
       - feat/v4-distilled-one-action-home-20261123
+    paths:
+      - .github/workflows/smartploy-ui-skill-tooling.yml
+      - web/src/HomeLanding.tsx
+      - web/src/App.tsx
+      - web/src/sp-v4-quiet-home.css
+      - web/src/sp-v4-card-surfaces.css
   workflow_dispatch:
+
+concurrency:
+  group: smartploy-ui-tooling-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
