@@ -42,3 +42,32 @@ describe("SP89: saved application entry in the CV-first journey", () => {
     expect(screen.queryByRole("button", { name: /Continue saved drafts & letters/i })).toBeNull();
   });
 });
+
+describe("V4 clarity: one visible task, real actions, and accessible disclosure hierarchy",()=>{
+  it("uses a clear step heading and keeps all three original application choices operational",()=>{
+    const onMode=vi.fn();
+    render(<StartChoices cvPresent onMode={onMode}
+      onBrowse={vi.fn()} onOpenApplications={vi.fn()} />);
+    expect(screen.getByRole("heading",{name:"CV connected. Choose how to apply.",level:2})).toBeTruthy();
+    expect(screen.getByRole("heading",{name:"How would you like to apply?",level:3})).toBeTruthy();
+    const assisted=screen.getByRole("button",{name:/Assisted · Apply with AI/i});
+    expect(assisted.getAttribute("data-featured")).toBe("guided");
+    fireEvent.click(assisted);
+    expect(onMode).toHaveBeenCalledExactlyOnceWith("assisted");
+    expect(screen.getByRole("button",{name:/Just find jobs/i})).toBeTruthy();
+    expect(screen.getByText(/Employer submissions require applicant review and explicit authorization/)).toBeTruthy();
+  });
+  it("never turns a missing CV into enabled application or employer submission",()=>{
+    const onMode=vi.fn();
+    render(<StartChoices cvPresent={false} onMode={onMode}
+      onBrowse={vi.fn()} onUpload={vi.fn()} onCreateCV={vi.fn()}/>);
+    expect(screen.getByRole("heading",{name:"Start with your CV.",level:2})).toBeTruthy();
+    for(const mode of ["manual","assisted","automatic"]){
+      const el=document.querySelector<HTMLButtonElement>(
+        '.flow-start-card[data-flow-mode="'+mode+'"]');
+      expect(el?.disabled).toBe(true);
+      if(el)fireEvent.click(el);
+    }
+    expect(onMode).not.toHaveBeenCalled();
+  });
+});
