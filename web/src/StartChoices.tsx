@@ -21,7 +21,7 @@ export default function StartChoices(props: {
   const hasCV = props.cvPresent === true;
   return <section className="flow-start" aria-label="Choose what to do with SmartPloy">
     <div className="flow-start-heading">
-      <h1>{hasCV ? "CV connected. Choose how to apply." : "Start with your CV."}</h1>
+      <h2>{hasCV ? "CV connected. Choose how to apply." : "Start with your CV."}</h2>
       <p>{hasCV
         ? "Your CV is saved privately. Choose the level of help you want."
         : "Upload or create your CV once. You can still explore jobs without one."}</p>
