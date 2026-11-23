@@ -115,7 +115,7 @@ jobs:
           code=$?
           echo "IMPECCABLE_CONTEXT_EXIT=$code" | tee -a .ui-tooling-results/versions.txt
           sh .ui-toolchain/impeccable/.claude/skills/impeccable/scripts/impeccable \
-            detect --json --changed > .ui-tooling-results/impeccable-detect.json 2> .ui-tooling-results/impeccable-detect-stderr.txt
+            detect --json web/src/HomeLanding.tsx web/src/App.tsx web/src/sp-v4-quiet-home.css web/src/sp-v4-card-surfaces.css > .ui-tooling-results/impeccable-detect.json 2> .ui-tooling-results/impeccable-detect-stderr.txt
           code=$?
           echo "IMPECCABLE_DETECT_EXIT=$code" | tee -a .ui-tooling-results/versions.txt
           sed -n '1,28p' .ui-tooling-results/impeccable-context.txt
