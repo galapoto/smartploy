@@ -1753,101 +1753,79 @@ test("V4 M1: remaining pale workflow panels and editors contrast in real Chromiu
 });
 
 
-/* V4 UX VIDEO CLARITY: inspect the REAL built React/CSS at ordinary desktop
- * and phone dimensions. Network/API fixtures are synthetic; no employer
- * request, applicant mutation, final submission or screenshot invention.
+/* V4 quiet home is the actual browser-rendered destination, not a mockup.
+ * This test uses a real React/Vite build and only synthetic account/API data.
+ * No employer URL is visited or application submission attempted.
  */
-test("V4 clarity: task and job hierarchy is readable; overview is an opt-in disclosure", async ({ page }) => {
+test("V4 quiet home: one primary CV action, clear sidebar, optional tools",async({page})=>{
   await page.setViewportSize({width:1440,height:900});
-  await installSyntheticApi(page,{
-    initial:{completed:true,mode:"personalized",revision:1},
-    cvFilename:"Reviewed-Synthetic-CV.pdf"
-  });
+  await installSyntheticApi(page);
   await page.goto("/");
-  const shell=page.locator(".sp-clarity-home");
-  await expect(shell).toBeVisible();
-  const hero=page.locator(".sp125-career-cover");
-  await expect(hero.getByRole("heading",{name:"Apply with confidence",level:1})).toBeVisible();
-  const start=shell.locator(".flow-start");
-  await expect(start.getByRole("heading",{name:/CV connected/,level:2})).toBeVisible();
-  await expect(start.getByRole("heading",{name:"How would you like to apply?",level:3})).toBeVisible();
-  await expect(start.locator(".flow-start-card")).toHaveCount(3);
-  await expect(start.locator('.flow-start-card[data-featured="guided"]')).toBeVisible();
-  const jobs=shell.locator(".sp126-job-results");
-  await expect(jobs.getByRole("heading",{name:"Recommended opportunities"})).toBeVisible();
-  const overview=shell.locator(".sp-clarity-overview");
-  await expect(overview).not.toHaveAttribute("open","");
-  await expect(overview.locator(".stat-card").first()).toBeHidden();
-  const measurement=await page.evaluate(()=>{
-    const measured=(selector:string)=>{
-      const el=document.querySelector(selector) as HTMLElement;
-      if(!el)throw Error("Missing real UI "+selector);
-      return {size:parseFloat(getComputedStyle(el).fontSize),
-        lh:parseFloat(getComputedStyle(el).lineHeight)};
-    };
-    const layout=document.querySelector(".sp-clarity-home") as HTMLElement;
-    const first=layout.querySelector(".flow-start") as HTMLElement;
-    const next=layout.querySelector(".sp126-job-results") as HTMLElement;
-    const later=layout.querySelector(".sp-clarity-overview") as HTMLElement;
-    return {
-      root:measured(".smartploy-app"),
-      description:measured(".flow-start-heading > p"),
-      method:measured(".flow-start-card > strong"),
-      job:measured(".job-details h3"),
-      columnCount:getComputedStyle(layout).gridTemplateColumns.split(" ").length,
-      order:[first,next,later].map(e=>e.getBoundingClientRect().top),
-      overflow:document.documentElement.scrollWidth>innerWidth+1
-    };
-  });
-  expect(measurement.root.size).toBeGreaterThanOrEqual(16);
-  expect(measurement.description.size).toBeGreaterThanOrEqual(16);
-  expect(measurement.description.lh/measurement.description.size).toBeGreaterThanOrEqual(1.45);
-  expect(measurement.method.size).toBeGreaterThanOrEqual(18);
-  expect(measurement.job.size).toBeGreaterThanOrEqual(18);
-  expect(measurement.columnCount).toBe(1);
-  expect(measurement.order[0]).toBeLessThan(measurement.order[1]);
-  expect(measurement.order[1]).toBeLessThan(measurement.order[2]);
-  expect(measurement.overflow).toBe(false);
-  await overview.locator("summary").focus();
+  const home=page.locator(".sp-solo-home");
+  await expect(home).toBeVisible();
+  await expect(home.getByRole("heading",{name:"Apply with confidence",level:1})).toBeVisible();
+  await expect(home.getByRole("heading",{name:"Start with your CV.",level:2})).toBeVisible();
+  await expect(home.getByRole("button",{name:"Upload your CV"})).toBeVisible();
+  await expect(home.locator(".flow-start-card")).toHaveCount(0);
+  await expect(page.locator(".sp126-job-results")).toHaveCount(0);
+  await expect(page.locator(".sidebar-nav > .nav-item")).toHaveCount(4);
+  const tools=page.locator(".sidebar-nav .sp-solo-nav-more");
+  await expect(tools).not.toHaveAttribute("open","");
+  await tools.locator("summary").focus();
   await page.keyboard.press("Enter");
-  await expect(overview).toHaveAttribute("open","");
-  await expect(overview.locator(".stat-card")).toHaveCount(4);
-  await expect(overview.getByRole("heading",{name:"Your profile"})).toBeVisible();
-  await evidence(page,"sp-v4-clarity-20261123-desktop-light.png");
+  await expect(tools).toHaveAttribute("open","");
+  await expect(tools.getByRole("button",{name:"My CV & documents"})).toBeVisible();
+  await expect(tools.getByRole("button",{name:"Advanced settings"})).toBeVisible();
+  await evidence(page,"sp-v4-quiet-first-desktop-light.png");
   await page.getByRole("button",{name:"Switch to dark mode"}).click();
   await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme","dark");
-  await expect(start.locator('.flow-start-card[data-featured="guided"]')).toHaveCSS(
-    "border-top-color", /rgb\(/);
-  await evidence(page,"sp-v4-clarity-20261123-desktop-dark.png");
+  await evidence(page,"sp-v4-quiet-first-desktop-dark.png");
 });
-test("V4 clarity: 320/390px phone retains accessible CV gate and never overflows",async({page})=>{
+
+test("V4 quiet home: saved CV offers one action then three reviewed routes",async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await installSyntheticApi(page,{initial:{completed:true,mode:"personalized",revision:1},
+    cvFilename:"Reviewed-Synthetic-CV.pdf"});
+  await page.goto("/");
+  const home=page.locator(".sp-solo-home");
+  await expect(home.getByRole("heading",{name:"Ready to apply?"})).toBeVisible();
+  await expect(home.getByRole("button",{name:"Choose how to apply"})).toBeVisible();
+  await expect(home.locator(".flow-start-card")).toHaveCount(0);
+  await expect(page.locator(".sp126-job-results")).toHaveCount(0);
+  await home.getByRole("button",{name:"Choose how to apply"}).click();
+  await expect(home.getByRole("heading",{name:"How would you like to apply?",level:2})).toBeVisible();
+  const modes=home.locator(".flow-start-card[data-flow-mode]");
+  await expect(modes).toHaveCount(3);
+  for(const card of await modes.all())await expect(card).toBeEnabled();
+  await evidence(page,"sp-v4-quiet-methods-desktop.png");
+  await home.locator('.flow-start-card[data-flow-mode="assisted"]').click();
+  await expect(page.getByRole("heading",{name:/Choose how to apply|Application|Prepare/i}).first()).toBeVisible();
+  await expect(page.locator(".sp-solo-home")).toHaveCount(0);
+});
+
+test("V4 quiet home: no horizontal overflow on 320 and 390px phones",async({page})=>{
   await installSyntheticApi(page);
   for(const width of [320,390]){
     await page.setViewportSize({width,height:740});
     await page.goto("/");
-    await expect(page.getByRole("heading",{name:"Apply with confidence",level:1})).toBeVisible();
-    await expect(page.getByRole("heading",{name:"Start with your CV.",level:2})).toBeVisible();
-    await expect(page.locator(".sp-clarity-home .sp-clarity-overview")).toBeHidden();
-    await expect(page.locator(".sp-clarity-home .sp126-job-results")).toBeHidden();
-    const controls=page.locator(".sp-clarity-home .flow-start-card[data-flow-mode]");
-    await expect(controls).toHaveCount(3);
-    for(const btn of await controls.all())await expect(btn).toBeDisabled();
-    const dimensions=await page.evaluate(()=>{
-      const cards=Array.from(document.querySelectorAll<HTMLElement>(
-        ".sp-clarity-home .flow-start-card[data-flow-mode]"));
-      return {
-        overflow:document.documentElement.scrollWidth>window.innerWidth+1,
-        hero:document.querySelector(".sp125-career-cover")!.getBoundingClientRect().height,
-        heights:cards.map(el=>el.getBoundingClientRect().height),
-        columns:getComputedStyle(cards[0]).gridTemplateColumns.split(" ").length
-      };
+    const home=page.locator(".sp-solo-home");
+    await expect(home.getByRole("heading",{name:"Apply with confidence"})).toBeVisible();
+    await expect(home.getByRole("button",{name:"Upload your CV"})).toBeVisible();
+    await expect(home.getByRole("button",{name:"Find jobs"})).toBeVisible();
+    await expect(home.locator(".flow-start-card")).toHaveCount(0);
+    const dims=await page.evaluate(()=>{
+      const main=document.querySelector(".sp-solo-dashboard") as HTMLElement;
+      const primary=document.querySelector(".sp-solo-primary") as HTMLElement;
+      const title=document.querySelector(".sp-solo-hero h1") as HTMLElement;
+      return {overflow:document.documentElement.scrollWidth>innerWidth+1,
+        primaryHeight:primary.getBoundingClientRect().height,
+        titleSize:parseFloat(getComputedStyle(title).fontSize),
+        pageWidth:main.getBoundingClientRect().width};
     });
-    expect(dimensions.overflow).toBe(false);
-    expect(dimensions.hero).toBeLessThanOrEqual(145);
-    expect(dimensions.heights.every(h=>h<=170)).toBe(true);
-    expect(dimensions.columns).toBe(3);
-    await expect(page.getByRole("button",{name:/Upload CV first/})).toBeVisible();
-    await expect(page.getByRole("button",{name:/Just find jobs/})).toBeVisible();
-    await evidence(page,"sp-v4-clarity-20261123-phone-"+width+".png");
+    expect(dims.overflow).toBe(false);
+    expect(dims.primaryHeight).toBeGreaterThanOrEqual(44);
+    expect(dims.titleSize).toBeGreaterThanOrEqual(40);
+    expect(dims.pageWidth).toBeLessThanOrEqual(width);
+    await evidence(page,"sp-v4-quiet-first-phone-"+width+".png");
   }
 });
