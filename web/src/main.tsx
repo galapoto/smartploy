@@ -25,6 +25,7 @@ import "./sp128-mobile-workflow.css";
 import "./sp-v4-monochrome.css";
 import "./signin.css";
 import "./sp-v4-card-surfaces.css";
+import "./sp-v4-quiet-home.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
