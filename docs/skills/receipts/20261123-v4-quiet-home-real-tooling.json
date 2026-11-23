@@ -1,0 +1,127 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "f76e56c3975646970dcb75fba2d645299bee6357",
+  "user_outcome": "An actual premium but unusually simple SmartPloy entry: one primary action per viewport before employer application; avoid overwhelming simultaneous dashboards, jobs, steps and three cards. Use REAL tooling for user-nominated GitHub skills rather than merely citing guidance.",
+  "source_authority": "AGENTS.md and docs/v4/SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md on main; owner-design brief 2026-11-23; approved privacy and source gates unchanged.",
+  "actual_tooling": {
+    "github_actions_run": "https://github.com/galapoto/smartploy/actions/runs/45190968415",
+    "artifact": "https://github.com/galapoto/smartploy/actions/runs/45190968415/artifacts/14825721629",
+    "note": "First upload excluded dot-prefixed reports; runner logs contain actual exit results. Next workflow commit includes include-hidden-files=true and executable Impeccable detect; use final exact HEAD evidence when available."
+  },
+  "components": [
+    {
+      "name": "ui",
+      "paths": [
+        "web/src/HomeLanding.tsx",
+        "web/src/App.tsx",
+        "web/src/main.tsx",
+        "web/src/sp-v4-quiet-home.css",
+        "web/src/sp-v4-card-surfaces.css"
+      ],
+      "skills": [
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/scripts/search.py",
+          "mode": "EXECUTED_CLI",
+          "applied": "Real Python design-system search --variance 2 --motion 1 --density 2; UX progressive-disclosure search; React stack search. Executed via GitHub Actions #45190968415; output archived to actual CLI report."
+        },
+        {
+          "name": "Taste / design-taste-frontend",
+          "repository": "https://github.com/Leonxlnx/taste-skill",
+          "commit": "6c0b5c78f5d31776e2210305abaa210cdc0030bf",
+          "path": "skills/taste-skill/scripts/copy-lint.mjs",
+          "mode": "EXECUTED_CLI",
+          "applied": "Actual Node 22 copy-lint.mjs --kind software --json on two REAL React server-rendered homepage variants, not author-invented sample HTML; exit 0, 2 files; original copy report in Actions artifact."
+        },
+        {
+          "name": "Impeccable / distill and mechanical detector",
+          "repository": "https://github.com/pbakaus/impeccable",
+          "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
+          "path": ".claude/skills/impeccable/scripts/impeccable",
+          "mode": "EXECUTED_CLI",
+          "applied": "Actual checksum-verified launcher context --target HomeLanding.tsx succeeded (exit 0). Initial invalid audit command returned exit 1 (NOT VERIFIED); corrected to documented detect --json --changed and reran in Actions #45191478425 (result pending). Applied distill and operate ref to remove first-screen cards/jobs/steps."
+        },
+        {
+          "name": "Anthropic Frontend Design",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/frontend-design/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read authoritative skill; no standalone command exists in that directory. Converted brief into one literal task-focused hero, one action, one restrained brand palette, user-language copy, no generic card grid or needless section numbers."
+        },
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Semantic heading/landmark order, native keyboard-operable sidebar disclosure, 44px interaction targets, no false submit action, dark/light, reduced motion and visible focus."
+        }
+      ],
+      "applied_method": "V4 operator-mode redesign per owner screenshot and critique: no CV => exactly one Upload your CV primary, signed-in CV => exactly one Choose how to apply primary; explicit user action reveals existing three certified StartChoices handlers; optional Find jobs/Create CV/saved cases remain immediately operable. Simplified 10 sidebar links to four frequent destinations + native More tools, preserving full routes. Moved job feeds and preference setup to existing Jobs/Settings routes; kept release warnings and account isolation, employer submit permission and first-party API untouched. Stopped stacking old homepage CSS: deleted 16,860 bytes from obsolete card/job-preview overrides, added scoped quiet-home token-aware styles with no new dependencies.",
+      "reuse_provenance": "COPIED: none. PORTED: none. SANITIZED: removed obsolete homepage CSS rules from web/src/sp-v4-card-surfaces.css. ADAPTED/INTEGRATED: existing first-party galapoto/smartploy@f76e56c3975646970dcb75fba2d645299bee6357 App.tsx::navigate/startApplyFlow/onUploadClick/startGeneralBrowse/onOpenApplications, StartChoices.tsx original 3 approved mode callbacks, NAV and ReleaseStatus, locally licensed Fontsource via main.tsx; no external UI code/assets copied. NEW: HomeLanding.tsx focused entry and sp-v4-quiet-home.css scoped style. NOT_VERIFIED: real signed-in public UI and employer receipt until exact PR/main CI, deployment and owner view.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "All affected runtime source is complete readable first-party React+CSS. User-supplied design references and skill instruction repos are design-tool inputs, not licensed application code or executable reference targets. Reconstructed/retrofitted donor UI adds no value and may violate source rights. Verified no external source/stylesheet is copied into app; external tools checked out only in ephemeral read-only CI runner.",
+      "measured_seconds": "NOT_MEASURED",
+      "tests": "Actual UI/UX Pro Max CLI SUCCESS in Actions #45190968415; Taste Node linter two React server renders exit 0. Impeccable context exit 0, invalid audit command exit 1 and corrected detector pending. Web Vitest, built Chromium, native Woodpecker and exact-branch checks pending. Existing no-final-submit consent and account boundaries unchanged."
+    },
+    {
+      "name": "qa",
+      "paths": [
+        "web/src/HomeLanding.test.tsx",
+        "web/browser-tests/onboarding.e2e.ts",
+        ".github/workflows/smartploy-ui-skill-tooling.yml"
+      ],
+      "skills": [
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/scripts/search.py",
+          "mode": "EXECUTED_CLI",
+          "applied": "Real Python design-system search --variance 2 --motion 1 --density 2; UX progressive-disclosure search; React stack search. Executed via GitHub Actions #45190968415; output archived to actual CLI report."
+        },
+        {
+          "name": "Taste / design-taste-frontend",
+          "repository": "https://github.com/Leonxlnx/taste-skill",
+          "commit": "6c0b5c78f5d31776e2210305abaa210cdc0030bf",
+          "path": "skills/taste-skill/scripts/copy-lint.mjs",
+          "mode": "EXECUTED_CLI",
+          "applied": "Actual Node 22 copy-lint.mjs --kind software --json on two REAL React server-rendered homepage variants, not author-invented sample HTML; exit 0, 2 files; original copy report in Actions artifact."
+        },
+        {
+          "name": "Impeccable / distill and mechanical detector",
+          "repository": "https://github.com/pbakaus/impeccable",
+          "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
+          "path": ".claude/skills/impeccable/scripts/impeccable",
+          "mode": "EXECUTED_CLI",
+          "applied": "Actual checksum-verified launcher context --target HomeLanding.tsx succeeded (exit 0). Initial invalid audit command returned exit 1 (NOT VERIFIED); corrected to documented detect --json --changed and reran in Actions #45191478425 (result pending). Applied distill and operate ref to remove first-screen cards/jobs/steps."
+        },
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Semantic heading/landmark order, native keyboard-operable sidebar disclosure, 44px interaction targets, no false submit action, dark/light, reduced motion and visible focus."
+        },
+        {
+          "name": "Test-driven development / regression verification",
+          "repository": "https://github.com/obra/superpowers",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read real skill; new regression tests cover absent pre-CV methods, no unauthorized final submit, user-selected mode and mobile overflow. Tests were written after first UI edit; do not claim strict test-first/TDD RED was observed. Exact built React/Vitest/Chromium pipeline must provide GREEN/RED outputs."
+        }
+      ],
+      "applied_method": "Executed pinned real external toolchain on isolated ubuntu-24.04 GitHub Actions with read-only checkout and persist-credentials false. UI/UX Python BM25 search, Taste Node linter on actual React SSR HTML (synthetic props only), verified Impeccable launcher context and documented detector. No applicant data or tokens supplied. Extended first-party Vitest and Playwright browser tests to assert exactly one starting action, real route callbacks, genuine same-origin browser rendering at 320/390/1440, sidebar accessibility and no employer mutations.",
+      "reuse_provenance": "COPIED: none. ADAPTED: existing web/browser-tests/onboarding.e2e.ts::installSyntheticApi/evidence and first-party Vitest. NEW: HomeLanding.test.tsx and read-only CI tool audit workflow. NOT_VERIFIED: CI and real UI until exact checks pass. No untrusted tool code is copied into deployable web bundle.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "First-party UI test fixtures and Playwright are already deployed; source tools are used explicitly for audit and do not require REA reconstruction.",
+      "measured_seconds": "NOT_MEASURED",
+      "tests": "Actual upstream tools Actions #45190968415: UI/UX Pro Max search PASS, Taste copy-lint two real SSR files EXIT=0, Impeccable context EXIT=0, wrong audit command EXIT=1, corrected documented Impeccable detect pipeline pending. Regression tests added; no source CI verified at receipt creation."
+    }
+  ]
+}
