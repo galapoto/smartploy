@@ -4,9 +4,9 @@
   "user_outcome": "An actual premium but unusually simple SmartPloy entry: one primary action per viewport before employer application; avoid overwhelming simultaneous dashboards, jobs, steps and three cards. Use REAL tooling for user-nominated GitHub skills rather than merely citing guidance.",
   "source_authority": "AGENTS.md and docs/v4/SMARTPLOY_V4_PRODUCTION_FIRST_CONTRACT.md on main; owner-design brief 2026-11-23; approved privacy and source gates unchanged.",
   "actual_tooling": {
-    "github_actions_run": "https://github.com/galapoto/smartploy/actions/runs/45190968415",
-    "artifact": "https://github.com/galapoto/smartploy/actions/runs/45190968415/artifacts/14825721629",
-    "note": "First upload excluded dot-prefixed reports; runner logs contain actual exit results. Next workflow commit includes include-hidden-files=true and executable Impeccable detect; use final exact HEAD evidence when available."
+    "github_actions_run": "https://github.com/galapoto/smartploy/actions/runs/45191478425",
+    "artifact": "https://github.com/galapoto/smartploy/actions/runs/45191478425/artifacts/14826012037",
+    "note": "Real UIUX generated Minimalism & Swiss Style and progressive-disclosure suggestions; recommendations for gamer fonts (Russo One/Chakra Petch), green accent and GSAP animation were deliberately REJECTED as off-brief. Taste found zero copy issues in 2 real SSR variants. Impeccable empty worktree scan corrected to explicit files; result pending. All tool output archived."
   },
   "components": [
     {
@@ -17,7 +17,9 @@
         "web/src/main.tsx",
         "web/src/sp-v4-quiet-home.css",
         "web/src/sp-v4-card-surfaces.css",
-        "web/src/HomeLanding.test.tsx"
+        "web/src/HomeLanding.test.tsx",
+        "web/src/App.test.tsx",
+        "web/src/sp-v4-card-surfaces.test.ts"
       ],
       "skills": [
         {
@@ -44,8 +46,8 @@
           "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
           "path": ".claude/skills/impeccable/SKILL.md",
           "mode": "EXECUTED",
-          "applied": "Actual checksum-verified launcher context --target HomeLanding.tsx succeeded (exit 0). Initial invalid audit command returned exit 1 (NOT VERIFIED); corrected to documented detect --json --changed and reran in Actions #45191478425 (result pending). Applied distill and operate ref to remove first-screen cards/jobs/steps.",
-          "execution_evidence": "Actual GitHub Actions run 45190968415: checksum-pinned Impeccable launcher context --target web/src/HomeLanding.tsx exit=0; initial nonexistent audit returned EXIT=1, corrected documented detector in later run."
+          "applied": "Actual verified launcher context --target HomeLanding.tsx EXIT=0; documented `detect --json --changed` EXIT=0 but scanned no modified worktree files ([]), corrected to explicit changed UI source paths for an actionable scan. An initial unsupported `audit` subcommand EXIT=1 was corrected, never declared a pass.",
+          "execution_evidence": "Actual upstream action run 45191478425 yielded context=0 and detect=0 with [] because clean git worktree; original unsupported audit=1. Exact changed-file detector now explicitly invoked by follow-up workflow; report pending."
         },
         {
           "name": "Anthropic Frontend Design",
@@ -64,12 +66,12 @@
           "applied": "Semantic heading/landmark order, native keyboard-operable sidebar disclosure, 44px interaction targets, no false submit action, dark/light, reduced motion and visible focus."
         }
       ],
-      "applied_method": "V4 operator-mode redesign per owner screenshot and critique: no CV => exactly one Upload your CV primary, signed-in CV => exactly one Choose how to apply primary; explicit user action reveals existing three certified StartChoices handlers; optional Find jobs/Create CV/saved cases remain immediately operable. Simplified 10 sidebar links to four frequent destinations + native More tools, preserving full routes. Moved job feeds and preference setup to existing Jobs/Settings routes; kept release warnings and account isolation, employer submit permission and first-party API untouched. Stopped stacking old homepage CSS: deleted 16,860 bytes from obsolete card/job-preview overrides, added scoped quiet-home token-aware styles with no new dependencies.",
+      "applied_method": "V4 operator-mode redesign per owner screenshot and critique: no CV => exactly one Upload your CV primary, signed-in CV => exactly one Choose how to apply primary; explicit user action reveals existing three certified StartChoices handlers; optional Find jobs/Create CV/saved cases remain immediately operable. Simplified 10 sidebar links to four frequent destinations + native More tools, preserving full routes. Moved job feeds and preference setup to existing Jobs/Settings routes; kept release warnings and account isolation, employer submit permission and first-party API untouched. Stopped stacking old homepage CSS: deleted 16,860 bytes from obsolete card/job-preview overrides, added scoped quiet-home token-aware styles with no new dependencies. Original App tests preserving private AutoApply progress and old dashboard visibility assumptions were updated for explicit applicant method choice; 16,860 chars obsolete home styles removed, older safety classes preserved. Candidate-specific job results/search setup remain available under native Workspace overview and dedicated routes, invisible on first view. Existing account-bound operations unchanged.",
       "reuse_provenance": "COPIED: none. PORTED: none. SANITIZED: removed obsolete homepage CSS rules from web/src/sp-v4-card-surfaces.css. ADAPTED/INTEGRATED: existing first-party galapoto/smartploy@f76e56c3975646970dcb75fba2d645299bee6357 App.tsx::navigate/startApplyFlow/onUploadClick/startGeneralBrowse/onOpenApplications, StartChoices.tsx original 3 approved mode callbacks, NAV and ReleaseStatus, locally licensed Fontsource via main.tsx; no external UI code/assets copied. NEW: HomeLanding.tsx focused entry and sp-v4-quiet-home.css scoped style. NOT_VERIFIED: real signed-in public UI and employer receipt until exact PR/main CI, deployment and owner view.",
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "All affected runtime source is complete readable first-party React+CSS. User-supplied design references and skill instruction repos are design-tool inputs, not licensed application code or executable reference targets. Reconstructed/retrofitted donor UI adds no value and may violate source rights. Verified no external source/stylesheet is copied into app; external tools checked out only in ephemeral read-only CI runner.",
       "measured_seconds": "NOT_MEASURED",
-      "tests": "Actual UI/UX Pro Max CLI SUCCESS in Actions #45190968415; Taste Node linter two React server renders exit 0. Impeccable context exit 0, invalid audit command exit 1 and corrected detector pending. Web Vitest, built Chromium, native Woodpecker and exact-branch checks pending. Existing no-final-submit consent and account boundaries unchanged."
+      "tests": "Actual UI/UX Pro Max CLI SUCCESS in Actions #45190968415; Taste Node linter two React server renders exit 0. Impeccable context exit 0, invalid audit command exit 1 and corrected detector pending. Web Vitest, built Chromium, native Woodpecker and exact-branch checks pending. Existing no-final-submit consent and account boundaries unchanged. Initial exact PR head #1530 web tests had 56 failures dominated by old homepage assertions. Updated original App.test for new CV label, app-mode selection step, previous banner/side-panel expectations; preserved all real employer/no-submit assertions. Added retired stylesheet CSS-order check. Fresh exact-head web/Chromium/native CI pending."
     },
     {
       "name": "qa",
@@ -101,8 +103,8 @@
           "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
           "path": ".claude/skills/impeccable/SKILL.md",
           "mode": "EXECUTED",
-          "applied": "Actual checksum-verified launcher context --target HomeLanding.tsx succeeded (exit 0). Initial invalid audit command returned exit 1 (NOT VERIFIED); corrected to documented detect --json --changed and reran in Actions #45191478425 (result pending). Applied distill and operate ref to remove first-screen cards/jobs/steps.",
-          "execution_evidence": "Actual GitHub Actions run 45190968415: checksum-pinned Impeccable launcher context --target web/src/HomeLanding.tsx exit=0; initial nonexistent audit returned EXIT=1, corrected documented detector in later run."
+          "applied": "Actual verified launcher context --target HomeLanding.tsx EXIT=0; documented `detect --json --changed` EXIT=0 but scanned no modified worktree files ([]), corrected to explicit changed UI source paths for an actionable scan. An initial unsupported `audit` subcommand EXIT=1 was corrected, never declared a pass.",
+          "execution_evidence": "Actual upstream action run 45191478425 yielded context=0 and detect=0 with [] because clean git worktree; original unsupported audit=1. Exact changed-file detector now explicitly invoked by follow-up workflow; report pending."
         },
         {
           "name": "Apple HIG Foundations",
@@ -126,7 +128,7 @@
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "First-party UI test fixtures and Playwright are already deployed; source tools are used explicitly for audit and do not require REA reconstruction.",
       "measured_seconds": "NOT_MEASURED",
-      "tests": "Actual upstream tools Actions #45190968415: UI/UX Pro Max search PASS, Taste copy-lint two real SSR files EXIT=0, Impeccable context EXIT=0, wrong audit command EXIT=1, corrected documented Impeccable detect pipeline pending. Regression tests added; no source CI verified at receipt creation."
+      "tests": "Actual upstream tools Actions #45190968415: UI/UX Pro Max search PASS, Taste copy-lint two real SSR files EXIT=0, Impeccable context EXIT=0, wrong audit command EXIT=1, corrected documented Impeccable detect pipeline pending. Regression tests added; no source CI verified at receipt creation. Executed upstream UI tool audit #45191478425: UIUX search exit 0, Taste linter exit 0 with zero findings in two SSR files, Impeccable context exit 0 and detect --json --changed exit 0 but [] because unmodified git worktree; corrected to explicit UI files for meaningful scan. No claim that zero findings are product-level browser verification."
     },
     {
       "name": "ci",
@@ -158,16 +160,16 @@
           "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
           "path": ".claude/skills/impeccable/SKILL.md",
           "mode": "EXECUTED",
-          "applied": "Actual checksum-verified launcher context --target HomeLanding.tsx succeeded (exit 0). Initial invalid audit command returned exit 1 (NOT VERIFIED); corrected to documented detect --json --changed and reran in Actions #45191478425 (result pending). Applied distill and operate ref to remove first-screen cards/jobs/steps.",
-          "execution_evidence": "Actual GitHub Actions run 45190968415: checksum-pinned Impeccable launcher context --target web/src/HomeLanding.tsx exit=0; initial nonexistent audit returned EXIT=1, corrected documented detector in later run."
+          "applied": "Actual verified launcher context --target HomeLanding.tsx EXIT=0; documented `detect --json --changed` EXIT=0 but scanned no modified worktree files ([]), corrected to explicit changed UI source paths for an actionable scan. An initial unsupported `audit` subcommand EXIT=1 was corrected, never declared a pass.",
+          "execution_evidence": "Actual upstream action run 45191478425 yielded context=0 and detect=0 with [] because clean git worktree; original unsupported audit=1. Exact changed-file detector now explicitly invoked by follow-up workflow; report pending."
         }
       ],
-      "applied_method": "Configured and ran actual upstream UI/UX Pro Max Python search, Taste Node copy-lint on rendered React HTML, and the pinned checksum-verifying Impeccable executable via read-only ephemeral GitHub Actions. External repository checkouts are pinned full SHAs, persist-credentials=false and contents read. Original GHA #45190968415 reported UIUX PASS, Taste EXIT=0 and Impeccable context EXIT=0; the first audit command was unsupported (EXIT=1), so the next exact run executes the supported detector. Artifacts include unmodified findings, with include-hidden-files true. No external package is shipped in web/app image.",
+      "applied_method": "Configured and ran actual upstream UI/UX Pro Max Python search, Taste Node copy-lint on rendered React HTML, and the pinned checksum-verifying Impeccable executable via read-only ephemeral GitHub Actions. External repository checkouts are pinned full SHAs, persist-credentials=false and contents read. Original GHA #45190968415 reported UIUX PASS, Taste EXIT=0 and Impeccable context EXIT=0; the first audit command was unsupported (EXIT=1), so the next exact run executes the supported detector. Artifacts include unmodified findings, with include-hidden-files true. No external package is shipped in web/app image. Detector --changed reported empty [] because clean checkout, so explicitly passed HomeLanding, App and both changed CSS file paths for a meaningful UI scan. Github actions artifacts now include hidden .ui-tooling-results files; external report independently inspected.",
       "reuse_provenance": "COPIED: none. ADAPTED/INTEGRATED existing first-party github-actions/checkout workflow style and three upstream checked-out *tools* in CI only; scripts are not vendored into product. NEW: smartploy-ui-skill-tooling.yml read-only design audit; original CI and native Woodpecker release gates unaffected. NOT_VERIFIED: future tool-run results until captured.",
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "This CI job invokes pinned existing upstream CLI scripts as disposable tools; no source reconstruction or REA donor required, and no third-party code adopted in deployed application.",
       "measured_seconds": "NOT_MEASURED",
-      "tests": "Actual run 45190968415: full external tool checkout/source search/Taste copy-lint; Impeccable context exit 0; unsupported audit command failed and was replaced by supported detect command. Next audit run 45191478425 result pending at receipt revision. No candidate account data or employer actions."
+      "tests": "Actual run 45190968415: full external tool checkout/source search/Taste copy-lint; Impeccable context exit 0; unsupported audit command failed and was replaced by supported detect command. Next audit run 45191478425 result pending at receipt revision. No candidate account data or employer actions. Tool artifacts ID 14826012037 include full actual UiUX/Taste/Impeccable outputs. Original Impeccable detect [] was empty-input not proof of a clean design. Corrected to explicit files, new run pending."
     }
   ]
 }
