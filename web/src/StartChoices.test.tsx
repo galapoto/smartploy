@@ -53,7 +53,8 @@ describe("V4 clarity: one visible task, real actions, and accessible disclosure 
     const assisted=screen.getByRole("button",{name:/Assisted · Apply with AI/i});
     expect(assisted.getAttribute("data-featured")).toBe("guided");
     fireEvent.click(assisted);
-    expect(onMode).toHaveBeenCalledExactlyOnceWith("assisted");
+    expect(onMode).toHaveBeenCalledOnce();
+    expect(onMode).toHaveBeenCalledWith("assisted");
     expect(screen.getByRole("button",{name:/Just find jobs/i})).toBeTruthy();
     expect(screen.getByText(/Employer submissions require applicant review and explicit authorization/)).toBeTruthy();
   });
