@@ -1107,7 +1107,8 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-byli
     padding:12px 13px;
     gap:4px;
     border-radius:10px;
-    grid-template-columns:24px minmax(0,1fr);
+    grid-template-columns:32px minmax(0,1fr) 18px;
+    grid-template-rows:auto auto auto;
     align-items:center;
     text-align:left;
   }
@@ -1125,14 +1126,18 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-byli
     line-height:1.35;
   }
   html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > .flow-card-cta {
-    grid-column:1 / -1;
-    min-height:34px;
+    grid-column:2;
+    grid-row:3;
+    min-height:32px;
     margin:4px 0 0;
     padding:6px 10px;
     font-size:12px;
   }
   html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:last-child {
-    display:none;
+    display:block;
+    grid-column:3;
+    grid-row:1 / span 3;
+    align-self:center;
   }
   html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-secondary-actions {
     grid-template-columns:minmax(0,1fr);
