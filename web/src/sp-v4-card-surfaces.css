@@ -557,3 +557,642 @@ html[data-smartploy-theme] .smartploy-app .studio-resume-card:focus-visible {
     transform:none;
   }
 }
+
+
+/* SP V4 / EXPERIENCE-CLARITY-001 / 2026-11-23
+   Screenshot + owner-supplied UI video: one visible CV/application decision,
+   job results next, supplementary analytics on demand. No new framework,
+   font CDN, motion package, fake submit action or product reference assets.
+   GUIDANCE_APPLIED: HIG, UI-UX Pro Max, Impeccable, Taste, Apple Design,
+   Web Typography, Font Pairing, Web Interface Guidelines. */
+
+/* Keep the existing locally licensed Lato, Manrope and Garamond font roles.
+   Unlike the earlier 14px/root + miniature card text, practical reading
+   surfaces now share a 16px baseline and visible 1.45+ leading. */
+html[data-smartploy-theme] .smartploy-app {
+  font-size:16px;
+  line-height:1.5;
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .content {
+  width:100%;
+  max-width:1320px;
+  padding:clamp(22px,2.6vw,40px) clamp(18px,2.4vw,38px) 44px;
+}
+html[data-smartploy-theme] .smartploy-app .site-header {
+  min-height:70px;
+}
+html[data-smartploy-theme] .smartploy-app .header-search input {
+  font-size:15px;
+  line-height:1.5;
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .nav-item {
+  font-family:"Manrope","Segoe UI",sans-serif;
+  font-size:14px;
+  min-height:44px;
+  line-height:1.4;
+}
+html[data-smartploy-theme] .smartploy-app :is(
+  .nav-item,.header-search input,.flow-start-card,.flow-start-browse-button,
+  .sp-clarity-overview > summary,.jobs-panel .job-buttons :is(button,a)
+):focus-visible {
+  outline:3px solid var(--sp-ui-ring);
+  outline-offset:3px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home.sp126-dashboard-layout {
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:0;
+  max-width:100%;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp126-dashboard-main {
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:20px;
+}
+html[data-smartploy-theme] .smartploy-app .sp125-career-cover {
+  min-height:152px;
+  max-height:210px;
+  margin:0 0 clamp(20px,2.5vw,32px);
+  border-radius:18px;
+}
+html[data-smartploy-theme] .smartploy-app .sp125-career-copy {
+  display:flex;
+  align-items:center;
+  padding:clamp(24px,2.9vw,40px);
+  max-width:100%;
+}
+html[data-smartploy-theme] .smartploy-app .sp125-career-copy h1 {
+  margin:0;
+  color:#f7faff;
+  font:400 clamp(38px,4.4vw,62px)/1.12 "EB Garamond",Georgia,serif;
+  letter-spacing:-.02em;
+  text-wrap:balance;
+}
+
+/* A single next action, followed by three honest modes. */
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start {
+  padding:0;
+  margin:0;
+  background:transparent;
+  border:0;
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-heading {
+  max-width:75ch;
+  margin:0 0 18px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-heading h2 {
+  margin:0 0 8px;
+  font:400 clamp(28px,3vw,38px)/1.17 "EB Garamond",Georgia,serif;
+  letter-spacing:-.012em;
+  color:var(--sp-ui-ink);
+  text-wrap:balance;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-heading > p {
+  margin:0;
+  max-width:65ch;
+  color:var(--sp-ui-muted);
+  font-size:16px;
+  line-height:1.55;
+  opacity:1;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin:8px 0 20px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress li {
+  min-width:0;
+  padding:11px 12px;
+  border:1px solid var(--sp-ui-card-border);
+  border-radius:9px;
+  background:var(--sp-ui-card);
+  background-image:none;
+  box-shadow:none;
+  color:var(--sp-ui-muted);
+  font-size:13px;
+  font-weight:700;
+  line-height:1.4;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress li.current {
+  border-color:var(--sp-ui-accent);
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  color:var(--sp-ui-ink);
+  box-shadow:inset 0 -2px 0 var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress li.done {
+  border-color:var(--sp-ui-card-border);
+  background:var(--sp-ui-card);
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-ready {
+  margin:0 0 16px;
+  padding:10px 14px;
+  color:var(--sp-ui-ink);
+  border:1px solid var(--sp-ui-card-border);
+  background:var(--sp-ui-card);
+  box-shadow:none;
+  font-size:14px;
+  line-height:1.5;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-ready :is(strong,span) {
+  color:var(--sp-ui-ink);
+  opacity:1;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-method-heading {
+  display:flex;
+  align-items:end;
+  gap:16px;
+  margin:0 0 15px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-method-heading h3 {
+  margin:0;
+  color:var(--sp-ui-ink);
+  font:700 clamp(19px,1.8vw,24px)/1.3 "Manrope","Segoe UI",sans-serif;
+  letter-spacing:-.018em;
+  text-wrap:balance;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-method-status {
+  font-size:12px;
+  line-height:1.5;
+  padding:7px 11px;
+  border:1px solid var(--sp-ui-card-border);
+  color:var(--sp-ui-ink);
+  background:var(--sp-ui-card);
+  white-space:nowrap;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid.flow-start-grid-methods {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:14px;
+  align-items:stretch;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] {
+  position:relative;
+  min-width:0;
+  min-height:218px;
+  padding:22px;
+  border:1px solid var(--sp-ui-card-border);
+  border-radius:15px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:9px;
+  align-content:start;
+  color:var(--sp-ui-ink);
+  background:var(--sp-ui-card);
+  background-image:none;
+  box-shadow:none;
+  text-align:left;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-featured="guided"] {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > strong {
+  color:var(--sp-ui-ink);
+  font:700 18px/1.4 "Manrope","Segoe UI",sans-serif;
+  letter-spacing:-.015em;
+  overflow-wrap:anywhere;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode]
+  > span:not(.flow-card-cta):not(.flow-start-index) {
+  color:var(--sp-ui-muted);
+  font:400 15px/1.5 "Lato","Segoe UI",sans-serif;
+  opacity:1;
+  overflow-wrap:anywhere;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:first-child {
+  color:var(--sp-ui-accent);
+  background:transparent;
+  padding:0;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > .flow-start-index {
+  display:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > .flow-card-cta {
+  display:flex;
+  align-items:center;
+  min-width:0;
+  width:100%;
+  min-height:44px;
+  margin-top:auto;
+  padding:11px 14px;
+  border:1px solid var(--sp-ui-card-border);
+  border-radius:9px;
+  color:var(--sp-ui-ink);
+  background:var(--sp-ui-card-raised);
+  font:700 14px/1.3 "Manrope","Segoe UI",sans-serif;
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-featured="guided"] > .flow-card-cta {
+  background:var(--sp-ui-accent);
+  border-color:var(--sp-ui-accent);
+  color:var(--sp-ui-card);
+}
+html[data-smartploy-theme="dark"] .smartploy-app .sp-clarity-home
+ .flow-start-grid-methods .flow-start-card[data-featured="guided"] > .flow-card-cta {
+  color:#051c28;
+}
+html[data-smartploy-theme="light"] .smartploy-app .sp-clarity-home
+ .flow-start-grid-methods .flow-start-card[data-featured="guided"] > .flow-card-cta {
+  color:#fff;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card:disabled {
+  opacity:.68;
+  cursor:not-allowed;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card:disabled > .flow-card-cta {
+  display:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-secondary-actions {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin-top:16px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-secondary-actions > div {
+  min-width:0;
+  margin:0;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-secondary-actions .flow-start-browse-button {
+  min-width:0;
+  min-height:66px;
+  padding:14px 16px;
+  margin:0;
+  background:var(--sp-ui-card);
+  border:1px solid var(--sp-ui-card-border);
+  color:var(--sp-ui-ink);
+  border-radius:12px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-secondary-actions .flow-start-browse-button strong {
+  font:700 15px/1.4 "Manrope","Segoe UI",sans-serif;
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-secondary-actions .flow-start-browse-button small {
+  font-size:13px;
+  line-height:1.4;
+  color:var(--sp-ui-muted);
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-privacy {
+  margin:12px 0 0;
+  max-width:75ch;
+  color:var(--sp-ui-muted);
+  font-size:14px;
+  line-height:1.5;
+}
+
+/* First screen stays task-led. The job list is second; metrics, source status
+   and tools remain one keyboard-operable native disclosure further down.
+   Native <details> owns keyboard activation, Escape remains untouched. */
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview {
+  margin-top:2px;
+  color:var(--sp-ui-ink);
+  background:var(--sp-ui-card);
+  border:1px solid var(--sp-ui-card-border);
+  border-radius:14px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home.sp-home-setup .sp-clarity-overview {
+  display:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview > summary {
+  display:flex;
+  align-items:center;
+  gap:13px;
+  min-height:60px;
+  padding:14px 18px;
+  cursor:pointer;
+  list-style:none;
+  color:var(--sp-ui-ink);
+  font:700 16px/1.4 "Manrope","Segoe UI",sans-serif;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview > summary::-webkit-details-marker {
+  display:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview > summary svg:first-child {
+  color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview > summary small {
+  margin-left:auto;
+  color:var(--sp-ui-muted);
+  font-size:13px;
+  font-weight:400;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview > summary svg:last-child {
+  flex-shrink:0;
+  color:var(--sp-ui-muted);
+  transition:transform 160ms ease;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview[open] > summary svg:last-child {
+  transform:rotate(90deg);
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body {
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:20px;
+  padding:6px 18px 20px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .stats-grid {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:12px;
+  margin:0;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .sp126-dashboard-aside {
+  min-width:0;
+  display:block;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .dashboard-side {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px;
+  min-width:0;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .dashboard-side .panel {
+  min-width:0;
+  padding:20px;
+  border:1px solid var(--sp-ui-card-border);
+  background:var(--sp-ui-card-raised);
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .stat-card {
+  min-width:0;
+  padding:16px;
+  min-height:106px;
+  border-color:var(--sp-ui-card-border);
+  background:var(--sp-ui-card-raised);
+  color:var(--sp-ui-ink);
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .stat-copy strong {
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .stat-copy :is(small,.stat-label) {
+  color:var(--sp-ui-muted);
+  font-size:13px;
+}
+
+/* Real vacancy data is scannable before applicant chooses a mode; leave
+   source freshness and mismatches intact and all five buttons wired. */
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp126-job-results .jobs-panel {
+  padding:clamp(18px,2.2vw,28px);
+  border:1px solid var(--sp-ui-card-border);
+  border-radius:16px;
+  background:var(--sp-ui-card);
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp126-job-results .jobs-panel .panel-heading h2 {
+  color:var(--sp-ui-ink);
+  font:700 clamp(22px,2.15vw,29px)/1.28 "Manrope","Segoe UI",sans-serif;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp126-job-results .jobs-panel .panel-heading p:last-child {
+  max-width:65ch;
+  color:var(--sp-ui-muted);
+  font-size:14px;
+  line-height:1.5;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-list {
+  gap:12px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-item {
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr);
+  align-items:start;
+  column-gap:15px;
+  row-gap:15px;
+  min-width:0;
+  padding:19px;
+  border:1px solid var(--sp-ui-card-border);
+  border-radius:12px;
+  background:var(--sp-ui-card-raised);
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-details {
+  min-width:0;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-details h3 {
+  color:var(--sp-ui-ink);
+  font:700 18px/1.35 "Manrope","Segoe UI",sans-serif;
+  overflow-wrap:anywhere;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-byline {
+  color:var(--sp-ui-muted);
+  font-size:14px;
+  line-height:1.5;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-meta {
+  color:var(--sp-ui-muted);
+  font-size:13px;
+  line-height:1.45;
+  gap:8px 12px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-buttons {
+  grid-column:2;
+  width:100%;
+  display:flex;
+  flex-direction:row;
+  flex-wrap:wrap;
+  justify-content:flex-start;
+  align-items:center;
+  gap:9px;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-buttons :is(button,a) {
+  width:auto;
+  min-width:125px;
+  min-height:42px;
+  padding:9px 13px;
+  border-radius:8px;
+  color:var(--sp-ui-ink);
+  font-size:14px;
+  font-weight:700;
+  line-height:1.4;
+  text-align:center;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-buttons .navy-btn {
+  background:var(--sp-ui-accent);
+  border-color:var(--sp-ui-accent);
+  color:#05212a;
+}
+html[data-smartploy-theme="light"] .smartploy-app .sp-clarity-home .jobs-panel .job-buttons .navy-btn {
+  color:#fff;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-buttons .text-btn {
+  min-width:0;
+  color:var(--sp-ui-muted);
+  background:transparent;
+  border-color:transparent;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-buttons :is(button,a):disabled {
+  opacity:.6;
+  cursor:not-allowed;
+}
+html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-byline strong {
+  color:var(--sp-ui-ink);
+}
+
+/* Widths are based on the user's available content area, not guessed device
+   brands. No horizontal scroll or hover-only action; zoom can reflow. */
+@media (max-width:1100px) {
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .dashboard-side {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] {
+    padding:17px;
+  }
+}
+@media (max-width:850px) {
+  html[data-smartploy-theme] .smartploy-app .content {
+    padding:17px 13px 28px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp125-career-cover {
+    min-height:108px;
+    max-height:140px;
+    margin-bottom:14px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp125-career-copy {
+    padding:18px 20px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp125-career-copy h1 {
+    font-size:clamp(31px,6vw,42px);
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-heading h2 {
+    font-size:clamp(27px,5.1vw,36px);
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress li {
+    padding:8px 9px;
+    font-size:12px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid.flow-start-grid-methods {
+    gap:9px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] {
+    min-height:154px;
+    padding:13px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > strong {
+    font-size:15px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > span:not(.flow-card-cta):not(.flow-start-index) {
+    font-size:13px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .stats-grid,
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .dashboard-side {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+@media (max-width:620px) {
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-heading {
+    margin-bottom:10px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-heading > p {
+    font-size:14px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress {
+    gap:5px;
+    margin-bottom:9px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress li {
+    font-size:11px;
+    padding:6px 5px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid.flow-start-grid-methods {
+    grid-template-columns:minmax(0,1fr);
+    gap:8px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] {
+    min-height:0;
+    max-height:158px;
+    padding:12px 13px;
+    gap:4px;
+    border-radius:10px;
+    grid-template-columns:32px minmax(0,1fr) 18px;
+    grid-template-rows:auto auto auto;
+    align-items:center;
+    text-align:left;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:first-child {
+    grid-column:1;
+    grid-row:1 / span 2;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > strong {
+    grid-column:2;
+    font-size:15px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > span:not(.flow-card-cta):not(.flow-start-index) {
+    grid-column:2;
+    font-size:12px;
+    line-height:1.35;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > .flow-card-cta {
+    grid-column:2;
+    grid-row:3;
+    min-height:32px;
+    margin:4px 0 0;
+    padding:6px 10px;
+    font-size:12px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:last-child {
+    display:block;
+    grid-column:3;
+    grid-row:1 / span 3;
+    align-self:center;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-secondary-actions {
+    grid-template-columns:minmax(0,1fr);
+    gap:8px;
+    margin-top:10px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-secondary-actions .flow-start-browse-button {
+    min-height:48px;
+    padding:9px 12px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-privacy {
+    font-size:12px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview > summary {
+    flex-wrap:wrap;
+    font-size:15px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview > summary small {
+    display:none;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .stats-grid,
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview-body .dashboard-side {
+    grid-template-columns:minmax(0,1fr);
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-item {
+    grid-template-columns:34px minmax(0,1fr);
+    padding:13px;
+    gap:10px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-details h3 {
+    font-size:16px;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-buttons {
+    grid-column:1 / -1;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-buttons :is(button,a) {
+    flex:1 1 calc(50% - 10px);
+    min-width:0;
+    min-height:42px;
+  }
+}
+@media (hover:hover) and (prefers-reduced-motion:no-preference) {
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card:not(:disabled),
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview > summary {
+    transition:border-color 160ms ease,background-color 160ms ease,transform 160ms ease;
+  }
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card:not(:disabled):hover {
+    border-color:var(--sp-ui-accent);
+    transform:translateY(-2px);
+  }
+}
+@media(prefers-reduced-motion:reduce) {
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card,
+  html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp-clarity-overview > summary svg:last-child {
+    transition:none;
+    transform:none;
+  }
+}

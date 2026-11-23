@@ -910,6 +910,9 @@ test("a same-email account change resets unsaved criteria and private CV details
     cvFilename: "PRIVATE-ACCOUNT-A.pdf",
   });
   await page.goto("/");
+  // Private CV details remain owner-scoped and available in the new
+  // keyboard-operable overview, no longer repeated beside first actions.
+  await page.locator(".sp-clarity-overview > summary").click();
   await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toBeVisible();
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
@@ -931,6 +934,10 @@ test("a same-email account change resets unsaved criteria and private CV details
     .toHaveValue("Account B role");
   await page.getByRole("button", { name: "Start here", exact: true }).click();
   await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toHaveCount(0);
+  const accountOverview=page.locator(".sp-clarity-overview");
+  if (!(await accountOverview.evaluate((node)=> (node as HTMLDetailsElement).open))) {
+    await accountOverview.locator("summary").click();
+  }
   await expect(page.getByText("ACCOUNT-B.pdf")).toBeVisible();
 });
 
@@ -1206,7 +1213,7 @@ test("SP125 dark canvas, action rows and application descriptions remain legible
         color('.flow-start-card[data-flow-mode="assisted"] > span:not(.flow-start-index):not(.flow-card-cta)', "color"),
         color('.flow-start-card[data-flow-mode="assisted"]', "backgroundColor")),
       card: contrast(
-        color(".flow-start-heading h1", "color"),
+        color(".flow-start-heading h2", "color"),
         color(".smartploy-app", "backgroundColor")),
       renderedWidth: document.querySelector(".flow-start")!.getBoundingClientRect().width,
       availableWidth: document.querySelector(".sp126-dashboard-layout")!.getBoundingClientRect().width,
@@ -1267,7 +1274,7 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   await expect(page.locator(".sidebar .site-brand-mark")).toBeVisible();
   await page.getByRole("button", { name: "Close navigation" }).click();
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
-  await expect(page.getByText("Upload or create a CV, then choose how to apply. You can browse jobs without a CV.")).toBeVisible();
+  await expect(page.getByText("Upload or create your CV once. You can still explore jobs without one.")).toBeVisible();
   const horizontalOverflow = await page.evaluate(() =>
     document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(horizontalOverflow).toBe(false);
@@ -1464,7 +1471,7 @@ test("SP156 Komplyint typography is self-hosted and banner has one clear heading
     await document.fonts.load('700 15px "Manrope"');
     return {
       body: getComputedStyle(document.querySelector(".smartploy-app")!).fontFamily,
-      banner: getComputedStyle(document.querySelector(".sp125-career-copy h2")!).fontFamily,
+      banner: getComputedStyle(document.querySelector(".sp125-career-copy h1")!).fontFamily,
       nav: getComputedStyle(document.querySelector(".sidebar-nav .nav-item")!).fontFamily,
       loaded: [
         document.fonts.check('400 20px "Lato"'),
@@ -1742,5 +1749,105 @@ test("V4 M1: remaining pale workflow panels and editors contrast in real Chromiu
     expect(surface.gradient, surface.selector).toBe("none");
     expect(surface.backgroundLightness, surface.selector).toBeGreaterThan(.85);
     expect(surface.ratio, surface.selector).toBeGreaterThanOrEqual(4.5);
+  }
+});
+
+
+/* V4 UX VIDEO CLARITY: inspect the REAL built React/CSS at ordinary desktop
+ * and phone dimensions. Network/API fixtures are synthetic; no employer
+ * request, applicant mutation, final submission or screenshot invention.
+ */
+test("V4 clarity: task and job hierarchy is readable; overview is an opt-in disclosure", async ({ page }) => {
+  await page.setViewportSize({width:1440,height:900});
+  await installSyntheticApi(page,{
+    initial:{completed:true,mode:"personalized",revision:1},
+    cvFilename:"Reviewed-Synthetic-CV.pdf"
+  });
+  await page.goto("/");
+  const shell=page.locator(".sp-clarity-home");
+  await expect(shell).toBeVisible();
+  const hero=page.locator(".sp125-career-cover");
+  await expect(hero.getByRole("heading",{name:"Apply with confidence",level:1})).toBeVisible();
+  const start=shell.locator(".flow-start");
+  await expect(start.getByRole("heading",{name:/CV connected/,level:2})).toBeVisible();
+  await expect(start.getByRole("heading",{name:"How would you like to apply?",level:3})).toBeVisible();
+  await expect(start.locator(".flow-start-card")).toHaveCount(3);
+  await expect(start.locator('.flow-start-card[data-featured="guided"]')).toBeVisible();
+  const jobs=shell.locator(".sp126-job-results");
+  await expect(jobs.getByRole("heading",{name:"Recommended opportunities"})).toBeVisible();
+  const overview=shell.locator(".sp-clarity-overview");
+  await expect(overview).not.toHaveAttribute("open","");
+  await expect(overview.locator(".stat-card").first()).toBeHidden();
+  const measurement=await page.evaluate(()=>{
+    const measured=(selector:string)=>{
+      const el=document.querySelector(selector) as HTMLElement;
+      if(!el)throw Error("Missing real UI "+selector);
+      return {size:parseFloat(getComputedStyle(el).fontSize),
+        lh:parseFloat(getComputedStyle(el).lineHeight)};
+    };
+    const layout=document.querySelector(".sp-clarity-home") as HTMLElement;
+    const first=layout.querySelector(".flow-start") as HTMLElement;
+    const next=layout.querySelector(".sp126-job-results") as HTMLElement;
+    const later=layout.querySelector(".sp-clarity-overview") as HTMLElement;
+    return {
+      root:measured(".smartploy-app"),
+      description:measured(".flow-start-heading > p"),
+      method:measured(".flow-start-card > strong"),
+      job:measured(".job-details h3"),
+      columnCount:getComputedStyle(layout).gridTemplateColumns.split(" ").length,
+      order:[first,next,later].map(e=>e.getBoundingClientRect().top),
+      overflow:document.documentElement.scrollWidth>innerWidth+1
+    };
+  });
+  expect(measurement.root.size).toBeGreaterThanOrEqual(16);
+  expect(measurement.description.size).toBeGreaterThanOrEqual(16);
+  expect(measurement.description.lh/measurement.description.size).toBeGreaterThanOrEqual(1.45);
+  expect(measurement.method.size).toBeGreaterThanOrEqual(18);
+  expect(measurement.job.size).toBeGreaterThanOrEqual(18);
+  expect(measurement.columnCount).toBe(1);
+  expect(measurement.order[0]).toBeLessThan(measurement.order[1]);
+  expect(measurement.order[1]).toBeLessThan(measurement.order[2]);
+  expect(measurement.overflow).toBe(false);
+  await overview.locator("summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(overview).toHaveAttribute("open","");
+  await expect(overview.locator(".stat-card")).toHaveCount(4);
+  await expect(overview.getByRole("heading",{name:"Your profile"})).toBeVisible();
+  await evidence(page,"sp-v4-clarity-20261123-desktop-light.png");
+  await page.getByRole("button",{name:"Switch to dark mode"}).click();
+  await expect(page.locator("html")).toHaveAttribute("data-smartploy-theme","dark");
+  await expect(start.locator('.flow-start-card[data-featured="guided"]')).toHaveCSS(
+    "border-top-color", /rgb\(/);
+  await evidence(page,"sp-v4-clarity-20261123-desktop-dark.png");
+});
+test("V4 clarity: 320/390px phone retains accessible CV gate and never overflows",async({page})=>{
+  await installSyntheticApi(page);
+  for(const width of [320,390]){
+    await page.setViewportSize({width,height:740});
+    await page.goto("/");
+    await expect(page.getByRole("heading",{name:"Apply with confidence",level:1})).toBeVisible();
+    await expect(page.getByRole("heading",{name:"Start with your CV.",level:2})).toBeVisible();
+    await expect(page.locator(".sp-clarity-home .sp-clarity-overview")).toBeHidden();
+    await expect(page.locator(".sp-clarity-home .sp126-job-results")).toBeHidden();
+    const controls=page.locator(".sp-clarity-home .flow-start-card[data-flow-mode]");
+    await expect(controls).toHaveCount(3);
+    for(const btn of await controls.all())await expect(btn).toBeDisabled();
+    const dimensions=await page.evaluate(()=>{
+      const cards=Array.from(document.querySelectorAll<HTMLElement>(
+        ".sp-clarity-home .flow-start-card[data-flow-mode]"));
+      return {
+        overflow:document.documentElement.scrollWidth>window.innerWidth+1,
+        hero:document.querySelector(".sp125-career-cover")!.getBoundingClientRect().height,
+        heights:cards.map(el=>el.getBoundingClientRect().height),
+        columns:getComputedStyle(cards[0]).gridTemplateColumns.split(" ").length
+      };
+    });
+    expect(dimensions.overflow).toBe(false);
+    expect(dimensions.hero).toBeLessThanOrEqual(145);
+    expect(dimensions.heights.every(h=>h<=170)).toBe(true);
+    expect(dimensions.columns).toBe(3);
+    await expect(page.getByRole("button",{name:/Upload CV first/})).toBeVisible();
+    await expect(page.getByRole("button",{name:/Just find jobs/})).toBeVisible();
+    await evidence(page,"sp-v4-clarity-20261123-phone-"+width+".png");
   }
 });

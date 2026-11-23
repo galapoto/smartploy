@@ -139,7 +139,8 @@ describe("SP21 application journey", () => {
     const onMode = vi.fn(), onBrowse = vi.fn(), onUpload = vi.fn();
     const view = render(<StartChoices onMode={onMode} onBrowse={onBrowse}
       onUpload={onUpload} cvPresent/>);
-    expect(screen.getByRole("status").textContent).toContain("CV connected.");
+    expect(screen.getByRole("status").textContent).toContain("CV saved.");
+    expect(screen.getByRole("status").textContent).toContain("Nothing has been sent to an employer.");
     expect(screen.queryByRole("button", { name: /Upload CV first/i })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Automatic.*AutoApply/i }));
     expect(onMode).toHaveBeenCalledWith("automatic");
