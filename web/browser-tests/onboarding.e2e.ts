@@ -910,6 +910,9 @@ test("a same-email account change resets unsaved criteria and private CV details
     cvFilename: "PRIVATE-ACCOUNT-A.pdf",
   });
   await page.goto("/");
+  // Private CV details remain owner-scoped and available in the new
+  // keyboard-operable overview, no longer repeated beside first actions.
+  await page.locator(".sp-clarity-overview > summary").click();
   await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toBeVisible();
   await page.getByRole("button", { name: "Advanced settings" }).click();
   await page.getByRole("radio", { name: /Personalized jobs/i }).check();
@@ -931,6 +934,10 @@ test("a same-email account change resets unsaved criteria and private CV details
     .toHaveValue("Account B role");
   await page.getByRole("button", { name: "Start here", exact: true }).click();
   await expect(page.getByText("PRIVATE-ACCOUNT-A.pdf")).toHaveCount(0);
+  const accountOverview=page.locator(".sp-clarity-overview");
+  if (!(await accountOverview.evaluate((node)=> (node as HTMLDetailsElement).open))) {
+    await accountOverview.locator("summary").click();
+  }
   await expect(page.getByText("ACCOUNT-B.pdf")).toBeVisible();
 });
 
@@ -1206,7 +1213,7 @@ test("SP125 dark canvas, action rows and application descriptions remain legible
         color('.flow-start-card[data-flow-mode="assisted"] > span:not(.flow-start-index):not(.flow-card-cta)', "color"),
         color('.flow-start-card[data-flow-mode="assisted"]', "backgroundColor")),
       card: contrast(
-        color(".flow-start-heading h1", "color"),
+        color(".flow-start-heading h2", "color"),
         color(".smartploy-app", "backgroundColor")),
       renderedWidth: document.querySelector(".flow-start")!.getBoundingClientRect().width,
       availableWidth: document.querySelector(".sp126-dashboard-layout")!.getBoundingClientRect().width,
@@ -1267,7 +1274,7 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   await expect(page.locator(".sidebar .site-brand-mark")).toBeVisible();
   await page.getByRole("button", { name: "Close navigation" }).click();
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
-  await expect(page.getByText("Upload or create a CV, then choose how to apply. You can browse jobs without a CV.")).toBeVisible();
+  await expect(page.getByText("Upload or create your CV once. You can still explore jobs without one.")).toBeVisible();
   const horizontalOverflow = await page.evaluate(() =>
     document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(horizontalOverflow).toBe(false);
@@ -1770,7 +1777,7 @@ test("V4 clarity: task and job hierarchy is readable; overview is an opt-in disc
   await expect(jobs.getByRole("heading",{name:"Recommended opportunities"})).toBeVisible();
   const overview=shell.locator(".sp-clarity-overview");
   await expect(overview).not.toHaveAttribute("open","");
-  await expect(overview.locator(".stat-card")).toBeHidden();
+  await expect(overview.locator(".stat-card").first()).toBeHidden();
   const measurement=await page.evaluate(()=>{
     const measured=(selector:string)=>{
       const el=document.querySelector(selector) as HTMLElement;
