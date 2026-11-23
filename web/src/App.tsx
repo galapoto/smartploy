@@ -1532,6 +1532,7 @@ export default function App() {
             <SearchSetup key={accountViewKey} initial={preferences}
               onSave={saveSearchPreferences}/>
           </details> : null}
+          <ReleaseStatus apiRevision={health?.release_revision} />
           <div className="sp126-job-results">{jobsSection}</div>
           <details className="sp-clarity-overview" aria-label="Workspace overview">
             <summary>
@@ -1541,7 +1542,6 @@ export default function App() {
               <ChevronRight size={18} aria-hidden="true" />
             </summary>
             <div className="sp-clarity-overview-body">
-              <ReleaseStatus apiRevision={health?.release_revision} />
           <div className="stats-grid">
             <Stat label={preferences?.mode === "general" ? "Available jobs" : "Preference matches"}
               value={preferences?.mode === "general" ? discovery?.available_count || 0 : discovery?.recommendations.length || 0}
