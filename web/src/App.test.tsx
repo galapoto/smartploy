@@ -189,7 +189,7 @@ describe("SP127: mobile-first persistent shell and nonblocking startup", () => {
     expect(document.querySelector(".loading-screen")).toBeNull();
     expect(document.querySelector(".spinner")).toBeNull();
     expect(document.querySelector(".sp-boot-header .sp-boot-logo")).toBeTruthy();
-    fireEvent.click(within(screen.getByRole("navigation", {name:"Main navigation"})).getByRole("button", { name: "Find jobs" }));
+    fireEvent.click(within(screen.getByRole("navigation", {name:"Workspace navigation while connecting"})).getByRole("button", { name: "Find jobs" }));
     expect(screen.getByText("Find jobs will open when ready")).toBeTruthy();
     // Do not render private profile or employer actions before server identity.
     expect(screen.queryByText("test@smartploy.invalid")).toBeNull();
