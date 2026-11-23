@@ -1,0 +1,127 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "9fc02457333a8850871a2116b261335b2160bc97",
+  "user_outcome": "Make SmartPloy homepage visually readable and easy to navigate before any real employer application: prominent CV/mode workflow and genuine job results, hidden optional stats/tools behind keyboard-accessible overview, accessible desktop/phone interactions, no privacy or submission changes.",
+  "components": [
+    {
+      "name": "ui",
+      "paths": [
+        "web/src/App.tsx",
+        "web/src/StartChoices.tsx",
+        "web/src/StartChoices.test.tsx",
+        "web/src/styles.css",
+        "web/src/sp-v4-card-surfaces.css"
+      ],
+      "skills": [
+        {
+          "name": "Web Typography",
+          "repository": "https://github.com/wondelai/skills",
+          "commit": "c5265583b1a9740f06831e1d3e89b35bba3eb430",
+          "path": "plugins/ux-design/skills/web-typography/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Replaced 14px root with 16px, defined main prose 16px with 1.55 leading and 65ch measure, removed unnecessary external Google font import; reused self-hosted Lato, Manrope and EB Garamond."
+        },
+        {
+          "name": "Font Pairing",
+          "repository": "https://github.com/bilioveloso/font-pairing-skill",
+          "commit": "21060b8ce647b949fa259157c9fc967e0d928d7e",
+          "path": "SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Preserved licensed self-hosted EB Garamond display and Manrope interface headings/Lato legible body instead of adding another display/font service; verified font roles in browser regression."
+        },
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Moved incidental panels to native keyboard-operable details, preserved visible release status and applicant-consent truth, reduced decorative chrome while strengthening focus and disabled states."
+        },
+        {
+          "name": "Apple Design",
+          "repository": "https://github.com/emilkowalski/skills",
+          "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c",
+          "path": "skills/apple-design/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Used restrained 160ms hover/press feedback only on actual existing method buttons, with no gesture lock or extra library; explicit reduced-motion no-transform fallback."
+        },
+        {
+          "name": "Impeccable",
+          "repository": "https://github.com/pbakaus/impeccable",
+          "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
+          "path": ".claude/skills/impeccable/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied actual craft-floor: removed redundant masthead/eyebrow, consolidated secondary actions, eliminated dashboard stat grid from first reading priority and made headings consistent and spacious."
+        },
+        {
+          "name": "Taste",
+          "repository": "https://github.com/Leonxlnx/taste-skill",
+          "commit": "f6b76575f949707b4e3c37cd86cb44b0b98643e8",
+          "path": "skills/taste-skill/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Let real SmartPloy task and employer-job results lead instead of generic metric cards; retained own logo/palette with no borrowed product photography, complex scene or generic animation."
+        },
+        {
+          "name": "UI UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "e59ff376a41f7ca47b7541ad5c116495cbade3ee",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied contrast, 44px target, semantic label/heading flow, responsive grid and progressive information disclosure checks; real browser tests for 320/390 and 1440 light/dark."
+        },
+        {
+          "name": "Web Design Guidelines",
+          "repository": "https://github.com/vercel-labs/agent-skills",
+          "commit": "1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62",
+          "path": "skills/web-design-guidelines/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied up-to-date source guidance: h1 hero then h2 CV then h3 mode, native details keyboard behavior, true buttons/actions, no horizontal overflow, no network font, visible focus and no motion when reduced."
+        }
+      ],
+      "applied_method": "Looked at the real owner-provided 1700x901 desktop screenshot and 25 sampled visual frames from the attached 12m25s retail interface redesign video. Applied transferable hierarchy: one focal task, clear type, one primary choice, readable secondary actions and details on demand. Applied eight pinned real skill SKILL.md files as guidance (not installed/executed runtimes), read Impeccable craft-floor, UI-UX quick-reference and current Vercel source. Adapted existing React StartChoices/App and final loaded CSS only: made h1 hero > h2 CV > h3 method hierarchy, grouped saved drafts and browse, single-column content, moved stats/tools into native details, jobs earlier, 16px root and legible cards, dark/light with semantic palette, focus and reduced motion. Preserved CV gating, provider permission, cases, ATS safety, release evidence and all handlers.",
+      "reuse_provenance": "COPIED: none (no external code or video assets). PORTED: none. SANITIZED: removed unused remote Google DM Sans @import from web/src/styles.css; no applicant data moved. ADAPTED/INTEGRATED: existing galapoto/smartploy@9fc02457333a8850871a2116b261335b2160bc97 web/src/App.tsx, StartChoices.tsx, styles.css and sp-v4-card-surfaces.css; reused previously licensed Lato/Manrope/EB Garamond Fontsource in main.tsx and original built-in <details>, Chrome Playwright and test infrastructure. NEW: V4 task hierarchy styles and actual regression tests, no new dependency. NOT_VERIFIED: live public new UI until exact CI, merged immutable SHA, approved production release and visual user check.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "The user's video is a visual retail interaction reference, not an authorized source-code binary or analyzable private application. Exact current first-party SmartPloy React/CSS and tests are already available; reverse engineering the unrelated retail design would add licensing, uncertainty and delay without better functional reuse. No user/video assets or code copied.",
+      "measured_seconds": "NOT_MEASURED",
+      "tests": "New V4 StartChoices unit checks original CV gating, real callback, heading hierarchy. Existing UI source/contrast/typography tests, vite typecheck/build and full Vitest and Chromium 320/390/1440 real element layout/keyboard/theme/screenshots required. CI exact-head not yet verified as receipt authored; no production promotion yet."
+    },
+    {
+      "name": "qa",
+      "paths": [
+        "web/browser-tests/onboarding.e2e.ts"
+      ],
+      "skills": [
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Moved incidental panels to native keyboard-operable details, preserved visible release status and applicant-consent truth, reduced decorative chrome while strengthening focus and disabled states."
+        },
+        {
+          "name": "UI UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "e59ff376a41f7ca47b7541ad5c116495cbade3ee",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied contrast, 44px target, semantic label/heading flow, responsive grid and progressive information disclosure checks; real browser tests for 320/390 and 1440 light/dark."
+        },
+        {
+          "name": "Web Design Guidelines",
+          "repository": "https://github.com/vercel-labs/agent-skills",
+          "commit": "1a2c79d4e6c4a2283dc2c614b6538cbe1ed5ca62",
+          "path": "skills/web-design-guidelines/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Applied up-to-date source guidance: h1 hero then h2 CV then h3 mode, native details keyboard behavior, true buttons/actions, no horizontal overflow, no network font, visible focus and no motion when reduced."
+        }
+      ],
+      "applied_method": "Extended first-party Playwright onboarding suite against built app at 1440x900, 320x740 and 390x740: actual rendered h1/h2/h3 and real buttons, verified original CV lock, proper job-before-metrics visual position, 16px body/heading/line-height, native overview click and keyboard Enter, theme switch with light/dark screenshots, no mobile overflow or inflated card heights. Fixed old EB Garamond banner computed font test selector after changing h2 to h1. The API response is explicitly synthetic; no employer site, CV data or final submit is touched.",
+      "reuse_provenance": "COPIED none. REUSED/ADAPTED existing first-party galapoto/smartploy@9fc02457333a8850871a2116b261335b2160bc97 web/browser-tests/onboarding.e2e.ts::installSyntheticApi,evidence and existing real Chromium/Vite preview; NEW 2 browser regression tests. No third-party program or data.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "The exact owned browser fixture and testing framework already exist; original user design video is a visual reference, not comparable executable source. REA would not add authenticated UI validation or replace actual Playwright screenshots.",
+      "measured_seconds": "NOT_MEASURED",
+      "tests": "New tests V4 clarity: desktop task/job hierarchy/native details/contrast reading and 320/390 mobile disabled mode/overflow/hero height. CI exact-head and screenshot inspection still pending. Real signed-in website acceptance NOT_VERIFIED."
+    }
+  ]
+}
