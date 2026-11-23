@@ -1535,6 +1535,12 @@ export default function App() {
               <summary><LayoutDashboard size={18} aria-hidden="true" />
                 <span>Workspace overview</span><ChevronRight size={16} aria-hidden="true"/></summary>
               <div className="sp-clarity-overview-body">
+                {preferences && !preferences.completed ? <details className="flow-advanced-setup flow-dashboard-setup">
+                  <summary>Optional: set your job search preferences</summary>
+                  <SearchSetup key={accountViewKey} initial={preferences}
+                    onSave={saveSearchPreferences}/>
+                </details> : null}
+                <div className="sp126-job-results">{jobsSection}</div>
                 <div className="stats-grid">
                   <Stat label={preferences?.mode === "general" ? "Available jobs" : "Preference matches"}
                     value={preferences?.mode === "general" ? discovery?.available_count || 0 : discovery?.recommendations.length || 0}
