@@ -20,14 +20,11 @@ export default function StartChoices(props: {
 }) {
   const hasCV = props.cvPresent === true;
   return <section className="flow-start" aria-label="Choose what to do with SmartPloy">
-    <div className="flow-start-masthead" aria-hidden="true">
-      <span>SMARTPLOY / APPLICATION WORKSPACE</span><span>FINLAND · PRIVATE WORKSPACE</span>
-    </div>
     <div className="flow-start-heading">
       <h1>{hasCV ? "CV connected. Choose how to apply." : "Start with your CV."}</h1>
       <p>{hasCV
-        ? "Your CV is ready. Choose a method to find and apply for jobs."
-        : "Upload or create a CV, then choose how to apply. You can browse jobs without a CV."}</p>
+        ? "Your CV is saved privately. Choose the level of help you want."
+        : "Upload or create your CV once. You can still explore jobs without one."}</p>
     </div>
     <ol className="flow-start-progress" aria-label="Application journey steps">
       <li className={hasCV ? "done" : "current"}
@@ -64,14 +61,13 @@ export default function StartChoices(props: {
     </> : <>
       <div className="flow-start-ready" role="status">
         <CheckCircle2 size={20} aria-hidden="true"/>
-        <span><strong>CV connected.</strong> Choose how to apply. Review your facts before sending.</span>
+        <span><strong>CV saved.</strong> Nothing has been sent to an employer.</span>
       </div>
 
     </>}
     <div className="flow-start-method-heading">
       <div>
-        <p className="section-kicker">STEP 2 · APPLICATION METHOD</p>
-        <h2>Manual, Assisted or Automatic?</h2>
+        <h2>How would you like to apply?</h2>
         <p>{hasCV
           ? "Select one path to continue."
           : "Connect a CV to unlock these choices."}</p>
@@ -90,11 +86,11 @@ export default function StartChoices(props: {
           <span className="flow-start-index" aria-hidden="true">01</span>
           <strong>Apply manually</strong>
           <span>Open a matching job and complete its application yourself.</span>
-          <small>MANUAL · You send the application</small>
+          <small aria-hidden="true">MANUAL · You send the application</small>
           <span className="flow-card-cta">{hasCV ? "Choose manual" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
-        <button type="button" className="flow-start-card" data-flow-mode="assisted"
+        <button type="button" className="flow-start-card" data-flow-mode="assisted" data-featured="guided"
           disabled={!hasCV}
           aria-describedby={!hasCV ? "flow-start-require-cv" : undefined}
           onClick={() => props.onMode("assisted")}>
@@ -102,7 +98,7 @@ export default function StartChoices(props: {
           <span className="flow-start-index" aria-hidden="true">02</span>
           <strong>Assisted · Apply with AI</strong>
           <span>Prepare a CV and letter. Review before filling supported forms.</span>
-          <small>ASSISTED · You review before sending</small>
+          <small aria-hidden="true">ASSISTED · You review before sending</small>
           <span className="flow-card-cta">{hasCV ? "Choose assisted" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
@@ -114,7 +110,7 @@ export default function StartChoices(props: {
           <span className="flow-start-index" aria-hidden="true">03</span>
           <strong>Automatic · AutoApply</strong>
           <span>Prepare matched jobs. Employer actions require explicit authorization.</span>
-          <small>AUTOMATIC · Employer-specific authorization required</small>
+          <small aria-hidden="true">AUTOMATIC · Employer-specific authorization required</small>
           <span className="flow-card-cta">{hasCV ? "Choose automatic" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
         </button>
@@ -130,6 +126,7 @@ export default function StartChoices(props: {
         </button> : null}
       </div>
     </> : null}
+    <div className="sp-clarity-secondary-actions" aria-label="Other actions">
     {props.onOpenApplications ? <div className="flow-start-workspaces">
       <button type="button" className="flow-start-browse-button" onClick={props.onOpenApplications}>
         <FileText size={19} aria-hidden="true"/>
@@ -144,6 +141,7 @@ export default function StartChoices(props: {
         <span><strong>Just find jobs</strong><small>Search current jobs without applying</small></span>
         <ArrowRight size={17} aria-hidden="true"/>
       </button>
+    </div>
     </div>
     <p className="flow-start-privacy">Selecting a mode never authorizes sending an application. Employer submissions require applicant review and explicit authorization.</p>
   </section>;
