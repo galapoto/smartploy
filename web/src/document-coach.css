@@ -114,7 +114,7 @@
 }
 .document-coach-checks li svg { margin-top: 2px; flex: none; }
 .document-coach-checks li.is-met svg { color: #138366; }
-.document-coach-checks li.needs-review svg { color: #987123; }
+.document-coach-checks li.needs-review svg { color: #747474; }
 .document-coach-checks li div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .document-coach-checks li strong {
   font-size: 12px;

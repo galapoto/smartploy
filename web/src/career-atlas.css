@@ -10,7 +10,7 @@
   --sp-sea: #116d82;
   --sp-cyan: #04bfd0;
   --sp-cyan-soft: #dcf8f6;
-  --sp-apricot: #f3ae73;
+  --sp-apricot: #b8b8b8;
   --sp-paper: #f6f8f6;
   --sp-line: #dce8e8;
   --sp-font: "Manrope", "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -224,7 +224,7 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
   transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
 }
 .flow-start-grid-methods .flow-start-card[data-flow-mode="assisted"] { --flow-tone: #6657a3; }
-.flow-start-grid-methods .flow-start-card[data-flow-mode="automatic"] { --flow-tone: #ad6637; }
+.flow-start-grid-methods .flow-start-card[data-flow-mode="automatic"] { --flow-tone: #727272; }
 .flow-start-grid-methods .flow-start-card:hover {
   transform: translateY(-3px);
   border-color: var(--flow-tone);
@@ -321,7 +321,7 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
   border-top: 3px solid var(--flow-tone);
 }
 .application-flow .flow-mode[data-flow-mode="assisted"] { --flow-tone: #6657a3; }
-.application-flow .flow-mode[data-flow-mode="automatic"] { --flow-tone: #ad6637; }
+.application-flow .flow-mode[data-flow-mode="automatic"] { --flow-tone: #727272; }
 .application-flow .flow-mode > svg,
 .application-flow .flow-mode .flow-mode-head svg,
 .application-flow .flow-mode .flow-mode-label,
@@ -368,7 +368,7 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
 .stat-card, .tool-tile, .job-item { border-color: #dce8e7; }
 .stat-copy strong { color: #183443; }
 .stat-icon.blue { background: #e1f5f5; color: #126b82; }
-.stat-icon.orange { background: #fff1e3; color: #a45e23; }
+.stat-icon.orange { background: #f3f3f3; color: #696969; }
 .stat-icon.violet { background: #f0edfb; color: #6b5c9d; }
 .stat-icon.green { background: #e9f8ee; color: #157a60; }
 .release-status { border-color: #d6e7e5; background: #f7fbf9; }

@@ -18,7 +18,7 @@
   --sp-ui-accent:#06d9e8;
   --sp-ui-ring:#06d9e8;
   --sp-ui-error:#ff9fa9;
-  --sp-ui-warning:#f8d29a;
+  --sp-ui-warning:#d6d6d6;
   --sp-ui-shadow:0 15px 36px -25px rgba(0,0,0,.95), inset 0 1px 0 rgba(255,255,255,.045);
 }
 html[data-smartploy-theme="light"] .smartploy-app {
@@ -33,7 +33,7 @@ html[data-smartploy-theme="light"] .smartploy-app {
   --sp-ui-accent:#086f82;
   --sp-ui-ring:#087e95;
   --sp-ui-error:#af3445;
-  --sp-ui-warning:#8b5914;
+  --sp-ui-warning:#505050;
   --sp-ui-shadow:0 12px 32px -23px rgba(17,36,56,.35), inset 0 1px 0 #fff;
 }
 
@@ -92,7 +92,7 @@ html[data-smartploy-theme] .smartploy-app :is(
   box-shadow:inset 3px 0 0 var(--sp-ui-accent),var(--sp-ui-shadow);
 }
 
-/* Risk remains amber and failure remains red, without returning to pale
+/* Review warnings use a neutral emphasis and failure remains red, without returning to pale
    backgrounds that destroyed contrast in dark mode. */
 html[data-smartploy-theme] .smartploy-app .studio-alert.error {
   background:var(--sp-ui-card);
@@ -585,7 +585,7 @@ html[data-smartploy-theme] .smartploy-app .content {
   padding:clamp(22px,2.6vw,40px) clamp(18px,2.4vw,38px) 44px;
 }
 html[data-smartploy-theme] .smartploy-app .site-header {
-  min-height:70px;
+  min-height:64px;
 }
 html[data-smartploy-theme] .smartploy-app .header-search input {
   font-size:15px;
@@ -618,7 +618,7 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp126-dashboard-main
 html[data-smartploy-theme] .smartploy-app .sp125-career-cover {
   min-height:0;
   max-height:none;
-  margin:0 0 clamp(28px,4vw,48px);
+  margin:0 0 clamp(18px,2.2vw,28px);
   border:0;
   border-radius:0;
   background:transparent;
@@ -634,11 +634,19 @@ html[data-smartploy-theme] .smartploy-app .sp125-career-copy {
 html[data-smartploy-theme] .smartploy-app .sp125-career-copy h1 {
   margin:0;
   color:var(--sp-ui-ink);
-  font:400 clamp(38px,4vw,56px)/1.1 "EB Garamond",Georgia,serif;
-  letter-spacing:-.02em;
+  font:600 clamp(28px,2.8vw,34px)/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  letter-spacing:-.025em;
   text-wrap:balance;
 }
 
+
+/* Product page titles share the compact native-style hierarchy. No app font downloads. */
+html[data-smartploy-theme] .smartploy-app .page-intro h1 {
+  font:600 clamp(26px,2.8vw,34px)/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  letter-spacing:-.025em;
+  color:var(--sp-ui-ink);
+  text-shadow:none;
+}
 
 /* Owner screenshot/video 2026-11-24: neutral chrome, no competing
    filled labels, colored cards or ornamental hero panel. */
@@ -1130,7 +1138,7 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-byli
     padding:3px 0;
   }
   html[data-smartploy-theme] .smartploy-app .sp125-career-copy h1 {
-    font-size:clamp(31px,6vw,42px);
+    font-size:clamp(26px,5.5vw,30px);
   }
   html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-heading h2 {
     font-size:clamp(22px,5.1vw,29px);

@@ -36,7 +36,7 @@ describe("SP91 SmartPloy Career Atlas entrypoint", () => {
       expect(card).toBeTruthy();
       expect((card as HTMLButtonElement).disabled).toBe(true);
     }
-    expect(screen.getByText(/Upload a CV to unlock these options/)).toBeTruthy();
+    expect(screen.getByText(/Add your CV to use these options/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Upload CV first/ }));
     expect(onUpload).toHaveBeenCalledTimes(1);
     expect(onMode).not.toHaveBeenCalled();
