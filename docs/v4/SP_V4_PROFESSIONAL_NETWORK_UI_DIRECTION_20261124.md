@@ -1,0 +1,21 @@
+# SmartPloy — professional network UI direction (2026-11-24)
+
+Owner direction: total visual reset, no brown/yellow/orange; compact Apple-like heading and a future professional network. V4 §§1.1, 4, 7, 9 remain binding. This is a scoped design direction, not authorization to implement unrelated social features or publish candidate data. Current task and browser acceptance continue independently.
+
+## Benchmark and method
+- Apple HIG tab bars and foundations: content before chrome, semantic light/dark colors, platform type, accessible controls. https://developer.apple.com/design/human-interface-guidelines/tab-bars
+- Linear 2026 refresh: consistent view headers, quieter navigation, focus on the current task. https://linear.app/now/behind-the-latest-design-refresh
+- LinkedIn and Notion: functional reference for professional network and extensible content-first workspace; no external design assets or source copied.
+- Pinned HIG foundations, Emil Apple Design, UI/UX Pro Max; reuse previous real toolchain and CI, record separate execution for this exact SHA. REA not applicable to proprietary design references; first-party source available, no reconstruction.
+
+## Present release slice
+Existing React/Vite and CSS, no new packages. Home is a compact native sans-serif title; use the existing apply route for “Apply with confidence”. Keep Home, Find jobs, Apply for jobs, My applications, My CV & documents first; other real routes remain in Tools & settings. Remove the narrow job-intelligence subtitle and repeated mode hint; preserve all callbacks, CV privacy, OIDC, employer consent, release evidence and recovery. Normalize residual warm UI colors (review attention remains explicit; red errors unchanged). No fake feed, contacts, messages or placeholder nav.
+
+## Shared design direction and next slices
+- Surfaces: white/black, near-neutral grays, sparse existing cyan/teal brand accent. No warm decorative colors, tinted hero, ornamental gradients or competing display fonts. Use semantic tokens and strong text contrast, not state conveyed by color alone. App title 26–34px, body ~16px, consistent icon weights, 44px touch targets, predictable focus and reduced motion. Keep the existing licensed locally available fonts for other content until verified consolidation.
+- A single real task at a time: integrate the independently tested one-action home work from PR #350 when compatible; do not regress the V4 flow or accumulate duplicate home controllers. No CV -> upload/create; saved CV -> continue the active case or choose a method; jobs are separate real content. Never misrepresent a disabled capability as available.
+- Stable product shell: a quiet desktop sidebar; mobile top bar and eventual bottom navigation with no more than five main destinations. Same route identity across layouts, keyboard and history. Keep private application workflow distinct from public profile and future feed. Design for a centered feed and optional context column on wide screens, one column on mobile. Use existing semantic cards/lists and a single navigation model, not a replacement framework.
+- Later owner-approved social slices: (1) separate private candidate profile and explicit public profile visibility/editor; default private, preview as visitor, no CV/answers automatically published; (2) connections and companies with consent, block/report; (3) real paginated feed/news with source attribution, moderation, privacy and empty states; (4) notifications and messages with explicit settings and abuse protections. Do not expose dormant navigation before real backend, security, and acceptance evidence. Keep AutoApply and application records private throughout.
+
+## Release gates
+Exact-head GitHub and native Woodpecker CI, exact skill CLI output, Chrome screenshots at 320/390/1440 and light/dark, text contrast, keyboard navigation, CV gating, employer consent, no horizontal overflow, test account isolation; main merge only when qualified; exact-main CI and authorized deployment plus rollback and signed-in user verification. No live claim on source alone. Prior PR #351 exact head b6e1f64ff17efd41bdffac689479cf80eeefa5e6: GitHub browser passed, web 380 passed/2 failed on old copy; native failed. Correct old copy assertions without removing CV gate assertions. Latest tool and release results pending.

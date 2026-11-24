@@ -309,7 +309,7 @@ html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
 html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
   .flow-start-card[data-flow-mode="assisted"] { --flow-tone:#bdabff; }
 html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
-  .flow-start-card[data-flow-mode="automatic"] { --flow-tone:#f3ba86; }
+  .flow-start-card[data-flow-mode="automatic"] { --flow-tone:#c2c2c2; }
 html[data-smartploy-theme="dark"] .smartploy-app .flow-start-grid-methods
   .flow-start-card:hover:enabled {
   background: #223c54;

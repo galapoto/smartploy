@@ -36,3 +36,61 @@ def test_employer_sector_is_explicit_and_unknown_is_not_guessed():
     assert unknown.candidate is not None
     assert private.candidate.job.raw["employer_sector"] == "private"
     assert unknown.candidate.job.raw["employer_sector"] == "unknown"
+
+
+def test_dashboard_projects_only_bounded_cards_from_one_ranked_snapshot(monkeypatch):
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from smartploy.service import SmartployService
+
+    normalized = normalize_observation(
+        SourceObservation(
+            source_id="manual",
+            source_mode="manual",
+            source_url="",
+            raw_text="Example Oy Data Analyst",
+            payload={"company": "Example Oy", "role_title": "Data Analyst"},
+            observed_at="2026-10-10T00:00:00+00:00",
+        ),
+        SourcePolicy("manual", "Manual", "manual", ("manual",)),
+    )
+    assert normalized.candidate is not None
+    candidates = [
+        replace(normalized.candidate, canonical_key=f"synthetic-{index}")
+        for index in range(1200)
+    ]
+    scores = [
+        SimpleNamespace(
+            canonical_key=candidate.canonical_key,
+            queue="review" if index < 600 else "possible",
+            to_dict=lambda candidate=candidate: {"canonical_key": candidate.canonical_key},
+        )
+        for index, candidate in enumerate(candidates)
+    ]
+    rank = Mock(return_value=scores)
+    monkeypatch.setattr("smartploy.service.rank_candidates", rank)
+    service = SmartployService()
+    ledger = Mock(return_value=candidates)
+    lookup = Mock(side_effect=AssertionError("Unexpected individual job lookup"))
+    monkeypatch.setattr(service, "list_jobs", ledger)
+    monkeypatch.setattr(service, "get_job", lookup)
+
+    dashboard = service.dashboard()
+
+    ledger.assert_called_once_with()
+    lookup.assert_not_called()
+    rank.assert_called_once()
+    assert rank.call_args.args[0] is candidates
+    assert [row["canonical_key"] for row in dashboard["top_matches"]] == [
+        f"synthetic-{index}" for index in range(50)
+    ]
+    assert [row["canonical_key"] for row in dashboard["possible_matches"]] == [
+        f"synthetic-{index}" for index in range(600, 700)
+    ]
+    assert all(
+        row["job"]["company"] == "Example Oy"
+        for row in dashboard["top_matches"] + dashboard["possible_matches"]
+    )
+    assert dashboard["external_actions_authorized"] is False

@@ -44,9 +44,9 @@ type Page = "dashboard" | "apply" | "jobs" | "training" | "applications" | "prof
 type MatchView = "top" | "possible";
 
 const NAV: Array<{ id: Page; label: string; icon: LucideIcon }> = [
-  { id: "dashboard", label: "Start here", icon: LayoutDashboard },
-  { id: "apply", label: "Apply for jobs", icon: FileCheck2 },
+  { id: "dashboard", label: "Home", icon: LayoutDashboard },
   { id: "jobs", label: "Find jobs", icon: Search },
+  { id: "apply", label: "Apply for jobs", icon: FileCheck2 },
   { id: "applications", label: "My applications", icon: FileText },
   { id: "profile", label: "My CV & documents", icon: FileCheck2 },
   { id: "training", label: "Training & traineeships", icon: BriefcaseBusiness },
@@ -175,14 +175,14 @@ function StartupShell(props: {
   onNavigate: (page: Page) => void;
   onRetry: () => void;
 }) {
-  const requested = NAV.find((item) => item.id === props.page)?.label ?? "Start here";
+  const requested = NAV.find((item) => item.id === props.page)?.label ?? "Home";
   return <div className="sp-boot">
     <a className="skip-to-content" href="#smartploy-main">Skip to main content</a>
     <header className="sp-boot-header">
       <button className="sp-boot-brand" type="button"
         aria-label="Go to start page" onClick={() => props.onNavigate("dashboard")}>
         <BrandMark className="sp-boot-logo" />
-        <span><strong>SmartPloy</strong><small>Job intelligence</small></span>
+        <span><strong>SmartPloy</strong></span>
       </button>
       <button className="sp-boot-theme" type="button" onClick={props.onTheme}
         aria-label={props.theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
@@ -1460,7 +1460,7 @@ export default function App() {
       aria-modal={mobileNav ? "true" : undefined}
       className={cx("sidebar", mobileNav && "open")}>
       <button className="site-brand" type="button" onClick={() => navigate("dashboard")} aria-label="SmartPloy dashboard">
-        <BrandMark className="site-brand-mark" /><span><strong>SmartPloy</strong><small>Job intelligence</small></span>
+        <BrandMark className="site-brand-mark" /><span><strong>SmartPloy</strong></span>
       </button>
       <button type="button" className="sp126-desktop-collapse" onClick={toggleSidebar}
         aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -1475,10 +1475,10 @@ export default function App() {
       </button>
       <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-label">WORKSPACE</div>
-        {NAV.slice(0, 7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} title={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span className="nav-item-copy"><span>{item.label}</span>{item.id === "apply" ? <small aria-hidden="true" className="nav-item-hint">Manual · Assisted · Auto</small> : null}</span></button>; })}
+        {NAV.slice(0, 5).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} title={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span className="nav-item-copy"><span>{item.label}</span></span></button>; })}
         <div className="nav-divider" />
-        <div className="nav-label">MANAGE</div>
-        {NAV.slice(7).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} title={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
+        <div className="nav-label">TOOLS &amp; SETTINGS</div>
+        {NAV.slice(5).map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={cx("nav-item", item.id === "apply" && "nav-apply-entry", page === item.id && "active")} aria-label={item.label} title={item.label} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}><Icon size={19} strokeWidth={1.9} /><span>{item.label}</span></button>; })}
       </nav>
       <div className="sidebar-bottom"><span className="country-chip"><span className="flag-finland" aria-hidden="true" /> Finland</span><span className="session-profile"><span className="avatar">{avatar}</span><span><strong>{session?.email ? session.email.split("@")[0] : "Your workspace"}</strong><small>{session?.authenticated ? "Signed in" : "Private workspace"}</small></span></span></div>
     </aside>
@@ -1512,13 +1512,13 @@ export default function App() {
         {notice ? <div className="toast-notice" role="status"><Activity size={16} /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X size={17} /></button></div> : null}
         {error ? <div className="toast-notice error" role="alert"><AlertCircle size={16} /><span>{error}</span><button type="button" onClick={() => void load()} aria-label="Retry"><RefreshCw size={17} /></button></div> : null}
         {page === "dashboard" ? <>
-          <section className="sp125-career-cover" aria-label="Career search and applications banner">
+          <section className="sp125-career-cover" aria-label="Home overview">
             <div className="sp125-career-copy">
-              <h1>Apply with confidence</h1>
+              <h1>Home</h1>
             </div>
           </section>
           <FinlandPageIdentity />
-          {/* Keep CV -> Manual/Assisted/Auto directly after the compact cover.
+          {/* Keep the current CV/application task directly after the compact Home title.
               No lost actions, secondary landing page, or duplicate mode selector. */}
           <div className={cx("sp126-dashboard-layout", "sp-clarity-home", !cv.present && !preferences?.completed && "sp-home-setup")}>
             <div className="sp126-dashboard-main">

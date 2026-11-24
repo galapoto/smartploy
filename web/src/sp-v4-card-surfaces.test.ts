@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const css = readFileSync(new URL("./sp-v4-card-surfaces.css", import.meta.url), "utf8");
+const css: string = readFileSync(new URL("./sp-v4-card-surfaces.css", import.meta.url), "utf8");
 const entry = readFileSync(new URL("./main.tsx", import.meta.url), "utf8");
 
 describe("V4 shadcn-adapted surface system", () => {
@@ -17,14 +17,24 @@ describe("V4 shadcn-adapted surface system", () => {
   });
 
   it("pairs dark surfaces with light text and light surfaces with dark text", () => {
-    expect(css).toContain("--sp-ui-card:#101821");
-    expect(css).toContain("--sp-ui-ink:#f7faff");
+    expect(css).toContain("--sp-ui-card:#151515");
+    expect(css).toContain("--sp-ui-ink:#fafafa");
     expect(css).toContain('--sp-ui-card:#fff');
-    expect(css).toContain("--sp-ui-ink:#112334");
+    expect(css).toContain("--sp-ui-ink:#171717");
     expect(css).toContain(".flow-primary-next-copy strong");
     expect(css).toContain("background-image:none");
     expect(css).toContain("color:var(--sp-ui-muted)");
-    expect(css).toContain("border-left:3px solid var(--sp-ui-accent)");
+    expect(css).not.toContain("border-left:3px solid var(--sp-ui-accent)");
+  });
+
+  it("uses neutral review tokens and a compact native-style home title", () => {
+    const warnings = Array.from(css.matchAll(/--sp-ui-warning:#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2});/gi));
+    expect(warnings).toHaveLength(2);
+    for (const [,r,g,b] of warnings) {
+      expect(r).toBe(g);
+      expect(g).toBe(b);
+    }
+    expect(css).toContain("font:600 clamp(28px,2.8vw,34px)/1.2 -apple-system");
   });
 
   it("preserves disabled method cards, warning/error meaning and unambiguous selection", () => {

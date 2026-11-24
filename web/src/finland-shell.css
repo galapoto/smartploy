@@ -364,7 +364,7 @@ html[data-smartploy-theme="dark"] .smartploy-app :is(
 html[data-smartploy-theme="dark"] .smartploy-app :is(
   .state-pill.waiting, .connection-status.disconnected,
   .source-observation-caution
-) { background: #4a391e; color: #fbe0a9; }
+) { background: #3b3b3b; color: #e2e2e2; }
 html[data-smartploy-theme="dark"] .smartploy-app :is(
   .tabs button.active, .search-mode-choices button.active
 ) { background: #335776; color: #f0f8ff; }

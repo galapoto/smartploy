@@ -486,7 +486,7 @@ describe("SP21 application journey", () => {
       expect(card).toBeTruthy();
       expect((card as HTMLButtonElement).disabled).toBe(true);
     }
-    expect(screen.getByText(/Upload a CV to unlock these options/)).toBeTruthy();
+    expect(screen.getByText(/Add your CV to use these options/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Upload CV first/i }));
     fireEvent.click(screen.getByRole("button", { name: /Create CV from scratch/i }));
     expect(onUpload).toHaveBeenCalledTimes(1);

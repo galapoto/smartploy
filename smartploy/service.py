@@ -258,10 +258,14 @@ class SmartployService:
         return self.application_repository.summary()
 
     def dashboard(self) -> dict[str, Any]:
-        rankings = self.rankings()
+        # Rank and project the same bulk ledger snapshot. Avoid an individual
+        # database lookup for every candidate, including cards beyond the limit.
+        candidates = self.list_jobs()
+        rankings = rank_candidates(candidates, self.profile())
+        candidates_by_key = {candidate.canonical_key: candidate for candidate in candidates}
 
         def card(score: ScoreResult) -> dict[str, Any]:
-            candidate = self.get_job(score.canonical_key)
+            candidate = candidates_by_key.get(score.canonical_key)
             job = candidate.job if candidate is not None else None
             return {
                 **score.to_dict(),
@@ -285,12 +289,13 @@ class SmartployService:
                 },
             }
 
-        top = [
-            card(item)
-            for item in rankings
+        top_scores = [
+            item for item in rankings
             if item.queue in {"exceptional", "auto_prepare", "review"}
         ][:50]
-        possible = [card(item) for item in rankings if item.queue == "possible"][:100]
+        possible_scores = [item for item in rankings if item.queue == "possible"][:100]
+        top = [card(item) for item in top_scores]
+        possible = [card(item) for item in possible_scores]
 
         preparation_counts: dict[str, int] = {}
         for item in self.list_preparations(limit=500):

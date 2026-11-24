@@ -38,8 +38,18 @@
         file_server
     }
 
+    # Vite content-hashed PUBLIC assets only. Private/auth/release routes
+    # retain their independent policies; the HTML shell always revalidates.
+    @immutable path_regexp immutable ^/assets/[^/]+-[A-Za-z0-9_-]{8,}\.(js|css|woff2?|svg|png|jpg|webp)$
+    handle @immutable {
+        root * /srv
+        header Cache-Control "public, max-age=31536000, immutable"
+        file_server
+    }
+
     handle {
         root * /srv
+        header Cache-Control "no-cache"
         try_files {path} /index.html
         file_server
     }

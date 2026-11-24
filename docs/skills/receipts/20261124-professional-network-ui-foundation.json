@@ -1,0 +1,133 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "f76e56c3975646970dcb75fba2d645299bee6357",
+  "user_outcome": "A compact, native-style Home with quiet navigation and no residual brown/yellow/orange UI tokens in audited styles; preserve all real job and candidate actions; document future professional network direction.",
+  "candidate_parent": "b6e1f64ff17efd41bdffac689479cf80eeefa5e6",
+  "components": [
+    {
+      "skills": [
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read pinned content-first hierarchy, semantic color, platform typography and accessibility guidance; compact page titles, neutral attention state, quiet nav; keep labels and all real routes."
+        },
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read pinned accessibility, typography, navigation and low-density guidance. Keep 44px nav targets, explicit CV prerequisites, no new dependencies; exact existing executable workflow reruns on branch push. No fresh CLI result asserted."
+        },
+        {
+          "name": "Apple Design",
+          "repository": "https://github.com/emilkowalski/skills",
+          "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c",
+          "path": "skills/apple-design/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read pinned feedback, typography and motion guidance; retain immediate native controls and reduced-motion behavior, no new animation framework or ornamental interaction."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Apple and Linear are public interaction/design references, not authorized third-party application source. Complete first-party SmartPloy React/CSS and existing test fixtures are available, so no reverse-engineering or protected asset reuse is needed.",
+      "measured_seconds": "NOT_MEASURED",
+      "name": "ui",
+      "paths": [
+        "web/src/App.tsx",
+        "web/src/styles.css",
+        "web/src/sp125-workspace-theme.css",
+        "web/src/career-atlas.css",
+        "web/src/document-coach.css",
+        "web/src/document-comparison.css",
+        "web/src/finland-shell.css",
+        "web/src/sp-v4-card-surfaces.css",
+        "web/src/App.test.tsx",
+        "web/src/ApplicationJourney.test.tsx",
+        "web/src/CareerAtlas.test.tsx",
+        "web/src/sp-v4-card-surfaces.test.ts"
+      ],
+      "applied_method": "Adapted existing App NAV, home title, existing page headings and warm CSS tokens; no new framework, no new assets, no changes to route IDs or action permissions. Fix two observed stale unit copy assertions, preserve disabled-state checks. Follow-up removes unsupported exact option (string name is exact by default) and explicitly types CSS as string; no runtime change.",
+      "reuse_provenance": "COPIED: none; no third-party runtime code required. ADAPTED galapoto/smartploy@b6e1f64ff17efd41bdffac689479cf80eeefa5e6 existing App.tsx, audited CSS and first-party tests (exact paths in this record). SANITIZED residual warm colors and redundant nav copy. Existing locally licensed fonts, UI controls, and pinned skill workflow reused; no dependencies added. NEW compact title and neutral token checks. NOT_VERIFIED exact-head CI and production.",
+      "tests": "Previous exact parent GitHub Actions 45379637342 browser PASS, web 380 pass/2 fail old copy, backend and deploy stack PASS, Woodpecker pipeline 391 FAIL. New source test asserts warning tokens and title; corrected two old assertions. Exact-head full Vitest, Playwright, native CI and actual skills tooling pending; signed-in production NOT_VERIFIED. Exact candidate 05f1ffa55e192a4babe755de7548cc3be6b9b71a GH 45383127689: Vitest passed but tsc rejected Testing Library exact option and untyped Node readFileSync matchAll. Correct those types without weakening assertions. UI/UX tooling 45383118315 passed (Taste and Impeccable exits 0); rerun exact release checks required."
+    },
+    {
+      "skills": [
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read pinned content-first hierarchy, semantic color, platform typography and accessibility guidance; compact page titles, neutral attention state, quiet nav; keep labels and all real routes."
+        },
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read pinned accessibility, typography, navigation and low-density guidance. Keep 44px nav targets, explicit CV prerequisites, no new dependencies; exact existing executable workflow reruns on branch push. No fresh CLI result asserted."
+        },
+        {
+          "name": "Apple Design",
+          "repository": "https://github.com/emilkowalski/skills",
+          "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c",
+          "path": "skills/apple-design/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read pinned feedback, typography and motion guidance; retain immediate native controls and reduced-motion behavior, no new animation framework or ornamental interaction."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Apple and Linear are public interaction/design references, not authorized third-party application source. Complete first-party SmartPloy React/CSS and existing test fixtures are available, so no reverse-engineering or protected asset reuse is needed.",
+      "measured_seconds": "NOT_MEASURED",
+      "name": "qa",
+      "paths": [
+        "web/browser-tests/onboarding.e2e.ts"
+      ],
+      "applied_method": "Adapted existing actual Chromium browser fixture and screenshot suite; preserve original CV gate, account, consent, no-send assertions. Verify Home heading, active navigation, platform font, compact size and neutral review token in both themes.",
+      "reuse_provenance": "COPIED: none; ADAPTED galapoto/smartploy@b6e1f64ff17efd41bdffac689479cf80eeefa5e6 web/browser-tests/onboarding.e2e.ts; existing synthetic API and browser suite unchanged in behavior.",
+      "tests": "Exact prior browser job 138395000727 success. Updated actual selectors and computed CSS tests; exact new run pending. No live employer or production verification."
+    },
+    {
+      "skills": [
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read pinned content-first hierarchy, semantic color, platform typography and accessibility guidance; compact page titles, neutral attention state, quiet nav; keep labels and all real routes."
+        },
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read pinned accessibility, typography, navigation and low-density guidance. Keep 44px nav targets, explicit CV prerequisites, no new dependencies; exact existing executable workflow reruns on branch push. No fresh CLI result asserted."
+        },
+        {
+          "name": "Apple Design",
+          "repository": "https://github.com/emilkowalski/skills",
+          "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c",
+          "path": "skills/apple-design/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read pinned feedback, typography and motion guidance; retain immediate native controls and reduced-motion behavior, no new animation framework or ornamental interaction."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Apple and Linear are public interaction/design references, not authorized third-party application source. Complete first-party SmartPloy React/CSS and existing test fixtures are available, so no reverse-engineering or protected asset reuse is needed.",
+      "measured_seconds": "NOT_MEASURED",
+      "name": "docs",
+      "paths": [
+        "docs/v4/SP_V4_PROFESSIONAL_NETWORK_UI_DIRECTION_20261124.md"
+      ],
+      "applied_method": "Translate benchmark content-first design and extensible navigation into current and future scope; keep private application profile and future public profile separated. V4 remains authority; social features require separately approved implementation.",
+      "reuse_provenance": "COPIED: none. NEW design direction from owner instructions, pinned HIG and UI/UX guidance, public design references, first-party repo and V4. No protected code or assets.",
+      "tests": "Source design review only, not a functional test. Future release acceptance explicitly requires role/privacy and actual signed-in checks."
+    }
+  ]
+}

@@ -64,7 +64,7 @@
 }
 .studio-letter-proposal > strong { color: #164c5c; font-size: 14px; }
 .studio-letter-proposal p { margin: 7px 0; color: #476978; line-height: 1.6; }
-.studio-letter-proposal ul { padding-left: 20px; color: #704d20; line-height: 1.65; }
+.studio-letter-proposal ul { padding-left: 20px; color: #515151; line-height: 1.65; }
 .studio-letter-proposal .row-actions { display: flex; gap: 9px; flex-wrap: wrap; }
 .studio-letter-proposal .row-actions button { min-height: 40px; }
 .studio-document-undo {
@@ -137,5 +137,5 @@
   margin: 10px 0;
   font-size: 12px;
   line-height: 1.65;
-  color: #74602b;
+  color: #606060;
 }

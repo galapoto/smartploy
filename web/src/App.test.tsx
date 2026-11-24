@@ -223,7 +223,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Upload CV first/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Create CV from scratch/i })).toBeTruthy();
-    expect(screen.getByText(/Upload a CV to unlock these options/i)).toBeTruthy();
+    expect(screen.getByText(/Add your CV to use these options/i)).toBeTruthy();
     const sidebar = screen.getByRole("navigation", { name: "Main navigation" });
     expect(sidebar).toBeTruthy();
     expect(screen.getByRole("button", { name: "Apply for jobs" })).toBeTruthy();
@@ -1250,7 +1250,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     await waitFor(() => expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-CV.docx")).toBeNull());
     expect(screen.queryByText("PRIVATE-OLD-ACCOUNT-FACT")).toBeNull();
     expect(await screen.findByText(/Some optional profile or AI tools are temporarily unavailable/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^Start here$/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Home$/i })).toBeTruthy();
   });
 
   it("fails closed when the signed-in identity flips during essential workspace reads", async () => {
@@ -1878,11 +1878,12 @@ describe("SP125: work-focused career banner, full logo and persistent theme", ()
   it("renders a real work-related banner before the actionable CV-first journey", async () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
-    const cover = screen.getByRole("region", { name: "Career search and applications banner" });
+    const cover = screen.getByRole("region", { name: "Home overview" });
     expect(within(cover).getByRole("heading", {
-      name: "Apply with confidence",
+      name: "Home", level: 1,
     })).toBeTruthy();
-    expect(cover.textContent?.trim()).toBe("Apply with confidence");
+    expect(cover.textContent?.trim()).toBe("Home");
+    expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("button", {name:"Home"}).getAttribute("aria-current")).toBe("page");
     expect(within(cover).queryByRole("img")).toBeNull();
     expect(within(cover).queryAllByRole("listitem")).toHaveLength(0);
     const fullLogo = screen.getByRole("group", { name: "SmartPloy complete page logo" });
