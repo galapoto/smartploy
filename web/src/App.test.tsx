@@ -1883,7 +1883,7 @@ describe("SP125: work-focused career banner, full logo and persistent theme", ()
       name: "Home", level: 1,
     })).toBeTruthy();
     expect(cover.textContent?.trim()).toBe("Home");
-    expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("button", {name:"Home", exact:true}).getAttribute("aria-current")).toBe("page");
+    expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("button", {name:"Home"}).getAttribute("aria-current")).toBe("page");
     expect(within(cover).queryByRole("img")).toBeNull();
     expect(within(cover).queryAllByRole("listitem")).toHaveLength(0);
     const fullLogo = screen.getByRole("group", { name: "SmartPloy complete page logo" });

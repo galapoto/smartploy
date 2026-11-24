@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const css = readFileSync(new URL("./sp-v4-card-surfaces.css", import.meta.url), "utf8");
+const css: string = readFileSync(new URL("./sp-v4-card-surfaces.css", import.meta.url), "utf8");
 const entry = readFileSync(new URL("./main.tsx", import.meta.url), "utf8");
 
 describe("V4 shadcn-adapted surface system", () => {
