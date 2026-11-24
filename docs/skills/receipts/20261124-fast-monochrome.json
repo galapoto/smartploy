@@ -46,24 +46,27 @@
           "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
           "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
           "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
-          "mode": "GUIDANCE_APPLIED",
-          "applied": "Low-density design-system search previously executed on PR350; apply minimal hierarchy and one accent; rerun exact candidate CLI in isolated CI."
+          "mode": "EXECUTED",
+          "applied": "Low-density design-system search previously executed on PR350; apply minimal hierarchy and one accent; rerun exact candidate CLI in isolated CI.",
+          "execution_evidence": "GitHub Actions run 45379260877, artifact 14913325832: exact candidate design-system, UX and React searches completed; Minimalism & Swiss Style and low density adopted. Generated blue/green palette rejected as off-brief."
         },
         {
-          "name": "Taste",
+          "name": "Taste Skill copy-lint",
           "repository": "https://github.com/Leonxlnx/taste-skill",
           "commit": "6c0b5c78f5d31776e2210305abaa210cdc0030bf",
           "path": "skills/taste-skill/SKILL.md",
-          "mode": "GUIDANCE_APPLIED",
-          "applied": "Use shorter copy and real rendered React states; existing copy-lint executable reruns on this candidate."
+          "mode": "EXECUTED",
+          "applied": "Use shorter copy and real rendered React states; existing copy-lint executable reruns on this candidate.",
+          "execution_evidence": "GitHub Actions run 45379260877, artifact 14913325832: two actual rendered React states. Exit 1 identified five occurrences of unlock in no-CV copy; replaced each with plain CV prerequisite wording. Exact corrected run pending."
         },
         {
           "name": "Impeccable",
           "repository": "https://github.com/pbakaus/impeccable",
           "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
           "path": ".claude/skills/impeccable/SKILL.md",
-          "mode": "GUIDANCE_APPLIED",
-          "applied": "Distill decorative borders and background blocks; rerun explicit source detector on actual changed files."
+          "mode": "EXECUTED",
+          "applied": "Distill decorative borders and background blocks; rerun explicit source detector on actual changed files.",
+          "execution_evidence": "GitHub Actions run 45379260877, artifact 14913325832: context exit 0, explicit detector exit 2 and one real side-tab warning; removed the decorative accent stripe from the next-action panel. Corrected exact run pending."
         },
         {
           "name": "Anthropic Frontend Design",
@@ -87,14 +90,16 @@
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "Readable complete first-party source, approved behavior and owned synthetic data are available; no external protected code reconstruction needed. Video supplied visual evidence only; REA cannot improve this narrow source patch.",
       "measured_seconds": "NOT_MEASURED",
-      "tests": "New exact browser test and Python regression; existing tests retained. Pending exact CI."
+      "tests": "New exact browser test and Python regression; existing tests retained. Pending exact CI. Added synthetic browser navigation/FCP/workspace-ready timing output. No production timing inferred."
     },
     {
       "name": "ui",
       "paths": [
         "web/src/sp-v4-card-surfaces.css",
         "web/src/sp-v4-card-surfaces.test.ts",
-        "web/src/StartChoices.tsx"
+        "web/src/StartChoices.tsx",
+        "web/src/StartChoices.test.tsx",
+        "web/src/App.test.tsx"
       ],
       "skills": [
         {
@@ -102,24 +107,27 @@
           "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
           "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
           "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
-          "mode": "GUIDANCE_APPLIED",
-          "applied": "Low-density design-system search previously executed on PR350; apply minimal hierarchy and one accent; rerun exact candidate CLI in isolated CI."
+          "mode": "EXECUTED",
+          "applied": "Low-density design-system search previously executed on PR350; apply minimal hierarchy and one accent; rerun exact candidate CLI in isolated CI.",
+          "execution_evidence": "GitHub Actions run 45379260877, artifact 14913325832: exact candidate design-system, UX and React searches completed; Minimalism & Swiss Style and low density adopted. Generated blue/green palette rejected as off-brief."
         },
         {
-          "name": "Taste",
+          "name": "Taste Skill copy-lint",
           "repository": "https://github.com/Leonxlnx/taste-skill",
           "commit": "6c0b5c78f5d31776e2210305abaa210cdc0030bf",
           "path": "skills/taste-skill/SKILL.md",
-          "mode": "GUIDANCE_APPLIED",
-          "applied": "Use shorter copy and real rendered React states; existing copy-lint executable reruns on this candidate."
+          "mode": "EXECUTED",
+          "applied": "Use shorter copy and real rendered React states; existing copy-lint executable reruns on this candidate.",
+          "execution_evidence": "GitHub Actions run 45379260877, artifact 14913325832: two actual rendered React states. Exit 1 identified five occurrences of unlock in no-CV copy; replaced each with plain CV prerequisite wording. Exact corrected run pending."
         },
         {
           "name": "Impeccable",
           "repository": "https://github.com/pbakaus/impeccable",
           "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
           "path": ".claude/skills/impeccable/SKILL.md",
-          "mode": "GUIDANCE_APPLIED",
-          "applied": "Distill decorative borders and background blocks; rerun explicit source detector on actual changed files."
+          "mode": "EXECUTED",
+          "applied": "Distill decorative borders and background blocks; rerun explicit source detector on actual changed files.",
+          "execution_evidence": "GitHub Actions run 45379260877, artifact 14913325832: context exit 0, explicit detector exit 2 and one real side-tab warning; removed the decorative accent stripe from the next-action panel. Corrected exact run pending."
         },
         {
           "name": "Anthropic Frontend Design",
@@ -178,24 +186,27 @@
           "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
           "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
           "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
-          "mode": "GUIDANCE_APPLIED",
-          "applied": "Low-density design-system search previously executed on PR350; apply minimal hierarchy and one accent; rerun exact candidate CLI in isolated CI."
+          "mode": "EXECUTED",
+          "applied": "Low-density design-system search previously executed on PR350; apply minimal hierarchy and one accent; rerun exact candidate CLI in isolated CI.",
+          "execution_evidence": "GitHub Actions run 45379260877, artifact 14913325832: exact candidate design-system, UX and React searches completed; Minimalism & Swiss Style and low density adopted. Generated blue/green palette rejected as off-brief."
         },
         {
-          "name": "Taste",
+          "name": "Taste Skill copy-lint",
           "repository": "https://github.com/Leonxlnx/taste-skill",
           "commit": "6c0b5c78f5d31776e2210305abaa210cdc0030bf",
           "path": "skills/taste-skill/SKILL.md",
-          "mode": "GUIDANCE_APPLIED",
-          "applied": "Use shorter copy and real rendered React states; existing copy-lint executable reruns on this candidate."
+          "mode": "EXECUTED",
+          "applied": "Use shorter copy and real rendered React states; existing copy-lint executable reruns on this candidate.",
+          "execution_evidence": "GitHub Actions run 45379260877, artifact 14913325832: two actual rendered React states. Exit 1 identified five occurrences of unlock in no-CV copy; replaced each with plain CV prerequisite wording. Exact corrected run pending."
         },
         {
           "name": "Impeccable",
           "repository": "https://github.com/pbakaus/impeccable",
           "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
           "path": ".claude/skills/impeccable/SKILL.md",
-          "mode": "GUIDANCE_APPLIED",
-          "applied": "Distill decorative borders and background blocks; rerun explicit source detector on actual changed files."
+          "mode": "EXECUTED",
+          "applied": "Distill decorative borders and background blocks; rerun explicit source detector on actual changed files.",
+          "execution_evidence": "GitHub Actions run 45379260877, artifact 14913325832: context exit 0, explicit detector exit 2 and one real side-tab warning; removed the decorative accent stripe from the next-action panel. Corrected exact run pending."
         },
         {
           "name": "Anthropic Frontend Design",
@@ -219,7 +230,12 @@
       "rea_status": "REA_NOT_APPLICABLE",
       "rea_reason": "Readable complete first-party source, approved behavior and owned synthetic data are available; no external protected code reconstruction needed. Video supplied visual evidence only; REA cannot improve this narrow source patch.",
       "measured_seconds": "NOT_MEASURED",
-      "tests": "Prior run 45193658936 produced tool outputs. Current branch must run workflow and archive results before declaring current audit success."
+      "tests": "Prior run 45193658936 produced tool outputs. Current branch must run workflow and archive results before declaring current audit success. First exact candidate audit returned Taste=1 and Impeccable detector=2; addressed both, added final exit-code gate. Original output preserved in artifact 14913325832."
     }
-  ]
+  ],
+  "actual_tooling": {
+    "run": "https://github.com/galapoto/smartploy/actions/runs/45379260877",
+    "artifact": "https://github.com/galapoto/smartploy/actions/runs/45379260877/artifacts/14913325832",
+    "first_scan": "UIUX success; Taste exit 1, five unlock occurrences; Impeccable context 0, detector 2, decorative side-tab. Actual findings fixed in source; corrected run not yet verified."
+  }
 }

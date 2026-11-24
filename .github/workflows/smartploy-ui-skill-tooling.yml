@@ -130,6 +130,12 @@ jobs:
           sed -n '1,28p' .ui-tooling-results/impeccable-context.txt
           sed -n '1,35p' .ui-tooling-results/impeccable-detect.json
           exit 0
+      - name: Require actual external tool success
+        run: |
+          set -Eeuo pipefail
+          grep -qx 'TASTE_COPY_LINT_EXIT=0' .ui-tooling-results/versions.txt
+          grep -qx 'IMPECCABLE_CONTEXT_EXIT=0' .ui-tooling-results/versions.txt
+          grep -qx 'IMPECCABLE_DETECT_EXIT=0' .ui-tooling-results/versions.txt
       - name: Upload unmodified executable tool findings
         if: always()
         uses: actions/upload-artifact@v4

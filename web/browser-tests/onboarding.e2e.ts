@@ -1861,6 +1861,15 @@ test("V4 monochrome: homepage preserves real application paths and neutral surfa
   await page.setViewportSize({width:1440,height:900});
   await page.goto("/");
   await expect(page.getByRole("heading",{name:"CV connected. Choose how to apply."})).toBeVisible();
+  const startup = await page.evaluate(() => {
+    const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming;
+    const firstPaint = performance.getEntriesByName("first-contentful-paint")[0];
+    return { workspaceReadyMs: Math.round(performance.now()),
+      firstContentfulPaintMs: firstPaint ? Math.round(firstPaint.startTime) : null,
+      domInteractiveMs: Math.round(navigation.domInteractive) };
+  });
+  console.log("SMARTPLOY_SYNTHETIC_STARTUP_MS=" + JSON.stringify(startup));
+  expect(startup.workspaceReadyMs).toBeGreaterThan(0);
   for (const theme of ["light","dark"] as const) {
     if (theme === "dark") await page.getByRole("button",{name:"Switch to dark mode"}).click();
     const measured = await page.evaluate(() => {

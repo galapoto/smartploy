@@ -8,8 +8,8 @@ afterEach(cleanup);
 describe("SP89: saved application entry in the CV-first journey", () => {
   it("keeps concise mobile labels and explicit applicant/ATS boundaries", () => {
     render(<StartChoices cvPresent onMode={vi.fn()} onBrowse={vi.fn()} />);
-    expect(screen.getByText("Open a matching job and complete its application yourself.")).toBeTruthy();
-    expect(screen.getByText("Prepare a CV and letter. Review before filling supported forms.")).toBeTruthy();
+    expect(screen.getByText("Choose a job and apply yourself.")).toBeTruthy();
+    expect(screen.getByText("Prepare a CV and letter. Review before filling forms.")).toBeTruthy();
     expect(screen.getByText("Prepare matched jobs. Employer actions require explicit authorization.")).toBeTruthy();
     expect(screen.getByText(/Selecting a mode never authorizes sending an application/)).toBeTruthy();
     expect(screen.getByText(/Employer submissions require applicant review and explicit authorization/)).toBeTruthy();
