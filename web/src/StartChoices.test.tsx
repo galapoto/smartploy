@@ -48,8 +48,8 @@ describe("V4 clarity: one visible task, real actions, and accessible disclosure 
     const onMode=vi.fn();
     render(<StartChoices cvPresent onMode={onMode}
       onBrowse={vi.fn()} onOpenApplications={vi.fn()} />);
-    expect(screen.getByRole("heading",{name:"CV connected. Choose how to apply.",level:2})).toBeTruthy();
-    expect(screen.getByRole("heading",{name:"How would you like to apply?",level:3})).toBeTruthy();
+    expect(screen.getByRole("heading",{name:"CV connected. Choose how to apply.",level:1})).toBeTruthy();
+    expect(screen.getByRole("heading",{name:"How would you like to apply?",level:2})).toBeTruthy();
     const assisted=screen.getByRole("button",{name:/Assisted · Apply with AI/i});
     expect(assisted.getAttribute("data-featured")).toBe("guided");
     fireEvent.click(assisted);
@@ -62,7 +62,7 @@ describe("V4 clarity: one visible task, real actions, and accessible disclosure 
     const onMode=vi.fn();
     render(<StartChoices cvPresent={false} onMode={onMode}
       onBrowse={vi.fn()} onUpload={vi.fn()} onCreateCV={vi.fn()}/>);
-    expect(screen.getByRole("heading",{name:"Start with your CV.",level:2})).toBeTruthy();
+    expect(screen.getByRole("heading",{name:"Start with your CV.",level:1})).toBeTruthy();
     for(const mode of ["manual","assisted","automatic"]){
       const el=document.querySelector<HTMLButtonElement>(
         '.flow-start-card[data-flow-mode="'+mode+'"]');

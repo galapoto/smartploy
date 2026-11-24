@@ -1122,16 +1122,13 @@ test("SP98: real inference is an explicit synthetic-only action inside a saved A
 });
 
 
-test("SP125 career banner and complete logo preserve the actionable CV flow", async ({ page }) => {
+test("SP125 task-first dashboard and complete logo preserve the actionable CV flow", async ({ page }) => {
   await installSyntheticApi(page);
   await page.goto("/");
-  const panorama = page.getByRole("region", { name: "Home overview" });
-  await expect(panorama).toBeVisible();
-  await expect(panorama.getByRole("heading", {
-    name: "Home",
-  })).toBeVisible();
-  await expect(panorama.locator("img, p, ul, ol")).toHaveCount(0);
-  expect((await panorama.innerText()).trim()).toBe("Home");
+  await expect(page.getByRole("heading", { name: "Start with your CV.", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toHaveCount(0);
+  await expect(page.locator(".sp125-career-cover")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toHaveAttribute("aria-current", "page");
   const fullLogo = page.locator(".sidebar .site-brand");
   await expect(fullLogo).toBeVisible();
   await expect(page.getByRole("group", { name: "SmartPloy complete page logo" })).toBeHidden();
@@ -1213,7 +1210,7 @@ test("SP125 dark canvas, action rows and application descriptions remain legible
         color('.flow-start-card[data-flow-mode="assisted"] > span:not(.flow-start-index):not(.flow-card-cta)', "color"),
         color('.flow-start-card[data-flow-mode="assisted"]', "backgroundColor")),
       card: contrast(
-        color(".flow-start-heading h2", "color"),
+        color(".flow-start-heading h1", "color"),
         color(".smartploy-app", "backgroundColor")),
       renderedWidth: document.querySelector(".flow-start")!.getBoundingClientRect().width,
       availableWidth: document.querySelector(".sp126-dashboard-layout")!.getBoundingClientRect().width,
@@ -1237,23 +1234,22 @@ test("SP125 zoom-out width preserves full-width work imagery and no sideways ove
   await installSyntheticApi(page);
   await page.goto("/");
   await expect(page.locator(".flow-start")).toBeVisible();
-  const hero = page.getByRole("region", { name: "Home overview" });
-  await expect(hero.getByRole("heading", { name: "Home" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Start with your CV.", level: 1 })).toBeVisible();
+  await expect(page.locator(".sp125-career-cover")).toHaveCount(0);
   const measurements = await page.evaluate(() => {
     const main = document.querySelector(".content") as HTMLElement;
     const layout = document.querySelector(".sp126-dashboard-layout") as HTMLElement;
     const flow = document.querySelector(".flow-start") as HTMLElement;
-    const hero = document.querySelector(".sp125-career-cover") as HTMLElement;
     return {
       ratio: flow.getBoundingClientRect().width / layout.getBoundingClientRect().width,
       used: layout.getBoundingClientRect().width / main.getBoundingClientRect().width,
-      heroHeight: hero.getBoundingClientRect().height,
+      taskTop: flow.getBoundingClientRect().top - main.getBoundingClientRect().top,
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
   expect(measurements.ratio).toBeGreaterThan(.65);
   expect(measurements.used).toBeGreaterThan(.9);
-  expect(measurements.heroHeight).toBeLessThan(250);
+  expect(measurements.taskTop).toBeLessThanOrEqual(48);
   expect(measurements.overflow).toBe(false);
 });
 
@@ -1261,7 +1257,8 @@ test("SP99 mobile has visible whole logo and an operable theme toggle without lo
   await page.setViewportSize({ width: 390, height: 844 });
   await installSyntheticApi(page);
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "Home overview" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Start with your CV.", level: 1 })).toBeVisible();
+  await expect(page.locator(".sp125-career-cover")).toHaveCount(0);
   await expect(page.locator(".site-header .sp-mobile-brand")).toBeVisible();
   await expect(page.locator(".site-header .sp-mobile-brand-mark")).toBeVisible();
   // No second wordmark below the banner: the top header remains fully branded.
@@ -1356,18 +1353,18 @@ test("SP128 phone home is CV-first with compact actionable methods and no duplic
     await expect(page.locator(".site-footer")).toBeHidden();
     await expect(page.locator(".flow-start-locked")).toHaveCSS("width", "1px");
     await expect(page.locator(".site-header .sp-mobile-brand")).toBeVisible();
+    await expect(page.locator(".sp125-career-cover")).toHaveCount(0);
     const measurements = await page.evaluate(() => {
-      const height = (selector: string) =>
-        document.querySelector(selector)!.getBoundingClientRect().height;
       return {
-        hero: height(".sp125-career-cover"),
+        taskTop: document.querySelector(".flow-start")!.getBoundingClientRect().top -
+          document.querySelector(".content")!.getBoundingClientRect().top,
         cards: Array.from(document.querySelectorAll(".flow-start-card[data-flow-mode]"))
           .map((el) => el.getBoundingClientRect().height),
         columns: getComputedStyle(document.querySelector(".flow-start-card[data-flow-mode]")!).gridTemplateColumns,
         overflow: document.documentElement.scrollWidth > innerWidth + 1,
       };
     });
-    expect(measurements.hero).toBeLessThanOrEqual(145);
+    expect(measurements.taskTop).toBeLessThanOrEqual(32);
     expect(measurements.cards.every((height) => height <= 170)).toBe(true);
     expect(measurements.columns.split(" ").length).toBe(3);
     expect(measurements.overflow).toBe(false);
@@ -1457,12 +1454,11 @@ test("V4 new visitor sees the black SmartPloy loading shell without rotation", a
   expect(appearance.icon).toBe("none");
 });
 
-test("SP156 Komplyint typography is self-hosted and banner has one clear heading", async ({ page }) => {
+test("SP156 Komplyint typography is self-hosted and task has one clear heading", async ({ page }) => {
   await installSyntheticApi(page);
   await page.goto("/");
-  const hero = page.getByRole("region", { name: "Home overview" });
-  await expect(hero).toBeVisible();
-  expect((await hero.innerText()).trim()).toBe("Home");
+  await expect(page.locator(".sp125-career-cover")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toHaveCount(0);
   await expect(page.locator(".flow-start-heading .section-kicker")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Start with your CV." })).toBeVisible();
   const families = await page.evaluate(async () => {
@@ -1470,8 +1466,8 @@ test("SP156 Komplyint typography is self-hosted and banner has one clear heading
     await document.fonts.load('700 15px "Manrope"');
     return {
       body: getComputedStyle(document.querySelector(".smartploy-app")!).fontFamily,
-      banner: getComputedStyle(document.querySelector(".sp125-career-copy h1")!).fontFamily,
-      bannerSize: parseFloat(getComputedStyle(document.querySelector(".sp125-career-copy h1")!).fontSize),
+      banner: getComputedStyle(document.querySelector(".flow-start-heading h1")!).fontFamily,
+      bannerSize: parseFloat(getComputedStyle(document.querySelector(".flow-start-heading h1")!).fontSize),
       nav: getComputedStyle(document.querySelector(".sidebar-nav .nav-item")!).fontFamily,
       loaded: [
         document.fonts.check('400 20px "Lato"'),
@@ -1766,11 +1762,11 @@ test("V4 clarity: task and job hierarchy is readable; overview is an opt-in disc
   await page.goto("/");
   const shell=page.locator(".sp-clarity-home");
   await expect(shell).toBeVisible();
-  const hero=page.locator(".sp125-career-cover");
-  await expect(hero.getByRole("heading",{name:"Home",level:1})).toBeVisible();
+  await expect(page.locator(".sp125-career-cover")).toHaveCount(0);
+  await expect(page.getByRole("heading",{name:"Home",exact:true})).toHaveCount(0);
   const start=shell.locator(".flow-start");
-  await expect(start.getByRole("heading",{name:/CV connected/,level:2})).toBeVisible();
-  await expect(start.getByRole("heading",{name:"How would you like to apply?",level:3})).toBeVisible();
+  await expect(start.getByRole("heading",{name:/CV connected/,level:1})).toBeVisible();
+  await expect(start.getByRole("heading",{name:"How would you like to apply?",level:2})).toBeVisible();
   await expect(start.locator(".flow-start-card")).toHaveCount(3);
   await expect(start.locator('.flow-start-card[data-featured="guided"]')).toBeVisible();
   const jobs=shell.locator(".sp126-job-results");
@@ -1825,8 +1821,9 @@ test("V4 clarity: 320/390px phone retains accessible CV gate and never overflows
   for(const width of [320,390]){
     await page.setViewportSize({width,height:740});
     await page.goto("/");
-    await expect(page.getByRole("heading",{name:"Home",level:1})).toBeVisible();
-    await expect(page.getByRole("heading",{name:"Start with your CV.",level:2})).toBeVisible();
+    await expect(page.getByRole("heading",{name:"Home",exact:true})).toHaveCount(0);
+    await expect(page.locator(".sp125-career-cover")).toHaveCount(0);
+    await expect(page.getByRole("heading",{name:"Start with your CV.",level:1})).toBeVisible();
     await expect(page.locator(".sp-clarity-home .sp-clarity-overview")).toBeHidden();
     await expect(page.locator(".sp-clarity-home .sp126-job-results")).toBeHidden();
     const controls=page.locator(".sp-clarity-home .flow-start-card[data-flow-mode]");
@@ -1837,13 +1834,14 @@ test("V4 clarity: 320/390px phone retains accessible CV gate and never overflows
         ".sp-clarity-home .flow-start-card[data-flow-mode]"));
       return {
         overflow:document.documentElement.scrollWidth>window.innerWidth+1,
-        hero:document.querySelector(".sp125-career-cover")!.getBoundingClientRect().height,
+        taskTop:document.querySelector(".flow-start")!.getBoundingClientRect().top -
+          document.querySelector(".content")!.getBoundingClientRect().top,
         heights:cards.map(el=>el.getBoundingClientRect().height),
         columns:getComputedStyle(cards[0]).gridTemplateColumns.split(" ").length
       };
     });
     expect(dimensions.overflow).toBe(false);
-    expect(dimensions.hero).toBeLessThanOrEqual(145);
+    expect(dimensions.taskTop).toBeLessThanOrEqual(32);
     expect(dimensions.heights.every(h=>h<=170)).toBe(true);
     expect(dimensions.columns).toBe(3);
     await expect(page.getByRole("button",{name:/Upload CV first/})).toBeVisible();
@@ -1879,7 +1877,7 @@ test("V4 monochrome: homepage preserves real application paths and neutral surfa
         const css = getComputedStyle(el);
         return {bg:css.backgroundColor,image:css.backgroundImage};
       };
-      return {canvas:read(".smartploy-app"),hero:read(".sp125-career-cover"),
+      return {canvas:read(".smartploy-app"),task:read(".flow-start"),
         warning:getComputedStyle(document.querySelector(".smartploy-app")!).getPropertyValue("--sp-ui-warning").trim(),
         homeActive:document.querySelector(".sidebar-nav [aria-current=page]")?.getAttribute("aria-label"),
         current:read(".flow-start-progress li.current"),
@@ -1888,7 +1886,8 @@ test("V4 monochrome: homepage preserves real application paths and neutral surfa
         overflow:document.documentElement.scrollWidth>innerWidth+1};
     });
     expect(measured.canvas.bg).toBe(theme==="dark"?"rgb(9, 9, 9)":"rgb(255, 255, 255)");
-    expect(measured.hero.image).toBe("none");
+    expect(measured.task.image).toBe("none");
+    await expect(page.locator(".sp125-career-cover")).toHaveCount(0);
     expect(measured.homeActive).toBe("Home");
     expect(measured.warning).toMatch(/^#([0-9a-f]{2})\1\1$/i);
     expect(measured.current.image).toBe("none");
