@@ -1,0 +1,144 @@
+name: SmartPloy actual UI skills tooling
+
+on:
+  push:
+    branches:
+      - fix/v4-fast-monochrome-20261124
+    paths:
+      - .github/workflows/smartploy-ui-skill-tooling.yml
+      - web/src/StartChoices.tsx
+      - web/src/App.tsx
+      - web/src/sp-v4-card-surfaces.css
+  workflow_dispatch:
+
+concurrency:
+  group: smartploy-ui-tooling-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tooling-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout candidate (no stored token)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Checkout pinned UI/UX Pro Max executable and database
+        uses: actions/checkout@v4
+        with:
+          repository: nextlevelbuilder/ui-ux-pro-max-skill
+          ref: 7e935ad920b390035e0e139bce555d091d14c70b
+          path: .ui-toolchain/uiux
+          persist-credentials: false
+      - name: Checkout pinned Taste executable and references
+        uses: actions/checkout@v4
+        with:
+          repository: Leonxlnx/taste-skill
+          ref: 6c0b5c78f5d31776e2210305abaa210cdc0030bf
+          path: .ui-toolchain/taste
+          persist-credentials: false
+      - name: Checkout pinned Impeccable binary launcher and checksums
+        uses: actions/checkout@v4
+        with:
+          repository: pbakaus/impeccable
+          ref: b49177d32788f2dc585c42831d845dacf1ebed2c
+          path: .ui-toolchain/impeccable
+          persist-credentials: false
+      - name: Record actual source revisions
+        run: |
+          set -Eeuo pipefail
+          mkdir -p .ui-tooling-results
+          for skill in uiux taste impeccable; do
+            printf '%s %s\n' "$skill" "$(git -C .ui-toolchain/$skill rev-parse HEAD)" |
+              tee -a .ui-tooling-results/versions.txt
+          done
+      - name: Execute UI/UX Pro Max design intelligence and React UX searches
+        run: |
+          set -Eeuo pipefail
+          script=.ui-toolchain/uiux/.claude/skills/ui-ux-pro-max/scripts/search.py
+          python "$script" "job application SaaS calm minimal one primary action" --design-system \
+            --variance 2 --motion 1 --density 2 -p SmartPloy > .ui-tooling-results/uiux-design-system.txt
+          python "$script" "progressive disclosure navigation primary action" --domain ux \
+            > .ui-tooling-results/uiux-ux-search.txt
+          python "$script" "responsive forms semantic button state" --stack react \
+            > .ui-tooling-results/uiux-react-search.txt
+          test -s .ui-tooling-results/uiux-design-system.txt
+          test -s .ui-tooling-results/uiux-ux-search.txt
+          test -s .ui-tooling-results/uiux-react-search.txt
+          grep -E '^\*\*|^\#' .ui-tooling-results/uiux-design-system.txt | head -n 36 || true
+      - name: Render REAL React homepage component text for Taste copy tooling
+        working-directory: web
+        run: |
+          set -Eeuo pipefail
+          npm ci --no-audit --no-fund
+          mkdir -p .ux-tooling
+          node --input-type=module <<'JS'
+          import { build } from "esbuild";
+          import React from "react";
+          import { renderToStaticMarkup } from "react-dom/server";
+          import { writeFileSync } from "node:fs";
+          await build({
+            entryPoints:["src/StartChoices.tsx"], bundle:true, platform:"node",
+            format:"esm", packages:"external", outfile:".ux-tooling/home.bundle.mjs"
+          });
+          const {default:StartChoices}=await import("./.ux-tooling/home.bundle.mjs");
+          const noop=()=>{};
+          for(const [cvPresent,name] of [[false,"first-cv"],[true,"saved-cv"]]) {
+            const html=renderToStaticMarkup(React.createElement(StartChoices,{
+              cvPresent,onMode:noop,onBrowse:noop,onCreateCV:noop,onUpload:noop,
+              onOpenApplications:noop
+            }));
+            writeFileSync(".ux-tooling/"+name+".html",
+              "<!doctype html><html lang=\"en\"><head><title>SmartPloy — Apply with confidence</title></head><body>"+html+"</body></html>");
+          }
+          JS
+          test -s .ux-tooling/first-cv.html
+          test -s .ux-tooling/saved-cv.html
+      - name: Execute actual Taste 2.5 copy-lint against rendered component
+        run: |
+          set +e
+          node .ui-toolchain/taste/skills/taste-skill/scripts/copy-lint.mjs \
+            web/.ux-tooling/first-cv.html web/.ux-tooling/saved-cv.html \
+            --kind software --json > .ui-tooling-results/taste-copy-lint.json 2> .ui-tooling-results/taste-stderr.txt
+          code=$?
+          echo "TASTE_COPY_LINT_EXIT=$code" | tee -a .ui-tooling-results/versions.txt
+          test -s .ui-tooling-results/taste-copy-lint.json || exit 1
+          node -e 'const d=require("./.ui-tooling-results/taste-copy-lint.json"); console.log("Taste analyzed rendered React HTML files:",d.files?.length||0)'
+          exit 0
+      - name: Execute pinned Impeccable context and mechanical design detector
+        run: |
+          set +e
+          sh .ui-toolchain/impeccable/.claude/skills/impeccable/scripts/impeccable \
+            context --target web/src/StartChoices.tsx > .ui-tooling-results/impeccable-context.txt 2>&1
+          code=$?
+          echo "IMPECCABLE_CONTEXT_EXIT=$code" | tee -a .ui-tooling-results/versions.txt
+          sh .ui-toolchain/impeccable/.claude/skills/impeccable/scripts/impeccable \
+            detect --json web/src/StartChoices.tsx web/src/App.tsx web/src/sp-v4-card-surfaces.css > .ui-tooling-results/impeccable-detect.json 2> .ui-tooling-results/impeccable-detect-stderr.txt
+          code=$?
+          echo "IMPECCABLE_DETECT_EXIT=$code" | tee -a .ui-tooling-results/versions.txt
+          sed -n '1,28p' .ui-tooling-results/impeccable-context.txt
+          sed -n '1,35p' .ui-tooling-results/impeccable-detect.json
+          exit 0
+      - name: Upload unmodified executable tool findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartploy-ui-skills-actual-cli-output
+          path: |
+            .ui-tooling-results
+            web/.ux-tooling/first-cv.html
+            web/.ux-tooling/saved-cv.html
+          if-no-files-found: warn
+          retention-days: 7
+          include-hidden-files: true

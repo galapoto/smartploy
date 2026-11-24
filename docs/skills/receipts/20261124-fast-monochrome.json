@@ -1,0 +1,225 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "f76e56c3975646970dcb75fba2d645299bee6357",
+  "user_outcome": "Reduce workspace opening latency and blue visual clutter; black/white/neutral gray surfaces, sparse existing logo accent, clear headings, unchanged real Manual/Assisted/Automatic routes.",
+  "source_authority": "AGENTS.md, V4 Production-First Contract sections 1.1 and 2.1, TYPE-TASTE-UI-2026-11-19 and owner screenshot/video 2026-11-24. Video frame evidence at 3:00 hierarchy, 6:00 headline, 8:30 redundant labels, 10:30 scrollable card; no video asset copied.",
+  "components": [
+    {
+      "name": "backend",
+      "paths": [
+        "smartploy/service.py"
+      ],
+      "skills": [
+        {
+          "name": "Systematic debugging and regression tests",
+          "repository": "https://github.com/obra/superpowers",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Add a regression that would fail if old individual database lookups recur; no claim of observed RED before code. Preserve all original behavior and suite."
+        }
+      ],
+      "applied_method": "Reused existing rank_candidates and single list_jobs snapshot; build only 50/100 projected cards without individual repository GET calls. No change to ranking algorithm, tenant binding, API shape or permissions.",
+      "reuse_provenance": "COPIED: none. ADAPTED smartploy/service.py::dashboard on pinned baseline. SANITIZED repeated database lookups and unbounded card projection. No new dependency.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Readable complete first-party source, approved behavior and owned synthetic data are available; no external protected code reconstruction needed. Video supplied visual evidence only; REA cannot improve this narrow source patch.",
+      "measured_seconds": "NOT_MEASURED",
+      "tests": "New 1200-candidate bounded snapshot regression plus full native CI. Production time NOT_MEASURED."
+    },
+    {
+      "name": "qa",
+      "paths": [
+        "tests/test_dashboard_metadata.py",
+        "web/browser-tests/onboarding.e2e.ts"
+      ],
+      "skills": [
+        {
+          "name": "Systematic debugging and regression tests",
+          "repository": "https://github.com/obra/superpowers",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Add a regression that would fail if old individual database lookups recur; no claim of observed RED before code. Preserve all original behavior and suite."
+        },
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Low-density design-system search previously executed on PR350; apply minimal hierarchy and one accent; rerun exact candidate CLI in isolated CI."
+        },
+        {
+          "name": "Taste",
+          "repository": "https://github.com/Leonxlnx/taste-skill",
+          "commit": "6c0b5c78f5d31776e2210305abaa210cdc0030bf",
+          "path": "skills/taste-skill/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Use shorter copy and real rendered React states; existing copy-lint executable reruns on this candidate."
+        },
+        {
+          "name": "Impeccable",
+          "repository": "https://github.com/pbakaus/impeccable",
+          "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
+          "path": ".claude/skills/impeccable/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Distill decorative borders and background blocks; rerun explicit source detector on actual changed files."
+        },
+        {
+          "name": "Anthropic Frontend Design",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/frontend-design/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Apply distinctive restrained typography and functional hierarchy; no standalone CLI."
+        },
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Preserve semantic controls, keyboard, focus, accessible contrast, minimum target sizes."
+        }
+      ],
+      "applied_method": "Keep prior browser security and account assertions; add exact neutral palette and actual route controls at desktop and phone; test bulk read invariant.",
+      "reuse_provenance": "COPIED: none. ADAPTED tests/test_dashboard_metadata.py and existing Chromium synthetic fixture.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Readable complete first-party source, approved behavior and owned synthetic data are available; no external protected code reconstruction needed. Video supplied visual evidence only; REA cannot improve this narrow source patch.",
+      "measured_seconds": "NOT_MEASURED",
+      "tests": "New exact browser test and Python regression; existing tests retained. Pending exact CI."
+    },
+    {
+      "name": "ui",
+      "paths": [
+        "web/src/sp-v4-card-surfaces.css",
+        "web/src/sp-v4-card-surfaces.test.ts",
+        "web/src/StartChoices.tsx"
+      ],
+      "skills": [
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Low-density design-system search previously executed on PR350; apply minimal hierarchy and one accent; rerun exact candidate CLI in isolated CI."
+        },
+        {
+          "name": "Taste",
+          "repository": "https://github.com/Leonxlnx/taste-skill",
+          "commit": "6c0b5c78f5d31776e2210305abaa210cdc0030bf",
+          "path": "skills/taste-skill/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Use shorter copy and real rendered React states; existing copy-lint executable reruns on this candidate."
+        },
+        {
+          "name": "Impeccable",
+          "repository": "https://github.com/pbakaus/impeccable",
+          "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
+          "path": ".claude/skills/impeccable/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Distill decorative borders and background blocks; rerun explicit source detector on actual changed files."
+        },
+        {
+          "name": "Anthropic Frontend Design",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/frontend-design/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Apply distinctive restrained typography and functional hierarchy; no standalone CLI."
+        },
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Preserve semantic controls, keyboard, focus, accessible contrast, minimum target sizes."
+        }
+      ],
+      "applied_method": "Replace existing surface palette and simplify existing banner, progress rail, status, card CTA, sidebar and search without new CSS layer or application framework. Logo accent, readable text and security warnings remain.",
+      "reuse_provenance": "COPIED: none. ADAPTED existing first-party CSS and StartChoices on baseline; no new external production code; sanitized tinted backgrounds and repeated copy.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Readable complete first-party source, approved behavior and owned synthetic data are available; no external protected code reconstruction needed. Video supplied visual evidence only; REA cannot improve this narrow source patch.",
+      "measured_seconds": "NOT_MEASURED",
+      "tests": "Existing source test updates only intended token expectations; real browser acceptance and external skill checks pending."
+    },
+    {
+      "name": "delivery",
+      "paths": [
+        "deploy/personal/web.Caddyfile"
+      ],
+      "skills": [
+        {
+          "name": "Systematic debugging and regression tests",
+          "repository": "https://github.com/obra/superpowers",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Add a regression that would fail if old individual database lookups recur; no claim of observed RED before code. Preserve all original behavior and suite."
+        }
+      ],
+      "applied_method": "Reuse existing Caddy static asset routes; immutable cache only content-hashed Vite public assets. HTML revalidates; private API, auth, release marker and extension routes untouched.",
+      "reuse_provenance": "COPIED: none. ADAPTED existing deploy/personal/web.Caddyfile; no credentials or new dependency.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Readable complete first-party source, approved behavior and owned synthetic data are available; no external protected code reconstruction needed. Video supplied visual evidence only; REA cannot improve this narrow source patch.",
+      "measured_seconds": "NOT_MEASURED",
+      "tests": "Existing production Compose smoke and security gates, exact cache response proof pending."
+    },
+    {
+      "name": "ci",
+      "paths": [
+        ".github/workflows/smartploy-ui-skill-tooling.yml"
+      ],
+      "skills": [
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Low-density design-system search previously executed on PR350; apply minimal hierarchy and one accent; rerun exact candidate CLI in isolated CI."
+        },
+        {
+          "name": "Taste",
+          "repository": "https://github.com/Leonxlnx/taste-skill",
+          "commit": "6c0b5c78f5d31776e2210305abaa210cdc0030bf",
+          "path": "skills/taste-skill/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Use shorter copy and real rendered React states; existing copy-lint executable reruns on this candidate."
+        },
+        {
+          "name": "Impeccable",
+          "repository": "https://github.com/pbakaus/impeccable",
+          "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
+          "path": ".claude/skills/impeccable/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Distill decorative borders and background blocks; rerun explicit source detector on actual changed files."
+        },
+        {
+          "name": "Anthropic Frontend Design",
+          "repository": "https://github.com/anthropics/skills",
+          "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+          "path": "skills/frontend-design/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Apply distinctive restrained typography and functional hierarchy; no standalone CLI."
+        },
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Preserve semantic controls, keyboard, focus, accessible contrast, minimum target sizes."
+        }
+      ],
+      "applied_method": "Reuse actual executable audit workflow from prior SmartPloy PR350 head d2de2b1365867eec056e53b2d8e5a9a44b61ab73; pin upstream repos, read-only credential-free checkouts; execute UIUX search, Taste linter on actual StartChoices SSR and explicit Impeccable detector; actual result not yet claimed.",
+      "reuse_provenance": "COPIED: existing authorized first-party workflow from PR350, adapted to StartChoices and current branch. Upstream tools executed separately in CI, not deployed. NOT_VERIFIED current run.",
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Readable complete first-party source, approved behavior and owned synthetic data are available; no external protected code reconstruction needed. Video supplied visual evidence only; REA cannot improve this narrow source patch.",
+      "measured_seconds": "NOT_MEASURED",
+      "tests": "Prior run 45193658936 produced tool outputs. Current branch must run workflow and archive results before declaring current audit success."
+    }
+  ]
+}

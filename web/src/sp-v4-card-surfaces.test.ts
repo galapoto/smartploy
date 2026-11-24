@@ -17,10 +17,10 @@ describe("V4 shadcn-adapted surface system", () => {
   });
 
   it("pairs dark surfaces with light text and light surfaces with dark text", () => {
-    expect(css).toContain("--sp-ui-card:#101821");
-    expect(css).toContain("--sp-ui-ink:#f7faff");
+    expect(css).toContain("--sp-ui-card:#151515");
+    expect(css).toContain("--sp-ui-ink:#fafafa");
     expect(css).toContain('--sp-ui-card:#fff');
-    expect(css).toContain("--sp-ui-ink:#112334");
+    expect(css).toContain("--sp-ui-ink:#171717");
     expect(css).toContain(".flow-primary-next-copy strong");
     expect(css).toContain("background-image:none");
     expect(css).toContain("color:var(--sp-ui-muted)");

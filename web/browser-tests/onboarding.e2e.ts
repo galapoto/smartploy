@@ -1221,7 +1221,7 @@ test("SP125 dark canvas, action rows and application descriptions remain legible
       contentWidth: document.querySelector(".content")!.getBoundingClientRect().width,
     };
   });
-  expect(readings.canvas).toBe("rgb(5, 7, 11)");
+  expect(readings.canvas).toBe("rgb(9, 9, 9)");
   expect(readings.browse).toBeGreaterThanOrEqual(4.5);
   expect(readings.details).toBeGreaterThanOrEqual(4.5);
   expect(readings.card).toBeGreaterThanOrEqual(4.5);
@@ -1850,4 +1850,47 @@ test("V4 clarity: 320/390px phone retains accessible CV gate and never overflows
     await expect(page.getByRole("button",{name:/Just find jobs/})).toBeVisible();
     await evidence(page,"sp-v4-clarity-20261123-phone-"+width+".png");
   }
+});
+
+
+test("V4 monochrome: homepage preserves real application paths and neutral surfaces", async ({page}) => {
+  const state = await installSyntheticApi(page, {
+    cvFilename: "Reviewed-Synthetic-CV.pdf",
+    initial: {completed:true,mode:"personalized",revision:1}
+  });
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto("/");
+  await expect(page.getByRole("heading",{name:"CV connected. Choose how to apply."})).toBeVisible();
+  for (const theme of ["light","dark"] as const) {
+    if (theme === "dark") await page.getByRole("button",{name:"Switch to dark mode"}).click();
+    const measured = await page.evaluate(() => {
+      const read = (selector:string) => {
+        const el = document.querySelector(selector);
+        if (!el) throw new Error("Missing " + selector);
+        const css = getComputedStyle(el);
+        return {bg:css.backgroundColor,image:css.backgroundImage};
+      };
+      return {canvas:read(".smartploy-app"),hero:read(".sp125-career-cover"),
+        current:read(".flow-start-progress li.current"),
+        guided:read('.flow-start-card[data-featured="guided"] > .flow-card-cta'),
+        cards:[...document.querySelectorAll(".flow-start-card")].map(e=>getComputedStyle(e).backgroundColor),
+        overflow:document.documentElement.scrollWidth>innerWidth+1};
+    });
+    expect(measured.canvas.bg).toBe(theme==="dark"?"rgb(9, 9, 9)":"rgb(255, 255, 255)");
+    expect(measured.hero.image).toBe("none");
+    expect(measured.current.image).toBe("none");
+    expect(measured.guided.bg).toBe(theme==="dark"?"rgb(250, 250, 250)":"rgb(23, 23, 23)");
+    for(const bg of measured.cards) {
+      const rgb=bg.match(/\d+/g)?.slice(0,3).map(Number) || [];
+      expect(rgb).toHaveLength(3);
+      expect(Math.max(...rgb)-Math.min(...rgb)).toBeLessThanOrEqual(1);
+    }
+    expect(measured.overflow).toBe(false);
+    await evidence(page,"sp-v4-neutral-"+theme+"-desktop.png");
+  }
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.locator('.flow-start-card[data-flow-mode="automatic"]')).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)).toBe(false);
+  await evidence(page,"sp-v4-neutral-dark-phone.png");
+  expect(state.applicationWorkspaceCreates).toEqual([]);
 });

@@ -23,7 +23,7 @@ export default function StartChoices(props: {
     <div className="flow-start-heading">
       <h2>{hasCV ? "CV connected. Choose how to apply." : "Start with your CV."}</h2>
       <p>{hasCV
-        ? "Your CV is saved privately. Choose the level of help you want."
+        ? "Choose the level of help you want."
         : "Upload or create your CV once. You can still explore jobs without one."}</p>
     </div>
     <ol className="flow-start-progress" aria-label="Application journey steps">
@@ -85,7 +85,7 @@ export default function StartChoices(props: {
           <FileCheck2 size={25} aria-hidden="true"/>
           <span className="flow-start-index" aria-hidden="true">01</span>
           <strong>Apply manually</strong>
-          <span>Open a matching job and complete its application yourself.</span>
+          <span>Choose a job and apply yourself.</span>
           <small aria-hidden="true">MANUAL · You send the application</small>
           <span className="flow-card-cta">{hasCV ? "Choose manual" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>
@@ -97,7 +97,7 @@ export default function StartChoices(props: {
           <WandSparkles size={25} aria-hidden="true"/>
           <span className="flow-start-index" aria-hidden="true">02</span>
           <strong>Assisted · Apply with AI</strong>
-          <span>Prepare a CV and letter. Review before filling supported forms.</span>
+          <span>Prepare a CV and letter. Review before filling forms.</span>
           <small aria-hidden="true">ASSISTED · You review before sending</small>
           <span className="flow-card-cta">{hasCV ? "Choose assisted" : "Connect CV to unlock"}</span>
           <ArrowRight size={17} aria-hidden="true"/>

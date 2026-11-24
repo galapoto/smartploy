@@ -7,11 +7,14 @@
    This last-loaded sheet owns surface/foreground pairing in BOTH themes. */
 
 .smartploy-app {
-  --sp-ui-card:#101821;
-  --sp-ui-card-raised:#16232f;
-  --sp-ui-card-border:#334354;
-  --sp-ui-ink:#f7faff;
-  --sp-ui-muted:#c0d0de;
+  --sp-ui-canvas:#090909;
+  --sp-ui-action:#fafafa;
+  --sp-ui-action-ink:#151515;
+  --sp-ui-card:#151515;
+  --sp-ui-card-raised:#202020;
+  --sp-ui-card-border:#3b3b3b;
+  --sp-ui-ink:#fafafa;
+  --sp-ui-muted:#c4c4c4;
   --sp-ui-accent:#06d9e8;
   --sp-ui-ring:#06d9e8;
   --sp-ui-error:#ff9fa9;
@@ -19,11 +22,14 @@
   --sp-ui-shadow:0 15px 36px -25px rgba(0,0,0,.95), inset 0 1px 0 rgba(255,255,255,.045);
 }
 html[data-smartploy-theme="light"] .smartploy-app {
+  --sp-ui-canvas:#fff;
+  --sp-ui-action:#171717;
+  --sp-ui-action-ink:#fff;
   --sp-ui-card:#fff;
-  --sp-ui-card-raised:#f4f7fa;
-  --sp-ui-card-border:#c5d1dc;
-  --sp-ui-ink:#112334;
-  --sp-ui-muted:#43586e;
+  --sp-ui-card-raised:#f5f5f5;
+  --sp-ui-card-border:#d1d1d1;
+  --sp-ui-ink:#171717;
+  --sp-ui-muted:#505050;
   --sp-ui-accent:#086f82;
   --sp-ui-ring:#087e95;
   --sp-ui-error:#af3445;
@@ -611,23 +617,98 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .sp126-dashboard-main
   gap:20px;
 }
 html[data-smartploy-theme] .smartploy-app .sp125-career-cover {
-  min-height:152px;
-  max-height:210px;
-  margin:0 0 clamp(20px,2.5vw,32px);
-  border-radius:18px;
+  min-height:0;
+  max-height:none;
+  margin:0 0 clamp(28px,4vw,48px);
+  border:0;
+  border-radius:0;
+  background:transparent;
+  background-image:none;
+  box-shadow:none;
 }
 html[data-smartploy-theme] .smartploy-app .sp125-career-copy {
   display:flex;
   align-items:center;
-  padding:clamp(24px,2.9vw,40px);
+  padding:4px 0;
   max-width:100%;
 }
 html[data-smartploy-theme] .smartploy-app .sp125-career-copy h1 {
   margin:0;
-  color:#f7faff;
-  font:400 clamp(38px,4.4vw,62px)/1.12 "EB Garamond",Georgia,serif;
+  color:var(--sp-ui-ink);
+  font:400 clamp(38px,4vw,56px)/1.1 "EB Garamond",Georgia,serif;
   letter-spacing:-.02em;
   text-wrap:balance;
+}
+
+
+/* Owner screenshot/video 2026-11-24: neutral chrome, no competing
+   filled labels, colored cards or ornamental hero panel. */
+html[data-smartploy-theme] .smartploy-app {
+  background:var(--sp-ui-canvas);
+}
+html[data-smartploy-theme] .smartploy-app :is(.sidebar,.site-header) {
+  background:var(--sp-ui-canvas);
+  color:var(--sp-ui-ink);
+  border-color:var(--sp-ui-card-border);
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .nav-item {
+  background:transparent;
+  background-image:none;
+  border-color:transparent;
+  color:var(--sp-ui-ink);
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .nav-item:not(.active):hover,
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .nav-item.active {
+  background:var(--sp-ui-card-raised);
+  background-image:none;
+  border-color:transparent;
+  box-shadow:none;
+  color:var(--sp-ui-ink);
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .nav-item.active::before {
+  background:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .nav-item :is(svg,small) {
+  color:var(--sp-ui-muted);
+}
+html[data-smartploy-theme] .smartploy-app .sidebar-nav .nav-item.active svg {
+  color:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app :is(.header-search,.sp99-theme-toggle,.header-refresh,.sp126-desktop-collapse,.sp126-mobile-close,.avatar) {
+  background:var(--sp-ui-card);
+  background-image:none;
+  border-color:var(--sp-ui-card-border);
+  color:var(--sp-ui-ink);
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .header-search input {
+  background:transparent;
+  color:var(--sp-ui-ink);
+  box-shadow:none;
+}
+html[data-smartploy-theme] .smartploy-app .header-search input::placeholder {
+  color:var(--sp-ui-muted);
+  opacity:1;
+}
+html[data-smartploy-theme] .smartploy-app .header-tools .connection-status {
+  background:transparent;
+  border:1px solid var(--sp-ui-card-border);
+  color:var(--sp-ui-muted);
+}
+html[data-smartploy-theme] .smartploy-app .header-tools .connection-status.connected > span {
+  background:var(--sp-ui-accent);
+}
+html[data-smartploy-theme] .smartploy-app .header-tools .connection-status.disconnected > span {
+  background:var(--sp-ui-muted);
+}
+html[data-smartploy-theme] .smartploy-app .primary-btn:not(:disabled) {
+  background:var(--sp-ui-action);
+  background-image:none;
+  border-color:var(--sp-ui-action);
+  color:var(--sp-ui-action-ink);
+  box-shadow:none;
 }
 
 /* A single next action, followed by three honest modes. */
@@ -644,7 +725,7 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-heading {
 }
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-heading h2 {
   margin:0 0 8px;
-  font:400 clamp(28px,3vw,38px)/1.17 "EB Garamond",Georgia,serif;
+  font:700 clamp(24px,2.45vw,32px)/1.25 "Manrope","Segoe UI",sans-serif;
   letter-spacing:-.012em;
   color:var(--sp-ui-ink);
   text-wrap:balance;
@@ -665,10 +746,11 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress 
 }
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress li {
   min-width:0;
-  padding:11px 12px;
-  border:1px solid var(--sp-ui-card-border);
-  border-radius:9px;
-  background:var(--sp-ui-card);
+  padding:8px 4px 10px;
+  border:0;
+  border-bottom:1px solid var(--sp-ui-card-border);
+  border-radius:0;
+  background:transparent;
   background-image:none;
   box-shadow:none;
   color:var(--sp-ui-muted);
@@ -677,23 +759,23 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress 
   line-height:1.4;
 }
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress li.current {
-  border-color:var(--sp-ui-accent);
-  background:var(--sp-ui-card-raised);
+  border-bottom:2px solid var(--sp-ui-accent);
+  background:transparent;
   background-image:none;
   color:var(--sp-ui-ink);
-  box-shadow:inset 0 -2px 0 var(--sp-ui-accent);
+  box-shadow:none;
 }
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress li.done {
   border-color:var(--sp-ui-card-border);
-  background:var(--sp-ui-card);
+  background:transparent;
   color:var(--sp-ui-ink);
 }
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-ready {
-  margin:0 0 16px;
-  padding:10px 14px;
+  margin:0 0 18px;
+  padding:3px 0;
   color:var(--sp-ui-ink);
-  border:1px solid var(--sp-ui-card-border);
-  background:var(--sp-ui-card);
+  border:0;
+  background:transparent;
   box-shadow:none;
   font-size:14px;
   line-height:1.5;
@@ -718,10 +800,11 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-method-he
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-method-status {
   font-size:12px;
   line-height:1.5;
-  padding:7px 11px;
-  border:1px solid var(--sp-ui-card-border);
-  color:var(--sp-ui-ink);
-  background:var(--sp-ui-card);
+  padding:0;
+  border:0;
+  color:var(--sp-ui-muted);
+  background:transparent;
+  box-shadow:none;
   white-space:nowrap;
 }
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid.flow-start-grid-methods {
@@ -733,10 +816,10 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid.flow
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] {
   position:relative;
   min-width:0;
-  min-height:218px;
-  padding:22px;
+  min-height:190px;
+  padding:20px;
   border:1px solid var(--sp-ui-card-border);
-  border-radius:15px;
+  border-radius:12px;
   display:grid;
   grid-template-columns:minmax(0,1fr);
   gap:9px;
@@ -748,9 +831,9 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-meth
   text-align:left;
 }
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-featured="guided"] {
-  background:var(--sp-ui-card-raised);
+  background:var(--sp-ui-card);
   background-image:none;
-  border-color:var(--sp-ui-accent);
+  border-color:var(--sp-ui-card-border);
 }
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > strong {
   color:var(--sp-ui-ink);
@@ -761,12 +844,12 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-meth
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode]
   > span:not(.flow-card-cta):not(.flow-start-index) {
   color:var(--sp-ui-muted);
-  font:400 15px/1.5 "Lato","Segoe UI",sans-serif;
+  font:400 15px/1.5 "Manrope","Segoe UI",sans-serif;
   opacity:1;
   overflow-wrap:anywhere;
 }
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-flow-mode] > svg:first-child {
-  color:var(--sp-ui-accent);
+  color:var(--sp-ui-muted);
   background:transparent;
   padding:0;
 }
@@ -780,26 +863,19 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-meth
   width:100%;
   min-height:44px;
   margin-top:auto;
-  padding:11px 14px;
-  border:1px solid var(--sp-ui-card-border);
-  border-radius:9px;
+  padding:10px 0;
+  border:0;
+  border-radius:7px;
   color:var(--sp-ui-ink);
-  background:var(--sp-ui-card-raised);
+  background:transparent;
   font:700 14px/1.3 "Manrope","Segoe UI",sans-serif;
   box-shadow:none;
 }
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card[data-featured="guided"] > .flow-card-cta {
-  background:var(--sp-ui-accent);
-  border-color:var(--sp-ui-accent);
-  color:var(--sp-ui-card);
-}
-html[data-smartploy-theme="dark"] .smartploy-app .sp-clarity-home
- .flow-start-grid-methods .flow-start-card[data-featured="guided"] > .flow-card-cta {
-  color:#051c28;
-}
-html[data-smartploy-theme="light"] .smartploy-app .sp-clarity-home
- .flow-start-grid-methods .flow-start-card[data-featured="guided"] > .flow-card-cta {
-  color:#fff;
+  padding:10px 13px;
+  background:var(--sp-ui-action);
+  border-color:var(--sp-ui-action);
+  color:var(--sp-ui-action-ink);
 }
 html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-grid-methods .flow-start-card:disabled {
   opacity:.68;
@@ -1047,18 +1123,18 @@ html[data-smartploy-theme] .smartploy-app .sp-clarity-home .jobs-panel .job-byli
     padding:17px 13px 28px;
   }
   html[data-smartploy-theme] .smartploy-app .sp125-career-cover {
-    min-height:108px;
-    max-height:140px;
-    margin-bottom:14px;
+    min-height:0;
+    max-height:none;
+    margin-bottom:20px;
   }
   html[data-smartploy-theme] .smartploy-app .sp125-career-copy {
-    padding:18px 20px;
+    padding:3px 0;
   }
   html[data-smartploy-theme] .smartploy-app .sp125-career-copy h1 {
     font-size:clamp(31px,6vw,42px);
   }
   html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-heading h2 {
-    font-size:clamp(27px,5.1vw,36px);
+    font-size:clamp(22px,5.1vw,29px);
   }
   html[data-smartploy-theme] .smartploy-app .sp-clarity-home .flow-start-progress li {
     padding:8px 9px;
