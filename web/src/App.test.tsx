@@ -731,6 +731,9 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     }));
 
     render(<App />);
+    expect(await screen.findByRole("heading", { name: "Checking your CV…" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Upload CV first/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Apply manually/i })).toBeNull();
     fireEvent.click(await screen.findByText(/Optional: set your job search preferences/i));
     const generalRadio = await screen.findByRole("radio", { name: /general job search/i });
     fireEvent.click(generalRadio);
@@ -739,6 +742,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
     // This is the async first-use hydration race observed intermittently
     // under CI load. No CV or model is required for General search.
     await act(async () => { finishCV(); });
+    expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
     expect((screen.getByRole("radio", { name: /general job search/i }) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /browse all jobs/i }));
     await waitFor(() => expect(api.updateSearchPreferences).toHaveBeenCalledWith(

@@ -253,6 +253,7 @@ export default function App() {
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [cv, setCV] = useState<CVDocument>({ present: false });
+  const [cvStatus, setCVStatus] = useState<"loading" | "ready" | "unavailable">("loading");
   const [facts, setFacts] = useState<CandidateFact[]>([]);
   const [jobs, setJobs] = useState<SavedJob[]>([]);
   const [jobsStatus, setJobsStatus] = useState<"loading" | "ready" | "unavailable">("unavailable");
@@ -386,7 +387,7 @@ export default function App() {
   const clearPrivateWorkspace = useCallback(() => {
     setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
     setDiscoveryStatus("loading"); setJobsStatus("unavailable"); setRankedCount(null);
-    setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
+    setApplications([]); setCV({ present: false }); setCVStatus("loading"); setFacts([]); setJobs([]);
     setPrivateSavedJobs([]);
     setAIConsents([]); setAIConsentEvents([]);
     setAIConsentStatus("unavailable"); setAIConsentBusy(false);
@@ -474,6 +475,7 @@ export default function App() {
     const { signal } = controller;
     const current = () => generation === loadGeneration.current && !signal.aborted;
     if (quiet) setRefreshing(true); else setLoading(true);
+    setCVStatus(previous => previous === "ready" ? "ready" : "loading");
     const connectionDeadline = window.setTimeout(() => {
       if (!current()) return;
       ++loadGeneration.current;
@@ -505,26 +507,40 @@ export default function App() {
 
       // Only small, account-bound reads are on the initial rendering path.
       // No catalogue download or rank_candidates call is required to open Home.
-      const cvRequest = Promise.allSettled([getCV(signal)]);
+      const cvRead: { result?: PromiseSettledResult<CVDocument> } = {};
+      const cvRequest = Promise.allSettled([getCV(signal)]).then(([result]) => {
+        cvRead.result = result;
+        return result;
+      });
       const [board, prefs] = await Promise.all([
         getDashboard(signal, false), getSearchPreferences(signal)
       ]);
+      // A CV result already settled before this identity check belongs to
+      // this same verified batch. A delayed CV needs its own later check.
+      const cvAtVerification = cvRead.result;
       const verifiedWho = await verify("Your signed-in account changed during refresh. Reload this workspace.");
       if (!verifiedWho) return;
-      const [savedCV] = await cvRequest;
-      const finalWho = await verify("Your signed-in account changed during profile loading. Reload this workspace.");
-      if (!finalWho) return;
 
       lastSessionIdentity.current = identity;
       window.clearTimeout(connectionDeadline);
       setLoginRequired(false);
-      setDashboard(board); setPreferences(prefs);
-      setCV(savedCV.status === "fulfilled" ? savedCV.value : { present: false });
-      setSession(finalWho);
+      setDashboard(board); setPreferences(prefs); setSession(verifiedWho);
       setLoading(false); setRefreshing(false); setError("");
-      if (savedCV.status === "rejected") optionalError();
+      const publishCV = (savedCV: PromiseSettledResult<CVDocument>) => {
+        setCV(savedCV.status === "fulfilled" ? savedCV.value : { present: false });
+        setCVStatus(savedCV.status === "fulfilled" ? "ready" : "unavailable");
+        if (savedCV.status === "rejected") optionalError();
+      };
+      if (cvAtVerification) publishCV(cvAtVerification);
+      const hydrateCV = async () => {
+        if (cvAtVerification) return;
+        const savedCV = await cvRequest;
+        if (!await verify("Your signed-in account changed during profile loading. Reload this workspace.")) return;
+        publishCV(savedCV);
+      };
 
-      // Start expensive discovery only after the real CV/task can render.
+      // Expensive discovery is no longer on the initial rendering path.
+      // A slow CV also cannot prevent General search or safe navigation.
       // Each result batch is independently verified before touching private UI.
       setDiscoveryStatus("loading");
       const hydrateSearch = async () => {
@@ -558,7 +574,7 @@ export default function App() {
         setLocalAI(model.status === "fulfilled" ? model.value : null);
         if (model.status === "rejected") optionalError();
       });
-      await Promise.all([hydrateSearch(), hydrateSecondary()]);
+      await Promise.all([hydrateCV(), hydrateSearch(), hydrateSecondary()]);
     } catch (exc) {
       if (current()) {
         controller.abort();
@@ -634,6 +650,11 @@ export default function App() {
   };
 
   function startApplyFlow(chosen: ApplicationFlowMode, jobKey = "") {
+    if (cvStatus !== "ready") {
+      setFlowMode(null); setFlowSelectedJob(""); setFlowSelectedCVSha("");
+      navigate("apply");
+      return;
+    }
     // A job-card shortcut never skips the CV-first gate. Creating a draft
     // without a CV is impossible and must not visually select a method.
     if (!cv.present) {
@@ -677,6 +698,7 @@ export default function App() {
     // the PUT and its paired discovery GET are in progress.
     ++loadGeneration.current;
     loadAbort.current?.abort();
+    setCVStatus(previous => previous === "loading" ? "unavailable" : previous);
     setRefreshing(false);
 
     const expectedIdentity = lastSessionIdentity.current;
@@ -793,6 +815,7 @@ export default function App() {
     savingAIConsent.current = true;
     ++loadGeneration.current; // Invalidate older private GET responses.
     loadAbort.current?.abort();
+    setCVStatus(previous => previous === "loading" ? "unavailable" : previous);
     setRefreshing(false); // A cancelled refresh must not leave its spinner stuck.
     setAIConsentBusy(true);
     try {
@@ -848,7 +871,7 @@ export default function App() {
     }
   }
 
-  const onUploadClick = () => uploadRef.current?.click();
+  const onUploadClick = () => { if (cvStatus === "ready") uploadRef.current?.click(); };
 
   async function onCVUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -1323,7 +1346,21 @@ export default function App() {
     onAutoDraft={() => void onPrepareMyAutoDrafts()}
   />;
 
-  const cvBlock = <section className="panel cv-panel">
+  const cvStatusTitle = cvStatus === "loading" ? "Checking your CV…" : "CV status unavailable";
+  const cvStatusPanel = <section className="flow-start" aria-label="CV status">
+    <div className="flow-start-heading">
+      {page === "dashboard" ? <h1>{cvStatusTitle}</h1> : <h2>{cvStatusTitle}</h2>}
+      <p role="status">{cvStatus === "loading" ? "You can browse jobs while we check your CV." : "Retry to verify your saved CV before applying."}</p>
+    </div>
+    <div className="row-actions">
+      <button type="button" className="secondary-btn" disabled={startSearchBusy}
+        onClick={() => void startGeneralBrowse()}>Just find jobs <ArrowRight size={16}/></button>
+      {cvStatus === "unavailable" ? <button type="button" className="outline-btn"
+        onClick={() => void load(true)}>Retry CV status</button> : null}
+    </div>
+  </section>;
+
+  const cvBlock = cvStatus !== "ready" ? cvStatusPanel : <section className="panel cv-panel">
     <div className="panel-heading"><div><p className="section-kicker">YOUR CAREER EVIDENCE</p><h2>Your CV</h2><p>Private, on this SmartPloy account.</p></div></div>
     {cv.present ? <div className="uploaded-file">
       <span className="file-icon"><FileText size={24} /></span>
@@ -1569,11 +1606,11 @@ export default function App() {
               Home remains a navigation destination, not a duplicate banner. */}
           <div className={cx("sp126-dashboard-layout", "sp-clarity-home", !cv.present && !preferences?.completed && "sp-home-setup")}>
             <div className="sp126-dashboard-main">
-          <StartChoices onMode={(choice) => startApplyFlow(choice)}
+          {cvStatus === "ready" ? <StartChoices onMode={(choice) => startApplyFlow(choice)}
             onBrowse={() => void startGeneralBrowse()} busyBrowse={startSearchBusy}
             onOpenApplications={() => navigate("applications")}
             cvPresent={cv.present} onUpload={onUploadClick}
-            onCreateCV={() => navigate("profile")}/>
+            onCreateCV={() => navigate("profile")}/> : cvStatusPanel}
           {preferences && !preferences.completed ? <details className="flow-advanced-setup flow-dashboard-setup">
             <summary>Optional: set your job search preferences</summary>
             <SearchSetup key={accountViewKey} initial={preferences}
@@ -1612,9 +1649,10 @@ export default function App() {
           <ReleaseStatus apiRevision={health?.release_revision} />
           <div className="page-intro"><div><p className="section-kicker">SMARTPLOY / {selectedNav?.label.toUpperCase()}</p><h1>{selectedNav?.label}</h1><p>{preferences?.mode === "general" ? "General search across current Finnish vacancies." : "Your private workspace, ranked by the search criteria you chose."}</p></div>
             {page === "jobs" ? <button type="button" className="primary-btn" onClick={() => setJobDialog(true)}><Plus size={17} /> Save job</button> : null}
-            {page === "profile" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}
+            {page === "profile" && cvStatus === "ready" ? <button type="button" className="primary-btn" onClick={onUploadClick}><UploadCloud size={17} /> {cv.present ? "Replace CV" : "Upload CV"}</button> : null}
           </div>
-          {page === "apply" ? <ApplicationJourney
+          {page === "apply" && cvStatus !== "ready" ? cvStatusPanel : null}
+          {page === "apply" && cvStatus === "ready" ? <ApplicationJourney
             key={accountViewKey} userId={session?.user_id || ""}
             cv={cv} mode={flowMode}
             selectedJobKey={pinnedJobForCV(flowSelectedJob, flowSelectedCVSha, cv.sha256 || "")}
@@ -1636,7 +1674,7 @@ export default function App() {
           {page === "training" ? <TrainingProgramsPanel /> : null}
           {page === "profile" ? <div className="secondary-grid"><div className="stacked">
             {cvBlock}
-            <MasterCVEditor key={accountViewKey} expectedUserId={session?.user_id || ""}
+            {cvStatus === "ready" ? <MasterCVEditor key={accountViewKey} expectedUserId={session?.user_id || ""}
               cv={cv}
               onSave={(text, expectedSha256) => runPrivateMutation(
                 (userId) => saveCVEditor(text, expectedSha256, userId)
@@ -1656,7 +1694,7 @@ export default function App() {
                 } else {
                   setNotice("Master CV saved. Revisit your application method and job documents before sending.");
                 }
-              }} />
+              }} /> : null}
             {factPanel}</div><aside>{sidePanel}</aside></div> : null}
           {page === "tools" ? <div className="secondary-grid">{toolsPanel}<aside>{cvBlock}</aside></div> : null}
           {page === "sources" ? <div className="secondary-grid">{sourcePanel}<aside><section className="panel"><h3>Continuous worker</h3><p className="muted">{dashboard.worker.ready ? "Worker available" : "Worker unavailable"} · {dashboard.worker.count} registered tasks</p>{dashboard.worker.tasks.map((task) => <div className="source-row" key={task.task_id}><span><strong>{formatState(task.task_kind)}</strong><small>{formatState(task.last_status)}</small></span></div>)}</section></aside></div> : null}
