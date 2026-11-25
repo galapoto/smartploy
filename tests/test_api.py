@@ -101,6 +101,13 @@ def test_application_summary_and_dashboard_are_read_only_truthful_views():
     assert body["external_actions_authorized"] is False
     assert body["top_matches"] == []
     assert body["possible_matches"] == []
+    assert body["rankings_loaded"] is True
+
+    lightweight = api.get("/api/v1/dashboard?include_rankings=false")
+    assert lightweight.status_code == 200
+    assert lightweight.json()["rankings_loaded"] is False
+    assert lightweight.json()["applications"] == body["applications"]
+    assert lightweight.json()["external_actions_authorized"] is False
     assert body["worker"]["configured"] is False
     assert body["worker"]["tasks"] == []
 

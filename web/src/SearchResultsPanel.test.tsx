@@ -53,6 +53,21 @@ const common = {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("job discovery mode semantics", () => {
+  it("renders only 30 initial cards and makes every remaining filtered job reachable", () => {
+    const rows = Array.from({ length: 75 }, (_, n) => ({
+      ...job, canonical_key: "large-" + n,
+      job: { ...baseJob, role_title: "Junior Data Analyst " + n },
+    }));
+    render(<SearchResultsPanel {...common} data={{ ...general, available_count: rows.length, all_jobs: rows }} />);
+    expect(screen.getAllByText("General listing")).toHaveLength(30);
+    expect(screen.getByText("Showing 30 of 75 matching jobs")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Load more jobs" }));
+    expect(screen.getAllByText("General listing")).toHaveLength(60);
+    fireEvent.click(screen.getByRole("button", { name: "Load more jobs" }));
+    expect(screen.getAllByText("General listing")).toHaveLength(75);
+    expect(screen.queryByRole("button", { name: "Load more jobs" })).toBeNull();
+  });
+
   it("renders all general listings without any score or inferred fit percentage", () => {
     render(<SearchResultsPanel {...common} data={general} />);
     expect(screen.getByText("Junior Data Analyst")).toBeTruthy();

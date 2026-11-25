@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, ChevronDown, Globe2, MapPin, Search, SlidersHorizontal, Target } from "lucide-react";
 import type { SearchResults, SearchJobCard } from "./types";
 import { listingObservationLabels, safeExternalJobUrl, scoreBand, sectorLabel, type SectorFilter, type DisplayMode } from "./lib";
@@ -93,6 +93,8 @@ export default function SearchResultsPanel(props: {
   displayMode: DisplayMode;
   onToggleDisplay: () => void;
   currentPage: "dashboard" | "jobs";
+  loading?: boolean;
+  onRetry?: () => void;
   busyKey: string;
   onPrepare: (canonicalKey: string) => void;
   onChooseFlow?: (canonicalKey: string, mode: "manual" | "assisted" | "automatic") => void;
@@ -136,7 +138,15 @@ export default function SearchResultsPanel(props: {
       );
     });
   }, [all, props.sector, props.search, general, careerFocus, levelFocus, kindFocus]);
-  const shown = props.currentPage === "dashboard" ? rows.slice(0, 8) : rows;
+  const [visibleLimit, setVisibleLimit] = useState(30);
+  useEffect(() => { setVisibleLimit(30); },
+    [props.currentPage, props.search, props.sector, props.view, general, careerFocus, levelFocus, kindFocus]);
+  const shown = rows.slice(0, props.currentPage === "dashboard" ? 8 : visibleLimit);
+  if (!data && props.loading !== undefined) return <section className="panel jobs-panel">
+    <h2>{props.loading ? "Loading jobs…" : "Job results unavailable"}</h2>
+    <p role="status">{props.loading ? "You can keep using your workspace." : "Try loading your jobs again."}</p>
+    {!props.loading && props.onRetry ? <button type="button" className="secondary-btn" onClick={props.onRetry}>Retry jobs</button> : null}
+  </section>;
   return <section className="panel jobs-panel">
     <div className="panel-heading">
       <div>
@@ -251,6 +261,9 @@ export default function SearchResultsPanel(props: {
           Adjust search criteria <ArrowRight size={15}/>
         </button>
       </div> : null}
+      {props.currentPage === "jobs" && rows.length > 30 ? <p className="muted" role="status">Showing {shown.length} of {rows.length} matching jobs</p> : null}
+      {props.currentPage === "jobs" && shown.length < rows.length ? <button type="button" className="secondary-btn search-more"
+        onClick={() => setVisibleLimit(limit => limit + 30)}>Load more jobs</button> : null}
       {props.currentPage === "dashboard" && rows.length > 8 ? <button type="button"
         className="secondary-btn search-more" onClick={props.onAllJobs}>
         See all {rows.length} jobs <ArrowRight size={15}/>

@@ -225,3 +225,14 @@ describe("SP50 original HTTP client preserves private mutation failure status", 
     }
   });
 });
+
+
+
+it("requests the lightweight dashboard and propagates read cancellation without changing write preconditions", async () => {
+  const controller = new AbortController();
+  await api.getDashboard(controller.signal, false);
+  const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+  expect(url).toContain("/api/v1/dashboard?include_rankings=false");
+  expect(init.signal).toBeDefined();
+  expect(init.headers).not.toHaveProperty("X-Smartploy-Expected-User-Id");
+});

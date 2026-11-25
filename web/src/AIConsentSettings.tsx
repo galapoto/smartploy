@@ -5,6 +5,7 @@ import type {
 
 interface Props {
   jobs: SavedJob[];
+  jobsStatus?: "loading" | "ready" | "unavailable";
   consents: JobAIProcessingConsent[];
   events: JobAIProcessingConsentEvent[];
   status: "ready" | "unavailable";
@@ -15,7 +16,7 @@ interface Props {
 
 /** Settings-only explicit consent. Never invokes a model or an employer API. */
 export default function AIConsentSettings({
-  jobs, consents, events, status, busy, onGrant, onRevoke
+  jobs, jobsStatus = "ready", consents, events, status, busy, onGrant, onRevoke
 }: Props) {
   const [selected, setSelected] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
@@ -42,7 +43,7 @@ export default function AIConsentSettings({
     {available ? <>
       <div className="dialog-form">
         <label htmlFor="ai-consent-job">Choose a currently approved job
-          <select id="ai-consent-job" value={selected} disabled={busy}
+          <select id="ai-consent-job" value={selected} disabled={busy || jobsStatus !== "ready"}
             onChange={(event) => { setSelected(event.target.value); setAcknowledged(false); }}>
             <option value="">Select a job</option>
             {permitted.map((item) => <option key={item.canonical_key}
@@ -58,9 +59,9 @@ export default function AIConsentSettings({
           selected job posting to prepare a draft. This does not authorize employer submission.
         </label>
         <button type="button" className="primary-btn"
-          disabled={busy || !selected || !acknowledged}
+          disabled={busy || jobsStatus !== "ready" || !selected || !acknowledged}
           onClick={() => {
-            if (!selected || !acknowledged) return;
+            if (jobsStatus !== "ready" || !selected || !acknowledged) return;
             const jobKey = selected;
             setAcknowledged(false);
             void onGrant(jobKey);
@@ -68,7 +69,8 @@ export default function AIConsentSettings({
           Save job-specific permission
         </button>
       </div>
-      {!permitted.length ? <p className="muted">
+      {jobsStatus !== "ready" ? <p role="status">{jobsStatus === "loading" ? "Loading available jobs…" : "Job catalogue unavailable. Refresh the workspace to retry."}</p> : null}
+      {jobsStatus === "ready" && !permitted.length ? <p className="muted">
         No current jobs are approved for AI forwarding. Browse normally without an AI grant.
       </p> : null}
       <h3>Saved permissions</h3>
