@@ -27,14 +27,16 @@ describe("V4 shadcn-adapted surface system", () => {
     expect(css).not.toContain("border-left:3px solid var(--sp-ui-accent)");
   });
 
-  it("uses neutral review tokens and a compact native-style home title", () => {
+  it("uses neutral review tokens and a compact native-style task title", () => {
     const warnings = Array.from(css.matchAll(/--sp-ui-warning:#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2});/gi));
     expect(warnings).toHaveLength(2);
     for (const [,r,g,b] of warnings) {
       expect(r).toBe(g);
       expect(g).toBe(b);
     }
-    expect(css).toContain("font:600 clamp(28px,2.8vw,34px)/1.2 -apple-system");
+    expect(css).toContain(".flow-start-heading h1");
+    expect(css).toContain("font:600 clamp(24px,2.45vw,32px)/1.25 -apple-system");
+    expect(css).not.toContain(".sp125-career-cover");
   });
 
   it("preserves disabled method cards, warning/error meaning and unambiguous selection", () => {

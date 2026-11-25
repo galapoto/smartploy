@@ -1874,25 +1874,18 @@ describe("SP126: premium real dashboard, sidebar and full-width applicant UI", (
     expect(window.localStorage.getItem("smartploy-sidebar-compact-v1")).toBe("false");
   });
 });
-describe("SP125: work-focused career banner, full logo and persistent theme", () => {
-  it("renders a real work-related banner before the actionable CV-first journey", async () => {
+describe("SP125: task-first dashboard, full logo and persistent theme", () => {
+  it("starts with the actionable CV-first journey without a redundant Home banner", async () => {
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
-    const cover = screen.getByRole("region", { name: "Home overview" });
-    expect(within(cover).getByRole("heading", {
-      name: "Home", level: 1,
-    })).toBeTruthy();
-    expect(cover.textContent?.trim()).toBe("Home");
+    expect(await screen.findByRole("heading", { name: "Start with your CV.", level: 1 })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Home" })).toBeNull();
+    expect(document.querySelector(".sp125-career-cover")).toBeNull();
     expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("button", {name:"Home"}).getAttribute("aria-current")).toBe("page");
-    expect(within(cover).queryByRole("img")).toBeNull();
-    expect(within(cover).queryAllByRole("listitem")).toHaveLength(0);
     const fullLogo = screen.getByRole("group", { name: "SmartPloy complete page logo" });
     expect(within(fullLogo).getByRole("img", {
       name: "SmartPloy turquoise and navy mark",
     })).toBeTruthy();
     expect(within(fullLogo).getByText("SmartPloy")).toBeTruthy();
-    expect(cover.compareDocumentPosition(fullLogo) & Node.DOCUMENT_POSITION_FOLLOWING)
-      .toBeTruthy();
     expect(fullLogo.compareDocumentPosition(screen.getByRole("heading", {
       name: "Start with your CV.",
     })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

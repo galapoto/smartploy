@@ -1512,14 +1512,9 @@ export default function App() {
         {notice ? <div className="toast-notice" role="status"><Activity size={16} /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X size={17} /></button></div> : null}
         {error ? <div className="toast-notice error" role="alert"><AlertCircle size={16} /><span>{error}</span><button type="button" onClick={() => void load()} aria-label="Retry"><RefreshCw size={17} /></button></div> : null}
         {page === "dashboard" ? <>
-          <section className="sp125-career-cover" aria-label="Home overview">
-            <div className="sp125-career-copy">
-              <h1>Home</h1>
-            </div>
-          </section>
           <FinlandPageIdentity />
-          {/* Keep the current CV/application task directly after the compact Home title.
-              No lost actions, secondary landing page, or duplicate mode selector. */}
+          {/* The current CV/application task is the page heading.
+              Home remains a navigation destination, not a duplicate banner. */}
           <div className={cx("sp126-dashboard-layout", "sp-clarity-home", !cv.present && !preferences?.completed && "sp-home-setup")}>
             <div className="sp126-dashboard-main">
           <StartChoices onMode={(choice) => startApplyFlow(choice)}

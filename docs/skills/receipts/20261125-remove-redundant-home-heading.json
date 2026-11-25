@@ -1,0 +1,127 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "9bc0f1cdb5bafee26a72be08adac18ae840a5c9c",
+  "user_outcome": "Owner screenshot: remove redundant visible Home heading and its entire banner space; start with the actual CV task while retaining Home navigation, privacy and all application controls.",
+  "components": [
+    {
+      "name": "ui",
+      "paths": [
+        "web/src/App.tsx",
+        "web/src/StartChoices.tsx",
+        "web/src/sp-v4-card-surfaces.css",
+        "web/src/App.test.tsx",
+        "web/src/StartChoices.test.tsx",
+        "web/src/CareerAtlas.test.tsx",
+        "web/src/sp-v4-card-surfaces.test.ts"
+      ],
+      "applied_method": "Delete App.tsx banner, reuse StartChoices existing actual task and old h1/h2 hierarchy, remove the new unused banner surface rules and re-target scoped CSS; retain all handlers, CV gates, route IDs, contrast and consent. Unit assertions protect absence of Home heading and correct accessible hierarchy.",
+      "tests": "Updated App, StartChoices, CareerAtlas and surface unit assertions; exact candidate build, Vitest and CI pending. Previous production exact main release-evidence PASS supplied by owner 2026-11-24. No claim of current production.",
+      "reuse_provenance": "COPIED: none. ADAPTED/SANITIZED existing first-party galapoto/smartploy@9bc0f1cdb5bafee26a72be08adac18ae840a5c9c web/src/App.tsx, web/src/StartChoices.tsx, web/src/sp-v4-card-surfaces.css, web/src/App.test.tsx, web/src/StartChoices.test.tsx, web/src/CareerAtlas.test.tsx, web/src/sp-v4-card-surfaces.test.ts. Reused same task component, CSS, original tests, pinned executable tooling and route. Reviewed existing PR 350 (overlapping broad unqualified rewrite); no donor import needed. NEW regression assertions only. No dependencies.",
+      "skills": [
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read content-before-chrome, accessibility and platform typography guidance; remove redundant page banner in DOM and promote the real task to h1, retain labeled navigation."
+        },
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read critical accessibility and responsive hierarchy guidance; verify task heading, active navigation, existing keyboard and disabled-state tests, and no blank hero on mobile and desktop. Existing executable tooling reruns on its monitored branch."
+        },
+        {
+          "name": "Apple Design",
+          "repository": "https://github.com/emilkowalski/skills",
+          "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c",
+          "path": "skills/apple-design/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read restraint, immediate interaction and typography guidance; reuse system font and existing responsive sizing, no extra motion or dependencies."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Exact first-party source and existing tests are available. User requests removal of a redundant existing heading; no reconstruction or third-party implementation is necessary.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "qa",
+      "paths": [
+        "web/browser-tests/onboarding.e2e.ts"
+      ],
+      "applied_method": "Adapt current real browser fixture to assert absent banner, task h1, method h2, active sidebar and bounded task top position. Preserve theme, branding, CV privacy and no-employer-send checks; re-target old typography/color readings to actual task.",
+      "tests": "Existing full Chromium suite; assert missing Home banner and task directly within content padding at 2400px, 320px, 390px, saved CV and no-CV scenarios; exact new execution pending.",
+      "reuse_provenance": "COPIED: none; ADAPTED galapoto/smartploy@9bc0f1cdb5bafee26a72be08adac18ae840a5c9c web/browser-tests/onboarding.e2e.ts existing acceptance fixtures and screenshots. No new dependencies.",
+      "skills": [
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read content-before-chrome, accessibility and platform typography guidance; remove redundant page banner in DOM and promote the real task to h1, retain labeled navigation."
+        },
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read critical accessibility and responsive hierarchy guidance; verify task heading, active navigation, existing keyboard and disabled-state tests, and no blank hero on mobile and desktop. Existing executable tooling reruns on its monitored branch."
+        },
+        {
+          "name": "Apple Design",
+          "repository": "https://github.com/emilkowalski/skills",
+          "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c",
+          "path": "skills/apple-design/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read restraint, immediate interaction and typography guidance; reuse system font and existing responsive sizing, no extra motion or dependencies."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Exact first-party source and existing tests are available. User requests removal of a redundant existing heading; no reconstruction or third-party implementation is necessary.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "docs",
+      "paths": [
+        "docs/v4/SP_V4_PROFESSIONAL_NETWORK_UI_DIRECTION_20261124.md"
+      ],
+      "applied_method": "Document owner correction superseding compact Home title, preserve V4 and professional-network boundaries.",
+      "tests": "Direct owner screenshot scope review; actual browser verification tracked separately.",
+      "reuse_provenance": "COPIED: none; ADAPTED galapoto/smartploy@9bc0f1cdb5bafee26a72be08adac18ae840a5c9c docs/v4/SP_V4_PROFESSIONAL_NETWORK_UI_DIRECTION_20261124.md for latest owner instruction; no new architecture.",
+      "skills": [
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read content-before-chrome, accessibility and platform typography guidance; remove redundant page banner in DOM and promote the real task to h1, retain labeled navigation."
+        },
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read critical accessibility and responsive hierarchy guidance; verify task heading, active navigation, existing keyboard and disabled-state tests, and no blank hero on mobile and desktop. Existing executable tooling reruns on its monitored branch."
+        },
+        {
+          "name": "Apple Design",
+          "repository": "https://github.com/emilkowalski/skills",
+          "commit": "64eb3deb9a5fbfa041faf783e0bc3fd635872e9c",
+          "path": "skills/apple-design/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Read restraint, immediate interaction and typography guidance; reuse system font and existing responsive sizing, no extra motion or dependencies."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Exact first-party source and existing tests are available. User requests removal of a redundant existing heading; no reconstruction or third-party implementation is necessary.",
+      "measured_seconds": "NOT_MEASURED"
+    }
+  ]
+}
