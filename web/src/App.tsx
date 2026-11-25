@@ -255,6 +255,9 @@ export default function App() {
   const [cv, setCV] = useState<CVDocument>({ present: false });
   const [facts, setFacts] = useState<CandidateFact[]>([]);
   const [jobs, setJobs] = useState<SavedJob[]>([]);
+  const [jobsStatus, setJobsStatus] = useState<"loading" | "ready" | "unavailable">("unavailable");
+  const [rankedCount, setRankedCount] = useState<number | null>(null);
+  const [discoveryStatus, setDiscoveryStatus] = useState<"loading" | "ready" | "unavailable">("loading");
   const [privateSavedJobs, setPrivateSavedJobs] = useState<PrivateSavedJob[]>([]);
   const [aiConsents, setAIConsents] = useState<JobAIProcessingConsent[]>([]);
   const [aiConsentEvents, setAIConsentEvents] = useState<JobAIProcessingConsentEvent[]>([]);
@@ -373,6 +376,7 @@ export default function App() {
 
   // Old in-flight requests must not repopulate another account's workspace.
   const loadGeneration = useRef(0);
+  const loadAbort = useRef<AbortController | null>(null);
   const lastSessionIdentity = useRef<string | null>(null);
   const savingSearchPreferences = useRef(false);
   const savingAIConsent = useRef(false);
@@ -381,6 +385,7 @@ export default function App() {
   const autoDraftInFlight = useRef<string | null>(null);
   const clearPrivateWorkspace = useCallback(() => {
     setDashboard(null); setPreferences(null); setDiscovery(null); setSession(null);
+    setDiscoveryStatus("loading"); setJobsStatus("unavailable"); setRankedCount(null);
     setApplications([]); setCV({ present: false }); setFacts([]); setJobs([]);
     setPrivateSavedJobs([]);
     setAIConsents([]); setAIConsentEvents([]);
@@ -418,6 +423,7 @@ export default function App() {
     const expectedUserId = session?.user_id?.trim() || "";
     const denyStaleAction = (): never => {
       ++loadGeneration.current; // invalidate private GET responses in flight
+      loadAbort.current?.abort();
       lastSessionIdentity.current = null;
       clearPrivateWorkspace();
       setLoading(false);
@@ -462,111 +468,109 @@ export default function App() {
   const load = useCallback(async (quiet = false) => {
     if (savingSearchPreferences.current || savingAIConsent.current) return;
     const generation = ++loadGeneration.current;
+    loadAbort.current?.abort();
+    const controller = new AbortController();
+    loadAbort.current = controller;
+    const { signal } = controller;
+    const current = () => generation === loadGeneration.current && !signal.aborted;
     if (quiet) setRefreshing(true); else setLoading(true);
-    // A stalled session/search request must become an actionable error, not
-    // an endless loading screen. Old responses are invalidated before reset.
-    // Background refreshes leave the already mounted shell in place.
-    const connectionDeadline = quiet ? null : window.setTimeout(() => {
-      if (generation !== loadGeneration.current) return;
+    const connectionDeadline = window.setTimeout(() => {
+      if (!current()) return;
       ++loadGeneration.current;
+      controller.abort();
       lastSessionIdentity.current = null;
       clearPrivateWorkspace();
       setLoading(false); setRefreshing(false);
       setError("Workspace connection timed out. Check your connection and try again.");
     }, 18000);
+    const optionalError = () => setError(existing => existing ||
+      "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria.");
 
     try {
-      // Establish a server-issued account identity BEFORE requesting private
-      // preferences, CVs, drafts or other tenant-scoped responses. Starting
-      // them alongside the session request could mix two browser identities.
-      const who = await getSession();
-      if (generation !== loadGeneration.current) return;
+      const who = await getSession(signal);
+      if (!current()) return;
       const identity = sessionIdentity(who);
-      if (lastSessionIdentity.current !== null &&
-          identity !== lastSessionIdentity.current) {
+      if (lastSessionIdentity.current !== null && identity !== lastSessionIdentity.current) {
         clearPrivateWorkspace();
         setLoading(true);
         lastSessionIdentity.current = null;
       }
+      const verify = async (message: string) => {
+        if (!current()) return null;
+        const observed = await getSession(signal);
+        if (!current()) return null;
+        if (sessionIdentity(observed) !== identity) throw new Error(message);
+        return observed;
+      };
 
-      // Optional requests still run alongside the essential job reads; they
-      // must never block first-use navigation when Ollama or a CV is slow.
-      // A slow Ollama availability endpoint cannot hold profile documents
-      // and private saved jobs hostage. Attach a rejection handler now.
-      const localAIRequest = Promise.allSettled([getLocalAIStatus()]);
-      const secondaryRequest = Promise.allSettled([
-        getApplications(), getHealth(), getCV(), getProfileFacts(),
-        getJobs(), getPrivateSavedJobs(), getJobAIConsents(), getJobAIConsentEvents()
+      // Only small, account-bound reads are on the initial rendering path.
+      // No catalogue download or rank_candidates call is required to open Home.
+      const cvRequest = Promise.allSettled([getCV(signal)]);
+      const [board, prefs] = await Promise.all([
+        getDashboard(signal, false), getSearchPreferences(signal)
       ]);
-      const [board, prefs, results] = await Promise.all([
-        getDashboard(), getSearchPreferences(), getSearchResults()
-      ]);
-      if (generation !== loadGeneration.current) return;
+      const verifiedWho = await verify("Your signed-in account changed during refresh. Reload this workspace.");
+      if (!verifiedWho) return;
+      const [savedCV] = await cvRequest;
+      const finalWho = await verify("Your signed-in account changed during profile loading. Reload this workspace.");
+      if (!finalWho) return;
 
-      // Account switch during GETs: reject all mixed snapshots, rather than
-      // showing A's job/CV data under B's currently signed-in browser.
-      const verifiedWho = await getSession();
-      if (generation !== loadGeneration.current) return;
-      if (sessionIdentity(verifiedWho) !== identity) {
-        throw new Error("Your signed-in account changed during refresh. Reload this workspace.");
-      }
       lastSessionIdentity.current = identity;
-      // The essential account-bound workspace has arrived. Optional CV, AI
-      // and application reads must not keep the startup timeout active.
-      if (connectionDeadline !== null) window.clearTimeout(connectionDeadline);
+      window.clearTimeout(connectionDeadline);
       setLoginRequired(false);
-      setDashboard(board); setPreferences(prefs); setDiscovery(results);
-      setSession(verifiedWho);
-      setLoading(false); setRefreshing(false); setError("");
-
-      // Only global local-model readiness is returned by this endpoint:
-      // never personal CV or draft content. This response is optional and
-      // must not update a superseded account/load-generation view.
-      void localAIRequest.then(([model]) => {
-        if (generation !== loadGeneration.current ||
-            lastSessionIdentity.current !== identity) return;
-        setLocalAI(model.status === "fulfilled" ? model.value : null);
-        if (model.status === "rejected") {
-          setError((current) => current ||
-            "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria.");
-        }
-      });
-
-      const secondary = await secondaryRequest;
-      if (generation !== loadGeneration.current) return;
-      const finalWho = await getSession();
-      if (generation !== loadGeneration.current) return;
-      if (sessionIdentity(finalWho) !== identity) {
-        throw new Error("Your signed-in account changed during profile loading. Reload this workspace.");
-      }
-
-      const [apps, ready, savedCV, profile, savedJobs, bookmarks, grants, grantEvents] = secondary;
-      setApplications(apps.status === "fulfilled" ? apps.value.applications : []);
-      setHealth(ready.status === "fulfilled" ? ready.value : null);
+      setDashboard(board); setPreferences(prefs);
       setCV(savedCV.status === "fulfilled" ? savedCV.value : { present: false });
-      setFacts(profile.status === "fulfilled" ? profile.value.facts : []);
-      setJobs(savedJobs.status === "fulfilled" ? savedJobs.value.jobs : []);
-      setPrivateSavedJobs(bookmarks.status === "fulfilled" ? bookmarks.value.jobs : []);
-      setAIConsents(grants.status === "fulfilled" ? grants.value.consents : []);
-      setAIConsentEvents(grantEvents.status === "fulfilled" ? grantEvents.value.events : []);
-      setAIConsentStatus(grants.status === "fulfilled" ? "ready" : "unavailable");
-      if (secondary.slice(0, 6).some((item) => item.status === "rejected")) {
-        setError((current) => current ||
-          "Some optional profile or AI tools are temporarily unavailable. You can still browse and change job criteria.");
-      }
+      setSession(finalWho);
+      setLoading(false); setRefreshing(false); setError("");
+      if (savedCV.status === "rejected") optionalError();
+
+      // Start expensive discovery only after the real CV/task can render.
+      // Each result batch is independently verified before touching private UI.
+      setDiscoveryStatus("loading");
+      const hydrateSearch = async () => {
+        const [result] = await Promise.allSettled([getSearchResults(signal)]);
+        if (!await verify("Your signed-in account changed during job loading. Reload this workspace.")) return;
+        if (result.status === "fulfilled") {
+          setDiscovery(result.value); setDiscoveryStatus("ready");
+        } else {
+          setDiscovery(null); setDiscoveryStatus("unavailable");
+        }
+      };
+      const hydrateSecondary = async () => {
+        const secondary = await Promise.allSettled([
+          getApplications(signal), getHealth(signal), getProfileFacts(signal),
+          getPrivateSavedJobs(signal), getJobAIConsents(signal), getJobAIConsentEvents(signal)
+        ]);
+        if (!await verify("Your signed-in account changed during profile loading. Reload this workspace.")) return;
+        const [apps, ready, profile, bookmarks, grants, grantEvents] = secondary;
+        setApplications(apps.status === "fulfilled" ? apps.value.applications : []);
+        setHealth(ready.status === "fulfilled" ? ready.value : null);
+        setFacts(profile.status === "fulfilled" ? profile.value.facts : []);
+        setPrivateSavedJobs(bookmarks.status === "fulfilled" ? bookmarks.value.jobs : []);
+        setAIConsents(grants.status === "fulfilled" ? grants.value.consents : []);
+        setAIConsentEvents(grantEvents.status === "fulfilled" ? grantEvents.value.events : []);
+        setAIConsentStatus(grants.status === "fulfilled" ? "ready" : "unavailable");
+        if (secondary.slice(0, 4).some(item => item.status === "rejected")) optionalError();
+      };
+      // Local model status is not applicant data and cannot block CV or jobs.
+      void Promise.allSettled([getLocalAIStatus(signal)]).then(([model]) => {
+        if (!current() || lastSessionIdentity.current !== identity) return;
+        setLocalAI(model.status === "fulfilled" ? model.value : null);
+        if (model.status === "rejected") optionalError();
+      });
+      await Promise.all([hydrateSearch(), hydrateSecondary()]);
     } catch (exc) {
-      if (generation === loadGeneration.current) {
+      if (current()) {
+        controller.abort();
         lastSessionIdentity.current = null;
         clearPrivateWorkspace();
-        // Only a server-issued 401 opens the login page. Other failures
-        // continue to use the existing retry shell, never expose private data.
         const status = exc && typeof exc === "object" && "status" in exc
           ? (exc as { status?: unknown }).status : null;
         setLoginRequired(status === 401);
         setError(exc instanceof Error ? exc.message : "Unable to reach SmartPloy.");
       }
     } finally {
-      if (connectionDeadline !== null) window.clearTimeout(connectionDeadline);
+      window.clearTimeout(connectionDeadline);
       if (generation === loadGeneration.current) {
         setLoading(false); setRefreshing(false);
       }
@@ -576,8 +580,53 @@ export default function App() {
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => { void load(true); }, 60000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      ++loadGeneration.current;
+      loadAbort.current?.abort();
+    };
   }, [load]);
+
+  // The full public catalogue is only needed for the explicit consent picker.
+  // Legacy full ranking is only needed by Career insights, not Home.
+  useEffect(() => {
+    if (!session || (page !== "settings" && page !== "insights")) return;
+    const identity = sessionIdentity(session);
+    const generation = loadGeneration.current;
+    const controller = new AbortController();
+    const current = () => !controller.signal.aborted &&
+      generation === loadGeneration.current && lastSessionIdentity.current === identity;
+    if (page === "settings") { setJobs([]); setJobsStatus("loading"); }
+    else setRankedCount(null);
+    void (async () => {
+      try {
+        const result = page === "settings"
+          ? await getJobs(controller.signal)
+          : await getDashboard(controller.signal, true);
+        if (!current()) return;
+        let verified = false;
+        try { verified = sessionIdentity(await getSession(controller.signal)) === identity; }
+        catch { /* account verification must fail closed */ }
+        if (!current()) return;
+        if (!verified) {
+          ++loadGeneration.current;
+          loadAbort.current?.abort();
+          lastSessionIdentity.current = null;
+          clearPrivateWorkspace();
+          setError("Your signed-in account changed or could not be verified while loading tools. Reload this workspace.");
+          return;
+        }
+        if ("jobs" in result) {
+          setJobs(result.jobs); setJobsStatus("ready");
+        } else {
+          setRankedCount(result.top_matches.length + result.possible_matches.length);
+        }
+      } catch {
+        if (current() && page === "settings") setJobsStatus("unavailable");
+      }
+    })();
+    return () => controller.abort();
+  }, [page, session, clearPrivateWorkspace]);
 
   const navigate = (target: Page) => {
     if (mobileNav) mobileMenuFocusMainRef.current = true;
@@ -627,6 +676,7 @@ export default function App() {
     // A concurrent refresh cannot publish an old preference snapshot while
     // the PUT and its paired discovery GET are in progress.
     ++loadGeneration.current;
+    loadAbort.current?.abort();
     setRefreshing(false);
 
     const expectedIdentity = lastSessionIdentity.current;
@@ -683,7 +733,7 @@ export default function App() {
       }
 
       setPreferences(result);
-      setDiscovery(fresh);
+      setDiscovery(fresh); setDiscoveryStatus("ready");
       setView("top");
       if (shouldScan && firstScan?.status === "needs_approved_profile") {
         setPage("profile");
@@ -742,6 +792,7 @@ export default function App() {
     const originatingIdentity = lastSessionIdentity.current;
     savingAIConsent.current = true;
     ++loadGeneration.current; // Invalidate older private GET responses.
+    loadAbort.current?.abort();
     setRefreshing(false); // A cancelled refresh must not leave its spinner stuck.
     setAIConsentBusy(true);
     try {
@@ -1256,7 +1307,8 @@ export default function App() {
     ["failed", "degraded"].includes(autoDraftTask.last_status) ? "degraded" : "registered";
 
   const jobsSection = <SearchResultsPanel
-    data={discovery} search={search} sector={sector} onSector={setSector}
+    data={discovery} loading={discoveryStatus === "loading"} onRetry={() => void load(true)}
+    search={search} sector={sector} onSector={setSector}
     view={view} onView={setView} displayMode={mode}
     onToggleDisplay={() => setMode(mode === "heatmap" ? "percentage" : "heatmap")}
     currentPage={page === "jobs" ? "jobs" : "dashboard"}
@@ -1617,11 +1669,11 @@ export default function App() {
             {applications.length ? <div className="applications-list">{applications.map((item) => <div className="application-list-row" key={item.application_id}><FileText size={20} /><div><strong>{formatState(item.state)}</strong><small>Job {item.canonical_key} · {item.updated_at ? relativeFreshness(item.updated_at) : "Updated time unknown"}</small></div><span className={cx("state-pill", item.has_been_submitted ? "good" : "waiting")}>{item.has_been_submitted ? "Submitted" : "Not submitted"}</span></div>)}</div> :
               <Empty title="No applications yet" description="When you've reviewed a job and prepared an application, the draft will appear here. No submissions are claimed without external evidence." icon={FileCheck2} action="Find jobs" onAction={() => navigate("jobs")} />}
             </section></div> : null}
-          {page === "insights" ? <div className="secondary-grid"><section className="panel insights-panel"><p className="section-kicker">PROFILE INSIGHTS</p><h2>Your evidence, at a glance</h2><p className="muted">These figures come from your own verified profile, not estimates.</p><div className="insight-numbers"><div><strong>{facts.length}</strong><span>Total facts</span></div><div><strong>{approved.length}</strong><span>Approved facts</span></div><div><strong>{dashboard.top_matches.length + dashboard.possible_matches.length}</strong><span>Ranked matches</span></div></div><button className="primary-btn" type="button" onClick={() => navigate("profile")}>Improve profile <ArrowRight size={16} /></button></section><aside>{sourcePanel}</aside></div> : null}
+          {page === "insights" ? <div className="secondary-grid"><section className="panel insights-panel"><p className="section-kicker">PROFILE INSIGHTS</p><h2>Your evidence, at a glance</h2><p className="muted">These figures come from your own verified profile, not estimates.</p><div className="insight-numbers"><div><strong>{facts.length}</strong><span>Total facts</span></div><div><strong>{approved.length}</strong><span>Approved facts</span></div><div><strong>{rankedCount ?? "—"}</strong><span>{rankedCount === null ? "Ranked matches (not yet available)" : "Ranked matches"}</span></div></div><button className="primary-btn" type="button" onClick={() => navigate("profile")}>Improve profile <ArrowRight size={16} /></button></section><aside>{sourcePanel}</aside></div> : null}
           {page === "settings" && preferences ? <div className="stacked">
             <SearchSetup key={accountViewKey} initial={preferences} settings onSave={saveSearchPreferences} />
             <AIConsentSettings key={accountViewKey + "-ai-consent"}
-              jobs={jobs} consents={aiConsents} events={aiConsentEvents}
+              jobs={jobs} jobsStatus={jobsStatus} consents={aiConsents} events={aiConsentEvents}
               status={aiConsentStatus} busy={aiConsentBusy}
               onGrant={grantConsent} onRevoke={revokeConsent} />
             <section className="panel settings-panel">

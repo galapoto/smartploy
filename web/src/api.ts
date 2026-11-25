@@ -139,16 +139,33 @@ export function getTrainingPrograms(): Promise<TrainingProgramsResponse> {
   return request<TrainingProgramsResponse>("/api/v1/training-programs");
 }
 
-export function getDashboard(): Promise<Dashboard> {
-  return request<Dashboard>("/api/v1/dashboard");
+// Workspace reads are bounded independently; a slow optional service cannot
+// hold the initial task hostage. Never apply this retry/abort policy to writes.
+async function workspaceRead<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  if (signal?.aborted) cancel();
+  else signal?.addEventListener("abort", cancel, { once: true });
+  const deadline = setTimeout(cancel, 15000);
+  try {
+    return await request<T>(path, { signal: controller.signal });
+  } finally {
+    clearTimeout(deadline);
+    signal?.removeEventListener("abort", cancel);
+  }
 }
 
-export function getApplications(): Promise<ApplicationsResponse> {
-  return request<ApplicationsResponse>("/api/v1/applications?limit=12");
+export function getDashboard(signal?: AbortSignal, includeRankings = true): Promise<Dashboard> {
+  return workspaceRead<Dashboard>("/api/v1/dashboard" +
+    (includeRankings ? "" : "?include_rankings=false"), signal);
 }
 
-export function getHealth(): Promise<HealthResponse> {
-  return request<HealthResponse>("/healthz");
+export function getApplications(signal?: AbortSignal): Promise<ApplicationsResponse> {
+  return workspaceRead<ApplicationsResponse>("/api/v1/applications?limit=12", signal);
+}
+
+export function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
+  return workspaceRead<HealthResponse>("/healthz", signal);
 }
 
 export function prepareJob(canonicalKey: string, expectedUserId: string): Promise<PreparationResponse> {
@@ -158,20 +175,20 @@ export function prepareJob(canonicalKey: string, expectedUserId: string): Promis
   );
 }
 
-export function getSession(): Promise<SessionInfo> {
-  return request<SessionInfo>("/api/v1/session");
+export function getSession(signal?: AbortSignal): Promise<SessionInfo> {
+  return workspaceRead<SessionInfo>("/api/v1/session", signal);
 }
 
-export function getJobs(): Promise<JobsResponse> {
-  return request<JobsResponse>("/api/v1/jobs");
+export function getJobs(signal?: AbortSignal): Promise<JobsResponse> {
+  return workspaceRead<JobsResponse>("/api/v1/jobs", signal);
 }
 
-export function getCV(): Promise<CVDocument> {
-  return request<CVDocument>("/api/v1/profile/cv");
+export function getCV(signal?: AbortSignal): Promise<CVDocument> {
+  return workspaceRead<CVDocument>("/api/v1/profile/cv", signal);
 }
 
-export function getProfileFacts(): Promise<ProfileFactsResponse> {
-  return request<ProfileFactsResponse>("/api/v1/profile/facts");
+export function getProfileFacts(signal?: AbortSignal): Promise<ProfileFactsResponse> {
+  return workspaceRead<ProfileFactsResponse>("/api/v1/profile/facts", signal);
 }
 
 /** SP79: full, private editable CV, not the limited 6,000-char preview. */
@@ -260,8 +277,8 @@ export function addManualJob(job: ManualJobPayload, expectedUserId: string): Pro
   }, expectedUserId);
 }
 
-export function getPrivateSavedJobs(): Promise<PrivateSavedJobsResponse> {
-  return request<PrivateSavedJobsResponse>("/api/v1/private-jobs");
+export function getPrivateSavedJobs(signal?: AbortSignal): Promise<PrivateSavedJobsResponse> {
+  return workspaceRead<PrivateSavedJobsResponse>("/api/v1/private-jobs", signal);
 }
 
 export function deletePrivateSavedJob(savedJobId: string, expectedUserId: string): Promise<{ deleted: boolean }> {
@@ -546,8 +563,8 @@ export function applicationBundleUrl(workspaceId: string): string {
     encodeURIComponent(workspaceId) + "/documents-bundle.zip";
 }
 
-export function getLocalAIStatus(): Promise<import("./types").LocalAIStatus> {
-  return request<import("./types").LocalAIStatus>("/api/v1/local-ai/status");
+export function getLocalAIStatus(signal?: AbortSignal): Promise<import("./types").LocalAIStatus> {
+  return workspaceRead<import("./types").LocalAIStatus>("/api/v1/local-ai/status", signal);
 }
 
 /** Perform a deliberately tiny synthetic local inference. No applicant/job data. */
@@ -875,8 +892,8 @@ export function prepareMyMatchingDrafts(expectedUserId: string): Promise<AutoDra
     {method: "POST", body: JSON.stringify({})}, expectedUserId);
 }
 
-export function getSearchPreferences(): Promise<import("./types").SearchPreferences> {
-  return request<import("./types").SearchPreferences>("/api/v1/search-preferences");
+export function getSearchPreferences(signal?: AbortSignal): Promise<import("./types").SearchPreferences> {
+  return workspaceRead<import("./types").SearchPreferences>("/api/v1/search-preferences", signal);
 }
 
 export function updateSearchPreferences(
@@ -887,17 +904,17 @@ export function updateSearchPreferences(
   }, expectedUserId);
 }
 
-export function getSearchResults(): Promise<import("./types").SearchResults> {
-  return request<import("./types").SearchResults>("/api/v1/search-results");
+export function getSearchResults(signal?: AbortSignal): Promise<import("./types").SearchResults> {
+  return workspaceRead<import("./types").SearchResults>("/api/v1/search-results", signal);
 }
 
 /** Inspect saved permissions without triggering an AI request. */
-export function getJobAIConsents(): Promise<import("./types").JobAIConsentsResponse> {
-  return request<import("./types").JobAIConsentsResponse>("/api/v1/ai-processing-consents");
+export function getJobAIConsents(signal?: AbortSignal): Promise<import("./types").JobAIConsentsResponse> {
+  return workspaceRead<import("./types").JobAIConsentsResponse>("/api/v1/ai-processing-consents", signal);
 }
 
-export function getJobAIConsentEvents(): Promise<import("./types").JobAIConsentEventsResponse> {
-  return request<import("./types").JobAIConsentEventsResponse>("/api/v1/ai-processing-consents/events");
+export function getJobAIConsentEvents(signal?: AbortSignal): Promise<import("./types").JobAIConsentEventsResponse> {
+  return workspaceRead<import("./types").JobAIConsentEventsResponse>("/api/v1/ai-processing-consents/events", signal);
 }
 
 /** The literal true opt-in is sent only from a separate, confirmed user action. */

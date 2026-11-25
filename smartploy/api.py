@@ -3332,10 +3332,10 @@ def create_app(
         return _worker_snapshot()
 
     @app.get("/api/v1/dashboard")
-    def dashboard(request: Request) -> dict[str, Any]:
+    def dashboard(request: Request, include_rankings: bool = True) -> dict[str, Any]:
         tenant, _ = tenant_context(request)
         return {
-            **tenant.dashboard(),
+            **tenant.dashboard(include_rankings=include_rankings),
             "worker": _worker_snapshot(),
         }
 

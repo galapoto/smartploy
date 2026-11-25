@@ -1,0 +1,114 @@
+{
+  "schema": "smartploy-component-skill-evidence-v1",
+  "baseline_sha": "c6f4467446a6ad40275ef65106893fd9581b4b76",
+  "user_outcome": "V4 section 13: usable signed-in CV workspace before expensive job discovery, no unnecessary catalogue/ranking requests, bounded initial Jobs DOM and original identity and permission controls.",
+  "components": [
+    {
+      "name": "ui",
+      "paths": [
+        "web/src/App.tsx",
+        "web/src/api.ts",
+        "web/src/SearchResultsPanel.tsx",
+        "web/src/AIConsentSettings.tsx",
+        "web/src/App.test.tsx",
+        "web/src/SearchResultsPanel.test.tsx",
+        "web/src/api.test.ts"
+      ],
+      "applied_method": "Adapt original account generation guards and API reads; port optional AbortSignal signatures and superseded-read abort approach from exact first-party PR326 (1117079c4c4c8ae7fa5eb432821c063b5e089ada). Bound GETs with per-request timeout. Initial small dashboard/preferences/CV, independently verify deferred search/profile batches, lazy Settings catalogue and Insights ranking, limit visible Jobs cards to 30 and load more. No permission bypass.",
+      "reuse_provenance": "PORTED/ADAPTED galapoto/smartploy PR326@1117079c4c4c8ae7fa5eb432821c063b5e089ada web/src/App.tsx and web/src/api.ts cancellation signatures/guards, integrated into latest main. Reuse original SearchResultsPanel, consent picker, account checks, API transport. NEW bounded request wrapper, optional data states and visible limit. No external code or packages copied; no shared private cache.",
+      "tests": "New deferred-search App test, 75-row DOM regression, API signal test and full existing account/consent tests. Exact new CI pending; no wall-clock claim.",
+      "skills": [
+        {
+          "name": "Systematic debugging and regression tests",
+          "repository": "https://github.com/obra/superpowers",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Define regression assertions first for zero full ledger ranking at startup, stalled search with usable CV, cancellation, and bounded DOM. Separate RED execution not observed; exact CI must qualify."
+        },
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Prioritize actual task and preserve explicit loading/error, keyboard-operable load more and permission controls."
+        },
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Apply performance and accessibility guidance: no catalogue startup, bounded real cards, nonblocking results and explicit consent picker state. Existing CLI audit on monitored branch."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Complete first-party implementations and exact source PR326 available; no opaque app reconstruction or external donor runtime needed.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "backend",
+      "paths": [
+        "smartploy/service.py",
+        "smartploy/api.py"
+      ],
+      "applied_method": "Reuse original dashboard handler/service and card projection; add backward compatible include_rankings switch, explicit rankings_loaded flag and no job snapshot or scoring invocation on lightweight read. Existing tenant middleware and full scoring unchanged.",
+      "reuse_provenance": "COPIED: none. ADAPTED galapoto/smartploy@c6f4467446a6ad40275ef65106893fd9581b4b76 smartploy/service.py and smartploy/api.py. Reuse existing Postgres and ranking engine; no new framework or SQL migration.",
+      "tests": "Exact service regression fails if catalogue read/rank called; API tests verify full and lightweight contracts and application authority. New CI pending.",
+      "skills": [
+        {
+          "name": "Systematic debugging and regression tests",
+          "repository": "https://github.com/obra/superpowers",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Define regression assertions first for zero full ledger ranking at startup, stalled search with usable CV, cancellation, and bounded DOM. Separate RED execution not observed; exact CI must qualify."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Complete first-party implementations and exact source PR326 available; no opaque app reconstruction or external donor runtime needed.",
+      "measured_seconds": "NOT_MEASURED"
+    },
+    {
+      "name": "qa",
+      "paths": [
+        "tests/test_dashboard_metadata.py",
+        "tests/test_api.py",
+        "web/browser-tests/onboarding.e2e.ts"
+      ],
+      "applied_method": "Add actual browser delayed response fixture and backend zero-work assertions; preserve all existing full tests.",
+      "reuse_provenance": "COPIED: none. ADAPTED galapoto/smartploy@c6f4467446a6ad40275ef65106893fd9581b4b76 existing Playwright synthetic API and pytest fixtures, new checks.",
+      "tests": "Chromium delayed search, CV heading, no catalogue request, explicit lightweight parameter, and pytest summary. CI pending, synthetic not production latency proof.",
+      "skills": [
+        {
+          "name": "Systematic debugging and regression tests",
+          "repository": "https://github.com/obra/superpowers",
+          "commit": "22f0b463e7a5e579904dd6211a520321035526f7",
+          "path": "skills/test-driven-development/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Define regression assertions first for zero full ledger ranking at startup, stalled search with usable CV, cancellation, and bounded DOM. Separate RED execution not observed; exact CI must qualify."
+        },
+        {
+          "name": "Apple HIG Foundations",
+          "repository": "https://github.com/raintree-technology/hig-doctor",
+          "commit": "a0f1e4ec3c5ada82e538710b54a344db63189d8b",
+          "path": "skills/hig-foundations/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Prioritize actual task and preserve explicit loading/error, keyboard-operable load more and permission controls."
+        },
+        {
+          "name": "UI/UX Pro Max",
+          "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+          "commit": "7e935ad920b390035e0e139bce555d091d14c70b",
+          "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+          "mode": "GUIDANCE_APPLIED",
+          "applied": "Apply performance and accessibility guidance: no catalogue startup, bounded real cards, nonblocking results and explicit consent picker state. Existing CLI audit on monitored branch."
+        }
+      ],
+      "rea_status": "REA_NOT_APPLICABLE",
+      "rea_reason": "Complete first-party implementations and exact source PR326 available; no opaque app reconstruction or external donor runtime needed.",
+      "measured_seconds": "NOT_MEASURED"
+    }
+  ]
+}

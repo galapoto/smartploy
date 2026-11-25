@@ -94,3 +94,27 @@ def test_dashboard_projects_only_bounded_cards_from_one_ranked_snapshot(monkeypa
         for row in dashboard["top_matches"] + dashboard["possible_matches"]
     )
     assert dashboard["external_actions_authorized"] is False
+
+
+
+def test_lightweight_dashboard_never_reads_or_ranks_job_catalogue(monkeypatch):
+    from unittest.mock import Mock
+
+    from smartploy.service import SmartployService
+
+    service = SmartployService()
+    read = Mock(side_effect=AssertionError("startup must not read the full catalogue"))
+    rank = Mock(side_effect=AssertionError("startup must not rank the catalogue"))
+    monkeypatch.setattr(service, "list_jobs", read)
+    monkeypatch.setattr("smartploy.service.rank_candidates", rank)
+
+    result = service.dashboard(include_rankings=False)
+
+    read.assert_not_called()
+    rank.assert_not_called()
+    assert result["rankings_loaded"] is False
+    assert result["top_matches"] == []
+    assert result["possible_matches"] == []
+    assert result["external_actions_authorized"] is False
+    assert "applications" in result
+    assert "profile" in result

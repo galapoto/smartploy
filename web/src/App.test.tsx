@@ -205,6 +205,25 @@ describe("SP127: mobile-first persistent shell and nonblocking startup", () => {
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
   });
 
+  it("opens the real CV-first workspace without waiting for search or downloading the job catalogue", async () => {
+    let resolveSearch: (value: SearchResults) => void = () => {};
+    vi.mocked(api.getSearchResults).mockImplementationOnce(() =>
+      new Promise<SearchResults>((resolve) => { resolveSearch = resolve; }));
+    vi.mocked(api.getCV).mockResolvedValue({ present: true, filename: "FAST-CV.pdf" });
+    vi.mocked(api.getProfileFacts).mockImplementation(() => new Promise(() => {}));
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "CV connected. Choose how to apply." })).toBeTruthy();
+    expect(api.getDashboard).toHaveBeenCalledWith(expect.anything(), false);
+    expect(api.getJobs).not.toHaveBeenCalled();
+    expect(api.getSearchResults).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
+    expect(screen.getByText("Loading jobs…")).toBeTruthy();
+    await act(async () => { resolveSearch(general); });
+    expect(await screen.findByText("Junior Data Analyst")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
+    await waitFor(() => expect(api.getJobs).toHaveBeenCalledTimes(1));
+  });
+
   it("preserves a working mobile header brand and theme button in loaded App", async () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Start with your CV." })).toBeTruthy();
@@ -1243,7 +1262,7 @@ describe("actual SmartPloy App first-use and application handoff", () => {
 
     render(<App />);
     expect(await screen.findByText("PRIVATE-OLD-ACCOUNT-CV.docx")).toBeTruthy();
-    expect(screen.getByText("PRIVATE-OLD-ACCOUNT-FACT")).toBeTruthy();
+    expect(await screen.findByText("PRIVATE-OLD-ACCOUNT-FACT")).toBeTruthy();
     currentUser = "usr-account-b";
     fireEvent.click(screen.getByRole("button", { name: "Refresh workspace" }));
 

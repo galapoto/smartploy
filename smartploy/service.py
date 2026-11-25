@@ -257,11 +257,11 @@ class SmartployService:
     def application_summary(self) -> dict[str, Any]:
         return self.application_repository.summary()
 
-    def dashboard(self) -> dict[str, Any]:
+    def dashboard(self, *, include_rankings: bool = True) -> dict[str, Any]:
         # Rank and project the same bulk ledger snapshot. Avoid an individual
         # database lookup for every candidate, including cards beyond the limit.
-        candidates = self.list_jobs()
-        rankings = rank_candidates(candidates, self.profile())
+        candidates = self.list_jobs() if include_rankings else []
+        rankings = rank_candidates(candidates, self.profile()) if include_rankings else []
         candidates_by_key = {candidate.canonical_key: candidate for candidate in candidates}
 
         def card(score: ScoreResult) -> dict[str, Any]:
@@ -304,6 +304,7 @@ class SmartployService:
         return {
             "top_matches": top,
             "possible_matches": possible,
+            "rankings_loaded": include_rankings,
             "preparation_counts": preparation_counts,
             "applications": self.application_summary(),
             "source_health": [item.to_dict() for item in self.list_source_health()],

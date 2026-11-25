@@ -1906,3 +1906,35 @@ test("V4 monochrome: homepage preserves real application paths and neutral surfa
   await evidence(page,"sp-v4-neutral-dark-phone.png");
   expect(state.applicationWorkspaceCreates).toEqual([]);
 });
+
+
+
+test("PERF-01: signed-in task becomes usable while search is stalled; catalogue is not requested", async ({ page }) => {
+  await installSyntheticApi(page, {
+    initial: { completed: true, mode: "general", revision: 1 },
+    cvFilename: "Reviewed-Synthetic-CV.pdf",
+  });
+  const requests: URL[] = [];
+  page.on("request", request => requests.push(new URL(request.url())));
+  let releaseSearch: () => void = () => {};
+  const barrier = new Promise<void>(resolve => { releaseSearch = resolve; });
+  await page.route("**/api/v1/search-results", async route => {
+    await barrier;
+    await route.fallback();
+  });
+  try {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "CV connected. Choose how to apply." })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
+    await expect.poll(() => requests.some(url => url.pathname === "/api/v1/search-results")).toBe(true);
+    expect(requests.some(url => url.pathname === "/api/v1/jobs")).toBe(false);
+    expect(requests.some(url => url.pathname === "/api/v1/dashboard" &&
+      url.searchParams.get("include_rankings") === "false")).toBe(true);
+    await page.getByRole("button", { name: "Find jobs", exact: true }).click();
+    await expect(page.getByText("Loading jobs…", { exact: true })).toBeVisible();
+  } finally {
+    releaseSearch();
+  }
+  await expect(page.getByText("Loading jobs…", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /IT, data & planning jobs in Finland/ })).toBeVisible();
+});
